@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <usbd_canokey.h>
 #include <device-config.h>
+#include <apdu.h>
+#include <device.h>
 #if ENABLE_IFACE_CCID
 #include <usbd_ccid.h>
 #endif
 #if ENABLE_IFACE_CTAPHID
 #include <usbd_ctaphid.h>
+#include <ctaphid.h>
 #endif
 #if ENABLE_IFACE_KBDHID
 #include <usbd_kbdhid.h>
@@ -27,7 +30,7 @@ const USBD_ClassTypeDef USBD_CANOKEY = {
     USBD_CANOKEY_EP0_RxReady, USBD_CANOKEY_DataIn, USBD_CANOKEY_DataOut,
 };
 
-static uint8_t USBD_CANOKEY_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx) {
+static uint8_t USBD_CANOKEY_ApplyInit(USBD_HandleTypeDef *pdev, uint8_t cfgidx) {
   UNUSED(cfgidx);
 
   pdev->ep_in_mask = 0;
@@ -57,15 +60,50 @@ static uint8_t USBD_CANOKEY_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx) {
   return 0;
 }
 
+/* Bits 0/1 are configured/ready; upper bits are the USB lifecycle epoch.
+ * IRQ callbacks only publish transitions. No applet/PKE cleanup runs there. */
+static volatile uint32_t usb_lifecycle = 3;
+
+uint8_t USBD_CANOKEY_Ready(void) { return (usb_lifecycle & 3u) == 3u; }
+
+static uint8_t USBD_CANOKEY_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx) {
+  UNUSED(pdev);
+  UNUSED(cfgidx);
+  usb_lifecycle = ((usb_lifecycle + 4u) & ~3u) | 1u;
+  return USBD_OK;
+}
+
 static uint8_t USBD_CANOKEY_DeInit(USBD_HandleTypeDef *pdev, uint8_t cfgidx) {
   pdev->ep_in_mask = 0;
   pdev->ep_out_mask = 0;
   UNUSED(cfgidx);
+  usb_lifecycle = (usb_lifecycle + 4u) & ~3u;
+  return USBD_OK;
+}
 
-  return 0;
+void USBD_CANOKEY_Service(void) {
+  const uint32_t epoch = usb_lifecycle;
+  if (epoch & 2u) return;
+  /* Main-loop entry guarantees the interrupted handler has returned. Bus
+   * reset has stopped old endpoints; callbacks stay gated until reinit ends. */
+  device_applet_session_clear();
+#if ENABLE_IFACE_CTAPHID
+  CTAPHID_TxReset();
+  CTAPHID_Init(USBD_CTAPHID_SendReport);
+#endif
+#if ENABLE_IFACE_CCID
+  CCID_Init();
+#endif
+#if ENABLE_IFACE_WEBUSB
+  USBD_WEBUSB_Init(&usb_device);
+#endif
+  if (epoch & 1u) USBD_CANOKEY_ApplyInit(&usb_device, 0);
+  /* A reset/configuration IRQ during initialization invalidates this epoch. */
+  device_atomic_compare_and_swap(&usb_lifecycle, epoch, epoch | 2u);
 }
 
 static uint8_t USBD_CANOKEY_EP0_TxSent(USBD_HandleTypeDef *pdev) {
+  if (!USBD_CANOKEY_Ready()) return USBD_BUSY;
 #if ENABLE_IFACE_WEBUSB
   return USBD_WEBUSB_TxSent(pdev);
 #else
@@ -75,6 +113,7 @@ static uint8_t USBD_CANOKEY_EP0_TxSent(USBD_HandleTypeDef *pdev) {
 }
 
 static uint8_t USBD_CANOKEY_EP0_RxReady(USBD_HandleTypeDef *pdev) {
+  if (!USBD_CANOKEY_Ready()) return USBD_BUSY;
 #if ENABLE_IFACE_WEBUSB
   return USBD_WEBUSB_RxReady(pdev);
 #else
@@ -112,6 +151,7 @@ static uint8_t USBD_CANOKEY_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef
 }
 
 static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
+  if (!USBD_CANOKEY_Ready()) return USBD_BUSY;
   UNUSED(pdev);
   UNUSED(epnum);
 
@@ -129,6 +169,7 @@ static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
 }
 
 static uint8_t USBD_CANOKEY_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum) {
+  if (!USBD_CANOKEY_Ready()) return USBD_BUSY;
   UNUSED(pdev);
   UNUSED(epnum);
 

@@ -369,6 +369,11 @@ static uint16_t add_all_algorithm_info(uint8_t *buffer) {
   return offset;
 }
 
+int openpgp_session_can_yield(void) {
+  return !openpgp_crypto_owned && !openpgp_pke_owned && cert_write_path == NULL &&
+         import_key_path == NULL && decipher_received == 0;
+}
+
 void openpgp_poweroff(void) {
   pw1_mode = 0;
   pw1.is_validated = 0;

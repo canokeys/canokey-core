@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <ccid.h>
 #include <device.h>
+#include <usbd_canokey.h>
 #include <usb_device.h>
 #include <usbd_ccid.h>
 #include <usbd_ctlreq.h>
@@ -45,6 +46,7 @@ uint8_t USBD_CCID_DataOut(USBD_HandleTypeDef *pdev) {
 
 uint8_t CCID_Response_SendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uint16_t len,
                                uint8_t is_time_extension_request) {
+  if (!USBD_CANOKEY_Ready()) return USBD_BUSY;
   USBD_StatusTypeDef ret = USBD_OK;
   if (pdev->dev_state == USBD_STATE_CONFIGURED) {
     uint32_t wait_ms = 0;

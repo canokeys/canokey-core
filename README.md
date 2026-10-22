@@ -26,13 +26,45 @@ The USB mode contains 3 different interfaces:
 The WebUSB interface is used to configure the key via a web-based interface.
 
 CCID presence polling remains live during CTAPHID user-presence waits and
-processing keepalives. Only `GetSlotStatus` is serviced from those paths;
-APDU execution and power/reset commands stay in the main loop. Releasing an
-applet session must preserve queued CCID slot-management requests. Dropping
-or starving these polls makes macOS interpret a timeout as card removal,
-rediscover the PIV token, and potentially open SmartCard pairing during FIDO
-authentication. The APDU tests cover both poll preservation at CTAPHID session
-release and status-only servicing during a CTAPHID wait.
+processing keepalives. `GetSlotStatus` and `GetParameters` are serviced from
+those paths without touching applet state. An `XfrBlock` refused by the
+session arbiter is drained and promptly answered with APDU status `6400`;
+power/reset and other state-changing commands receive a CCID slot-busy error
+without changing card presence, selection, or authentication state. No APDU
+execution is re-entered from a CTAPHID wait. These replies use the independent
+short response buffer, preserving the active HID payload and applet scratch.
+Releasing an applet session must preserve queued slot-management requests and
+refused XfrBlocks, including partially received frames. Silent loss or starvation
+can time out macOS smartcard discovery during FIDO authentication. APDU tests
+cover prompt replies, preservation of CTAP state, and complete/fragmented
+refused requests across HID session release.
+
+USB arbitration separates one persistent APDU card context from the single
+execution workspace. Native HID CBOR/MSG activity preserves an idle OpenPGP
+selection and PIN authorization; it does not run global applet poweroff.
+There is no two-second APDU lease expiry. OpenPGP decipher/import/certificate
+continuations, PIV continuations, FIDO input chains, and pending response sources
+retain their backing across arbitrary command gaps and refuse competitors.
+The owner must complete/abandon the operation or reset the card to recover.
+An ordinary completed APDU can yield; crypto and touch waits remain serialized.
+
+CCID and WebUSB share one APDU context. A change between those owners resets
+selection and authorization in the main loop before dispatch, requiring a fresh
+SELECT/PIN. A failed receive reservation never performs this cleanup. Extended
+CCID PKE staging requires an established matching context (or a fresh context);
+a foreign owner must first SELECT with an ordinary APDU. Same-CCID clients remain
+indistinguishable and need PC/SC transactions for mutual exclusion.
+
+USB reset/configuration callbacks publish an epoch and gate old callbacks and
+new reservations. Cleanup and interface initialization run at main-loop entry,
+after any interrupted handler returns; presence waits cancel on the transition.
+Platforms waiting for the first USB initialization must call
+`USBD_CANOKEY_Service()` in that wait loop. A superseding EP0 SETUP releases an
+abandoned WebUSB data stage without running applet cleanup in interrupt context.
+No raw-transfer watchdog reclaims an endpoint's backing while it may still be
+referenced. The CIU `USBD_LL_FlushEP()` is currently a no-op, so timeout-based
+endpoint cancellation needs a separate backend implementation; completed-APDU
+idle time must never substitute for that cancellation.
 
 ## Protocol
 

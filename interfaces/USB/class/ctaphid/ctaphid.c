@@ -349,6 +349,11 @@ void CTAPHID_CloseSharedBufferSource(void *ctx) {
   CTAPHID_ReleaseSharedBuffer();
 }
 
+static void CTAPHID_CloseAPDUResponse(void *ctx) {
+  apdu_response_source_clear();
+  CTAPHID_CloseSharedBufferSource(ctx);
+}
+
 static int CTAPHID_TxFillFrame(void) {
   size_t remaining = tx_stream.len - tx_stream.offset;
   size_t copied;
@@ -583,6 +588,10 @@ static void CTAPHID_SendErrorResponse(uint32_t cid, uint8_t code) {
 }
 
 static void CTAPHID_Execute_Init(void) {
+  if (device_applet_session_owner() == DEVICE_APPLET_SESSION_CTAPHID && apdu_response_source_active()) {
+    apdu_response_source_clear();
+    device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+  }
   CTAPHID_INIT_RESP *resp = (CTAPHID_INIT_RESP *)channel.data;
   uint32_t resp_cid;
   if (channel.cid == CID_BROADCAST)
@@ -657,11 +666,10 @@ static void CTAPHID_Execute_Msg(void) {
     CTAPHID_TxSource source = {
         .total_len = apdu_source->total_len - apdu_source->offset + 2,
         .read = CTAPHID_APDUResponseRead,
-        .close = CTAPHID_CloseSharedBufferSource,
+        .close = CTAPHID_CloseAPDUResponse,
         .ctx = (void *)apdu_source,
     };
     const int send_ret = CTAPHID_SendStreamSource(channel.cid, channel.cmd, &source);
-    apdu_response_source_clear();
     if (send_ret != 0) {
       device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
       CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
@@ -694,7 +702,7 @@ request_error:
 }
 
 static void CTAPHID_Execute_Cbor(void) {
-  if (device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID) != 0) {
+  if (apdu_response_source_active() || device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID) != 0) {
     CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
     return;
   }
@@ -800,7 +808,8 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       if (channel.bcnt_total > sizeof(channel.data)) {
         // Cross-transport cleanup clears PKE. Finish it before staging any
         // request bytes, and retain the session throughout fragmented RX.
-        if (device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID) != 0) {
+        if (apdu_response_source_active() ||
+            device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID) != 0) {
           CTAPHID_SendErrorResponse(rx_frame->cid, ERR_CHANNEL_BUSY);
           goto consume_frame;
         }

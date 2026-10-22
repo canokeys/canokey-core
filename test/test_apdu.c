@@ -36,6 +36,8 @@
 #include <string.h>
 #include <usb_device.h>
 #include <usbd_ctaphid.h>
+#include <usbd_canokey.h>
+#include <webusb.h>
 #include <usbd_ccid.h>
 #include <usbd_kbdhid.h>
 #include <usbd_ctlreq.h>
@@ -1154,7 +1156,7 @@ static void test_ccid_slot_status_survives_ctaphid_release(void **state) {
   usb_device.dev_state = previous_state;
 }
 
-static void test_ctaphid_wait_services_only_ccid_presence_poll(void **state) {
+static void test_ctaphid_wait_services_ccid_without_applet_access(void **state) {
   (void)state;
   uint8_t request[] = {PC_TO_RDR_GETSLOTSTATUS, 0, 0, 0, 0, 0, 0x38, 0, 0, 0};
   const uint8_t previous_state = usb_device.dev_state;
@@ -1182,13 +1184,74 @@ static void test_ctaphid_wait_services_only_ccid_presence_poll(void **state) {
   assert_int_equal(applet_session_scratch.buffer[0], 0x5A);
   USBD_CCID_DataIn(&usb_device);
 
-  request[0] = PC_TO_RDR_ICCPOWERON;
+  static const uint8_t commands[] = {PC_TO_RDR_ICCPOWERON, PC_TO_RDR_ICCPOWEROFF};
+  for (size_t i = 0; i < sizeof(commands); ++i) {
+    request[0] = commands[i];
+    in->xfer_buff = NULL;
+    assert_int_equal(CCID_OutEvent(request, sizeof(request)), 0);
+    assert_int_equal(CTAPHID_Loop(1), LOOP_SUCCESS);
+    assert_non_null(in->xfer_buff);
+    response = in->xfer_buff - CCID_CMD_HEADER_SIZE;
+    assert_int_equal(response[0], i == 0 ? RDR_TO_PC_DATABLOCK : RDR_TO_PC_SLOTSTATUS);
+    assert_int_equal(response[6], 0x38);
+    assert_int_equal(response[7], BM_COMMAND_STATUS_FAILED | BM_ICC_PRESENT_INACTIVE);
+    assert_int_equal(response[8], SLOTERROR_CMD_SLOT_BUSY);
+    assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
+    assert_int_equal(shared_io_buffer[0], 0xA5);
+    assert_int_equal(applet_session_scratch.buffer[0], 0x5A);
+    USBD_CCID_DataIn(&usb_device);
+  }
+
+  uint8_t select_piv[] = {PC_TO_RDR_XFRBLOCK, 13, 0, 0, 0, 0, 0x39, 0, 0, 0,
+                        0, 0xA4, 4, 0, 8, 0xA0, 0, 0, 3, 8, 0, 0, 0x10};
   in->xfer_buff = NULL;
-  assert_int_equal(CCID_OutEvent(request, sizeof(request)), 0);
+  assert_int_equal(CCID_OutEvent(select_piv, sizeof(select_piv)), 0);
   assert_int_equal(CTAPHID_Loop(1), LOOP_SUCCESS);
-  assert_null(in->xfer_buff); // Power/reset commands must wait for the main loop.
+  assert_non_null(in->xfer_buff);
+  response = in->xfer_buff - (CCID_CMD_HEADER_SIZE + 2);
+  assert_int_equal(response[0], RDR_TO_PC_DATABLOCK);
+  assert_int_equal(response[6], 0x39);
+  assert_int_equal(response[7], BM_ICC_PRESENT_INACTIVE);
+  assert_memory_equal(response + CCID_CMD_HEADER_SIZE, "\x64\x00", 2);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
+  assert_int_equal(shared_io_buffer[0], 0xA5);
+  assert_int_equal(applet_session_scratch.buffer[0], 0x5A);
+  USBD_CCID_DataIn(&usb_device);
   release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
   CCID_Init();
+  usb_device.dev_state = previous_state;
+}
+
+static void test_ccid_refused_apdu_survives_ctaphid_release(void **state) {
+  (void)state;
+  uint8_t select_piv[] = {PC_TO_RDR_XFRBLOCK, 13, 0, 0, 0, 0, 0x3A, 0, 0, 0,
+                        0, 0xA4, 4, 0, 8, 0xA0, 0, 0, 3, 8, 0, 0, 0x10};
+  const uint8_t previous_state = usb_device.dev_state;
+  for (unsigned fragmented = 0; fragmented < 2; ++fragmented) {
+    init_apdu_buffer();
+    device_init();
+    USBD_CCID_Init(&usb_device);
+    usb_device.dev_state = USBD_STATE_CONFIGURED;
+    EPType *in = dummy_get_ep_by_addr(EP_IN(ccid));
+    in->maxpacket = 64;
+    in->xfer_buff = NULL;
+    assert_int_equal(acquire_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID), 0);
+    const uint8_t first_len = fragmented ? 12 : sizeof(select_piv);
+    assert_int_equal(CCID_OutEvent(select_piv, first_len), 0);
+    release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
+    if (fragmented) {
+      CCID_Loop();
+      assert_null(in->xfer_buff); // Must drain the whole request before replying.
+      assert_int_equal(CCID_OutEvent(select_piv + first_len, sizeof(select_piv) - first_len), 0);
+    }
+    CCID_Loop();
+    assert_non_null(in->xfer_buff);
+    const uint8_t *response = in->xfer_buff - (CCID_CMD_HEADER_SIZE + 2);
+    assert_int_equal(response[0], RDR_TO_PC_DATABLOCK);
+    assert_int_equal(response[6], 0x3A);
+    assert_memory_equal(response + CCID_CMD_HEADER_SIZE, "\x64\x00", 2);
+    USBD_CCID_DataIn(&usb_device);
+  }
   usb_device.dev_state = previous_state;
 }
 
@@ -1518,7 +1581,7 @@ static void test_large_blob_noncanonical_string_offset(void **state) {
   }
 }
 
-static void test_applet_session_deadline_wraparound(void **state) {
+static void test_applet_session_tick_wraparound(void **state) {
   (void)state;
 
   testmode_set_initial_ticks(0);
@@ -3126,7 +3189,7 @@ static void streaming_source_close(void *ctx) {
   s->closes++;
 }
 
-static void test_pending_ccid_response_can_be_abandoned_by_ctaphid(void **state) {
+static void test_pending_ccid_response_cannot_be_abandoned_by_ctaphid(void **state) {
   (void)state;
 
   static const uint8_t payload[300] = {0};
@@ -3138,11 +3201,14 @@ static void test_pending_ccid_response_can_be_abandoned_by_ctaphid(void **state)
   apdu_response_source_set(sizeof(payload), SW_NO_ERROR, streaming_source_read, streaming_source_close, &stream_ctx);
   assert_true(apdu_response_source_active());
 
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
-  assert_false(apdu_response_source_active());
+  set_test_tick(3600100);
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), -1);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
+  assert_true(apdu_response_source_active());
+  assert_int_equal(stream_ctx.closes, 0);
+  assert_int_equal(device_applet_session_reset(DEVICE_APPLET_SESSION_CCID), 0);
   assert_int_equal(stream_ctx.closes, 1);
-  device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+  set_test_tick(0);
 }
 
 static void test_active_ccid_transfer_cannot_be_preempted(void **state) {
@@ -3162,6 +3228,9 @@ static void test_active_ccid_transfer_cannot_be_preempted(void **state) {
   assert_int_equal(stream_ctx.closes, 0);
 
   release_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID);
+  assert_true(apdu_response_source_active());
+  assert_int_equal(stream_ctx.closes, 0);
+  apdu_response_source_clear();
   assert_false(apdu_response_source_active());
   assert_int_equal(stream_ctx.closes, 1);
 }
@@ -3206,8 +3275,7 @@ static void test_openpgp_ccid_idle_timeout_preserves_pin_on_reselect(void **stat
   process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_CCID);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
 
-  // Once that refreshed lease expires, a different transport may take over;
-  // takeover performs the power-off cleanup that invalidates PW1.
+  // Native HID borrows execution without resetting the APDU card context.
   set_test_tick(4102);
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), -1);
@@ -3216,7 +3284,7 @@ static void test_openpgp_ccid_idle_timeout_preserves_pin_on_reselect(void **stat
 
   assert_int_equal(build_capdu(&capdu, query_pw1, sizeof(query_pw1)), 0);
   process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_CCID);
-  assert_int_equal(rapdu.sw, SW_PIN_RETRIES | 3);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
 
   device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
   set_test_tick(0);
@@ -3575,7 +3643,7 @@ static void test_session_reset_drops_pending_rapdu_chain(void **state) {
   assert_int_equal(rapdu.len, 0);
   assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
 
-  // Variant 2: session owned — reset goes through session expiry.
+  // Variant 2: the owning transport explicitly resets the context.
   assert_int_equal(build_capdu(&capdu, select_piv, sizeof(select_piv)), 0);
   process_apdu(&capdu, &rapdu);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
@@ -4522,6 +4590,306 @@ static void test_client_pin_encrypted_length_policy(void **state) {
   }
 }
 
+static uint16_t session_ccid_apdu(const uint8_t *apdu, size_t len) {
+  uint8_t frame[64] = {PC_TO_RDR_XFRBLOCK};
+  assert_true(len + CCID_CMD_HEADER_SIZE <= sizeof(frame));
+  frame[1] = (uint8_t)len;
+  frame[6] = 0x67;
+  memcpy(frame + CCID_CMD_HEADER_SIZE, apdu, len);
+  assert_int_equal(CCID_OutEvent(frame, (uint8_t)(len + CCID_CMD_HEADER_SIZE)), 0);
+  CCID_Loop();
+  uint32_t response_len = ccid_get_le32(bulkin_data.dwLength);
+  assert_true(response_len >= 2);
+  uint16_t sw = ((uint16_t)bulkin_data.abData[response_len - 2] << 8) | bulkin_data.abData[response_len - 1];
+  USBD_CCID_DataIn(&usb_device);
+  return sw;
+}
+static void session_openpgp_long_idle(void **unused) {
+  (void)unused;
+  const uint8_t select[] = {0, 0xa4, 4, 0, 6, 0xd2, 0x76, 0, 1, 0x24, 1};
+  const uint8_t verify[] = {0, 0x20, 0, 0x81, 6, '1', '2', '3', '4', '5', '6'};
+  const uint8_t query[] = {0, 0x20, 0, 0x81};
+  init_apdu_buffer();
+  device_init();
+  USBD_CCID_Init(&usb_device);
+  usb_device.dev_state = USBD_STATE_CONFIGURED;
+  assert_int_equal(openpgp_install(1), 0);
+  set_test_tick(100);
+  assert_int_equal(session_ccid_apdu(select, sizeof(select)), SW_NO_ERROR);
+  assert_int_equal(session_ccid_apdu(verify, sizeof(verify)), SW_NO_ERROR);
+  set_test_tick(3600100); /* One hour between completed APDUs. */
+  assert_int_equal(session_ccid_apdu(select, sizeof(select)), SW_NO_ERROR);
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_NO_ERROR);
+  /* Presence polling is harmless even after a further idle hour. */
+  set_test_tick(7200100);
+  uint8_t poll[CCID_CMD_HEADER_SIZE] = {PC_TO_RDR_GETSLOTSTATUS};
+  CCID_OutEvent(poll, sizeof(poll));
+  CCID_Loop();
+  USBD_CCID_DataIn(&usb_device);
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_NO_ERROR);
+  reset_hid_capture();
+  CTAPHID_Init(capture_hid_report);
+  CTAPHID_FRAME ping = make_hid_init(0x12345678, CTAPHID_PING, 0);
+  CTAPHID_OutEvent((uint8_t *)&ping);
+  CTAPHID_Loop(0);
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_NO_ERROR);
+  /* Native GetInfo preserves the idle CCID context. */
+  set_test_tick(7200200);
+  CTAPHID_FRAME info = make_hid_init(0x12345678, CTAPHID_CBOR, 1);
+  info.init.data[0] = CTAP_GET_INFO;
+  reset_hid_capture();
+  CTAPHID_OutEvent((uint8_t *)&info);
+  CTAPHID_Loop(0);
+  assert_true(hid_capture_count > 0);
+  assert_int_equal(hid_capture[0].init.cmd, CTAPHID_CBOR);
+  assert_int_equal(hid_capture[0].init.data[0], 0);
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_NO_ERROR);
+  /* SELECT remains OpenPGP: the PIN-status response is not 6A82. */
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+  set_test_tick(0);
+}
+static const uint8_t session_select[] = {0, 0xa4, 4, 0, 6, 0xd2, 0x76, 0, 1, 0x24, 1};
+static const uint8_t session_verify[] = {0, 0x20, 0, 0x81, 6, '1', '2', '3', '4', '5', '6'};
+static void session_setup_openpgp(void) {
+  init_apdu_buffer();
+  device_init();
+  USBD_CCID_Init(&usb_device);
+  usb_device.dev_state = USBD_STATE_CONFIGURED;
+  set_test_tick(100);
+  assert_int_equal(openpgp_install(1), 0);
+  assert_int_equal(session_ccid_apdu(session_select, sizeof(session_select)), SW_NO_ERROR);
+  assert_int_equal(session_ccid_apdu(session_verify, sizeof(session_verify)), SW_NO_ERROR);
+}
+static void session_getinfo_busy(void) {
+  reset_hid_capture();
+  CTAPHID_Init(capture_hid_report);
+  CTAPHID_FRAME info = make_hid_init(0x12345678, CTAPHID_CBOR, 1);
+  info.init.data[0] = CTAP_GET_INFO;
+  CTAPHID_OutEvent((uint8_t *)&info);
+  CTAPHID_Loop(0);
+  assert_int_equal(hid_capture_count, 1);
+  assert_int_equal(hid_capture[0].init.cmd, CTAPHID_ERROR);
+  assert_int_equal(hid_capture[0].init.data[0], ERR_CHANNEL_BUSY);
+}
+static void session_webusb_cannot_inherit(void **unused) {
+  (void)unused;
+  session_setup_openpgp();
+  USBD_WEBUSB_Init(&usb_device);
+  USBD_SetupReqTypedef req = {.bRequest = WEBUSB_REQ_CMD, .wLength = 4};
+  assert_int_equal(USBD_WEBUSB_Setup(&usb_device, &req), USBD_OK);
+  const uint8_t query[] = {0, 0x20, 0, 0x81};
+  memcpy(shared_io_buffer, query, sizeof(query));
+  USBD_WEBUSB_RxReady(&usb_device);
+  WebUSB_Loop();
+  assert_memory_equal(shared_io_buffer, "\x6a\x82", 2);
+  req.bRequest = WEBUSB_REQ_RESP;
+  req.wLength = 2;
+  assert_int_equal(USBD_WEBUSB_Setup(&usb_device, &req), USBD_OK);
+  USBD_WEBUSB_TxSent(&usb_device);
+  assert_int_equal(session_ccid_apdu(session_select, sizeof(session_select)), SW_NO_ERROR);
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_PIN_RETRIES | 3);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+  set_test_tick(0);
+}
+static void session_decipher_chain_pins_scratch(void **unused) {
+  (void)unused;
+  session_setup_openpgp();
+  const uint8_t part[] = {0x10, 0x2a, 0x80, 0x86, 2, 0, 1};
+  assert_int_equal(session_ccid_apdu(part, sizeof(part)), SW_NO_ERROR);
+  assert_false(openpgp_session_can_yield());
+  uint8_t snapshot[2];
+  memcpy(snapshot, applet_session_scratch.buffer, sizeof(snapshot));
+  set_test_tick(3600100);
+  session_getinfo_busy();
+  assert_memory_equal(snapshot, applet_session_scratch.buffer, sizeof(snapshot));
+  assert_false(openpgp_session_can_yield());
+  assert_int_equal(device_applet_session_reset(DEVICE_APPLET_SESSION_CCID), 0);
+  assert_true(openpgp_session_can_yield());
+  set_test_tick(0);
+}
+static void session_pending_response_pins_source(void **unused) {
+  (void)unused;
+  session_setup_openpgp();
+  static const uint8_t bytes[300] = {0x55};
+  apdu_response_source_set(sizeof(bytes), SW_NO_ERROR, apdu_response_source_read_memory, NULL, (void *)bytes);
+  set_test_tick(3600100);
+  session_getinfo_busy();
+  assert_true(apdu_response_source_active());
+  assert_int_equal(apdu_response_source_view()->offset, 0);
+  assert_int_equal(apdu_response_source_view()->total_len, sizeof(bytes));
+  assert_int_equal(device_applet_session_reset(DEVICE_APPLET_SESSION_CCID), 0);
+  assert_false(apdu_response_source_active());
+  set_test_tick(0);
+}
+static size_t session_hid_cbor(const uint8_t *request, size_t length, uint8_t *response, size_t capacity) {
+  reset_hid_capture();
+  CTAPHID_Init(capture_hid_report);
+  size_t offset = 0;
+  uint8_t seq = 0;
+  while (offset < length) {
+    CTAPHID_FRAME frame = {.cid = 0x12345678};
+    size_t n;
+    if (!offset) {
+      frame = make_hid_init(frame.cid, CTAPHID_CBOR, (uint16_t)length);
+      n = MIN(length, sizeof(frame.init.data));
+      memcpy(frame.init.data, request, n);
+    } else {
+      frame.cont.seq = seq++;
+      n = MIN(length - offset, sizeof(frame.cont.data));
+      memcpy(frame.cont.data, request + offset, n);
+    }
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
+    CTAPHID_Loop(0);
+    offset += n;
+  }
+  size_t total = 0, copied = 0;
+  uint8_t next = 0;
+  for (size_t i = 0; i < hid_capture_count; i++) {
+    const CTAPHID_FRAME *f = &hid_capture[i];
+    if (FRAME_TYPE(*f) == TYPE_INIT) {
+      if (f->init.cmd != CTAPHID_CBOR) continue;
+      total = MSG_LEN(*f);
+      assert_true(total <= capacity);
+      copied = MIN(total, sizeof(f->init.data));
+      memcpy(response, f->init.data, copied);
+    } else if (total && copied < total) {
+      assert_int_equal(f->cont.seq, next++);
+      size_t n = MIN(total - copied, sizeof(f->cont.data));
+      memcpy(response + copied, f->cont.data, n);
+      copied += n;
+    }
+  }
+  assert_true(total > 0);
+  assert_int_equal(copied, total);
+  return total;
+}
+static void session_fido_sign_between_openpgp_apdus(void **unused) {
+  (void)unused;
+  session_setup_openpgp();
+  uint8_t private_key[32] = {1}, cert[] = {0x30, 0x03, 0x02, 1, 1};
+  assert_int_equal(write_attr("ctap_cert", 0, private_key, sizeof(private_key)), 0);
+  assert_int_equal(write_file("ctap_cert", cert, 0, sizeof(cert), 1), 0);
+  uint8_t request[256], response[APPLET_SHARED_BUFFER_LENGTH], auth[sizeof(CTAP_auth_data)];
+  credential_id cid;
+  size_t auth_len;
+  const uint8_t query[] = {0, 0x20, 0, 0x81};
+  size_t n = build_third_party_payment_make_credential(request, false, true);
+  size_t size = session_hid_cbor(request, n, response, sizeof(response));
+  assert_int_equal(response[0], 0);
+  assert_int_equal(test_cbor_get_auth_data(response, size, MC_RESP_AUTH_DATA, auth, sizeof(auth), &auth_len), 0);
+  memcpy(&cid, auth + 37 + AAGUID_SIZE + sizeof(uint16_t), sizeof(cid));
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_NO_ERROR);
+  n = build_third_party_payment_get_assertion(request, &cid);
+  size = session_hid_cbor(request, n, response, sizeof(response));
+  assert_true(size > 1);
+  assert_int_equal(response[0], 0);
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_NO_ERROR);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+  set_test_tick(0);
+  usb_device.dev_state = USBD_STATE_DEFAULT;
+}
+
+static void session_msg_source_releases_execution(void **unused) {
+  (void)unused;
+  session_setup_openpgp();
+  const uint8_t request[] = {0x80, CTAP_INS_MSG, 0, 0, 0, 0, 1, CTAP_GET_INFO, 0, 0};
+  uint8_t response[1024];
+  size_t len;
+  assert_int_equal(capture_ctaphid_msg(request, sizeof(request), response, sizeof(response), &len), 0);
+  assert_true(len > 57);
+  assert_int_equal(response[0], 0);
+  assert_memory_equal(response + len - 2, "\x90\x00", 2);
+  assert_false(apdu_response_source_active());
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
+  const uint8_t query[] = {0, 0x20, 0, 0x81};
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_NO_ERROR);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+  usb_device.dev_state = USBD_STATE_DEFAULT;
+  set_test_tick(0);
+}
+
+static void session_failed_receive_preserves_context(void **unused) {
+  (void)unused;
+  session_setup_openpgp();
+  USBD_WEBUSB_Init(&usb_device);
+  assert_int_equal(acquire_apdu_buffer(BUFFER_OWNER_CCID), 0);
+  USBD_SetupReqTypedef req = {.bRequest = WEBUSB_REQ_CMD, .wLength = 4};
+  assert_int_equal(USBD_WEBUSB_Setup(&usb_device, &req), USBD_FAIL);
+  release_apdu_buffer(BUFFER_OWNER_CCID);
+  const uint8_t query[] = {0, 0x20, 0, 0x81};
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_NO_ERROR);
+  assert_int_equal(USBD_WEBUSB_Setup(&usb_device, &req), USBD_OK);
+  /* Receiving a foreign command does not run applet poweroff in IRQ context. */
+  CAPDU capdu = {.cla = 0, .ins = 0x20, .p2 = 0x81};
+  uint8_t data[16];
+  RAPDU rapdu = {.data = data};
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  WebUSB_SetupAborted();
+  USBD_WEBUSB_RxReady(&usb_device); /* Completion for the superseded data stage. */
+  USBD_WEBUSB_TxSent(&usb_device);
+  WebUSB_Loop();
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_NO_ERROR);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+  usb_device.dev_state = USBD_STATE_DEFAULT;
+  set_test_tick(0);
+}
+
+static void session_usb_reset_defers_cleanup(void **unused) {
+  (void)unused;
+  session_setup_openpgp();
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
+  assert_int_equal(acquire_apdu_buffer(BUFFER_OWNER_CTAPHID), 0);
+  static const uint8_t bytes[300] = {0x55};
+  stream_ctx = (streaming_source_ctx){.data = bytes, .total = sizeof(bytes)};
+  apdu_response_source_set(sizeof(bytes), SW_NO_ERROR, streaming_source_read, streaming_source_close, &stream_ctx);
+  applet_session_scratch.buffer[0] = 0x5a;
+  USBD_CANOKEY.DeInit(&usb_device, 0);
+  assert_false(USBD_CANOKEY_Ready());
+  assert_int_equal(applet_session_scratch.buffer[0], 0x5a);
+  assert_true(apdu_response_source_active());
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), -1);
+  assert_int_equal(USBD_CANOKEY.DataIn(&usb_device, EP_NUM_ccid), USBD_BUSY);
+  assert_int_equal(acquire_apdu_buffer(BUFFER_OWNER_CCID), -1);
+  USBD_CANOKEY.Init(&usb_device, 0);
+  assert_false(USBD_CANOKEY_Ready());
+  assert_int_equal(stream_ctx.closes, 0);
+  USBD_CANOKEY_Service();
+  assert_true(USBD_CANOKEY_Ready());
+  assert_int_equal(stream_ctx.closes, 1);
+  assert_false(apdu_response_source_active());
+  const uint8_t query[] = {0, 0x20, 0, 0x81};
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_FILE_NOT_FOUND);
+  assert_int_equal(session_ccid_apdu(session_select, sizeof(session_select)), SW_NO_ERROR);
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_PIN_RETRIES | 3);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+  usb_device.dev_state = USBD_STATE_DEFAULT;
+  set_test_tick(0);
+}
+
+static void session_hid_source_retains_lease_until_init(void **unused) {
+  (void)unused;
+  session_setup_openpgp();
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
+  static const uint8_t bytes[300] = {0x55};
+  apdu_response_source_set(sizeof(bytes), SW_NO_ERROR, apdu_response_source_read_memory, NULL, (void *)bytes);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), -1);
+  session_getinfo_busy();
+  assert_true(apdu_response_source_active());
+  CTAPHID_FRAME init = make_hid_init(0x12345678, CTAPHID_INIT, 8);
+  CTAPHID_OutEvent((uint8_t *)&init);
+  CTAPHID_Loop(0);
+  assert_false(apdu_response_source_active());
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
+  const uint8_t query[] = {0, 0x20, 0, 0x81};
+  assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_NO_ERROR);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+  usb_device.dev_state = USBD_STATE_DEFAULT;
+  set_test_tick(0);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -4556,6 +4924,15 @@ int main() {
   assert_int_equal(applets_install(), 0);
 
   const struct CMUnitTest tests[] = {
+      cmocka_unit_test(session_hid_source_retains_lease_until_init),
+      cmocka_unit_test(session_usb_reset_defers_cleanup),
+      cmocka_unit_test(session_failed_receive_preserves_context),
+      cmocka_unit_test(session_msg_source_releases_execution),
+      cmocka_unit_test(session_openpgp_long_idle),
+      cmocka_unit_test(session_webusb_cannot_inherit),
+      cmocka_unit_test(session_decipher_chain_pins_scratch),
+      cmocka_unit_test(session_pending_response_pins_source),
+      cmocka_unit_test(session_fido_sign_between_openpgp_apdus),
       cmocka_unit_test(test_client_pin_encrypted_length_policy),
       cmocka_unit_test(test_ccid_response_headers),
       cmocka_unit_test(test_hid_setup_descriptors_and_errors),
@@ -4572,7 +4949,8 @@ int main() {
       cmocka_unit_test(test_ccid_power_on_does_not_steal_ctaphid_session),
       cmocka_unit_test(test_ccid_slot_reset_clears_selection),
       cmocka_unit_test(test_ccid_slot_status_survives_ctaphid_release),
-      cmocka_unit_test(test_ctaphid_wait_services_only_ccid_presence_poll),
+      cmocka_unit_test(test_ctaphid_wait_services_ccid_without_applet_access),
+      cmocka_unit_test(test_ccid_refused_apdu_survives_ctaphid_release),
       cmocka_unit_test(test_ccid_power_on_preempts_idle_webusb_session),
       cmocka_unit_test(test_ccid_rejects_reentrant_command_until_response_finishes),
       cmocka_unit_test(test_streaming_message_preserves_original_le_for_handler),
@@ -4581,7 +4959,7 @@ int main() {
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
       cmocka_unit_test(test_large_blob_noncanonical_string_offset),
-      cmocka_unit_test(test_applet_session_deadline_wraparound),
+      cmocka_unit_test(test_applet_session_tick_wraparound),
       cmocka_unit_test(test_pin_uv_auth_token_timer_wraparound),
       cmocka_unit_test(test_pin_uv_auth_token_invalid_auth_does_not_refresh_timer),
       cmocka_unit_test(test_pin_uv_auth_token_max_lifetime),
@@ -4633,7 +5011,7 @@ int main() {
       cmocka_unit_test(test_ctap_get_info_reports_transport_msg_size),
       cmocka_unit_test(test_get_response_after_reset_without_pending_response),
       cmocka_unit_test(test_response_source_multi_chunk_get_response),
-      cmocka_unit_test(test_pending_ccid_response_can_be_abandoned_by_ctaphid),
+      cmocka_unit_test(test_pending_ccid_response_cannot_be_abandoned_by_ctaphid),
       cmocka_unit_test(test_active_ccid_transfer_cannot_be_preempted),
       cmocka_unit_test(test_openpgp_ccid_idle_timeout_preserves_pin_on_reselect),
       cmocka_unit_test(test_piv_reselect_preserves_security_status),

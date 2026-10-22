@@ -11,6 +11,7 @@
 #endif
 #include <device-config.h>
 #include <device.h>
+#include <usbd_canokey.h>
 #if ENABLE_IFACE_KBDHID
 #include <kbdhid.h>
 #endif
@@ -22,37 +23,21 @@ static volatile uint8_t touch_result;
 #if ENABLE_NFC
 static uint8_t has_rf;
 #endif
-#define APPLET_SESSION_TIMEOUT_MS 2000u
 static uint32_t last_blink, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
 typedef enum { WAIT_NONE, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED, WAIT_DEEP_CANCEL } wait_status_t;
 static volatile wait_status_t wait_status;
 applet_session_scratch_t applet_session_scratch;
-static device_applet_session_owner_t session_owner;
-static volatile uint32_t session_deadline;
+/* Reservation is shared with USB IRQ callbacks. Cleanup is main-loop only. */
+static volatile uint32_t session_owner;
+static uint8_t apdu_context_owner;
 
-static void device_applet_session_expire(void) {
-  if (session_owner == DEVICE_APPLET_SESSION_NONE) return;
-#if ENABLE_IFACE_CCID
-  CCID_AbortPendingCommand();
-#endif
+static void device_applet_context_reset(void) {
   applets_poweroff();
   apdu_response_source_clear();
-  // applets_poweroff -> ctap_poweroff releases the PKE buffer, but the FIDO
-  // chained-APDU reassembly state in apdu.c (in_chaining, uses_pke, pke_owner)
-  // would remain set without this call. The next chained FIDO APDU would then
-  // skip pke_buffer_acquire and write to an unowned PKE region.
   apdu_fido_chain_reset();
-  // A pending RAPDU chain must not outlive its session: otherwise the next
-  // GET RESPONSE (possibly on a new connection) would be served stale bytes
-  // from whatever happens to sit in the shared I/O buffer.
   apdu_rapdu_chain_reset();
-  session_owner = DEVICE_APPLET_SESSION_NONE;
-  session_deadline = 0;
-}
-
-static int device_applet_session_timed_out(void) {
-  return session_owner != DEVICE_APPLET_SESSION_NONE && (int32_t)(device_get_tick() - session_deadline) > 0;
+  apdu_selection_reset();
 }
 
 static int device_applet_session_can_preempt(void) {
@@ -63,6 +48,8 @@ static int device_applet_session_can_preempt(void) {
 uint8_t device_is_blinking(void) { return blink_timeout != 0; }
 
 void device_loop(void) {
+  USBD_CANOKEY_Service();
+  if (!USBD_CANOKEY_Ready()) return;
 #if ENABLE_IFACE_CCID
   CCID_Loop();
 #endif
@@ -121,6 +108,11 @@ uint8_t wait_for_user_presence(uint8_t entry) {
   uint32_t start = device_get_tick();
   uint32_t last = start;
   while (get_touch_result() == TOUCH_NO) {
+    if (!USBD_CANOKEY_Ready()) {
+      stop_blinking();
+      wait_status = WAIT_NONE;
+      return USER_PRESENCE_CANCEL;
+    }
 #ifdef BYPASS_USER_PRESENCE
     break;
 #endif
@@ -159,6 +151,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
 
 int send_keepalive_during_processing(uint8_t entry) {
 #if ENABLE_IFACE_CTAPHID
+  if (!USBD_CANOKEY_Ready()) return LOOP_CANCEL;
   if (session_owner == DEVICE_APPLET_SESSION_CTAPHID || entry == WAIT_ENTRY_CTAPHID) {
     int loop_ret = CTAPHID_Loop(1);
     if (loop_ret == LOOP_CANCEL) return loop_ret;
@@ -264,49 +257,58 @@ void device_init(void) {
   stop_blinking();
   set_touch_result(TOUCH_NO);
   session_owner = DEVICE_APPLET_SESSION_NONE;
-  session_deadline = 0;
+  apdu_context_owner = DEVICE_APPLET_SESSION_NONE;
+}
+
+/* Main-loop only, after USB has invalidated the old endpoint epoch. */
+void device_applet_session_clear(void) {
+  device_applet_context_reset();
+  session_owner = DEVICE_APPLET_SESSION_NONE;
+  apdu_context_owner = DEVICE_APPLET_SESSION_NONE;
+  release_apdu_buffer(BUFFER_OWNER_CCID);
+  release_apdu_buffer(BUFFER_OWNER_CTAPHID);
+  release_apdu_buffer(BUFFER_OWNER_WEBUSB);
 }
 
 int device_applet_session_acquire(device_applet_session_owner_t owner) {
-  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner) {
-    // The timeout is a cross-transport preemption deadline, not a card reset.
-    // Reacquiring from the same transport must preserve PIN authorization.
-    if (!device_applet_session_timed_out() && !device_applet_session_can_preempt()) return -1;
-    device_applet_session_expire();
+  const uint32_t previous = session_owner;
+  if (owner == DEVICE_APPLET_SESSION_NONE || !USBD_CANOKEY_Ready()) return -1;
+  if (previous == owner) return 0;
+  /* No lease expiry: unfinished APDUs may retain scratch for arbitrary gaps. */
+  if (previous != DEVICE_APPLET_SESSION_NONE || owner != apdu_context_owner) {
+    if (!device_applet_session_can_preempt()) return -1;
   }
-  session_owner = owner;
-  session_deadline = device_get_tick() + APPLET_SESSION_TIMEOUT_MS;
-  return 0;
+  return device_atomic_compare_and_swap(&session_owner, previous, owner);
 }
 
-void device_applet_session_touch(device_applet_session_owner_t owner) {
-  if (owner == DEVICE_APPLET_SESSION_NONE || session_owner != owner) return;
-  session_deadline = device_get_tick() + APPLET_SESSION_TIMEOUT_MS;
+/* Called before APDU parsing, never from a USB callback. The reservation and
+ * I/O buffer prevent competing IRQs from entering while cleanup runs. */
+void device_applet_session_prepare(device_applet_session_owner_t owner) {
+  if (owner == DEVICE_APPLET_SESSION_CTAPHID || owner == apdu_context_owner) return;
+  if (apdu_context_owner != DEVICE_APPLET_SESSION_NONE) device_applet_context_reset();
+  apdu_context_owner = owner;
 }
+
+int device_applet_session_context_matches(device_applet_session_owner_t owner) {
+  return apdu_context_owner == DEVICE_APPLET_SESSION_NONE || apdu_context_owner == owner;
+}
+
+void device_applet_session_touch(device_applet_session_owner_t owner) { UNUSED(owner); }
 
 void device_applet_session_release(device_applet_session_owner_t owner) {
-  if (session_owner != owner) return;
-  device_applet_session_expire();
+  /* MSG can retain an APDU source although the card context belongs to CCID. */
+  if (owner == DEVICE_APPLET_SESSION_CTAPHID && apdu_response_source_active()) return;
+  device_atomic_compare_and_swap(&session_owner, owner, DEVICE_APPLET_SESSION_NONE);
 }
 
 int device_applet_session_reset(device_applet_session_owner_t owner) {
-  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner && !device_applet_session_timed_out() &&
-      !device_applet_session_can_preempt())
-    return -1;
   if (session_owner == DEVICE_APPLET_SESSION_NONE) {
-    applets_poweroff();
-    apdu_response_source_clear();
-    // No session is owned, but chain state may still exist (e.g. built over
-    // NFC, which does not take a session). A slot reset is a cold reset for
-    // the APDU context: drop any pending chain.
-    apdu_fido_chain_reset();
-    apdu_rapdu_chain_reset();
-  } else {
-    device_applet_session_expire();
-  }
-  // IccPowerOn/Off resets the card context, including SELECT. Ordinary session
-  // release/preemption is not a slot reset and retains its routing behavior.
-  apdu_selection_reset();
+    if (device_atomic_compare_and_swap(&session_owner, DEVICE_APPLET_SESSION_NONE, owner) != 0) return -1;
+  } else if (device_applet_session_acquire(owner) != 0)
+    return -1;
+  device_applet_context_reset();
+  apdu_context_owner = owner;
+  device_applet_session_release(owner);
   return 0;
 }
 

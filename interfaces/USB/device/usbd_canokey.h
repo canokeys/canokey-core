@@ -11,5 +11,8 @@
 #define USBD_CANOKEY_KBDHID_IF IFACE_KBDHID
 
 extern const USBD_ClassTypeDef USBD_CANOKEY;
+/* Service from the main loop, including while waiting for first enumeration. */
+void USBD_CANOKEY_Service(void);
+uint8_t USBD_CANOKEY_Ready(void);
 
 #endif /* __USB_CANOKEY_H */

@@ -110,6 +110,7 @@ typedef struct {
  */
 
 int piv_install(uint8_t reset);
+int piv_session_can_yield(void);
 void piv_poweroff(void);
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 int piv_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu);
