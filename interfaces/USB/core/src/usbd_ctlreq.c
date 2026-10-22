@@ -197,9 +197,12 @@ USBD_StatusTypeDef USBD_StdEPReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef 
       break;
 
     case USBD_STATE_CONFIGURED: {
-      static uint16_t ep_status;
-      ep_status = USBD_LL_IsStallEP(pdev, ep_addr) ? 0x0001 : 0x0000;
-      USBD_CtlSendData(pdev, (uint8_t *)&ep_status, 2, 0);
+      // USB status is little-endian, independent of the CPU byte order.
+      // Keep the buffer alive until the asynchronous control transfer finishes.
+      static uint8_t ep_status[2];
+      ep_status[0] = USBD_LL_IsStallEP(pdev, ep_addr) ? 1 : 0;
+      ep_status[1] = 0;
+      USBD_CtlSendData(pdev, ep_status, sizeof(ep_status), 0);
       break;
     }
 
