@@ -124,7 +124,10 @@ USBD_StatusTypeDef USBD_StdEPReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef 
   USBD_StatusTypeDef ret = USBD_OK;
   ep_addr = LO(req->wIndex);
 
-  if ((ep_addr & 0x7F) >= USBD_EP_SIZE) return USBD_FAIL;
+  if ((ep_addr & 0x7F) >= USBD_EP_SIZE) {
+    USBD_CtlError(pdev, req);
+    return USBD_FAIL;
+  }
 
   /* Check if it is a class request */
   if ((req->bmRequest & 0x60) == 0x20) {
@@ -136,55 +139,31 @@ USBD_StatusTypeDef USBD_StdEPReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef 
   switch (req->bRequest) {
 
   case USB_REQ_SET_FEATURE:
+  case USB_REQ_CLEAR_FEATURE: {
 
-    switch (pdev->dev_state) {
-    case USBD_STATE_ADDRESSED:
-      if ((ep_addr != 0x00) && (ep_addr != 0x80)) {
-        USBD_LL_StallEP(pdev, ep_addr);
-      }
-      break;
-
-    case USBD_STATE_CONFIGURED:
-      if (req->wValue == USB_FEATURE_EP_HALT) {
-        if ((ep_addr != 0x00) && (ep_addr != 0x80)) {
-          USBD_LL_StallEP(pdev, ep_addr);
-        }
-      }
-      pdev->pClass->Setup(pdev, req);
-      USBD_CtlSendStatus(pdev);
-
-      break;
-
-    default:
+    if (req->bmRequest != (USB_REQ_TYPE_STANDARD | USB_REQ_RECIPIENT_ENDPOINT) ||
+        req->wValue != USB_FEATURE_EP_HALT || req->wLength != 0 || (req->wIndex & 0xFF00) != 0 ||
+        (ep_addr & 0x7F) == 0 || pdev->dev_state != USBD_STATE_CONFIGURED) {
       USBD_CtlError(pdev, req);
       break;
     }
-    break;
-
-  case USB_REQ_CLEAR_FEATURE:
-
-    switch (pdev->dev_state) {
-    case USBD_STATE_ADDRESSED:
-      if ((ep_addr != 0x00) && (ep_addr != 0x80)) {
-        USBD_LL_StallEP(pdev, ep_addr);
-      }
-      break;
-
-    case USBD_STATE_CONFIGURED:
-      if (req->wValue == USB_FEATURE_EP_HALT) {
-        if ((ep_addr & 0x7F) != 0x00) {
-          USBD_LL_ClearStallEP(pdev, ep_addr);
-          pdev->pClass->Setup(pdev, req);
-        }
-        USBD_CtlSendStatus(pdev);
-      }
-      break;
-
-    default:
+    // Use the endpoints opened at SET_CONFIGURATION, not a mutable setting
+    // or a regenerated descriptor (which would borrow the shared APDU buffer).
+    uint8_t active_mask = (ep_addr & 0x80) ? pdev->ep_in_mask : pdev->ep_out_mask;
+    if ((active_mask & (1u << (ep_addr & 0x7F))) == 0) {
       USBD_CtlError(pdev, req);
       break;
     }
+    if (req->bRequest == USB_REQ_SET_FEATURE) {
+      USBD_LL_StallEP(pdev, ep_addr);
+    } else {
+      // The controller also resets the endpoint DATA toggle when clearing
+      // STALL, including when the endpoint was not halted.
+      USBD_LL_ClearStallEP(pdev, ep_addr);
+    }
+    USBD_CtlSendStatus(pdev);
     break;
+  }
 
   case USB_REQ_GET_STATUS:
     switch (pdev->dev_state) {
@@ -195,9 +174,12 @@ USBD_StatusTypeDef USBD_StdEPReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef 
       break;
 
     case USBD_STATE_CONFIGURED: {
-      static uint16_t ep_status;
-      ep_status = USBD_LL_IsStallEP(pdev, ep_addr) ? 0x0001 : 0x0000;
-      USBD_CtlSendData(pdev, (uint8_t *)&ep_status, 2, 0);
+      // USB status is little-endian, independent of the CPU byte order.
+      // Keep the buffer alive until the asynchronous control transfer finishes.
+      static uint8_t ep_status[2];
+      ep_status[0] = USBD_LL_IsStallEP(pdev, ep_addr) ? 1 : 0;
+      ep_status[1] = 0;
+      USBD_CtlSendData(pdev, ep_status, sizeof(ep_status), 0);
       break;
     }
 

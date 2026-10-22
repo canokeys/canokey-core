@@ -30,14 +30,24 @@ const USBD_ClassTypeDef USBD_CANOKEY = {
 static uint8_t USBD_CANOKEY_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx) {
   UNUSED(cfgidx);
 
+  pdev->ep_in_mask = 0;
+  pdev->ep_out_mask = 0;
 #if ENABLE_IFACE_CTAPHID
   USBD_CTAPHID_Init(pdev);
+  pdev->ep_in_mask |= 1u << EP_NUM_ctap_hid;
+  pdev->ep_out_mask |= 1u << EP_NUM_ctap_hid;
 #endif
 #if ENABLE_IFACE_KBDHID
-  if (device_config_is_pass_enabled()) USBD_KBDHID_Init(pdev);
+  if (device_config_is_pass_enabled()) {
+    USBD_KBDHID_Init(pdev);
+    pdev->ep_in_mask |= 1u << EP_NUM_kbd_hid;
+    pdev->ep_out_mask |= 1u << EP_NUM_kbd_hid;
+  }
 #endif
 #if ENABLE_IFACE_CCID
   USBD_CCID_Init(pdev);
+  pdev->ep_in_mask |= 1u << EP_NUM_ccid;
+  pdev->ep_out_mask |= 1u << EP_NUM_ccid;
 #endif
 #if ENABLE_IFACE_WEBUSB
   USBD_WEBUSB_Init(pdev);
@@ -48,7 +58,8 @@ static uint8_t USBD_CANOKEY_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx) {
 }
 
 static uint8_t USBD_CANOKEY_DeInit(USBD_HandleTypeDef *pdev, uint8_t cfgidx) {
-  UNUSED(pdev);
+  pdev->ep_in_mask = 0;
+  pdev->ep_out_mask = 0;
   UNUSED(cfgidx);
 
   return 0;
