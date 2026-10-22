@@ -166,6 +166,9 @@ typedef struct _USBD_HandleTypeDef {
   uint16_t ep0_data_len;
   uint8_t dev_state;
   uint8_t dev_remote_wakeup;
+  // Non-control endpoints opened for the current configuration, by direction.
+  uint8_t ep_in_mask;
+  uint8_t ep_out_mask;
 
   const USBD_DescriptorsTypeDef *pDesc;
   const USBD_ClassTypeDef *pClass;

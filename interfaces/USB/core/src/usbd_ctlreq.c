@@ -139,54 +139,31 @@ USBD_StatusTypeDef USBD_StdEPReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef 
   switch (req->bRequest) {
 
   case USB_REQ_SET_FEATURE:
+  case USB_REQ_CLEAR_FEATURE: {
 
     if (req->bmRequest != (USB_REQ_TYPE_STANDARD | USB_REQ_RECIPIENT_ENDPOINT) ||
-        req->wValue != USB_FEATURE_EP_HALT || req->wLength != 0 || (ep_addr & 0x7F) == 0) {
+        req->wValue != USB_FEATURE_EP_HALT || req->wLength != 0 || (req->wIndex & 0xFF00) != 0 ||
+        (ep_addr & 0x7F) == 0 || pdev->dev_state != USBD_STATE_CONFIGURED) {
       USBD_CtlError(pdev, req);
       break;
     }
-
-    switch (pdev->dev_state) {
-    case USBD_STATE_ADDRESSED:
+    // Use the endpoints opened at SET_CONFIGURATION, not a mutable setting
+    // or a regenerated descriptor (which would borrow the shared APDU buffer).
+    uint8_t active_mask = (ep_addr & 0x80) ? pdev->ep_in_mask : pdev->ep_out_mask;
+    if ((active_mask & (1u << (ep_addr & 0x7F))) == 0) {
       USBD_CtlError(pdev, req);
       break;
-
-    case USBD_STATE_CONFIGURED:
+    }
+    if (req->bRequest == USB_REQ_SET_FEATURE) {
       USBD_LL_StallEP(pdev, ep_addr);
-      USBD_CtlSendStatus(pdev);
-      break;
-
-    default:
-      USBD_CtlError(pdev, req);
-      break;
-    }
-    break;
-
-  case USB_REQ_CLEAR_FEATURE:
-
-    if (req->bmRequest != (USB_REQ_TYPE_STANDARD | USB_REQ_RECIPIENT_ENDPOINT) ||
-        req->wValue != USB_FEATURE_EP_HALT || req->wLength != 0 || (ep_addr & 0x7F) == 0) {
-      USBD_CtlError(pdev, req);
-      break;
-    }
-
-    switch (pdev->dev_state) {
-    case USBD_STATE_ADDRESSED:
-      USBD_CtlError(pdev, req);
-      break;
-
-    case USBD_STATE_CONFIGURED:
+    } else {
       // The controller also resets the endpoint DATA toggle when clearing
       // STALL, including when the endpoint was not halted.
       USBD_LL_ClearStallEP(pdev, ep_addr);
-      USBD_CtlSendStatus(pdev);
-      break;
-
-    default:
-      USBD_CtlError(pdev, req);
-      break;
     }
+    USBD_CtlSendStatus(pdev);
     break;
+  }
 
   case USB_REQ_GET_STATUS:
     switch (pdev->dev_state) {
