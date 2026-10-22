@@ -808,8 +808,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       if (channel.bcnt_total > sizeof(channel.data)) {
         // Cross-transport cleanup clears PKE. Finish it before staging any
         // request bytes, and retain the session throughout fragmented RX.
-        if (apdu_response_source_active() ||
-            device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID) != 0) {
+        if (apdu_response_source_active() || device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID) != 0) {
           CTAPHID_SendErrorResponse(rx_frame->cid, ERR_CHANNEL_BUSY);
           goto consume_frame;
         }

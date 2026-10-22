@@ -431,8 +431,7 @@ static uint8_t CCID_CheckCommandParams(uint32_t param_type) {
 // All replies use the independent short buffer, not the shared APDU payload.
 void CCID_ServicePresencePoll(void) {
   if (!has_cmd) return;
-  if (bulkout_data.bMessageType == PC_TO_RDR_GETSLOTSTATUS ||
-      bulkout_data.bMessageType == PC_TO_RDR_GETPARAMETERS) {
+  if (bulkout_data.bMessageType == PC_TO_RDR_GETSLOTSTATUS || bulkout_data.bMessageType == PC_TO_RDR_GETPARAMETERS) {
     CCID_Loop();
     return;
   }
