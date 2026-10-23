@@ -45,7 +45,12 @@ selection and PIN authorization; it does not run global applet poweroff.
 There is no two-second APDU lease expiry. OpenPGP decipher/import/certificate
 continuations, PIV continuations, FIDO input chains, and pending response sources
 retain their backing across arbitrary command gaps and refuse competitors.
-The owner must complete/abandon the operation or reset the card to recover.
+The owner must complete/abandon the operation or use an applicable reset path.
+CCID slot reset cannot preempt a CTAPHID-owned session. An abandoned HID MSG
+continuation can be cleared by CTAPHID INIT once no HID TX stream is active, or
+by USB reset/disconnect. A stalled HID IN stream has no watchdog and may block
+INIT as well; resume reading it or reset/disconnect USB. The same limitation
+applies when a host stops reading another shared-backed HID response.
 An ordinary completed APDU can yield; crypto and touch waits remain serialized.
 
 CCID and WebUSB share one APDU context. A change between those owners resets
@@ -58,9 +63,12 @@ indistinguishable and need PC/SC transactions for mutual exclusion.
 USB reset/configuration callbacks publish an epoch and gate old callbacks and
 new reservations. Cleanup and interface initialization run at main-loop entry,
 after any interrupted handler returns; presence waits cancel on the transition.
-Platforms waiting for the first USB initialization must call
-`USBD_CANOKEY_Service()` in that wait loop. A superseding EP0 SETUP releases an
-abandoned WebUSB data stage without running applet cleanup in interrupt context.
+Platforms using the bundled USB stack must also call `device_usb_service()`
+(or `USBD_CANOKEY_Service()`) while waiting for first enumeration. Core dispatch uses optional `device_usb_service()` /
+`device_usb_ready()` hooks, whose weak defaults are no-op/ready for other stacks.
+The bundled stack overrides them and starts permissive until its first USB
+lifecycle event; readiness gates lifecycle transitions, not endpoint enumeration.
+A superseding EP0 SETUP releases an abandoned WebUSB data stage without running applet cleanup in interrupt context.
 No raw-transfer watchdog reclaims an endpoint's backing while it may still be
 referenced. The CIU `USBD_LL_FlushEP()` is currently a no-op, so timeout-based
 endpoint cancellation needs a separate backend implementation; completed-APDU

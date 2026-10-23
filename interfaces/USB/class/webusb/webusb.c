@@ -32,7 +32,10 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
 
 /* A new SETUP supersedes the old EP0 data stage. Called by the USB core
  * before routing ANY setup, including descriptor requests and status polls.
- * No applet cleanup is allowed in this interrupt callback. */
+ * The backend must stop the superseded EP0 stage before calling SetupStage,
+ * so old IN/OUT transfers no longer reference shared_io_buffer. RECVING and
+ * SENT_RESP exclude main-loop applet execution. Only buffer/session bookkeeping
+ * is released here; no applet, response-source, or PKE cleanup runs in IRQ. */
 void WebUSB_SetupAborted(void) {
   if (state != STATE_RECVING && state != STATE_SENT_RESP) return;
   state = STATE_IDLE;

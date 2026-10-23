@@ -198,7 +198,14 @@ Transport sends response
 Execution ownership has no idle expiry. Native HID may borrow a yielded workspace without resetting the persistent
 APDU card context. CCID/WebUSB owner changes are prepared in the main loop and reset SELECT/PIN state. Protocol
 continuations and response sources retain resources until completion, explicit abandonment, or reset. USB lifecycle
-cleanup/initialization is deferred through `USBD_CANOKEY_Service()`; service it while waiting for initial enumeration.
+cleanup/initialization is deferred through optional `device_usb_service()` / `device_usb_ready()` hooks. Weak defaults
+are no-op/ready for ports using another USB stack; the bundled composite stack overrides them. Service the hooks while
+waiting for initial enumeration. Its initial readiness is permissive until the first USB lifecycle event, not a claim
+that endpoints are configured. `device_applet_session_touch()` is a compatibility no-op and never refreshes a lease.
+
+CCID slot reset cannot preempt CTAPHID ownership. For an abandoned HID MSG continuation, use CTAPHID INIT once no TX
+stream is active, or USB reset/disconnect. Stalled HID IN streams have no watchdog and can prevent INIT dispatch;
+resume host reads or reset/disconnect USB. Do not document slot reset as a universal recovery path.
 
 - Treat the applet session as the exclusivity boundary for large transient state. `CTAPHID`, CTAP over APDU (`CCID` / `WebUSB`), `OpenPGP`, and `PIV` are not required to make forward progress concurrently, so they should share one global session scratch area instead of reserving separate worst-case buffers per applet.
 - Transport choice does not create a separate scratch domain: `CTAPHID`, `CCID`, and `WebUSB` all compete for the same session-level transient resources.

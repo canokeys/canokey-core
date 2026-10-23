@@ -11,7 +11,6 @@
 #endif
 #include <device-config.h>
 #include <device.h>
-#include <usbd_canokey.h>
 #if ENABLE_IFACE_KBDHID
 #include <kbdhid.h>
 #endif
@@ -45,11 +44,15 @@ static int device_applet_session_can_preempt(void) {
   return apdu_session_can_preempt();
 }
 
+/* Optional lifecycle hooks for ports without the bundled USB stack. */
+__weak void device_usb_service(void) {}
+__weak uint8_t device_usb_ready(void) { return 1; }
+
 uint8_t device_is_blinking(void) { return blink_timeout != 0; }
 
 void device_loop(void) {
-  USBD_CANOKEY_Service();
-  if (!USBD_CANOKEY_Ready()) return;
+  device_usb_service();
+  if (!device_usb_ready()) return;
 #if ENABLE_IFACE_CCID
   CCID_Loop();
 #endif
@@ -108,7 +111,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
   uint32_t start = device_get_tick();
   uint32_t last = start;
   while (get_touch_result() == TOUCH_NO) {
-    if (!USBD_CANOKEY_Ready()) {
+    if (!device_usb_ready()) {
       stop_blinking();
       wait_status = WAIT_NONE;
       return USER_PRESENCE_CANCEL;
@@ -151,7 +154,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
 
 int send_keepalive_during_processing(uint8_t entry) {
 #if ENABLE_IFACE_CTAPHID
-  if (!USBD_CANOKEY_Ready()) return LOOP_CANCEL;
+  if (!device_usb_ready()) return LOOP_CANCEL;
   if (session_owner == DEVICE_APPLET_SESSION_CTAPHID || entry == WAIT_ENTRY_CTAPHID) {
     int loop_ret = CTAPHID_Loop(1);
     if (loop_ret == LOOP_CANCEL) return loop_ret;
@@ -272,7 +275,7 @@ void device_applet_session_clear(void) {
 
 int device_applet_session_acquire(device_applet_session_owner_t owner) {
   const uint32_t previous = session_owner;
-  if (owner == DEVICE_APPLET_SESSION_NONE || !USBD_CANOKEY_Ready()) return -1;
+  if (owner == DEVICE_APPLET_SESSION_NONE || !device_usb_ready()) return -1;
   if (previous == owner) return 0;
   /* No lease expiry: unfinished APDUs may retain scratch for arbitrary gaps. */
   if (previous != DEVICE_APPLET_SESSION_NONE || owner != apdu_context_owner) {

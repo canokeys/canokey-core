@@ -18,10 +18,10 @@
 // Control lines start with '!' (they mirror device events that are not
 // APDUs):
 //
-//   !POWEROFF   simulates a CCID slot power-off: expires the applet session
+//   !POWEROFF   simulates a successful CCID slot power-off: resets card context
 //               exactly like PC_to_RDR_IccPowerOff -> device_applet_session
-//               reset does on hardware (clears PIN validation, pending chains
-//               and response sources). The runner sends one per connection
+//               reset does on hardware (clears selection, PIN validation,
+//               pending chains and response sources). The runner sends one per connection
 //               close; answers "OK".
 //
 // Input lines carry one hex-encoded raw APDU (case-insensitive, no spaces);
@@ -149,13 +149,14 @@ int main(void) {
 
     if (in_line[0] == '!') { // control line: a device event, not an APDU
       if (strcmp(in_line, "!POWEROFF") == 0) {
-        // Mirror device_applet_session_expire() as triggered by CCID slot
-        // power-off on hardware: clear PIN validation and abandon any
-        // pending response/chain state.
+        // Mirror device_applet_context_reset() after a successful CCID slot
+        // power-off: clear selection/PIN validation and abandon pending
+        // response/chain state. Replay has no competing USB transport.
         applets_poweroff();
         apdu_response_source_clear();
         apdu_fido_chain_reset();
         apdu_rapdu_chain_reset();
+        apdu_selection_reset();
         proto_write("OK\n", 3);
       } else {
         proto_error("unknown-control");

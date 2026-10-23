@@ -4846,6 +4846,7 @@ static void session_usb_reset_defers_cleanup(void **unused) {
   applet_session_scratch.buffer[0] = 0x5a;
   USBD_CANOKEY.DeInit(&usb_device, 0);
   assert_false(USBD_CANOKEY_Ready());
+  assert_false(device_usb_ready());
   assert_int_equal(applet_session_scratch.buffer[0], 0x5a);
   assert_true(apdu_response_source_active());
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), -1);
@@ -4854,8 +4855,9 @@ static void session_usb_reset_defers_cleanup(void **unused) {
   USBD_CANOKEY.Init(&usb_device, 0);
   assert_false(USBD_CANOKEY_Ready());
   assert_int_equal(stream_ctx.closes, 0);
-  USBD_CANOKEY_Service();
+  device_usb_service();
   assert_true(USBD_CANOKEY_Ready());
+  assert_true(device_usb_ready());
   assert_int_equal(stream_ctx.closes, 1);
   assert_false(apdu_response_source_active());
   const uint8_t query[] = {0, 0x20, 0, 0x81};

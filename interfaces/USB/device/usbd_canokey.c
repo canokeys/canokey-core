@@ -61,8 +61,15 @@ static uint8_t USBD_CANOKEY_ApplyInit(USBD_HandleTypeDef *pdev, uint8_t cfgidx) 
 }
 
 /* Bits 0/1 are configured/ready; upper bits are the USB lifecycle epoch.
- * IRQ callbacks only publish transitions. No applet/PKE cleanup runs there. */
+ * IRQ callbacks only publish transitions. No applet/PKE cleanup runs there.
+ * Initially permissive: before the first USB lifecycle event there is no old
+ * USB session to invalidate. This also permits direct host fixtures that never
+ * initialize USB. This gate is not a claim that endpoints are configured;
+ * transport send paths still check the USB device state. */
 static volatile uint32_t usb_lifecycle = 3;
+
+void device_usb_service(void) { USBD_CANOKEY_Service(); }
+uint8_t device_usb_ready(void) { return USBD_CANOKEY_Ready(); }
 
 uint8_t USBD_CANOKEY_Ready(void) { return (usb_lifecycle & 3u) == 3u; }
 
