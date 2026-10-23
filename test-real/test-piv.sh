@@ -87,9 +87,9 @@ test_ChangePin() {
     assertContains 'verify-pin' "$out" '1 tries left before pin is blocked.'
     YPT -a verify-pin -P 654321
     assertEquals 'verify-pin' 0 $?
-    YPT -a set-mgm-key -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
+    YPT -a set-mgm-key --new-key-algo=AES192 -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
     assertEquals 'set-mgm-key' 0 $?
-    YPT -a set-mgm-key --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
+    YPT -a set-mgm-key --new-key-algo=AES192 --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
     assertEquals 'set-mgm-key' 0 $?
 }
 

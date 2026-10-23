@@ -1,0 +1,79 @@
+diff --git a/piv/key_test.go b/piv/key_test.go
+index af57495..562bdbf 100644
+--- a/piv/key_test.go
++++ b/piv/key_test.go
+@@ -1362 +1362 @@ func TestInvalidKeyParam(t *testing.T) {
+-		{slot: 0x90, alg: AlgorithmEC256},
++		{slot: 0x96, alg: AlgorithmEC256},
+diff --git a/piv/piv.go b/piv/piv.go
+index e5e2868..258568c 100644
+--- a/piv/piv.go
++++ b/piv/piv.go
+@@ -19 +19 @@ import (
+-	"crypto/des"
++	"crypto/aes"
+@@ -37 +37 @@ var (
+-	// DefaultManagementKey for the PIV applet. The Management Key is a Triple-DES
++	// DefaultManagementKey for the PIV applet. The Management Key is an AES-192
+@@ -62 +62 @@ const (
+-	alg3DES    = 0x03
++	algAES192  = 0x0a
+@@ -390 +390 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-		param1:      alg3DES,
++		param1:      algAES192,
+@@ -403 +403 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-	if n := len(resp); n < 12 {
++	if n := len(resp); n < 20 {
+@@ -408 +408 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-		0x0a,
++		0x12,
+@@ -410 +410 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-		0x08, // Tag length
++		0x10, // Tag length
+@@ -415,2 +415,2 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-	cardChallenge := resp[4 : 4+8]
+-	cardResponse := make([]byte, 8)
++	cardChallenge := resp[4 : 4+16]
++	cardResponse := make([]byte, 16)
+@@ -418 +418 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-	block, err := des.NewTripleDESCipher(key[:])
++	block, err := aes.NewCipher(key[:])
+@@ -420 +420 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-		return fmt.Errorf("creating triple des block cipher: %v", err)
++		return fmt.Errorf("creating AES-192 block cipher: %v", err)
+@@ -424 +424 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-	challenge := make([]byte, 8)
++	challenge := make([]byte, 16)
+@@ -428 +428 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-	response := make([]byte, 8)
++	response := make([]byte, 16)
+@@ -433 +433 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-		20,   // 2+8+2+8
++		36,   // 2+16+2+16
+@@ -435 +435 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-		0x08, // Tag length
++		0x10, // Tag length
+@@ -440 +440 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-		0x08, // Tag length
++		0x10, // Tag length
+@@ -446 +446 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-		param1:      alg3DES,
++		param1:      algAES192,
+@@ -454 +454 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-	if n := len(resp); n < 12 {
++	if n := len(resp); n < 20 {
+@@ -459 +459 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-		0x0a,
++		0x12,
+@@ -461 +461 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-		0x08,
++		0x10,
+@@ -465 +465 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-	if !bytes.Equal(resp[4:4+8], response) {
++	if !bytes.Equal(resp[4:4+16], response) {
+@@ -473 +473 @@ func ykAuthenticate(tx *scTx, key [24]byte, rand io.Reader) error {
+-// are triple-des keys, however padding isn't verified. To generate a new key,
++// are AES-192 keys. To generate a new key,
+@@ -503 +503 @@ func ykSetManagementKey(tx *scTx, key [24]byte, touch bool) error {
+-			alg3DES, keyCardManagement, 24,
++			algAES192, keyCardManagement, 24,

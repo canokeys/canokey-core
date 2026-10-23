@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <ccid.h>
 #include <device.h>
+#include <usbd_canokey.h>
 #include <usb_device.h>
 #include <usbd_ccid.h>
 #include <usbd_ctlreq.h>
+
+#define CCID_BULK_IN_IDLE_TIMEOUT_MS 2000u
 
 static uint8_t ccid_out_buf[64];
 static volatile uint8_t bulk_in_state;
@@ -20,7 +23,7 @@ uint8_t USBD_CCID_Init(USBD_HandleTypeDef *pdev) {
 uint8_t USBD_CCID_DataIn(USBD_HandleTypeDef *pdev) {
   if (bulk_in_state == CCID_STATE_DATA_IN_WITH_ZLP) {
     bulk_in_state = CCID_STATE_DATA_IN;
-    uint8_t addr = EP_OUT(ccid);
+    uint8_t addr = EP_IN(ccid);
     USBD_LL_Transmit(pdev, addr, NULL, 0);
   } else {
     CCID_InFinished(bulk_in_state == CCID_STATE_DATA_IN_TIME_EXTENSION);
@@ -43,24 +46,21 @@ uint8_t USBD_CCID_DataOut(USBD_HandleTypeDef *pdev) {
 
 uint8_t CCID_Response_SendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uint16_t len,
                                uint8_t is_time_extension_request) {
+  if (!USBD_CANOKEY_Ready()) return USBD_BUSY;
   USBD_StatusTypeDef ret = USBD_OK;
   if (pdev->dev_state == USBD_STATE_CONFIGURED) {
-    int retry = 0;
+    uint32_t wait_ms = 0;
     while (bulk_in_state != CCID_STATE_IDLE) {
-      if (is_time_extension_request)
-        return ret;
-      else if (++retry > 50)
-        return USBD_BUSY;
-      else
-        device_delay(1);
+      if (is_time_extension_request) return ret;
+      if (wait_ms++ >= CCID_BULK_IN_IDLE_TIMEOUT_MS) return USBD_BUSY;
+      device_delay(1);
     }
-    uint8_t addr = EP_OUT(ccid);
     uint8_t ep_size = EP_SIZE(ccid);
     if (is_time_extension_request)
       bulk_in_state = CCID_STATE_DATA_IN_TIME_EXTENSION;
     else
       bulk_in_state = len % ep_size == 0 ? CCID_STATE_DATA_IN_WITH_ZLP : CCID_STATE_DATA_IN;
-    ret = USBD_LL_Transmit(pdev, addr, buf, len);
+    ret = USBD_LL_Transmit(pdev, EP_IN(ccid), buf, len);
   }
   return ret;
 }
