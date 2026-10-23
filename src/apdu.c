@@ -465,9 +465,8 @@ int apdu_response_source_output(RAPDU *rapdu, uint32_t le) {
 
 int apdu_session_can_preempt(void) {
   if (buffer_owner != BUFFER_OWNER_NONE) return 0;
-  // Source-backed responses may be explicitly abandoned by another transport;
-  // device_applet_session_expire() closes their backing storage. Ordinary
-  // RAPDU continuation state has no equivalent reset and must stay owned.
+  if (apdu_response_source_active() || !openpgp_session_can_yield() || !piv_session_can_yield()) return 0;
+  // Continuations retain their backing even after a transport response ends.
   if (rapdu_chaining.sent < rapdu_chaining.rapdu.len) return 0;
   if (fido_capdu_chaining.in_chaining || fido_capdu_uses_pke) return 0;
   return 1;

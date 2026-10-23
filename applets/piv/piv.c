@@ -1419,6 +1419,11 @@ static void piv_algorithm_extension_config_set_default(void) {
   alg_ext_cfg.mlkem768 = ALG_MLKEM768_DEFAULT;
 }
 
+int piv_session_can_yield(void) {
+  return !piv_pke_owned && !piv_auth_active && !piv_sm2_agreement_active &&
+         piv_do_write < 0 && piv_do_read < 0 && piv_import_len == 0;
+}
+
 void piv_poweroff(void) {
   piv_state = PIV_STATE_OTHER;
   in_admin_status = 0;

@@ -195,9 +195,17 @@ Transport sends response
 ### Applet session
 
 `device_applet_session_acquire(owner)` / `_release()` serialize multi-step cryptographic transactions (e.g. key generation) across loop iterations.  
-After `APPLET_SESSION_TIMEOUT_MS` (2 s) of inactivity, another transport may force cleanup and take ownership. The
-same transport may reacquire its session without resetting applet security state; PIN authorization lasts until a real
-slot reset/power-off, an applet switch, an explicit logout, or cross-transport preemption.
+Execution ownership has no idle expiry. Native HID may borrow a yielded workspace without resetting the persistent
+APDU card context. CCID/WebUSB owner changes are prepared in the main loop and reset SELECT/PIN state. Protocol
+continuations and response sources retain resources until completion, explicit abandonment, or reset. USB lifecycle
+cleanup/initialization is deferred through optional `device_usb_service()` / `device_usb_ready()` hooks. Weak defaults
+are no-op/ready for ports using another USB stack; the bundled composite stack overrides them. Service the hooks while
+waiting for initial enumeration. Its initial readiness is permissive until the first USB lifecycle event, not a claim
+that endpoints are configured. `device_applet_session_touch()` is a compatibility no-op and never refreshes a lease.
+
+CCID slot reset cannot preempt CTAPHID ownership. For an abandoned HID MSG continuation, use CTAPHID INIT once no TX
+stream is active, or USB reset/disconnect. Stalled HID IN streams have no watchdog and can prevent INIT dispatch;
+resume host reads or reset/disconnect USB. Do not document slot reset as a universal recovery path.
 
 - Treat the applet session as the exclusivity boundary for large transient state. `CTAPHID`, CTAP over APDU (`CCID` / `WebUSB`), `OpenPGP`, and `PIV` are not required to make forward progress concurrently, so they should share one global session scratch area instead of reserving separate worst-case buffers per applet.
 - Transport choice does not create a separate scratch domain: `CTAPHID`, `CCID`, and `WebUSB` all compete for the same session-level transient resources.
@@ -322,7 +330,7 @@ Forbidden PKE staging uses:
 - Large response data is returned via `GET RESPONSE` chaining; `apdu_output` handles segmentation transparently.
 - The RAPDU chain store (`rapdu_chaining.rapdu.data`) aliases the transport I/O buffer (`shared_io_buffer`, which is the CCID Bulk-IN buffer or the NFC I-block buffer). Transports stamp the SW trailer at `buffer[LL..LL+1]` after each command, which lands on the first pending response bytes whenever the just-sent chunk is short — an empty first chunk (Le absent) is the worst case, leaving `sent == 0`. `apdu_output` saves the pending prefix into the static `response_tail` after each partial chunk and restores it before the next chunk; the saved tail is invalidated only when a new non-`GET RESPONSE` command is dispatched (`process_apdu_from` / `apdu_process_streaming_message`) or the chain completes, never on `sent == 0` alone.
 - A `GET RESPONSE` with no pending chain and no active response source is rejected with `SW_COMMAND_NOT_ALLOWED` on both the generic path (`process_apdu_from`) and the applet streaming path (`apdu_process_streaming_message`).
-- A pending RAPDU chain is abandoned as soon as any new non-`GET RESPONSE` command is dispatched (`process_apdu_from` / `apdu_process_streaming_message` clear both `rapdu.len` and `sent`; chaining handlers re-establish `rapdu.len` for the new response). This matters because handlers like OATH/ADMIN write only the transport RAPDU: if a stale `rapdu.len` survived with a reset `sent`, a later `GET RESPONSE` would serve leftover shared-buffer bytes with the old SW=9000. Chain state is also dropped on explicit applet-session release/reset and on expired cross-transport preemption (`device_applet_session_expire` / `device_applet_session_reset` call `apdu_rapdu_chain_reset()`; `apdu_fido_chain_reset()` does the same for the FIDO CAPDU reassembly state). Cross-transport preemption mid-chain remains blocked by `apdu_session_can_preempt()` until the ownership deadline passes; idle time alone does not clear the owning transport's chain or security state.
+- A pending RAPDU chain is abandoned as soon as any new non-`GET RESPONSE` command is dispatched (`process_apdu_from` / `apdu_process_streaming_message` clear both `rapdu.len` and `sent`; chaining handlers re-establish `rapdu.len` for the new response). This matters because handlers like OATH/ADMIN write only the transport RAPDU: if a stale `rapdu.len` survived with a reset `sent`, a later `GET RESPONSE` would serve leftover shared-buffer bytes with the old SW=9000. Chain state is also dropped on explicit card-context reset (`device_applet_context_reset()` calls `apdu_rapdu_chain_reset()` and `apdu_fido_chain_reset()`). Ordinary execution release preserves chains. Cross-transport preemption mid-chain remains blocked by `apdu_session_can_preempt()` regardless of idle time; the owner must complete or explicitly abandon the chain, or reset the card.
 - Do **not** increase `APDU_BUFFER_SIZE` to work around a design that should use chaining.
 
 ### Streaming response sources
@@ -330,8 +338,8 @@ Forbidden PKE staging uses:
 `apdu_response_source_set(total_len, sw, read, close, ctx)` registers a pull-based response stream with `apdu.c`:
 
 - `read(ctx, offset, buf, len)` produces response bytes on demand; the framework calls it once per `GET RESPONSE` chunk.
-- `close(ctx)` releases any backing resource (PKE buffer, shared scratch, file handle) when the stream finishes or is preempted.
-- `apdu_response_source_clear()` is invoked automatically before the next non-`GET RESPONSE` command and during explicit session cleanup or cross-transport preemption; applets may also call it directly to abort a stream.
+- `close(ctx)` releases any backing resource (PKE buffer, shared scratch, file handle) when the stream finishes or is explicitly abandoned/reset.
+- `apdu_response_source_clear()` is invoked automatically before the next non-`GET RESPONSE` command and during explicit card-context cleanup; applets may also call it directly to abort a stream.
 - `apdu_response_source_active()` reports whether a stream is in flight (used by transports to decide between inline and chunked responses).
 
 Use this helper for any response that does not fit `APDU_BUFFER_SIZE` instead of materializing the full payload into a buffer. PIV `7C` wrappers, OpenPGP large public-key encodings, FIDO2 large credential lists, and OpenPGP cert reads all go through this path.

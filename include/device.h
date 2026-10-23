@@ -69,6 +69,13 @@ void led_on(void);
 void led_off(void);
 void device_set_timeout(void (*callback)(void), uint16_t timeout);
 
+/* Optional USB lifecycle hooks. Defaults are no-op/ready; the bundled USB
+ * stack overrides both. Other stacks may override them to defer cleanup and
+ * gate dispatch during reset/reconfiguration. Service only in the main loop,
+ * including while waiting for first USB enumeration. */
+void device_usb_service(void);
+uint8_t device_usb_ready(void);
+
 // NFC related
 /**
  * Enable FM chip by pull down CSN
@@ -108,7 +115,12 @@ uint8_t wait_for_user_presence(uint8_t entry);
 int strong_user_presence_test(void);
 int send_keepalive_during_processing(uint8_t entry);
 void device_loop(void);
+void device_applet_session_clear(void);
 int device_applet_session_acquire(device_applet_session_owner_t owner);
+/* Main-loop only, after acquiring the execution reservation and I/O buffer. */
+void device_applet_session_prepare(device_applet_session_owner_t owner);
+int device_applet_session_context_matches(device_applet_session_owner_t owner);
+/* Compatibility no-op for existing transports; does not refresh an idle lease. */
 void device_applet_session_touch(device_applet_session_owner_t owner);
 void device_applet_session_release(device_applet_session_owner_t owner);
 int device_applet_session_reset(device_applet_session_owner_t owner);

@@ -16,6 +16,9 @@
  ******************************************************************************
  */
 #include <usbd_core.h>
+#if ENABLE_IFACE_WEBUSB
+#include <webusb.h>
+#endif
 #include <apdu.h>
 
 /**
@@ -178,6 +181,9 @@ USBD_StatusTypeDef USBD_LL_SetupStage(USBD_HandleTypeDef *pdev, uint8_t *psetup)
   USBD_SetupReqTypedef request;
 
   USBD_ParseSetupRequest(&request, psetup);
+#if ENABLE_IFACE_WEBUSB
+  WebUSB_SetupAborted();
+#endif
 
   pdev->ep0_state = USBD_EP0_SETUP;
   pdev->ep0_data_len = request.wLength;

@@ -363,7 +363,9 @@ static void test_device_sessions_and_keepalive(void **state) {
   device_init();
 
   fake_tick = 100;
+  apdu_session_preemptable = true; // The initial workspace has no retained resources.
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
+  apdu_session_preemptable = false; // Model a continuation retaining the workspace.
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
   assert_int_equal(send_keepalive_during_processing(WAIT_ENTRY_CCID), 0);
   assert_int_equal(keepalive_processing_calls, 0);
@@ -380,36 +382,56 @@ static void test_device_sessions_and_keepalive(void **state) {
   assert_int_equal(applets_poweroff_calls, 0);
   assert_int_equal(apdu_response_source_clear_calls, 0);
 
-  // Once the lease has timed out, another transport may force cleanup and
-  // take ownership even when an active session was not otherwise preemptable.
+  // Idle time cannot revoke a continuation that still owns resources.
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), -1);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
+  fake_tick = 3600100;
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), -1);
+  assert_int_equal(applets_poweroff_calls, 0);
+  assert_int_equal(apdu_response_source_clear_calls, 0);
+
+  // A yielded workspace can transfer without clearing the APDU card context.
+  apdu_session_preemptable = true;
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
-  assert_int_equal(applets_poweroff_calls, 1);
-  assert_int_equal(apdu_response_source_clear_calls, 1);
+  assert_int_equal(applets_poweroff_calls, 0);
+  assert_int_equal(apdu_response_source_clear_calls, 0);
 
-  fake_tick = 2200;
+  apdu_session_preemptable = false; // Native FIDO now retains the workspace.
+  fake_tick = 3600200;
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
   assert_int_equal(send_keepalive_during_processing(WAIT_ENTRY_CCID), 0);
   assert_int_equal(keepalive_processing_calls, 1);
 
-  fake_tick = 3000;
+  fake_tick = 3601000;
   device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
-  fake_tick = 4199;
+  fake_tick = 3602199;
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
 
-  fake_tick = 4201;
+  fake_tick = 3602201;
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
-  assert_int_equal(applets_poweroff_calls, 1);
+  assert_int_equal(applets_poweroff_calls, 0);
 
-  fake_tick = 6302;
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
-  assert_int_equal(applets_poweroff_calls, 2);
+  fake_tick = 3604302;
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), -1);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
   apdu_session_preemptable = true;
+  // Native HID execution must explicitly release, even without APDU resources.
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), -1);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
+  assert_int_equal(applets_poweroff_calls, 0);
+  device_applet_session_prepare(DEVICE_APPLET_SESSION_CCID);
+  assert_int_equal(applets_poweroff_calls, 0);
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB), 0);
+  assert_int_equal(applets_poweroff_calls, 0);
+  device_applet_session_prepare(DEVICE_APPLET_SESSION_WEBUSB);
+  assert_int_equal(applets_poweroff_calls, 1);
+  assert_int_equal(apdu_response_source_clear_calls, 1);
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_WEBUSB);
 
-  fake_tick = 6400;
+  fake_tick = 3604400;
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB), 0);
   assert_int_equal(send_keepalive_during_processing(WAIT_ENTRY_CCID), 0);
   assert_int_equal(keepalive_processing_calls, 1);

@@ -30,6 +30,18 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
   return USBD_OK;
 }
 
+/* A new SETUP supersedes the old EP0 data stage. Called by the USB core
+ * before routing ANY setup, including descriptor requests and status polls.
+ * The backend must stop the superseded EP0 stage before calling SetupStage,
+ * so old IN/OUT transfers no longer reference shared_io_buffer. RECVING and
+ * SENT_RESP exclude main-loop applet execution. Only buffer/session bookkeeping
+ * is released here; no applet, response-source, or PKE cleanup runs in IRQ. */
+void WebUSB_SetupAborted(void) {
+  if (state != STATE_RECVING && state != STATE_SENT_RESP) return;
+  state = STATE_IDLE;
+  release_apdu_interface(DEVICE_APPLET_SESSION_WEBUSB, BUFFER_OWNER_WEBUSB);
+}
+
 uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
   // CCID_eject();
   last_keepalive = device_get_tick();
@@ -102,6 +114,7 @@ void WebUSB_Loop(void) {
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
 
+  device_applet_session_prepare(DEVICE_APPLET_SESSION_WEBUSB);
   if (build_capdu(&apdu_cmd, shared_io_buffer, apdu_buffer_size) < 0) {
     // abandon malformed apdu
     LL = 0;
@@ -137,8 +150,7 @@ uint8_t USBD_WEBUSB_TxSent(USBD_HandleTypeDef *pdev) {
 uint8_t USBD_WEBUSB_RxReady(USBD_HandleTypeDef *pdev) {
   UNUSED(pdev);
 
-  //  state should be STATE_RECVING now
-  state = STATE_PROCESS;
+  if (state == STATE_RECVING) state = STATE_PROCESS;
 
   return USBD_OK;
 }

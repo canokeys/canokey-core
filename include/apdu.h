@@ -131,7 +131,7 @@ int apdu_session_can_preempt(void);
 void apdu_fido_chain_reset(void);
 // Drops any pending RAPDU (GET RESPONSE) chain. Call from paths that reset
 // the card-side APDU context out from under an in-progress chain (session
-// release/preemption, CCID slot power on/off).
+// owner change, USB reset, CCID slot power on/off).
 void apdu_rapdu_chain_reset(void);
 int acquire_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);
 void release_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);

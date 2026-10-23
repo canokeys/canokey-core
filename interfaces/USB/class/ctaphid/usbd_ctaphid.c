@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <ctaphid.h>
 #include <device.h>
+#include <usbd_canokey.h>
 #include <usb_device.h>
 #include <usbd_ctaphid.h>
 #include <usbd_ctlreq.h>
@@ -93,6 +94,7 @@ static uint8_t wait_ep_idle(int max_ms) {
 }
 
 uint8_t USBD_CTAPHID_SendReport(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
+  if (!USBD_CANOKEY_Ready()) return USBD_BUSY;
   if (pdev->dev_state == USBD_STATE_CONFIGURED) {
     if (wait_ep_idle(50) != USBD_OK) return USBD_BUSY;
     hid_handle.state = CTAPHID_BUSY;

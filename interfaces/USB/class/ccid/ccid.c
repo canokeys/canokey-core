@@ -18,6 +18,7 @@
 #define CCID_IsShortCommand() (bulkout_length <= SHORT_ABDATA_SIZE)
 
 static uint8_t CCID_CheckCommandParams(uint32_t param_type);
+static void CCID_SendResponse(ccid_bulkin_data_t *response, uint8_t type, uint8_t error, uint8_t specific);
 
 typedef union {
   empty_ccid_bulkin_data_t time_extension;
@@ -106,6 +107,9 @@ void CCID_AbortPendingCommand(void) {
   // queued GetSlotStatus when CTAPHID releases its session makes macOS treat
   // the reader timeout as card removal and restart PIV discovery/pairing.
   if (transaction_state == CCID_TRANSACTION_RECEIVING && bulkout_data.bMessageType != PC_TO_RDR_XFRBLOCK) return;
+  // A refused XfrBlock owns no applet resources. Retain its sequence number
+  // and drain any remaining OUT packets so it still gets an error response.
+  if (has_cmd == HAS_CMD_DISCARDED || bulkout_state == CCID_STATE_DISCARD_DATA) return;
   CCID_ResetPendingCommand();
 }
 
@@ -129,6 +133,9 @@ static int CCID_AppendPkeRequest(uint32_t offset, const uint8_t *data, uint16_t 
 }
 
 static int CCID_BeginPkeRequest(const uint8_t *cmd, uint16_t len) {
+  // Cross-owner SELECT must establish the new context before PKE staging;
+  // main-loop poweroff must never wipe an already received extended request.
+  if (!device_applet_session_context_matches(DEVICE_APPLET_SESSION_CCID)) return -1;
   if (len < 7 || cmd[0] != 0x80 || cmd[1] != CTAP_INS_MSG || cmd[4] != 0) return -1;
 
   const uint16_t lc = (uint16_t)((cmd[5] << 8) | cmd[6]);
@@ -348,6 +355,7 @@ uint8_t PC_to_RDR_XfrBlock(void) {
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
 
+  device_applet_session_prepare(DEVICE_APPLET_SESSION_CCID);
   device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
   const uint8_t request_uses_pke = pke_fido_request;
   if (request_uses_pke && pke_fido_has_le) {
@@ -418,10 +426,49 @@ static uint8_t CCID_CheckCommandParams(uint32_t param_type) {
   return error;
 }
 
-// Safe during CTAP execution: status polls use only the short response buffer,
-// never the shared APDU buffer, applet scratch, or session reset paths.
+// Keep background smartcard discovery responsive during a HID presence wait.
+// Never dispatch an APDU or reset the card here: both would clobber CTAP state.
+// All replies use the independent short buffer, not the shared APDU payload.
 void CCID_ServicePresencePoll(void) {
-  if (has_cmd && bulkout_data.bMessageType == PC_TO_RDR_GETSLOTSTATUS) CCID_Loop();
+  if (!has_cmd) return;
+  if (bulkout_data.bMessageType == PC_TO_RDR_GETSLOTSTATUS || bulkout_data.bMessageType == PC_TO_RDR_GETPARAMETERS) {
+    CCID_Loop();
+    return;
+  }
+  if (bulkout_data.bMessageType == PC_TO_RDR_XFRBLOCK && has_cmd != HAS_CMD_DISCARDED) return;
+
+  transaction_state = CCID_TRANSACTION_PROCESSING;
+  uint8_t type = RDR_TO_PC_SLOTSTATUS;
+  uint8_t error = SLOTERROR_CMD_SLOT_BUSY;
+  ccid_put_le32(bulkin_short.dwLength, 0);
+  bulkin_short.bStatus = BM_COMMAND_STATUS_FAILED | CCID_CardStatus();
+  switch (bulkout_data.bMessageType) {
+  case PC_TO_RDR_XFRBLOCK:
+    // This request failed to acquire the applet session and has been drained.
+    // Report an APDU failure promptly instead of timing out CryptoTokenKit.
+    type = RDR_TO_PC_DATABLOCK;
+    error = SLOT_NO_ERROR;
+    bulkin_short.bStatus &= BM_ICC_STATUS_MASK;
+    ccid_put_le32(bulkin_short.dwLength, 2);
+    bulkin_short.abData[0] = HI(SW_ERR_NOT_PERSIST);
+    bulkin_short.abData[1] = LO(SW_ERR_NOT_PERSIST);
+    break;
+  case PC_TO_RDR_ICCPOWERON:
+  case PC_TO_RDR_SECURE:
+    type = RDR_TO_PC_DATABLOCK;
+    break;
+  case PC_TO_RDR_SETPARAMETERS:
+  case PC_TO_RDR_RESETPARAMETERS:
+    type = RDR_TO_PC_PARAMETERS;
+    break;
+  case PC_TO_RDR_ESCAPE:
+    type = RDR_TO_PC_ESCAPE;
+    break;
+  case PC_TO_RDR_SETDATARATEANDCLOCKFREQUENCY:
+    type = RDR_TO_PC_DATARATEANDCLOCKFREQUENCY;
+    break;
+  }
+  CCID_SendResponse((ccid_bulkin_data_t *)&bulkin_short, type, error, 0);
 }
 
 void __attribute__((noinline)) CCID_Loop(void) {
@@ -452,6 +499,7 @@ void __attribute__((noinline)) CCID_Loop(void) {
     if (has_cmd == HAS_CMD_DISCARDED) {
       DBG_MSG("Respond to a data-discarded message\n");
       errorCode = SLOT_NO_ERROR;
+      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, CCID_CardStatus());
       ccid_put_le32(pBulkin->dwLength, 2);
       pBulkin->abData[0] = HI(SW_ERR_NOT_PERSIST);
       pBulkin->abData[1] = LO(SW_ERR_NOT_PERSIST);
@@ -489,6 +537,10 @@ void __attribute__((noinline)) CCID_Loop(void) {
     break;
   }
 
+  CCID_SendResponse(pBulkin, response_type, errorCode, specific);
+}
+
+static void CCID_SendResponse(ccid_bulkin_data_t *pBulkin, uint8_t response_type, uint8_t errorCode, uint8_t specific) {
   // All response types share the same header layout. Fill it once after
   // choosing the short or APDU backing buffer and command-specific payload.
   pBulkin->bMessageType = response_type;

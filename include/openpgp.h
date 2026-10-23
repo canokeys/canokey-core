@@ -64,6 +64,7 @@
 #define TAG_UIF_AUT 0xD8
 #define TAG_UIF_CACHE_TIME 0x0102
 
+int openpgp_session_can_yield(void);
 void openpgp_poweroff(void);
 int openpgp_install(uint8_t reset);
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
