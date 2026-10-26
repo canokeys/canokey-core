@@ -1056,7 +1056,7 @@ static void test_ccid_power_on_does_not_steal_ctaphid_session(void **state) {
   init_apdu_buffer();
   device_init();
   CCID_Init();
-  uint8_t aid[] = {0xA0, 0, 0, 6, 0x47, 0x2F, 0, 1}, response[16];
+  uint8_t aid[] = {0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44}, response[16];
   CAPDU capdu = {.ins = 0xA4, .p1 = 4, .lc = sizeof(aid), .le = sizeof(response), .data = aid};
   RAPDU rapdu = {.data = response};
   process_apdu(&capdu, &rapdu);
@@ -1089,7 +1089,7 @@ static void test_ccid_power_on_does_not_steal_ctaphid_session(void **state) {
 static void test_ccid_slot_reset_clears_selection(void **state) {
   (void)state;
   static const uint8_t select_fido[] = {
-      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01, 0x00,
+      0x00, 0xA4, 0x04, 0x00, 0x08, 0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44, 0x00,
   };
   static const uint8_t version[] = {0x00, 0x03, 0x00, 0x00, 0x00};
   static const uint8_t reset_commands[] = {PC_TO_RDR_ICCPOWERON, PC_TO_RDR_ICCPOWEROFF};
@@ -1418,7 +1418,7 @@ static void test_ccid_extended_fido_request_uses_pke(void **state) {
   device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
 
   static const uint8_t select_fido[] = {0x00, 0xA4, 0x04, 0x00, 0x08,
-                                       0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01, 0x00};
+                                       0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44, 0x00};
   uint8_t select_data[16], select_response[16];
   CAPDU select_capdu = {.data = select_data};
   RAPDU select_rapdu = {.data = select_response};
@@ -1540,11 +1540,11 @@ static void test_fido_ctap1_register_nfc(void **state) {
   set_nfc_state(1);
 
   assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
-  process_apdu(&capdu, &rapdu);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
 
   assert_int_equal(build_capdu(&capdu, register_apdu, sizeof(register_apdu)), 0);
-  process_apdu(&capdu, &rapdu);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
   assert_true(rapdu.len > 0);
   assert_int_equal(rapdu.data[0], 0x05);
 
@@ -1555,7 +1555,7 @@ static void test_fido_ctap1_register_nfc(void **state) {
     assert_int_equal(rapdu.sw & 0xFF00, 0x6100);
     assert_true(++rounds < 64);
     assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
-    process_apdu(&capdu, &rapdu);
+    process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
     total += rapdu.len;
   }
 
@@ -1724,11 +1724,11 @@ static void test_fido_reset_nfc_bypasses_user_presence(void **state) {
   assert_int_equal(ctap_write_sm2_config(&config_capdu, &rapdu), 0);
 
   assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
-  process_apdu(&capdu, &rapdu);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
 
   assert_int_equal(build_capdu(&capdu, reset_apdu, sizeof(reset_apdu)), 0);
-  process_apdu(&capdu, &rapdu);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
 
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
   assert_int_equal(rapdu.len, 1);
@@ -2859,7 +2859,7 @@ static void test_ctap_apdu_credential_management_streams_mldsa_public_key(void *
   (void)state;
 
   static const uint8_t select_fido[] = {
-      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01,
+      0x00, 0xA4, 0x04, 0x00, 0x08, 0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44,
   };
   static uint8_t response[4096];
   static uint8_t expected_public_key[MLDSA_PK_BYTES];
@@ -3659,6 +3659,106 @@ static void test_session_reset_drops_pending_rapdu_chain(void **state) {
   assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
 }
 
+static void check_fido_usb_private_management_select(apdu_transport_t transport) {
+  static const uint8_t standard[] = {0, 0xa4, 4, 0, 8, 0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1, 0};
+  static const uint8_t management[] = {0, 0xa4, 4, 0, 8, 0xf0, 0x43, 0x41, 0x4e, 0x4f, 0x46, 0x49, 0x44, 0};
+  static const uint8_t obsolete[] = {0, 0xa4, 4, 0, 8, 0xf0, 0, 0, 0, 0, 0xf1, 0xd0, 2, 0};
+  static const uint8_t get_response[] = {0, 0xc0, 0, 0, 0};
+  static const uint8_t info[] = {0x80, 0x10, 0, 0, 1, 4, 0};
+  static const uint8_t version[] = {0, 3, 0, 0, 0};
+  uint8_t command[32], response[APDU_COMMAND_BUFFER_SIZE];
+  CAPDU capdu = {.data = command};
+  RAPDU rapdu = {.data = response};
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+
+  assert_int_equal(build_capdu(&capdu, standard, sizeof(standard)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+  assert_int_equal(build_capdu(&capdu, info, sizeof(info)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+  assert_false(apdu_response_source_active());
+  assert_int_equal(build_capdu(&capdu, obsolete, sizeof(obsolete)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+
+  assert_int_equal(build_capdu(&capdu, management, sizeof(management)), 0);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+  assert_int_equal(build_capdu(&capdu, standard, sizeof(standard)), 0);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  for (size_t len = sizeof(management) - 1; len <= sizeof(management); ++len) {
+    assert_int_equal(build_capdu(&capdu, management, len), 0);
+    process_apdu_from(&capdu, &rapdu, transport);
+    assert_int_equal(rapdu.sw, SW_NO_ERROR);
+    assert_int_equal(rapdu.len, 6);
+    assert_memory_equal(rapdu.data, "U2F_V2", 6);
+  }
+  assert_int_equal(build_capdu(&capdu, info, sizeof(info)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_int_equal(rapdu.sw & 0xff00, 0x6100);
+  assert_int_equal(rapdu.data[0], CTAP1_ERR_SUCCESS);
+  size_t total = rapdu.len;
+  unsigned rounds = 0;
+  while ((rapdu.sw & 0xff00) == 0x6100) {
+    assert_true(++rounds < 16);
+    assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+    process_apdu_from(&capdu, &rapdu, transport);
+    total += rapdu.len;
+  }
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_true(total > APDU_BUFFER_SIZE);
+  assert_false(apdu_response_source_active());
+
+  // Leave another response pending to verify failed SELECT abandons it.
+  assert_int_equal(build_capdu(&capdu, info, sizeof(info)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_int_equal(rapdu.sw & 0xff00, 0x6100);
+
+  // Standard USB SELECT followed by U2F_VERSION cannot borrow Console selection.
+  assert_int_equal(build_capdu(&capdu, standard, sizeof(standard)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_false(apdu_response_source_active());
+  assert_int_equal(build_capdu(&capdu, version, sizeof(version)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+
+  for (uint8_t len = 7; len <= 9; len += 2) {
+    uint8_t invalid[14];
+    memcpy(invalid, management, sizeof(management));
+    invalid[4] = len;
+    assert_int_equal(build_capdu(&capdu, invalid, 5 + len), 0);
+    process_apdu_from(&capdu, &rapdu, transport);
+    assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+  }
+
+  // Failed USB APDU discovery leaves native HID discovery usable.
+  hid_capture_count = 0;
+  CTAPHID_Init(capture_hid_report);
+  CTAPHID_FRAME frame = {0};
+  frame.cid = 0x12345678;
+  frame.init.cmd = CTAPHID_CBOR;
+  frame.init.bcnth = 0;
+  frame.init.bcntl = 1;
+  frame.init.data[0] = CTAP_GET_INFO;
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  assert_true(hid_capture_count > 1);
+  assert_int_equal(hid_capture[0].init.cmd, CTAPHID_CBOR);
+  assert_int_equal(hid_capture[0].init.data[0], CTAP1_ERR_SUCCESS);
+  device_applet_session_clear();
+}
+
+static void test_fido_usb_private_management_select(void **state) {
+  (void)state;
+  check_fido_usb_private_management_select(APDU_TRANSPORT_CCID);
+  check_fido_usb_private_management_select(APDU_TRANSPORT_WEBUSB);
+}
+
 // fido_apdu_input rejects chains whose accumulated length would exceed the
 // PKE staging buffer. Send maximum-sized chained APDUs until APDU_CHAINING_OVERFLOW
 // fires, which process_apdu maps to SW_WRONG_LENGTH and which must also reset
@@ -3667,7 +3767,7 @@ static void test_fido_apdu_chain_overflow_returns_wrong_length(void **state) {
   (void)state;
 
   static const uint8_t select_fido[] = {
-      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01,
+      0x00, 0xA4, 0x04, 0x00, 0x08, 0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44,
   };
 
   uint8_t c_buf[512], r_buf[64];
@@ -4462,7 +4562,7 @@ static void test_ctap_cm_mixed_algorithms(void **state) {
   uint8_t c_buf[64], r_buf[64];
   CAPDU capdu = {.data = c_buf};
   RAPDU rapdu = {.data = r_buf};
-  const uint8_t select_fido[] = {0, 0xA4, 4, 0, 8, 0xA0, 0, 0, 6, 0x47, 0x2F, 0, 1};
+  const uint8_t select_fido[] = {0, 0xA4, 4, 0, 8, 0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44};
 
   init_apdu_buffer();
   device_init();
@@ -4937,6 +5037,7 @@ int main() {
       cmocka_unit_test(session_fido_sign_between_openpgp_apdus),
       cmocka_unit_test(test_client_pin_encrypted_length_policy),
       cmocka_unit_test(test_ccid_response_headers),
+      cmocka_unit_test(test_fido_usb_private_management_select),
       cmocka_unit_test(test_hid_setup_descriptors_and_errors),
       cmocka_unit_test(test_ccid_large_hid_request_survives_session_switch),
       cmocka_unit_test(test_ctaphid_large_rx_session_cleanup),

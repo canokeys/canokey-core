@@ -346,9 +346,17 @@ Use this helper for any response that does not fit `APDU_BUFFER_SIZE` instead of
 
 ### CTAP transport entrypoints
 
-APDU transports (CCID, WebUSB and NFC) require an explicit FIDO SELECT by AID
-(`00 A4 04 00 08 A0000006472F0001`) before CTAP/U2F commands. After a firmware
-restart or other initialization that clears selection, clients must SELECT again.
+APDU transports require an explicit FIDO SELECT before CTAP/U2F commands.
+CCID and WebUSB require the same private management SELECT `00 A4 04 00 08 F043414E4F464944`;
+NFC uses the standard SELECT `00 A4 04 00 08 A0000006472F0001`.
+The USB SELECT accepts the exact eight-byte AID, with absent Le or Le `00`,
+returns `U2F_V2 / 9000`, requires no PIN, and writes no persistent data. CTAP
+commands retain their existing size, continuation, permission and retry rules.
+A rejected CCID/WebUSB SELECT clears an existing FIDO selection, preventing subsequent
+U2F_VERSION discovery from inheriting it. The private AID shares no existing
+applet prefix, including on older firmware with prefix matching. This changes
+discovery only; PIN, touch and credential permissions still apply.
+After a firmware restart or other initialization that clears selection, clients must SELECT again.
 FIDO-shaped commands do not implicitly select an applet and return `6A82` when
 none is selected. This includes chained and CCID extended FIDO APDUs.
 A successful CCID slot power-on/off (including PC/SC `SCARD_RESET_CARD`)

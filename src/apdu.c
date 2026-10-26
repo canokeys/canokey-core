@@ -37,6 +37,8 @@ static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
 static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
 static const uint8_t FIDO_AID[] = {0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01};
+// Private USB management AID, outside existing applet prefixes even on older firmware.
+static const uint8_t FIDO_USB_AID[] = {0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44};
 #if ENABLE_APPLET_NDEF
 static const uint8_t NDEF_AID[] = {0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01};
 #endif
@@ -61,7 +63,10 @@ static const uint8_t AID_Size[] = {
 #endif
 };
 
-static uint8_t aid_matches(uint8_t applet, const uint8_t *candidate, uint16_t len) {
+static uint8_t aid_matches(uint8_t applet, const uint8_t *candidate, uint16_t len, apdu_transport_t transport) {
+  if (applet == APPLET_FIDO && (transport == APDU_TRANSPORT_CCID || transport == APDU_TRANSPORT_WEBUSB)) {
+    return len == sizeof(FIDO_USB_AID) && memcmp(candidate, FIDO_USB_AID, len) == 0;
+  }
   if (applet == APPLET_PIV) {
     // Keep the widely deployed RID-only selector in addition to the two forms in SP 800-73.
     if (len != PIV_AID_COMPAT_RID_SIZE && len != PIV_AID_RIGHT_TRUNCATED_SIZE && len != sizeof(PIV_AID)) return 0;
@@ -555,7 +560,7 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
     }
     uint8_t i, end = APPLET_ENUM_END;
     for (i = APPLET_NULL + 1; i != end; ++i) {
-      if (aid_matches(i, DATA, LC)) {
+      if (aid_matches(i, DATA, LC, transport)) {
         if (!applet_enabled_on_transport((enum APPLET)i, transport)) {
           disabled_applet_response(rapdu);
           DBG_MSG("applet disabled: %d\n", i);
@@ -582,6 +587,13 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
       }
     }
     if (i == end) {
+      // A rejected OS probe must not inherit an earlier private FIDO SELECT
+      // through its subsequent legacy U2F_VERSION fallback.
+      if ((transport == APDU_TRANSPORT_CCID || transport == APDU_TRANSPORT_WEBUSB) && current_applet == APPLET_FIDO) {
+        ctap_deselect();
+        fido_capdu_reset();
+        current_applet = APPLET_NULL;
+      }
       LL = 0;
       SW = SW_FILE_NOT_FOUND;
       DBG_MSG("applet not found\n");
