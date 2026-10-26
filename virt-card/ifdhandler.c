@@ -43,7 +43,22 @@ static uint8_t is_fido_pcsc_apdu(const uint8_t *buf, DWORD len) {
   return is_native_u2f_extended_apdu(buf, len);
 }
 
-static uint8_t transmit_xfrblock(DWORD Lun, const uint8_t *tx, DWORD tx_len) {
+static uint8_t transmit_xfrblock(DWORD Lun, const uint8_t *tx, DWORD tx_len, uint8_t nfc) {
+  if (nfc) {
+    // PC/SC is also the host interface for simulated NFC. Do not apply USB
+    // applet discovery policy to this transport (including GET RESPONSE).
+    CAPDU capdu = {.data = shared_io_buffer};
+    RAPDU rapdu = {.data = bulkin_data.abData};
+    if (build_capdu(&capdu, tx, tx_len) < 0) {
+      rapdu.sw = SW_WRONG_LENGTH;
+    } else {
+      process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
+    }
+    bulkin_data.abData[rapdu.len] = HI(rapdu.sw);
+    bulkin_data.abData[rapdu.len + 1] = LO(rapdu.sw);
+    ccid_put_le32(bulkin_data.dwLength, rapdu.len + 2);
+    return SLOT_NO_ERROR;
+  }
   // Core CCID maintains a single global bulk endpoint state; the virt-card is
   // single-slot, so we ignore Lun beyond stamping it into bSlot.
   uint8_t *abData = tx_len <= SHORT_ABDATA_SIZE ? bulkout_data.abDataShort : shared_io_buffer;
@@ -151,8 +166,9 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
     *RxLength = 0;
     return IFD_ERROR_INSUFFICIENT_BUFFER;
   }
-  const uint8_t aggregate_get_response = is_nfc() && is_fido_pcsc_apdu(TxBuffer, TxLength);
-  uint8_t ret = transmit_xfrblock(Lun, TxBuffer, TxLength);
+  const uint8_t nfc = is_nfc();
+  const uint8_t aggregate_get_response = nfc && is_fido_pcsc_apdu(TxBuffer, TxLength);
+  uint8_t ret = transmit_xfrblock(Lun, TxBuffer, TxLength, nfc);
   if (ret != SLOT_NO_ERROR) {
     *RxLength = 0;
     printf("warning: PC_to_RDR_XfrBlock returns %#x\n", ret);
@@ -166,8 +182,7 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
         return IFD_COMMUNICATION_ERROR;
       }
 
-      const uint16_t sw =
-          (uint16_t)(bulkin_data.abData[response_len - 2] << 8) | bulkin_data.abData[response_len - 1];
+      const uint16_t sw = (uint16_t)(bulkin_data.abData[response_len - 2] << 8) | bulkin_data.abData[response_len - 1];
       const DWORD data_len = response_len - 2;
       const uint8_t has_more = aggregate_get_response && (sw & 0xFF00) == 0x6100;
       const DWORD copy_len = has_more ? data_len : response_len;
@@ -186,7 +201,7 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
       }
 
       static const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
-      ret = transmit_xfrblock(Lun, get_response, sizeof(get_response));
+      ret = transmit_xfrblock(Lun, get_response, sizeof(get_response), nfc);
       if (ret != SLOT_NO_ERROR) {
         *RxLength = 0;
         printf("warning: PC_to_RDR_XfrBlock(GET RESPONSE) returns %#x\n", ret);
