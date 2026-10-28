@@ -45,7 +45,7 @@ static uint8_t ctap_cbor_value_cancel_status(const CborValue *val) {
 static bool ctap_cbor_can_read_bytes(void *token, size_t len) {
   ctap_cbor_reader_t *reader = (ctap_cbor_reader_t *)token;
   if (!reader->src) return false;
-  (void)ctap_cbor_source_cancelled(reader->src);
+  if (ctap_cbor_source_cancelled(reader->src)) return false;
   if (reader->offset > reader->src->len) return false;
   return len <= reader->src->len - reader->offset;
 }
@@ -54,7 +54,7 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t 
   ctap_cbor_reader_t *reader = (ctap_cbor_reader_t *)token;
   uint8_t *buf = dst != NULL ? (uint8_t *)dst : reader->scratch;
   if (!reader->src || !reader->src->read || !buf) return NULL;
-  (void)ctap_cbor_source_cancelled(reader->src);
+  if (ctap_cbor_source_cancelled(reader->src)) return NULL;
   if (reader->offset > reader->src->len) return NULL;
   if (len > sizeof(reader->scratch) && dst == NULL) return NULL;
   if (offset > reader->src->len - reader->offset || len > reader->src->len - reader->offset - offset) return NULL;
@@ -72,7 +72,7 @@ static void ctap_cbor_advance_bytes(void *token, size_t len) {
 static CborError ctap_cbor_transfer_string(void *token, const void **userptr, size_t offset, size_t len) {
   ctap_cbor_reader_t *reader = (ctap_cbor_reader_t *)token;
   if (!reader->src || !reader->src->read) return CborErrorIO;
-  (void)ctap_cbor_source_cancelled(reader->src);
+  if (ctap_cbor_source_cancelled(reader->src)) return CborErrorIO;
   if (reader->offset > reader->src->len) return CborErrorUnexpectedEOF;
   if (offset > reader->src->len - reader->offset || len > reader->src->len - reader->offset - offset)
     return CborErrorUnexpectedEOF;

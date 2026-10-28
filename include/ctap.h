@@ -15,18 +15,10 @@ typedef enum {
   CTAP_SRC_HID,
 } ctap_src_t;
 
-typedef int (*ctap_req_read_t)(void *ctx, size_t offset, uint8_t *buf, size_t len);
-typedef int (*ctap_req_cancelled_t)(void *ctx);
-typedef void (*ctap_req_close_t)(void *ctx);
-
-typedef struct {
-  ctap_req_read_t read;
-  ctap_req_cancelled_t cancelled;
-  ctap_req_close_t close;
-  void *ctx;
-  size_t base_offset;
-  size_t len;
-} ctap_req_src_t;
+typedef apdu_request_read_t ctap_req_read_t;
+typedef apdu_request_cancelled_t ctap_req_cancelled_t;
+typedef apdu_request_close_t ctap_req_close_t;
+typedef apdu_request_source_t ctap_req_src_t;
 
 uint8_t ctap_install(uint8_t reset);
 void ctap_poweroff(void);

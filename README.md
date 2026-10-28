@@ -39,6 +39,20 @@ can time out macOS smartcard discovery during FIDO authentication. APDU tests
 cover prompt replies, preservation of CTAP state, and complete/fragmented
 refused requests across HID session release.
 
+While CCID itself is busy, a second command is fully drained and answered
+with its own sequence and CCID `CMD_SLOT_BUSY` (`E0`), without replacing the
+active command or response. A separate ten-byte response header and OUT
+backpressure bound the queue; no second APDU payload buffer is allocated.
+
+CCID ABORT is not supported: its class control request stalls, and an idle
+bulk `PC_to_RDR_Abort` reports `CMD_NOT_SUPPORTED`. A competing bulk command
+while CCID is busy receives `CMD_SLOT_BUSY`, including ABORT. Host cancellation
+does not terminate a running device operation; user-presence waits end through
+touch or their existing timeout. Host APDU tests cover contention, fragmented
+refusals, 32-bit drain lengths, backpressure and preservation of the active
+command/response. No watchdog, continuation expiry or WebUSB timing change is
+introduced.
+
 USB arbitration separates one persistent APDU card context from the single
 execution workspace. Native HID CBOR/MSG activity preserves an idle OpenPGP
 selection and PIN authorization; it does not run global applet poweroff.
@@ -55,10 +69,17 @@ An ordinary completed APDU can yield; crypto and touch waits remain serialized.
 
 CCID and WebUSB share one APDU context. A change between those owners resets
 selection and authorization in the main loop before dispatch, requiring a fresh
-SELECT/PIN. A failed receive reservation never performs this cleanup. Extended
-CCID PKE staging requires an established matching context (or a fresh context);
-a foreign owner must first SELECT with an ordinary APDU. Same-CCID clients remain
-indistinguishable and need PC/SC transactions for mutual exclusion.
+SELECT/PIN. A failed receive reservation never performs this cleanup. Same-CCID
+clients remain indistinguishable and need PC/SC transactions for mutual exclusion.
+
+CCID supports short APDUs only, with at most 261 command bytes (271 including
+the CCID header). The USB descriptor advertises short APDU exchange and
+`dwMaxIFSD=254`. Oversized XfrBlock payloads are completely drained without
+reserving shared APDU/PKE storage and return CCID length error `0x01`. Bounded
+extended encodings, including tiny Case 2E/3E/4E commands, return `6700` before
+applet dispatch, without PIN or persistent-state effects. Large logical commands
+and responses continue to use short APDU chaining; standalone CCID extended
+requests are not staged in PKE. NFC has its own extended APDU support.
 
 USB reset/configuration callbacks publish an epoch and gate old callbacks and
 new reservations. Cleanup and interface initialization run at main-loop entry,
@@ -295,6 +316,38 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
 5. You should call the `device_loop` or `nfc_loop` in the main loop, and the `device_update_led` in a periodic interrupt. 
 
 6. You should call the `set_touch_result` to report touch sensing result, and `set_nfc_state` to report NFC state.
+
+## NFC FIDO extended APDUs
+
+After standard FIDO SELECT (`A0000006472F0001`), NFC accepts short command
+chaining and standalone extended `80 10` Case 3E/4E commands. The CTAP body,
+including its command byte, is bounded by GetInfo's `maxMsgSize` / PKE staging
+capacity. Larger valid envelopes return `CTAP2_ERR_REQUEST_TOO_LARGE / 9000`;
+malformed complete envelopes return `6700`. The shared APDU buffer stays small.
+Rejected envelopes drain to the final I-block; PKE write failures return `6900`
+after draining. NFCCTAP_MSG accepts P1=00/80 and P2=00. `80 12 01 00`
+(END CTAP_MSG) deselects FIDO and requires another explicit SELECT.
+
+Extended FIDO responses stream as one ISO-DEP response across internal chunk
+boundaries, whether SELECT had absent Le or Le=00. Short commands retain
+`61xx` / GET RESPONSE. An explicit finite Le limits the response and leaves
+its remainder available through GET RESPONSE. This transport extension does
+not change CTAP PIN, user-presence or credential-storage rules.
+
+RF interrupts invalidate work; resource cleanup runs after synchronous commands
+unwind. A new activation requires SELECT again. Cancellation cannot roll back
+an operation that already reached credential storage or counter updates.
+
+`test_apdu` includes `test/nfc-transport.inc`, which exercises real `nfc.c`
+with mocked FM11NT I/O: large MC/GA lists, PIN protocols 1/2, verified ES256
+assertions, GNA, ML-DSA responses, PKE poisoning, frame retransmission,
+length boundaries and cancellation. Run the normal CMocka build/CTest commands.
+The synthetic 422-byte MC fixture verifies attestation signatures with a
+configured PIN. Maximum-fragment largeBlobs get/set, exact CM/config authorization,
+unknown CBOR values, and bounded recursive skipping also have transport coverage.
+Hardware acceptance additionally requires NFC registration and assertion,
+WTX under NFC power, interruption recovery and stack measurement; host mocks
+do not establish radio timing or power behavior.
 
 ## Fuzz testing
 

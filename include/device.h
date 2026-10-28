@@ -168,4 +168,7 @@ uint8_t fm_crc8(const uint8_t *data, const uint8_t data_length);
 static inline void fm11_init(void) {}
 #endif
 
+// Main-loop only: abandon applet security, request and response continuations.
+void device_applet_context_reset(void);
+
 #endif // _DEVICE_H_

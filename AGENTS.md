@@ -317,17 +317,20 @@ Forbidden PKE staging uses:
 - Keep offsets into PKE for later verification, hashing, file writes, or response streaming.
 - Read PKE-backed request bytes after keepalive, `WAIT()`, PIN/UV-token verification, credential key generation, assertion signing, ML-DSA streaming, or any operation that may call crypto.
 
-### APDU transport: chaining, with one bounded extended-length exception
+### APDU transport: chaining, with a bounded FIDO extended-length exception
 
-**Rule: use ISO 7816-4 command/response chaining (`CAPDU_CHAINING` / `RAPDU_CHAINING`), not extended-length APDUs, for all multi-block data.**
+**Rule: use ISO 7816-4 command/response chaining (`CAPDU_CHAINING` / `RAPDU_CHAINING`) for generic multi-block data. FIDO over NFC also supports the bounded standalone extended request below.**
 
 - `APDU_BUFFER_SIZE` is 256 bytes (one short APDU payload). `APDU_COMMAND_BUFFER_SIZE = APDU_BUFFER_SIZE + 32 = 288 bytes`.
 - `APDU_INCOMING_DATA_SIZE` is an alias for `APDU_COMMAND_BUFFER_SIZE` (288). Chained reassembly in `apdu_input` accumulates up to that limit, so applet bounds checks should compare against `APDU_INCOMING_DATA_SIZE`, not the raw 256-byte payload size.
-- Extended-length APDUs are not supported in the standard transport path. The only exception is a standalone FIDO
-  `80 10` command received over CCID: its payload may be staged directly in PKE RAM up to `PKE_BUFFER_SIZE`, without
-  increasing `APDU_BUFFER_SIZE`. Other applets and transports must not rely on this exception.
-- Large request data (e.g. RSA key import, FIDO2 CBOR) must be sent by the host as chained `CLA=0x10` commands; `apdu_input` reassembles them transparently.
-- Large response data is returned via `GET RESPONSE` chaining; `apdu_output` handles segmentation transparently.
+- A standalone FIDO `80 10` extended command over NFC may stage its body directly in PKE RAM up to
+  `CTAP_MAX_REQUEST_SIZE` (`pke_buffer_size()`), without increasing `APDU_BUFFER_SIZE`. Other applets and transports
+  must not rely on this exception. An explicit transport-appropriate FIDO SELECT is required.
+- Generic large requests (e.g. RSA key import) use command chaining; FIDO2 CBOR supports both command chaining and
+  the standalone extended encoding above. Transport frame aggregation is separate from APDU command chaining.
+- Large responses use `apdu_output` / response sources. NFC extended FIDO commands aggregate internal chunks into one
+  ISO-DEP response, independently of SELECT's Le; short commands retain external `61xx` / `GET RESPONSE` chaining.
+  A finite extended Le remains a real limit and preserves the unsent response for a subsequent `GET RESPONSE`.
 - The RAPDU chain store (`rapdu_chaining.rapdu.data`) aliases the transport I/O buffer (`shared_io_buffer`, which is the CCID Bulk-IN buffer or the NFC I-block buffer). Transports stamp the SW trailer at `buffer[LL..LL+1]` after each command, which lands on the first pending response bytes whenever the just-sent chunk is short — an empty first chunk (Le absent) is the worst case, leaving `sent == 0`. `apdu_output` saves the pending prefix into the static `response_tail` after each partial chunk and restores it before the next chunk; the saved tail is invalidated only when a new non-`GET RESPONSE` command is dispatched (`process_apdu_from` / `apdu_process_streaming_message`) or the chain completes, never on `sent == 0` alone.
 - A `GET RESPONSE` with no pending chain and no active response source is rejected with `SW_COMMAND_NOT_ALLOWED` on both the generic path (`process_apdu_from`) and the applet streaming path (`apdu_process_streaming_message`).
 - A pending RAPDU chain is abandoned as soon as any new non-`GET RESPONSE` command is dispatched (`process_apdu_from` / `apdu_process_streaming_message` clear both `rapdu.len` and `sent`; chaining handlers re-establish `rapdu.len` for the new response). This matters because handlers like OATH/ADMIN write only the transport RAPDU: if a stale `rapdu.len` survived with a reset `sent`, a later `GET RESPONSE` would serve leftover shared-buffer bytes with the old SW=9000. Chain state is also dropped on explicit card-context reset (`device_applet_context_reset()` calls `apdu_rapdu_chain_reset()` and `apdu_fido_chain_reset()`). Ordinary execution release preserves chains. Cross-transport preemption mid-chain remains blocked by `apdu_session_can_preempt()` regardless of idle time; the owner must complete or explicitly abandon the chain, or reset the card.
@@ -358,7 +361,7 @@ applet prefix, including on older firmware with prefix matching. This changes
 discovery only; PIN, touch and credential permissions still apply.
 After a firmware restart or other initialization that clears selection, clients must SELECT again.
 FIDO-shaped commands do not implicitly select an applet and return `6A82` when
-none is selected. This includes chained and CCID extended FIDO APDUs.
+none is selected. This includes chained and NFC extended FIDO APDUs. CCID rejects extended encoding with `6700` before applet dispatch.
 A successful CCID slot power-on/off (including PC/SC `SCARD_RESET_CARD`)
 clears applet selection as well as security and chain state; SELECT is required
 again. A refused reset must preserve the active session. Ordinary session
@@ -382,11 +385,34 @@ independent of APDU applet selection.
 CTAP over `CCID` / `WebUSB` / NFC APDU:
 
 - Short request bodies live in `shared_io_buffer` only for the current APDU processing call. They are not long-lived across transport re-entry, `device_loop()`, session yield, or response streaming.
-- CCID `XfrBlock`, WebUSB control requests, and NFC I-block aggregation are bounded by `APDU_COMMAND_BUFFER_SIZE`.
-- A standalone FIDO `80 10` Extended APDU over CCID may exceed `APDU_COMMAND_BUFFER_SIZE`: CCID strips the 7/9-byte
-  APDU envelope while receiving USB packets and writes only the CBOR payload to PKE RAM. The CTAP parser must consume
-  that source immediately and release it before user-presence waits or crypto.
-- FIDO APDU chaining is separate from transport frame aggregation. Once the FIDO APDU body spans multiple APDUs or exceeds the short incoming data limit, `fido_apdu_input()` stages the accumulated payload in PKE and dispatches through `ctap_process_pke_apdu_with_src()`.
+- CCID accepts short APDUs only: `XfrBlock` is at most 261 bytes (271 including the CCID header).
+  Its descriptor advertises short APDU exchange, `dwMaxIFSD=254`, and the matching message bound.
+  Oversized commands are fully drained without reserving APDU/PKE storage, then return CCID length error `0x01`;
+  bounded extended encodings (including Case 2E/3E/4E) return `6700` before applet dispatch.
+  Short APDU command/response chaining remains available for large logical messages.
+- WebUSB control requests and ordinary NFC I-block aggregation are bounded by `APDU_COMMAND_BUFFER_SIZE`.
+- A standalone FIDO `80 10` extended APDU over NFC may exceed that size: the transport removes the 7/9-byte
+  envelope while receiving frames and stages only the CTAP body in PKE. `process_apdu_source_from` accepts an explicit
+  request source, rejects direct-memory applet dispatch, and closes sources on early rejection as well as completion.
+  The CTAP parser consumes and closes the source before user-presence waits or crypto. MC/GA authorization and storage
+  effects remain normal CTAP behavior; receiving an envelope itself writes no credentials.
+- NFC accepts Case 3E/4E, including headers/Le split across I-blocks. Malformed complete envelopes return `6700`;
+  valid over-limit bodies are drained and return `CTAP2_ERR_REQUEST_TOO_LARGE / 9000`. Retransmission resends cached
+  frame bytes without rereading forward-only responses. RF reset/cancellation is latched until main-loop cleanup:
+  IRQs must never clear request PKE or close a response underneath synchronous parser/crypto work. Reconnect requires
+  SELECT again; a cancelled operation already executing may still complete its persistent write.
+- `test/nfc-transport.inc`, included by `test_apdu`, drives the real NFC state machine with mocked FM11NT I/O.
+  Keep large MC and GA, GNA, PIN protocols 1/2, staging poisoning, streamed responses, retransmission, finite Le,
+  wide envelope totals and deferred cancellation covered when changing either transport or dispatch.
+- NFC RX uses explicit inline/PKE/discard/malformed envelope modes independently of PKE ownership. Complete malformed
+  requests drain to the final I-block and return `6700`; PKE write failures also drain, then return `6900`.
+  New requests close abandoned response generators before staging can reuse PKE. `80 12 01 00` ends the NFC FIDO
+  selection; subsequent CTAP commands require another standard SELECT. P1=80 may receive synchronous completion.
+- The CBOR external-string window covers a full CTAP message, including unknown values larger than the largeBlobs
+  fragment limit. TinyCBOR recursive skipping is bounded to four container levels to protect the device stack.
+- `largeBlobs.get` reuses the segmented MC response engine for a small memory prefix and file-backed fragment.
+  Do not read a maximum fragment directly into the shared encoder window. Its HID and APDU paths must both stream.
+- FIDO APDU chaining is separate from transport frame aggregation. For a chained FIDO command, `fido_apdu_input()` stages the first and subsequent fragments in PKE and dispatches through `ctap_process_apdu_source_with_src()`.
 - Chained FIDO APDU input in PKE follows the same lifetime rule as CTAPHID PKE-backed RX: it is valid only for immediate parser consumption.
 - `process_apdu()` may clear the PKE-backed FIDO request after the first `apdu_output()` call. APDU response sources must never depend on request PKE.
 - NFC mode bypasses user-presence polling because the platform does not initialize LED or touch scanning there. Long NFC operations rely on transport-level WTX and must not persist request snapshots for touch polling.
@@ -401,10 +427,10 @@ CTAP over `CCID` / `WebUSB` / NFC APDU:
 | `getInfo` | No request body beyond command byte | No | Yes | Emit const/static response segments with small dynamic patches. |
 | `clientPIN` | No | Crypto only | Usually no | Parser copies encrypted inputs, key agreement, permissions, RP hash, and auth parameters before crypto. |
 | `credentialManagement` | Sometimes | Sometimes | Yes | `subCommandParams` may be needed for PIN-token verification; materialize exactly those bytes or compute/verify while the source is valid. Do not keep a PKE-backed reread source across keepalive or crypto. |
-| `largeBlobs` | Yes for `set` | Yes | Limited | `set` bytes are needed for SHA-256/PIN-token verification and later `LB_FILE_TMP` writes. Do not pre-write unauthenticated `set` bytes to LittleFS and do not keep PKE offsets across verification unless every supported platform proves that path cannot clobber PKE. |
+| `largeBlobs` | Yes for `set` | Yes | Yes (`get`) | `set` copies its bounded semantic fragment before closing input, then verifies authorization and writes `LB_FILE_TMP`. `get` streams from the existing file. Never retain raw PKE offsets across verification. |
 | `selection` | No request body beyond command byte | UP wait | No | Only performs user-presence wait. |
 | `reset` | No request body beyond command byte | No | No | Time-gated reset only. |
-| `config` | No | No | No | Currently unhandled. |
+| `config` | Exact authenticated bytes | Yes | No | Preserve the raw subcommand parameter bytes before closing input; verify authorization against those exact bytes. |
 
 For `largeBlobs.set`, choose and document one command-specific contract before enabling source-backed PKE input: prove PIN-token verification cannot clobber PKE, materialize exactly the `set` fragment within the shared scratch budget, or redesign the handler so authorization happens before any second payload use.
 

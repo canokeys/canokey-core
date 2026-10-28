@@ -13,11 +13,18 @@
 #define CCID_STATE_PROCESS_DATA 4
 #define CCID_STATE_DISCARD_DATA 5
 #define CCID_STATE_DATA_IN_TIME_EXTENSION 6
+#define CCID_STATE_DATA_IN_AUXILIARY 7
+
+#define CCID_TX_RESPONSE 0
+#define CCID_TX_TIME_EXTENSION 1
+#define CCID_TX_AUXILIARY 2
 
 uint8_t USBD_CCID_Init(USBD_HandleTypeDef *pdev);
 uint8_t USBD_CCID_DataIn(USBD_HandleTypeDef *pdev);
 uint8_t USBD_CCID_DataOut(USBD_HandleTypeDef *pdev);
+void USBD_CCID_ServiceReceive(void);
+uint8_t CCID_Response_IsIdle(void);
 uint8_t CCID_Response_SendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uint16_t len,
-                               uint8_t is_time_extension_request);
+                               uint8_t kind);
 
 #endif // _USBD_CCID_H_
