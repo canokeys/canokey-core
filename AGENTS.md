@@ -412,7 +412,11 @@ CTAP over `CCID` / `WebUSB` / NFC APDU:
   New requests close abandoned response generators before staging can reuse PKE. `80 12 01 00` ends the NFC FIDO
   selection; subsequent CTAP commands require another standard SELECT. P1=80 may receive synchronous completion.
 - The CBOR external-string window covers a full CTAP message, including unknown values larger than the largeBlobs
-  fragment limit. TinyCBOR recursive skipping is bounded to four container levels to protect the device stack.
+  fragment limit. It lives in shared session scratch, disjoint from parsed MC/GA state and response metadata,
+  without increasing the scratch allocation. Parsers run serially under the applet session; window pointers must not
+  survive parsing. MC retains the minPinLength authorization decision computed from the exact full RP ID, not a
+  second RP string or its truncated storage form. TinyCBOR recursive skipping is bounded to four container levels
+  to protect the device stack. Latched source cancellation takes precedence over CBOR read/EOF errors.
 - `largeBlobs.get` reuses the segmented MC response engine for a small memory prefix and file-backed fragment.
   Do not read a maximum fragment directly into the shared encoder window. Its HID and APDU paths must both stream.
 - FIDO APDU chaining is separate from transport frame aggregation. For a chained FIDO command, `fido_apdu_input()` stages the first and subsequent fragments in PKE and dispatches through `ctap_process_apdu_source_with_src()`.

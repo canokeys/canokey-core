@@ -9,6 +9,7 @@ static unsigned nfc_test_releases;
 static int nfc_test_io_fail;
 static unsigned nfc_test_reset_on_read, nfc_test_reset_on_release;
 static bool nfc_test_reset_on_tx;
+static bool nfc_test_read_succeeds_after_reset;
 static void (*nfc_test_on_tx_enable)(void);
 static unsigned nfc_test_fail_read, nfc_test_fail_write;
 static unsigned nfc_test_retry_on_write;
@@ -27,7 +28,7 @@ static int nfc_test_read_request(void *ctx, size_t offset, uint8_t *buf, size_t 
     nfc_test_halt();
     nfc_test_loop(); // synchronous parser must prevent reentrant cleanup
     assert_int_equal(nfc_test_releases, released);
-    return -1;
+    if (!nfc_test_read_succeeds_after_reset) return -1;
   }
   return apdu_request_read_pke(ctx, offset, buf, len);
 }
@@ -170,6 +171,7 @@ static void nfc_test_fixture(bool le) {
   nfc_test_io_fail = 0;
   nfc_test_reset_on_read = nfc_test_reset_on_release = 0;
   nfc_test_reset_on_tx = false;
+  nfc_test_read_succeeds_after_reset = false;
   nfc_test_on_tx_enable = NULL;
   nfc_test_fail_read = nfc_test_fail_write = 0;
   nfc_test_retry_on_write = 0;
@@ -934,14 +936,18 @@ static void test_nfc_large_lists_and_continuations(void **unused) {
 static void test_nfc_deferred_cancellation(void **unused) {
   (void)unused;
   uint8_t body[1200], cmd[1210], out[1024];
-  for (unsigned phase = 0; phase < 4; ++phase) {
+  for (unsigned phase = 0; phase < 5; ++phase) {
     nfc_test_fixture(true);
     memset(body, 0, sizeof(body));
     body[0] = CTAP_GET_INFO;
-    size_t body_len = phase < 2 ? nfc_test_mc_body(body, COSE_ALG_ES256, 9, true, NULL, 0) : 413;
+    size_t body_len = (phase < 2 || phase == 4) ? nfc_test_mc_body(body, COSE_ALG_ES256, 9, true, NULL, 0) : 413;
     size_t len = nfc_test_extended(cmd, body, body_len, 0);
     if (phase == 0) nfc_test_reset_on_read = 12; // inside MC's external CBOR parser
     if (phase == 1) nfc_test_reset_on_release = 1;
+    if (phase == 4) {
+      nfc_test_reset_on_read = 12;
+      nfc_test_read_succeeds_after_reset = true;
+    }
     for (size_t off = 0; off < len;) {
       size_t n = MIN(29, len - off);
       if (phase == 3 && off + n == len) nfc_test_reset_on_tx = true;
@@ -951,8 +957,12 @@ static void test_nfc_deferred_cancellation(void **unused) {
     if (phase == 2) {
       assert_true(apdu_response_source_active());
       nfc_test_halt();
-    } else if (phase < 2)
+    } else if (phase < 2 || phase == 4)
       assert_int_equal(nfc_test_tx_len, 0);
+    if (phase == 4) {
+      assert_int_equal(apdu_resp.len, 1);
+      assert_int_equal(apdu_resp.data[0], CTAP2_ERR_KEEPALIVE_CANCEL);
+    }
     assert_true(cleanup_pending);
     assert_int_equal(nfc_test_releases, 1);
     nfc_test_loop();

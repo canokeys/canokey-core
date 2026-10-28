@@ -576,7 +576,7 @@ static int ctap_min_pin_rpids_store(const CTAP_config *cfg) {
   return 0;
 }
 
-static bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len) {
+bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len) {
   if (!rp_id || rp_id_len == 0 || rp_id_len > DOMAIN_NAME_MAX_SIZE) return false;
 
   int size = get_file_size(MIN_PIN_RPIDS_FILE);
@@ -2026,8 +2026,7 @@ step12:
   cp_clear_pin_uv_auth_token_permissions_except_lbw();
 
   // 15. If the extensions parameter is present:
-  bool ext_min_pin_authorized =
-      mc->ext_min_pin_length && ctap_min_pin_rpid_authorized(mc->rp_id_full, mc->rp_id_full_len);
+  bool ext_min_pin_authorized = mc->ext_min_pin_length && mc->min_pin_rpid_authorized;
   if (mc->ext_large_blob_key) {
     if (mc->options.rk != OPTION_TRUE) {
       DBG_MSG("largeBlobKey requires rk\n");

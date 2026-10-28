@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "ctap-parser.h"
+#include "applet-scratch.h"
 #include "cose-key.h"
 #include "ctap-errors.h"
 #include "secret.h"
@@ -23,11 +24,15 @@ extern CTAP_sm2_attr ctap_sm2_attr;
 typedef struct {
   const ctap_req_src_t *src;
   size_t offset;
-  uint8_t scratch[MAX_CTAP_EXTERNAL_STRING_CHUNK];
 } ctap_cbor_reader_t;
 
 static bool ctap_cbor_source_cancelled(const ctap_req_src_t *src) {
   return src && src->cancelled && src->cancelled(src->ctx);
+}
+
+// Reader cancellation may otherwise surface as a TinyCBOR I/O or EOF error.
+static uint8_t ctap_parser_source_result(const ctap_req_src_t *src, uint8_t status) {
+  return ctap_cbor_source_cancelled(src) ? CTAP2_ERR_KEEPALIVE_CANCEL : status;
 }
 
 static uint8_t ctap_cbor_value_cancel_status(const CborValue *val) {
@@ -52,11 +57,11 @@ static bool ctap_cbor_can_read_bytes(void *token, size_t len) {
 
 static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t len) {
   ctap_cbor_reader_t *reader = (ctap_cbor_reader_t *)token;
-  uint8_t *buf = dst != NULL ? (uint8_t *)dst : reader->scratch;
+  uint8_t *buf = dst != NULL ? (uint8_t *)dst : applet_session_scratch.ctap_reader;
   if (!reader->src || !reader->src->read || !buf) return NULL;
   if (ctap_cbor_source_cancelled(reader->src)) return NULL;
   if (reader->offset > reader->src->len) return NULL;
-  if (len > sizeof(reader->scratch) && dst == NULL) return NULL;
+  if (len > sizeof(applet_session_scratch.ctap_reader) && dst == NULL) return NULL;
   if (offset > reader->src->len - reader->offset || len > reader->src->len - reader->offset - offset) return NULL;
   if (reader->src->read(reader->src->ctx, reader->src->base_offset + reader->offset + offset, buf, len) < 0)
     return NULL;
@@ -76,10 +81,11 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si
   if (reader->offset > reader->src->len) return CborErrorUnexpectedEOF;
   if (offset > reader->src->len - reader->offset || len > reader->src->len - reader->offset - offset)
     return CborErrorUnexpectedEOF;
-  if (len > sizeof(reader->scratch)) return CborErrorOutOfMemory;
-  if (reader->src->read(reader->src->ctx, reader->src->base_offset + reader->offset + offset, reader->scratch, len) < 0)
+  if (len > sizeof(applet_session_scratch.ctap_reader)) return CborErrorOutOfMemory;
+  if (reader->src->read(reader->src->ctx, reader->src->base_offset + reader->offset + offset,
+                        applet_session_scratch.ctap_reader, len) < 0)
     return CborErrorIO;
-  if (userptr != NULL) *userptr = reader->scratch;
+  if (userptr != NULL) *userptr = applet_session_scratch.ctap_reader;
   reader->offset += offset + len;
   return CborNoError;
 }
@@ -100,7 +106,7 @@ static uint8_t ctap_parser_init(CborParser *parser, CborValue *it, const uint8_t
 static uint8_t ctap_parser_init_src(CborParser *parser, CborValue *it, ctap_cbor_reader_t *reader,
                                     const ctap_req_src_t *src) {
   if (!src || !src->read) return CTAP2_ERR_INVALID_CBOR;
-  memset(reader, 0, sizeof(*reader));
+  reader->offset = 0;
   reader->src = src;
   const int ret = cbor_parser_init_reader(&ctap_cbor_reader_ops, parser, it, reader);
   CHECK_CBOR_RET(ret);
@@ -302,8 +308,9 @@ static uint8_t parse_rp(CTAP_make_credential *mc, CborValue *val) {
       CHECK_CBOR_RET(ret);
       domain[len] = 0;
       DBG_MSG("rp_id: %s\n", domain);
-      memcpy(mc->rp_id_full, domain, len);
-      mc->rp_id_full_len = len;
+      // Consume the exact RP ID while available; only the authorization
+      // decision must survive parsing, keepalive and crypto.
+      mc->min_pin_rpid_authorized = ctap_min_pin_rpid_authorized((const uint8_t *)domain, len);
       maybe_truncate_rpid(mc->rp_id, &mc->rp_id_len, (const uint8_t *)domain, len);
       sha256_raw((uint8_t *)domain, len, mc->rp_id_hash);
     } else {
@@ -1118,7 +1125,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_make_credential *mc, cons
 }
 
 uint8_t parse_make_credential_src(CborParser *parser, CTAP_make_credential *mc, const ctap_req_src_t *src, size_t len) {
-  return parse_make_credential_impl(parser, mc, NULL, len, src);
+  return ctap_parser_source_result(src, parse_make_credential_impl(parser, mc, NULL, len, src));
 }
 
 static uint8_t parse_get_assertion_impl(CborParser *parser, CTAP_get_assertion *ga, const uint8_t *buf, size_t len,
@@ -1237,7 +1244,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_get_assertion *ga, const ui
 }
 
 uint8_t parse_get_assertion_src(CborParser *parser, CTAP_get_assertion *ga, const ctap_req_src_t *src, size_t len) {
-  return parse_get_assertion_impl(parser, ga, NULL, len, src);
+  return ctap_parser_source_result(src, parse_get_assertion_impl(parser, ga, NULL, len, src));
 }
 
 static uint8_t parse_client_pin_impl(CborParser *parser, CTAP_client_pin *cp, const uint8_t *buf, size_t len,
@@ -1421,7 +1428,7 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_client_pin *cp, const uint8_t 
 }
 
 uint8_t parse_client_pin_src(CborParser *parser, CTAP_client_pin *cp, const ctap_req_src_t *src, size_t len) {
-  return parse_client_pin_impl(parser, cp, NULL, len, src);
+  return ctap_parser_source_result(src, parse_client_pin_impl(parser, cp, NULL, len, src));
 }
 
 static uint8_t parse_credential_management_impl(CborParser *parser, CTAP_credential_management *cm, const uint8_t *buf,
@@ -1530,7 +1537,7 @@ uint8_t parse_credential_management(CborParser *parser, CTAP_credential_manageme
 
 uint8_t parse_credential_management_src(CborParser *parser, CTAP_credential_management *cm, const ctap_req_src_t *src,
                                         size_t len) {
-  return parse_credential_management_impl(parser, cm, NULL, len, src);
+  return ctap_parser_source_result(src, parse_credential_management_impl(parser, cm, NULL, len, src));
 }
 
 static uint8_t parse_config_params(CTAP_config *cfg, CborValue *val, size_t *total_length) {
@@ -1689,7 +1696,7 @@ uint8_t parse_config(CborParser *parser, CTAP_config *cfg, const uint8_t *buf, s
 }
 
 uint8_t parse_config_src(CborParser *parser, CTAP_config *cfg, const ctap_req_src_t *src, size_t len) {
-  return parse_config_impl(parser, cfg, NULL, len, src);
+  return ctap_parser_source_result(src, parse_config_impl(parser, cfg, NULL, len, src));
 }
 
 static uint8_t parse_large_blobs_impl(CborParser *parser, CTAP_large_blobs *lb, const uint8_t *buf, size_t len,
@@ -1823,5 +1830,5 @@ uint8_t parse_large_blobs(CborParser *parser, CTAP_large_blobs *lb, const uint8_
 }
 
 uint8_t parse_large_blobs_src(CborParser *parser, CTAP_large_blobs *lb, const ctap_req_src_t *src, size_t len) {
-  return parse_large_blobs_impl(parser, lb, NULL, len, src);
+  return ctap_parser_source_result(src, parse_large_blobs_impl(parser, lb, NULL, len, src));
 }

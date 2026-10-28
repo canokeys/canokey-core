@@ -4704,6 +4704,63 @@ static int client_pin_length_source_read(void *ctx, size_t offset, uint8_t *buf,
   return 0;
 }
 
+static void test_make_credential_min_pin_exact_rpid(void **state) {
+  UNUSED(state);
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+  char domain[DOMAIN_NAME_MAX_SIZE + 1];
+  memset(domain, 'a', sizeof(domain) - 1);
+  domain[sizeof(domain) - 1] = 0;
+  CTAP_min_pin_rp_id allowed = {.len = DOMAIN_NAME_MAX_SIZE};
+  memcpy(allowed.id, domain, allowed.len);
+  assert_int_equal(write_file(MIN_PIN_RPIDS_FILE, &allowed, 0, sizeof(allowed), 1), 0);
+  uint8_t stored[MAX_STORED_RPID_LENGTH];
+  for (int source_backed = 0; source_backed < 2; ++source_backed) {
+    for (int match = 1; match >= 0; --match) {
+      // These full RP IDs have the same truncated stored representation.
+      domain[0] = match ? 'a' : 'b';
+      uint8_t req[1024], zero32[32] = {0}, *p = req;
+      *p++ = 0xA5;
+      *p++ = 1;
+      put_cbor_bytes(&p, zero32, sizeof(zero32));
+      *p++ = 2;
+      *p++ = 0xA1;
+      put_cbor_text(&p, "id");
+      put_cbor_text(&p, domain);
+      *p++ = 3;
+      *p++ = 0xA1;
+      put_cbor_text(&p, "id");
+      put_cbor_bytes(&p, zero32, 1);
+      *p++ = 4;
+      *p++ = 0x81;
+      *p++ = 0xA2;
+      put_cbor_text(&p, "alg");
+      put_cbor_int(&p, COSE_ALG_ES256);
+      put_cbor_text(&p, "type");
+      put_cbor_text(&p, "public-key");
+      *p++ = 6;
+      *p++ = 0xA1;
+      put_cbor_text(&p, "minPinLength");
+      *p++ = 0xF5;
+      CborParser parser;
+      CTAP_make_credential *mc = &applet_session_scratch.ctap_mc;
+      ctap_req_src_t source = {.read = client_pin_length_source_read, .ctx = req, .len = p - req};
+      assert_int_equal(source_backed ? parse_make_credential_src(&parser, mc, &source, p - req)
+                                     : parse_make_credential(&parser, mc, req, p - req),
+                       0);
+      assert_true(mc->ext_min_pin_length);
+      assert_int_equal(mc->min_pin_rpid_authorized, match);
+      assert_int_equal(mc->rp_id_len, sizeof(stored));
+      if (match)
+        memcpy(stored, mc->rp_id, sizeof(stored));
+      else
+        assert_memory_equal(stored, mc->rp_id, sizeof(stored));
+    }
+  }
+  assert_int_equal(write_file(MIN_PIN_RPIDS_FILE, NULL, 0, 0, 1), 0);
+}
+
 static void test_client_pin_encrypted_length_policy(void **state) {
   UNUSED(state);
   for (uint8_t protocol = 1; protocol <= 2; ++protocol) {
@@ -5255,6 +5312,7 @@ int main() {
       cmocka_unit_test(session_pending_response_pins_source),
       cmocka_unit_test(session_fido_sign_between_openpgp_apdus),
       cmocka_unit_test(test_client_pin_encrypted_length_policy),
+      cmocka_unit_test(test_make_credential_min_pin_exact_rpid),
       cmocka_unit_test(test_ccid_response_headers),
       cmocka_unit_test(test_fido_usb_private_management_select),
       cmocka_unit_test(test_rejected_usb_select_clears_fido_state),
