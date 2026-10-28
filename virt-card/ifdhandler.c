@@ -17,6 +17,7 @@
 const static UCHAR ATR[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x65,
                             0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0x99};
 static int applet_init = 0;
+static int previous_nfc = -1;
 
 extern ccid_bulkin_data_t bulkin_data;
 extern ccid_bulkout_data_t bulkout_data;
@@ -167,6 +168,12 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
     return IFD_ERROR_INSUFFICIENT_BUFFER;
   }
   const uint8_t nfc = is_nfc();
+  if (previous_nfc >= 0 && previous_nfc != nfc) {
+    // A simulated transport change is a card disconnect: discard SELECT,
+    // security state and pending continuations before accepting another APDU.
+    device_applet_session_clear();
+  }
+  previous_nfc = nfc;
   const uint8_t aggregate_get_response = nfc && is_fido_pcsc_apdu(TxBuffer, TxLength);
   uint8_t ret = transmit_xfrblock(Lun, TxBuffer, TxLength, nfc);
   if (ret != SLOT_NO_ERROR) {

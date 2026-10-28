@@ -32,7 +32,7 @@ enum APPLET {
 
 static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00};
 #define PIV_AID_RIGHT_TRUNCATED_SIZE 9
-#define PIV_AID_COMPAT_RID_SIZE      5
+#define PIV_AID_COMPAT_RID_SIZE 5
 static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
 static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
@@ -492,6 +492,15 @@ void release_apdu_interface(uint8_t session_owner, uint8_t buffer_owner) {
   device_applet_session_release((device_applet_session_owner_t)session_owner);
 }
 
+// Rejected USB probes must not inherit a prior private FIDO selection.
+static void reject_usb_fido_select(apdu_transport_t transport) {
+  if ((transport == APDU_TRANSPORT_CCID || transport == APDU_TRANSPORT_WEBUSB) && current_applet == APPLET_FIDO) {
+    ctap_deselect();
+    fido_capdu_reset();
+    current_applet = APPLET_NULL;
+  }
+}
+
 void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
 #if ENABLE_IFACE_KBDHID
   if (device_config_is_pass_enabled() && CLA == 0xFF && INS == 0xEE && P1 == 0xFF && P2 == 0xEE) {
@@ -554,6 +563,7 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
   rapdu_chaining.rapdu.len = 0;
   if (is_select_by_aid) {
     if (P2 != 0x00) {
+      reject_usb_fido_select(transport);
       LL = 0;
       SW = SW_WRONG_P1P2;
       return;
@@ -562,12 +572,14 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
     for (i = APPLET_NULL + 1; i != end; ++i) {
       if (aid_matches(i, DATA, LC, transport)) {
         if (!applet_enabled_on_transport((enum APPLET)i, transport)) {
+          reject_usb_fido_select(transport);
           disabled_applet_response(rapdu);
           DBG_MSG("applet disabled: %d\n", i);
           return;
         }
 #if ENABLE_APPLET_NDEF
         if (i == APPLET_NDEF && !device_config_is_ndef_enabled()) {
+          reject_usb_fido_select(transport);
           LL = 0;
           SW = SW_FILE_NOT_FOUND;
           DBG_MSG("NDEF is disable\n");
@@ -587,13 +599,7 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
       }
     }
     if (i == end) {
-      // A rejected OS probe must not inherit an earlier private FIDO SELECT
-      // through its subsequent legacy U2F_VERSION fallback.
-      if ((transport == APDU_TRANSPORT_CCID || transport == APDU_TRANSPORT_WEBUSB) && current_applet == APPLET_FIDO) {
-        ctap_deselect();
-        fido_capdu_reset();
-        current_applet = APPLET_NULL;
-      }
+      reject_usb_fido_select(transport);
       LL = 0;
       SW = SW_FILE_NOT_FOUND;
       DBG_MSG("applet not found\n");

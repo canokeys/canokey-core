@@ -353,8 +353,11 @@ The USB SELECT accepts the exact eight-byte AID, with absent Le or Le `00`,
 returns `U2F_V2 / 9000`, requires no PIN, and writes no persistent data. CTAP
 commands retain their existing size, continuation, permission and retry rules.
 A rejected CCID/WebUSB SELECT clears an existing FIDO selection, preventing subsequent
-U2F_VERSION discovery from inheriting it. The private AID shares no existing
-applet prefix, including on older firmware with prefix matching. This changes
+U2F_VERSION discovery from inheriting it, including rejected P2 values and disabled applets.
+The virtual PC/SC card treats a simulated USB/NFC mode change as a disconnect, clearing
+selection, security state and pending continuations; clients must SELECT again in either direction.
+The private AID shares no existing applet prefix, including on older firmware with
+prefix matching. This changes
 discovery only; PIN, touch and credential permissions still apply.
 After a firmware restart or other initialization that clears selection, clients must SELECT again.
 FIDO-shaped commands do not implicitly select an applet and return `6A82` when

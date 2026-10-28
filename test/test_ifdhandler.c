@@ -59,9 +59,10 @@ static void test_transport_routing(void **state) {
   }
   assert_int_equal(status(usb_info, usb_len), SW_NO_ERROR);
 
-  init_apdu_buffer();
-  device_init();
+  // Switch without a manual reset: the old USB selection must not survive.
   assert_int_equal(setenv("CANOKEY_TEST_NFC", "1", 1), 0);
+  DWORD rejected_len = exchange(get_info, sizeof(get_info), nfc_info, sizeof(nfc_info));
+  assert_int_equal(status(nfc_info, rejected_len), SW_FILE_NOT_FOUND);
   select_applet(private_select, sizeof(private_select), SW_FILE_NOT_FOUND);
   select_applet(standard_select, sizeof(standard_select), SW_NO_ERROR);
   // The simulated NFC reader drains 61xx, using NFC for every continuation.
@@ -69,6 +70,19 @@ static void test_transport_routing(void **state) {
   assert_int_equal(status(nfc_info, nfc_len), SW_NO_ERROR);
   assert_int_equal(nfc_len, usb_len);
   assert_memory_equal(nfc_info, usb_info, usb_len);
+
+  // The reverse transition must also require a fresh transport-specific SELECT.
+  assert_int_equal(setenv("CANOKEY_TEST_NFC", "0", 1), 0);
+  rejected_len = exchange(get_info, sizeof(get_info), usb_info, sizeof(usb_info));
+  assert_int_equal(status(usb_info, rejected_len), SW_FILE_NOT_FOUND);
+  select_applet(private_select, sizeof(private_select), SW_NO_ERROR);
+  // Abandon a pending USB response while switching, then check GET RESPONSE.
+  usb_len = exchange(get_info, sizeof(get_info), usb_info, sizeof(usb_info));
+  assert_int_equal(status(usb_info, usb_len) & 0xff00, 0x6100);
+  assert_int_equal(setenv("CANOKEY_TEST_NFC", "1", 1), 0);
+  rejected_len = exchange(get_response, sizeof(get_response), nfc_info, sizeof(nfc_info));
+  assert_int_equal(status(nfc_info, rejected_len), SW_COMMAND_NOT_ALLOWED);
+  select_applet(standard_select, sizeof(standard_select), SW_NO_ERROR);
 }
 
 static void test_transport_errors(void **state) {

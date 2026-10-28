@@ -306,13 +306,15 @@ if(ENABLE_TESTS)
         )
         target_link_libraries(u2f-virt-card ${PCSCLITE_LIBRARIES} canokey-core)
         add_virt_card_git_revision(u2f-virt-card)
-        add_cmocka_test(test_ifdhandler
-            SOURCES test/test_ifdhandler.c
-            LINK_LIBRARIES ${CMOCKA_LIBRARIES} u2f-virt-card canokey-core
-        )
-        target_include_directories(test_ifdhandler PRIVATE
-            virt-card ${PCSCLITE_INCLUDE_DIRS} ${CMOCKA_INCLUDE_DIR}
-        )
+        if(ENABLE_NFC)
+            add_cmocka_test(test_ifdhandler
+                SOURCES test/test_ifdhandler.c
+                LINK_LIBRARIES ${CMOCKA_LIBRARIES} u2f-virt-card canokey-core
+            )
+            target_include_directories(test_ifdhandler PRIVATE
+                virt-card ${PCSCLITE_INCLUDE_DIRS} ${CMOCKA_INCLUDE_DIR}
+            )
+        endif()
     endif()
 endif(ENABLE_TESTS)
 
