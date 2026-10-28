@@ -181,6 +181,9 @@ gpg --card-status | grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
 GPGEnc
 UserChecked 1
 echo 1 >/tmp/canokey-test-nfc
+# A transport change disconnects the simulated card and clears its selection.
+# Reconnect scdaemon so it SELECTs OpenPGP again instead of using cached USB state.
+gpgconf --kill scdaemon
 
 echo "=== Phase: RSA-2048 key import ==="
 GPGReset
