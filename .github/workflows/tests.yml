@@ -1,11 +1,13 @@
 name: tests
 on: [push, pull_request, workflow_dispatch]
 
+# Keep native tool builds and consumers on the tested distro. Binary cache
+# keys below must track this version so runner upgrades cannot reuse an old ABI.
 jobs:
   build_tools:
     name: Build custom yubico-piv-tool package
     #if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
     - name: Cache deb files
       uses: actions/cache@v6
@@ -15,7 +17,7 @@ jobs:
         path: |
           yubico-piv-tool_*.deb
           libykpiv1_*.deb
-        key: ${{ runner.os }}-${{ env.cache-name }}
+        key: ubuntu-24.04-${{ runner.arch }}-${{ env.cache-name }}
     - name: Check file existence
       id: check_yubico_piv
       run: |
@@ -50,7 +52,7 @@ jobs:
 
   build_test:
     name: Build and Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build_tools
     steps:
     - name: Prepare - Download packages
@@ -116,7 +118,7 @@ jobs:
         cache-name: cache_gpg_binary
       with:
         path: gnupg
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_gpg.sh') }}
+        key: ubuntu-24.04-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_gpg.sh', './test-via-pcsc/pinentry-mock.patch') }}
 
     - name: Cache - FIDO tools
       id: cache-fido
@@ -128,7 +130,7 @@ jobs:
           u2f-ref-code
           libfido2
           fido2-tests
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_fido_tests.sh') }}
+        key: ubuntu-24.04-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_fido_tests.sh') }}
 
     - name: Build - Patched GnuPG
       if: steps.cache-gpg.outputs.cache-hit != 'true'
