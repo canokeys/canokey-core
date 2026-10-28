@@ -41,6 +41,7 @@
 #include <usbd_ccid.h>
 #include <usbd_kbdhid.h>
 #include <usbd_ctlreq.h>
+#include <usbd_desc.h>
 
 #include <ctap-parser.h>
 
@@ -455,6 +456,82 @@ static void test_ctaphid_cancel_is_consumed_from_queue(void **state) {
   assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
   assert_int_equal(cancel_enqueue_result, 1);
   assert_int_equal(cancel_loop_result, LOOP_CANCEL);
+}
+
+static unsigned cancel_queue_case;
+static uint8_t capture_hid_report_with_competitors(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
+  uint8_t ret = capture_hid_report(pdev, report, len);
+  if (ret != 0 || !inject_cancel_on_send) return ret;
+  inject_cancel_on_send = 0;
+  const uint32_t cid = ((CTAPHID_FRAME *)report)->cid;
+  CTAPHID_FRAME other = make_hid_init(0x99887766, CTAPHID_PING, 0);
+  CTAPHID_FRAME cancel = make_hid_init(cid, CTAPHID_CANCEL, 0);
+  if (cancel_queue_case == 2) {
+    uint8_t snapshot[HID_RPT_SIZE];
+    memcpy(snapshot, report, sizeof(snapshot));
+    assert_int_equal(USBD_CTAPHID_SendReport(&usb_device, report, len), USBD_OK);
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&other), 1);
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&cancel), 1);
+    cancel_loop_result = CTAPHID_Loop(1);
+    assert_memory_equal(report, snapshot, sizeof(snapshot)); // No host IN completion: backing stays intact.
+    USBD_CTAPHID_DataIn();
+    return 0;
+  }
+  if (cancel_queue_case == 1) {
+    EPType *out = dummy_get_ep_by_addr(EP_OUT(ctap_hid));
+    for (unsigned i = 0; i < 8; ++i) {
+      memcpy(out->xfer_buff, &other, sizeof(other));
+      assert_int_equal(USBD_CTAPHID_DataOut(&usb_device), i == 7 ? USBD_BUSY : USBD_OK);
+    }
+    assert_false(CTAPHID_RxCanAccept());
+    assert_int_equal(CTAPHID_Loop(1), LOOP_SUCCESS);
+    assert_true(CTAPHID_RxCanAccept());
+    memcpy(out->xfer_buff, &cancel, sizeof(cancel));
+    assert_int_equal(USBD_CTAPHID_DataOut(&usb_device), USBD_OK);
+  } else {
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&other), 1);
+    CTAPHID_FRAME wrong = make_hid_init(other.cid, CTAPHID_CANCEL, 0);
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&wrong), 1);
+    wrong = make_hid_init(cid, CTAPHID_CANCEL, 1);
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&wrong), 1);
+    CTAPHID_FRAME continuation = {.cid = cid};
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&continuation), 1);
+    assert_int_equal(CTAPHID_Loop(1), LOOP_SUCCESS); // Wrong/malformed CANCEL must not cancel.
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&cancel), 1);
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&cancel), 1); // Duplicate must not affect the next command.
+  }
+  cancel_loop_result = CTAPHID_Loop(1);
+  return 0;
+}
+static void test_ctaphid_cancel_bypasses_competitors(void **state) {
+  (void)state;
+  const uint8_t previous_state = usb_device.dev_state;
+  usb_device.dev_state = USBD_STATE_CONFIGURED;
+  for (cancel_queue_case = 0; cancel_queue_case < 3; ++cancel_queue_case) {
+    reset_hid_capture();
+    USBD_CTAPHID_Init(&usb_device);
+    CTAPHID_Init(capture_hid_report_with_competitors);
+    inject_cancel_on_send = 1;
+    cancel_loop_result = LOOP_SUCCESS;
+    CTAPHID_FRAME ping = make_hid_init(0x12345678, CTAPHID_PING, 0);
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&ping), 1);
+    uint8_t ret = CTAPHID_Loop(0);
+    assert_int_equal(cancel_loop_result, LOOP_CANCEL);
+    assert_int_equal(ret, LOOP_SUCCESS);
+    // Competing requests are refused, never dispatched during execution.
+    for (size_t i = 1; i < hid_capture_count; ++i) {
+      assert_int_equal(hid_capture[i].init.cmd, CTAPHID_ERROR);
+      assert_int_equal(hid_capture[i].init.data[0], ERR_CHANNEL_BUSY);
+    }
+    if (cancel_queue_case == 2) assert_int_equal(hid_capture_count, 1);
+    else assert_true(hid_capture_count > 1);
+    reset_hid_capture();
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&ping), 1);
+    assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+    assert_int_equal(hid_capture_count, 1);
+    assert_int_equal(hid_capture[0].init.cmd, CTAPHID_PING);
+  }
+  usb_device.dev_state = previous_state;
 }
 
 static void test_ctaphid_sustains_fifty_reports(void **state) {
@@ -4660,6 +4737,82 @@ static void session_setup_openpgp(void) {
   assert_int_equal(session_ccid_apdu(session_select, sizeof(session_select)), SW_NO_ERROR);
   assert_int_equal(session_ccid_apdu(session_verify, sizeof(session_verify)), SW_NO_ERROR);
 }
+// Exercise an RX reservation on either side of the main-loop CAS. Same-owner
+// receive used to leave session_owner unchanged and evade the contender's CAS.
+static int session_irq_acquire_result;
+static void session_receive_irq(void) {
+  session_irq_acquire_result = acquire_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID);
+}
+static void session_acquire_interrupt_boundary(void **unused) {
+  (void)unused;
+  for (unsigned after = 0; after < 2; ++after) {
+    device_applet_session_clear();
+    session_setup_openpgp();
+    testmode_set_atomic_hook(session_receive_irq, after);
+    int ret = device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID);
+    // Exactly one reservation succeeds; the loser must preserve the winner.
+    assert_true((ret == 0) != (session_irq_acquire_result == 0));
+    if (session_irq_acquire_result == 0) {
+      assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
+      assert_false(apdu_session_can_preempt());
+      release_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID);
+    } else {
+      assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
+      device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+    }
+    const uint8_t query[] = {0, 0x20, 0, 0x81};
+    assert_int_equal(session_ccid_apdu(query, sizeof(query)), SW_NO_ERROR);
+  }
+  device_applet_session_clear();
+  set_test_tick(0);
+}
+
+static void session_descriptors_preserve_response(void **unused) {
+  (void)unused;
+  device_applet_session_clear();
+  session_setup_openpgp();
+  uint8_t expected[APDU_BUFFER_SIZE];
+  const uint8_t full[] = {0, 0xca, 0, 0x6e, 0};
+  assert_int_equal(session_ccid_apdu(full, sizeof(full)), SW_NO_ERROR);
+  size_t len = ccid_get_le32(bulkin_data.dwLength) - 2;
+  assert_true(len > 32);
+  memcpy(expected, shared_io_buffer, len);
+  const uint8_t partial[] = {0, 0xca, 0, 0x6e, 1};
+  const uint8_t get[] = {0, 0xc0, 0, 0, 0};
+  const uint8_t *(*descriptors[])(USBD_SpeedTypeDef, uint16_t *) = {
+      usbdDescriptors.GetConfigurationDescriptor, usbdDescriptors.GetProductStrDescriptor,
+      usbdDescriptors.GetManufacturerStrDescriptor, usbdDescriptors.GetSerialStrDescriptor,
+      usbdDescriptors.GetBOSDescriptor, usbdDescriptors.GetMSOS20Descriptor,
+  };
+  for (unsigned i = 0; i < sizeof(descriptors) / sizeof(descriptors[0]); ++i) {
+    assert_int_equal(session_ccid_apdu(partial, sizeof(partial)) & 0xff00, 0x6100);
+    uint16_t desc_len = 123;
+    const uint8_t *desc = descriptors[i](USBD_SPEED_FULL, &desc_len);
+    if (desc) release_apdu_buffer(BUFFER_OWNER_USBD);
+    assert_null(desc);
+    assert_int_equal(desc_len, 0);
+    assert_int_equal(session_ccid_apdu(get, sizeof(get)), SW_NO_ERROR);
+    assert_memory_equal(shared_io_buffer, expected + 1, len - 1);
+    assert_non_null(descriptors[i](USBD_SPEED_FULL, &desc_len));
+    assert_true(desc_len > 0);
+    release_apdu_buffer(BUFFER_OWNER_USBD);
+  }
+  // Streaming sources may also retain bytes in shared_io_buffer. Refusal must
+  // neither close the source nor advance it; explicit abandonment restores EP0.
+  memcpy(shared_io_buffer, expected, len);
+  apdu_response_source_set(len, SW_NO_ERROR, apdu_response_source_read_memory, NULL, shared_io_buffer);
+  uint16_t desc_len = 123;
+  assert_null(usbdDescriptors.GetConfigurationDescriptor(USBD_SPEED_FULL, &desc_len));
+  assert_int_equal(desc_len, 0);
+  assert_int_equal(apdu_response_source_view()->offset, 0);
+  assert_memory_equal(shared_io_buffer, expected, len);
+  apdu_response_source_clear();
+  assert_non_null(usbdDescriptors.GetConfigurationDescriptor(USBD_SPEED_FULL, &desc_len));
+  release_apdu_buffer(BUFFER_OWNER_USBD);
+  device_applet_session_clear();
+  set_test_tick(0);
+}
+
 static void session_getinfo_busy(void) {
   reset_hid_capture();
   CTAPHID_Init(capture_hid_report);
@@ -4931,6 +5084,8 @@ int main() {
       cmocka_unit_test(session_failed_receive_preserves_context),
       cmocka_unit_test(session_msg_source_releases_execution),
       cmocka_unit_test(session_openpgp_long_idle),
+      cmocka_unit_test(session_acquire_interrupt_boundary),
+      cmocka_unit_test(session_descriptors_preserve_response),
       cmocka_unit_test(session_webusb_cannot_inherit),
       cmocka_unit_test(session_decipher_chain_pins_scratch),
       cmocka_unit_test(session_pending_response_pins_source),
@@ -4992,6 +5147,7 @@ int main() {
       cmocka_unit_test(test_ctaphid_rx_high_water_pauses_and_resumes),
       cmocka_unit_test(test_ctaphid_uses_receive_tick_for_timeout),
       cmocka_unit_test(test_ctaphid_cancel_is_consumed_from_queue),
+      cmocka_unit_test(test_ctaphid_cancel_bypasses_competitors),
       cmocka_unit_test(test_ctaphid_sustains_fifty_reports),
       cmocka_unit_test(test_ctaphid_large_ping_is_consumed_incrementally),
       cmocka_unit_test(test_ctaphid_msg_case3_and_case4_send_complete_response),

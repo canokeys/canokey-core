@@ -211,9 +211,8 @@ static uint8_t CTAPHID_DispatchComplete(uint8_t wait_for_user) {
     CTAPHID_SendResponseAuto(channel.cid, channel.cmd, channel.data, 0);
     break;
   case CTAPHID_CANCEL:
-    DBG_MSG("CANCEL when wait_for_user=%d\n", (int)wait_for_user);
-    if (wait_for_user) USBD_CTAPHID_WaitIdle();
-    ret = LOOP_CANCEL;
+    // A matching CANCEL during execution is consumed before dispatch. Ignore
+    // idle/late duplicates instead of cancelling an unrelated subsequent call.
     break;
   default:
     DBG_MSG("Invalid CMD 0x%x\n", (int)channel.cmd);
@@ -747,6 +746,7 @@ static void CTAPHID_Execute_Cbor(void) {
 
 uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   uint8_t ret = LOOP_SUCCESS;
+  uint8_t busy_budget = CTAPHID_RX_QUEUE_SIZE;
 #if ENABLE_IFACE_CCID
   if (wait_for_user) CCID_ServicePresencePoll();
 #endif
@@ -760,9 +760,19 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
     const uint8_t is_cancel = FRAME_TYPE(*rx_frame) == TYPE_INIT && rx_frame->init.cmd == CTAPHID_CANCEL &&
                               channel.executing && rx_frame->cid == channel.cid && MSG_LEN(*rx_frame) == 0;
 
-    // During command execution only a matching CANCEL may alter channel state.
-    // Other reports remain queued until the command has returned.
-    if (channel.executing && !is_cancel) break;
+    // Refuse competitors without dispatching them or changing channel state.
+    // Leaving them queued blocks CANCEL, and a full queue also NAKs later
+    // cancellation packets. Bound this work so a flood cannot starve the applet.
+    if (channel.executing && !is_cancel) {
+      if (busy_budget-- == 0) break;
+      CTAPHID_PopRxEntry();
+      // Continuations have no independent reply. If the host has stopped IN
+      // reads, discard the refusal rather than overwrite active TX backing or
+      // prevent cancellation. Normal contenders receive CHANNEL_BUSY.
+      if (FRAME_TYPE(*rx_frame) == TYPE_INIT && !CTAPHID_TxBusy() && USBD_CTAPHID_WaitIdle() == USBD_OK)
+        CTAPHID_SendErrorResponse(rx_frame->cid, ERR_CHANNEL_BUSY);
+      goto consume_frame;
+    }
     if (!is_cancel && (CTAPHID_TxBusy() || channel.ready)) break;
 
     if (!channel.executing && channel.state == CTAPHID_BUSY &&

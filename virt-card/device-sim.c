@@ -129,13 +129,26 @@ void device_enable_irq(void) {}
 void device_set_timeout(void (*callback)(void), uint16_t timeout) {}
 fm_status_t fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len) { return FM_STATUS_OK; }
 
+// One-shot interrupt injection at the boundary of an atomic reservation.
+static void (*atomic_hook)(void);
+static bool atomic_hook_after;
+void testmode_set_atomic_hook(void (*hook)(void), bool after) {
+  atomic_hook = hook;
+  atomic_hook_after = after;
+}
+
 int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
+  void (*hook)(void) = atomic_hook;
+  const bool after = atomic_hook_after;
+  atomic_hook = NULL; // The simulated interrupt may itself use CAS.
+  if (hook && !after) hook();
+  int ret = -1;
   if (*var == expect) {
     *var = update;
-    return 0;
-  } else {
-    return -1;
+    ret = 0;
   }
+  if (hook && after) hook();
+  return ret;
 }
 
 int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {

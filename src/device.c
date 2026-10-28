@@ -29,6 +29,7 @@ static volatile wait_status_t wait_status;
 applet_session_scratch_t applet_session_scratch;
 /* Reservation is shared with USB IRQ callbacks. Cleanup is main-loop only. */
 static volatile uint32_t session_owner;
+#define SESSION_RESERVING UINT32_MAX
 static uint8_t apdu_context_owner;
 
 static void device_applet_context_reset(void) {
@@ -37,11 +38,6 @@ static void device_applet_context_reset(void) {
   apdu_fido_chain_reset();
   apdu_rapdu_chain_reset();
   apdu_selection_reset();
-}
-
-static int device_applet_session_can_preempt(void) {
-  if (session_owner == DEVICE_APPLET_SESSION_CTAPHID) return 0;
-  return apdu_session_can_preempt();
 }
 
 /* Optional lifecycle hooks for ports without the bundled USB stack. */
@@ -275,13 +271,21 @@ void device_applet_session_clear(void) {
 
 int device_applet_session_acquire(device_applet_session_owner_t owner) {
   const uint32_t previous = session_owner;
-  if (owner == DEVICE_APPLET_SESSION_NONE || !device_usb_ready()) return -1;
+  if (owner == DEVICE_APPLET_SESSION_NONE || previous == SESSION_RESERVING || !device_usb_ready()) return -1;
   if (previous == owner) return 0;
+  /* Reserve BEFORE inspecting backing. Otherwise a same-owner RX interrupt
+   * can acquire the I/O buffer without changing previous, defeating the CAS.
+   * IRQ contenders refuse this sentinel; no cleanup runs while it is held. */
+  if (device_atomic_compare_and_swap(&session_owner, previous, SESSION_RESERVING) != 0) return -1;
+  int ret = 0;
   /* No lease expiry: unfinished APDUs may retain scratch for arbitrary gaps. */
   if (previous != DEVICE_APPLET_SESSION_NONE || owner != apdu_context_owner) {
-    if (!device_applet_session_can_preempt()) return -1;
+    if (previous == DEVICE_APPLET_SESSION_CTAPHID || !apdu_session_can_preempt()) ret = -1;
   }
-  return device_atomic_compare_and_swap(&session_owner, previous, owner);
+  // Only this caller can replace SESSION_RESERVING; failed acquisition leaves
+  // the old context and every resource reservation intact.
+  session_owner = ret ? previous : owner;
+  return ret;
 }
 
 /* Called before APDU parsing, never from a USB callback. The reservation and

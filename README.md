@@ -52,6 +52,20 @@ by USB reset/disconnect. A stalled HID IN stream has no watchdog and may block
 INIT as well; resume reading it or reset/disconnect USB. The same limitation
 applies when a host stops reading another shared-backed HID response.
 An ordinary completed APDU can yield; crypto and touch waits remain serialized.
+The execution arbiter reserves its transition before checking resource ownership,
+so a same-owner receive interrupt cannot slip between the check and acquisition.
+
+Dynamic USB descriptors share the APDU I/O buffer. While a response chain or
+stream still retains backing, these descriptor requests stall without changing
+that response; retry after draining or explicitly abandoning it. Constant device,
+language and URL descriptors do not borrow the buffer.
+
+During HID execution, competing initialization reports receive `CHANNEL_BUSY`
+and continuation reports are discarded without dispatch. Each poll drains at
+most eight competitors so a full receive queue cannot indefinitely hide a later
+matching, zero-length `CANCEL`. Idle/late duplicate cancellation is ignored.
+If IN has stalled, a refusal may be dropped after the existing bounded IN wait;
+active TX backing remains untouched and queued cancellation can still proceed.
 
 CCID and WebUSB share one APDU context. A change between those owners resets
 selection and authorization in the main loop before dispatch, requiring a fresh
