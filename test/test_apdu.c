@@ -518,14 +518,15 @@ static void test_ctaphid_cancel_bypasses_competitors(void **state) {
     assert_int_equal(cancel_loop_result, LOOP_CANCEL);
     assert_int_equal(ret, LOOP_SUCCESS);
     // Competing requests are refused, never dispatched during execution.
+    const size_t expected_reports[] = {4, 9, 1}; // Response plus each initialization-report refusal.
+    assert_int_equal(hid_capture_count, expected_reports[cancel_queue_case]);
     for (size_t i = 1; i < hid_capture_count; ++i) {
+      const uint32_t refused_cid = cancel_queue_case == 0 && i == 3 ? ping.cid : 0x99887766;
+      assert_int_equal(hid_capture[i].cid, refused_cid);
       assert_int_equal(hid_capture[i].init.cmd, CTAPHID_ERROR);
+      assert_int_equal(MSG_LEN(hid_capture[i]), 1);
       assert_int_equal(hid_capture[i].init.data[0], ERR_CHANNEL_BUSY);
     }
-    if (cancel_queue_case == 2)
-      assert_int_equal(hid_capture_count, 1);
-    else
-      assert_true(hid_capture_count > 1);
     reset_hid_capture();
     assert_int_equal(CTAPHID_OutEvent((uint8_t *)&ping), 1);
     assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
@@ -553,7 +554,9 @@ static uint8_t capture_hid_report_with_resync(USBD_HandleTypeDef *pdev, uint8_t 
   // Only competitors have replied: the INIT must survive until the handler unwinds.
   assert_int_equal(hid_capture_count, 3);
   for (size_t i = 1; i < hid_capture_count; ++i) {
+    assert_int_equal(hid_capture[i].cid, i == 1 ? other.cid : malformed.cid);
     assert_int_equal(hid_capture[i].init.cmd, CTAPHID_ERROR);
+    assert_int_equal(MSG_LEN(hid_capture[i]), 1);
     assert_int_equal(hid_capture[i].init.data[0], ERR_CHANNEL_BUSY);
   }
   return 0;
