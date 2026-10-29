@@ -24,27 +24,8 @@ extern ccid_bulkout_data_t bulkout_data;
 
 static uint8_t send_hid_report(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) { return 0; }
 
-static uint8_t is_native_u2f_extended_apdu(const uint8_t *buf, DWORD len) {
-  if (len < 7 || buf[0] != 0x00 || buf[4] != 0x00) return 0;
-
-  switch (buf[1]) {
-  case 0x01: // U2F_REGISTER
-  case 0x02: // U2F_AUTHENTICATE
-  case 0x03: // U2F_VERSION
-    return 1;
-  case 0xA4: // U2F_SELECT, distinct from ISO SELECT by P1/P2
-    return !(buf[2] == 0x04 && buf[3] == 0x00);
-  default:
-    return 0;
-  }
-}
-
-static uint8_t is_fido_pcsc_apdu(const uint8_t *buf, DWORD len) {
-  if (len >= 4 && buf[0] == 0x80) return 1; // CTAP2 CBOR / NFC GET RESPONSE
-  return is_native_u2f_extended_apdu(buf, len);
-}
-
-static uint8_t transmit_xfrblock(DWORD Lun, const uint8_t *tx, DWORD tx_len, uint8_t nfc) {
+static uint8_t transmit_xfrblock(DWORD Lun, const uint8_t *tx, DWORD tx_len, uint8_t nfc,
+                                 uint32_t *response_budget) {
   if (nfc) {
     // PC/SC is also the host interface for simulated NFC. Do not apply USB
     // applet discovery policy to this transport (including GET RESPONSE).
@@ -53,7 +34,11 @@ static uint8_t transmit_xfrblock(DWORD Lun, const uint8_t *tx, DWORD tx_len, uin
     if (build_capdu(&capdu, tx, tx_len) < 0) {
       rapdu.sw = SW_WRONG_LENGTH;
     } else {
+      // Dispatch clamps Le to its short working window. Preserve the original
+      // extended budget, as the hardware transport does across refills.
+      const uint32_t budget = capdu.extended ? capdu.le : 0;
       process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
+      if (response_budget && apdu_fido_selected()) *response_budget = budget;
     }
     bulkin_data.abData[rapdu.len] = HI(rapdu.sw);
     bulkin_data.abData[rapdu.len + 1] = LO(rapdu.sw);
@@ -174,8 +159,8 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
     device_applet_session_clear();
   }
   previous_nfc = nfc;
-  const uint8_t aggregate_get_response = nfc && is_fido_pcsc_apdu(TxBuffer, TxLength);
-  uint8_t ret = transmit_xfrblock(Lun, TxBuffer, TxLength, nfc);
+  uint32_t response_budget = 0; // Short APDUs expose 61xx to the caller.
+  uint8_t ret = transmit_xfrblock(Lun, TxBuffer, TxLength, nfc, &response_budget);
   if (ret != SLOT_NO_ERROR) {
     *RxLength = 0;
     printf("warning: PC_to_RDR_XfrBlock returns %#x\n", ret);
@@ -191,7 +176,8 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
 
       const uint16_t sw = (uint16_t)(bulkin_data.abData[response_len - 2] << 8) | bulkin_data.abData[response_len - 1];
       const DWORD data_len = response_len - 2;
-      const uint8_t has_more = aggregate_get_response && (sw & 0xFF00) == 0x6100;
+      response_budget -= MIN(response_budget, data_len);
+      const uint8_t has_more = response_budget && (sw & 0xFF00) == 0x6100;
       const DWORD copy_len = has_more ? data_len : response_len;
 
       if (total_len + copy_len > *RxLength) {
@@ -207,8 +193,8 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
         break;
       }
 
-      static const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
-      ret = transmit_xfrblock(Lun, get_response, sizeof(get_response), nfc);
+      const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, (uint8_t)MIN(response_budget, 256u)};
+      ret = transmit_xfrblock(Lun, get_response, sizeof(get_response), nfc, NULL);
       if (ret != SLOT_NO_ERROR) {
         *RxLength = 0;
         printf("warning: PC_to_RDR_XfrBlock(GET RESPONSE) returns %#x\n", ret);

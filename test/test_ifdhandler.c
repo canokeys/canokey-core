@@ -65,8 +65,13 @@ static void test_transport_routing(void **state) {
   assert_int_equal(status(nfc_info, rejected_len), SW_FILE_NOT_FOUND);
   select_applet(private_select, sizeof(private_select), SW_FILE_NOT_FOUND);
   select_applet(standard_select, sizeof(standard_select), SW_NO_ERROR);
-  // The simulated NFC reader drains 61xx, using NFC for every continuation.
+  // Short NFC APDUs expose the same ISO continuation as the hardware.
   DWORD nfc_len = exchange(get_info, sizeof(get_info), nfc_info, sizeof(nfc_info));
+  assert_int_equal(status(nfc_info, nfc_len) & 0xFF00, 0x6100);
+  while ((status(nfc_info, nfc_len) & 0xFF00) == 0x6100) {
+    nfc_len -= 2;
+    nfc_len += exchange(get_response, sizeof(get_response), nfc_info + nfc_len, sizeof(nfc_info) - nfc_len);
+  }
   assert_int_equal(status(nfc_info, nfc_len), SW_NO_ERROR);
   assert_int_equal(nfc_len, usb_len);
   assert_memory_equal(nfc_info, usb_info, usb_len);
@@ -83,6 +88,44 @@ static void test_transport_routing(void **state) {
   rejected_len = exchange(get_response, sizeof(get_response), nfc_info, sizeof(nfc_info));
   assert_int_equal(status(nfc_info, rejected_len), SW_COMMAND_NOT_ALLOWED);
   select_applet(standard_select, sizeof(standard_select), SW_NO_ERROR);
+}
+
+// Preserve the original extended Le across every internal short-buffer refill.
+static void test_nfc_response_budget(void **state) {
+  (void)state;
+  assert_int_equal(setenv("CANOKEY_TEST_NFC", "1", 1), 0);
+  select_applet(standard_select, sizeof(standard_select), SW_NO_ERROR);
+  uint8_t command[] = {0x80, 0x10, 0, 0, 0, 0, 1, 4, 0, 0};
+  uint8_t reference[2048], response[2048];
+  DWORD reference_len = exchange(command, sizeof(command), reference, sizeof(reference));
+  assert_int_equal(status(reference, reference_len), SW_NO_ERROR);
+  DWORD case3_len = exchange(command, sizeof(command) - 2, response, sizeof(response));
+  assert_int_equal(case3_len, reference_len);
+  assert_memory_equal(response, reference, reference_len);
+  const uint8_t short_info[] = {0x80, 0x10, 0, 0, 1, 4, 1};
+  DWORD short_len = exchange(short_info, sizeof(short_info), response, 3);
+  assert_int_equal(short_len, 3);
+  assert_int_equal(response[0], reference[0]);
+  assert_int_equal(status(response, short_len) & 0xFF00, 0x6100);
+  const uint32_t limits[] = {1, 255, 256, 257, 65535, 65536};
+  for (size_t i = 0; i < sizeof(limits) / sizeof(*limits); ++i) {
+    command[8] = limits[i] >> 8;
+    command[9] = limits[i];
+    DWORD capacity = MIN(limits[i], reference_len - 2) + 2;
+    DWORD len = exchange(command, sizeof(command), response, capacity);
+    assert_int_equal(len, capacity);
+    assert_memory_equal(response, reference, len - 2);
+    if (limits[i] >= reference_len - 2) {
+      assert_int_equal(status(response, len), SW_NO_ERROR);
+      continue;
+    }
+    assert_int_equal(status(response, len) & 0xFF00, 0x6100);
+    // Case 2E GET RESPONSE must also aggregate within its own Le budget.
+    const uint8_t more[] = {0, 0xC0, 0, 0, 0, 0, 0};
+    DWORD remaining = exchange(more, sizeof(more), response, sizeof(response));
+    assert_int_equal(remaining, reference_len - limits[i]);
+    assert_memory_equal(response, reference + limits[i], remaining);
+  }
 }
 
 static void test_transport_errors(void **state) {
@@ -120,7 +163,8 @@ int main(void) {
   init_apdu_buffer();
   device_init();
   assert_int_equal(applets_install(), 0);
-  const struct CMUnitTest tests[] = {cmocka_unit_test(test_transport_routing), cmocka_unit_test(test_transport_errors)};
+  const struct CMUnitTest tests[] = {cmocka_unit_test(test_transport_routing), cmocka_unit_test(test_transport_errors),
+                                       cmocka_unit_test(test_nfc_response_budget)};
   int ret = cmocka_run_group_tests(tests, NULL, NULL);
   unlink(path);
   unlink(config_path);

@@ -432,7 +432,7 @@ CTAP over `CCID` / `WebUSB` / NFC APDU:
   survive parsing. MC retains the minPinLength authorization decision computed from the exact full RP ID, not a
   second RP string or its truncated storage form. TinyCBOR recursive skipping is bounded to four container levels
   to protect the device stack. Latched source cancellation takes precedence over CBOR read/EOF errors.
-- `largeBlobs.get` reuses the segmented MC response engine for a small memory prefix and file-backed fragment.
+- `largeBlobs.get` reuses the segmented CTAP response engine for a small memory prefix and file-backed fragment.
   Do not read a maximum fragment directly into the shared encoder window. Its HID and APDU paths must both stream.
 - FIDO APDU chaining is separate from transport frame aggregation. For a chained FIDO command, `fido_apdu_input()` stages the first and subsequent fragments in PKE and dispatches through `ctap_process_apdu_source_with_src()`.
 - Chained FIDO APDU input in PKE follows the same lifetime rule as CTAPHID PKE-backed RX: it is valid only for immediate parser consumption.

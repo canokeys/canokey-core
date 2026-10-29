@@ -16,6 +16,12 @@ typedef struct {
   uint8_t pke_backed;
 } CAPDU;
 
+// build_capdu and transport staging copy the four wire header bytes together.
+_Static_assert(offsetof(CAPDU, ins) == offsetof(CAPDU, cla) + 1 &&
+                   offsetof(CAPDU, p1) == offsetof(CAPDU, cla) + 2 &&
+                   offsetof(CAPDU, p2) == offsetof(CAPDU, cla) + 3,
+               "CAPDU wire header must be contiguous");
+
 typedef struct {
   uint8_t *data;
   uint16_t len;

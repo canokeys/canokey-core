@@ -109,16 +109,6 @@ typedef struct {
 
 #define LEN_RDR_TO_PC_SLOTSTATUS 10
 
-typedef enum {
-  CHK_PARAM_SLOT = 1,
-  CHK_PARAM_DWLENGTH = (1 << 1),
-  CHK_PARAM_abRFU2 = (1 << 2),
-  CHK_PARAM_abRFU3 = (1 << 3),
-  CHK_PARAM_CARD_PRESENT = (1 << 4),
-  CHK_PARAM_ABORT = (1 << 5),
-  CHK_ACTIVE_STATE = (1 << 6)
-} ChkParam_t;
-
 #define PC_TO_RDR_ICCPOWERON 0x62
 #define PC_TO_RDR_ICCPOWEROFF 0x63
 #define PC_TO_RDR_GETSLOTSTATUS 0x65

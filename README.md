@@ -45,7 +45,9 @@ active command or response. A separate ten-byte response header and OUT
 backpressure bound the queue; no second APDU payload buffer is allocated.
 
 CCID ABORT is not supported: its class control request stalls, and an idle
-bulk `PC_to_RDR_Abort` reports `CMD_NOT_SUPPORTED`. A competing bulk command
+bulk `PC_to_RDR_Abort` reports `CMD_NOT_SUPPORTED` with failed command status.
+Unsupported commands never inherit a previous successful response status;
+requests for an absent slot report no ICC present. A competing bulk command
 while CCID is busy receives `CMD_SLOT_BUSY`, including ABORT. Host cancellation
 does not terminate a running device operation; user-presence waits end through
 touch or their existing timeout. Host APDU tests cover contention, fragmented
@@ -348,8 +350,10 @@ after draining. NFCCTAP_MSG accepts P1=00/80 and P2=00. `80 12 01 00`
 Extended FIDO responses stream as one ISO-DEP response across internal chunk
 boundaries, whether SELECT had absent Le or Le=00. Short commands retain
 `61xx` / GET RESPONSE. An explicit finite Le limits the response and leaves
-its remainder available through GET RESPONSE. This transport extension does
-not change CTAP PIN, user-presence or credential-storage rules.
+its remainder available through GET RESPONSE. The virtual PC/SC NFC path follows
+the same short/extended and Le rules; it does not unconditionally drain `61xx`.
+This transport extension does not change CTAP PIN, user-presence or
+credential-storage rules.
 
 RF interrupts invalidate work; resource cleanup runs after synchronous commands
 unwind. A new activation requires SELECT again. Cancellation cannot roll back

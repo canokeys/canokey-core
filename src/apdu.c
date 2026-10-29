@@ -162,8 +162,10 @@ void init_apdu_buffer(void) {
 }
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
-  // The length/encoding fields form the trailing metadata of CAPDU.
-  memset(&capdu->le, 0, sizeof(*capdu) - offsetof(CAPDU, le));
+  capdu->le = 0;
+  capdu->lc = 0;
+  capdu->extended = 0;
+  capdu->pke_backed = 0;
   if (len < 4) return -1;
   memcpy(&capdu->cla, cmd, 4);
   if (len == 4) return 0; // Case 1
@@ -606,6 +608,8 @@ static void process_apdu_impl(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t trans
         }
         break;
       }
+      // Large staged commands mirror these checks in NFC append_rx before
+      // acquiring PKE. Boundary tests exercise both inline and staged input.
       if ((CLA & 0xEF) == 0x80 && INS == CTAP_INS_MSG) {
         if ((P1 & 0x7F) || P2) {
           fido_capdu_reset();
@@ -672,11 +676,7 @@ static void process_apdu_impl(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t trans
       ctap_process_apdu_source_with_src(capdu, source, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
     else
       ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
-  output:
-    rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
-    apdu_output(&rapdu_chaining, rapdu);
-    if (current_applet == APPLET_FIDO) fido_capdu_reset();
-    break;
+    goto output;
   case APPLET_OATH:
     oath_process_apdu(capdu, rapdu);
     break;
@@ -692,11 +692,20 @@ static void process_apdu_impl(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t trans
     LL = 0;
     SW = SW_FILE_NOT_FOUND;
   }
+  return;
+
+output:
+  // Common response epilogue for FIDO and PIV/OpenPGP SELECT.
+  rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
+  apdu_output(&rapdu_chaining, rapdu);
+  if (current_applet == APPLET_FIDO) fido_capdu_reset();
 }
 
 void process_apdu_source_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport,
                               const apdu_request_source_t *source) {
   process_apdu_impl(capdu, rapdu, transport, source);
+  // CTAP may already have released input before crypto. This final close also
+  // covers pre-dispatch rejection; transport close callbacks are idempotent.
   if (source && source->close) source->close(source->ctx);
 }
 

@@ -304,10 +304,6 @@ void device_applet_session_prepare(device_applet_session_owner_t owner) {
   apdu_context_owner = owner;
 }
 
-int device_applet_session_context_matches(device_applet_session_owner_t owner) {
-  return apdu_context_owner == DEVICE_APPLET_SESSION_NONE || apdu_context_owner == owner;
-}
-
 void device_applet_session_touch(device_applet_session_owner_t owner) { UNUSED(owner); }
 
 void device_applet_session_release(device_applet_session_owner_t owner) {

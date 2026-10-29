@@ -120,7 +120,6 @@ void device_applet_session_clear(void);
 int device_applet_session_acquire(device_applet_session_owner_t owner);
 /* Main-loop only, after acquiring the execution reservation and I/O buffer. */
 void device_applet_session_prepare(device_applet_session_owner_t owner);
-int device_applet_session_context_matches(device_applet_session_owner_t owner);
 /* Compatibility no-op for existing transports; does not refresh an idle lease. */
 void device_applet_session_touch(device_applet_session_owner_t owner);
 void device_applet_session_release(device_applet_session_owner_t owner);

@@ -159,24 +159,26 @@ typedef struct {
 _Static_assert(sizeof(CTAP_const_stream_state) <= APPLET_SHARED_BUFFER_LENGTH,
                "GetInfo const stream state should stay smaller than one shared scratch buffer");
 
-#define CTAP_MC_STREAM_MAX_SEGMENTS 5
+#define CTAP_RESPONSE_STREAM_MAX_SEGMENTS 5
 
 typedef enum {
-  CTAP_MC_STREAM_SEG_MEM,
-  CTAP_MC_STREAM_SEG_FILE,
-  CTAP_MC_STREAM_SEG_MLDSA,
-} CTAP_make_credential_stream_segment_kind;
+  CTAP_RESPONSE_STREAM_SEG_MEM,
+  CTAP_RESPONSE_STREAM_SEG_FILE,
+  CTAP_RESPONSE_STREAM_SEG_MLDSA,
+} CTAP_response_stream_segment_kind;
 
 typedef struct {
-  CTAP_make_credential_stream_segment_kind kind;
+  CTAP_response_stream_segment_kind kind;
   const uint8_t *buf;
   const char *path;
   CTAP_mldsa_stream_state *mldsa;
   size_t file_off;
   size_t len;
   size_t off;
-} CTAP_make_credential_stream_segment;
+} CTAP_response_stream_segment;
 
+// Segments serve MakeCredential and largeBlobs. Construction-only storage
+// below is reused after MakeCredential has finished parsing and signing.
 typedef struct {
   union {
     struct {
@@ -191,16 +193,16 @@ typedef struct {
         sha256_ctx_t sha256;
       } crypto;
     } build;
-    CTAP_make_credential_stream_segment segments[CTAP_MC_STREAM_MAX_SEGMENTS];
+    CTAP_response_stream_segment segments[CTAP_RESPONSE_STREAM_MAX_SEGMENTS];
   } storage;
   size_t segment_count;
   size_t current_segment;
   size_t total_len;
   size_t emitted;
   bool prepared;
-} CTAP_make_credential_stream_state;
+} CTAP_response_stream_state;
 
-#define mc_stream_segments mc_stream_state.storage.segments
+#define response_stream_segments response_stream_state.storage.segments
 
 typedef struct {
   uint32_t parsed_params;
@@ -216,7 +218,7 @@ typedef struct {
   bool ext_third_party_payment;
 } CTAP_get_assertion_state;
 
-static CTAP_make_credential_stream_state mc_stream_state;
+static CTAP_response_stream_state response_stream_state;
 static CTAP_mem_stream_state mem_stream_state;
 static CTAP_credential_management_state cred_mgmt_state;
 static CTAP_get_assertion_state ga_state;
@@ -917,11 +919,11 @@ static int ctap_mldsa65_tr_from_seed(const uint8_t seed[PRI_KEY_SIZE], uint8_t t
   return 0;
 }
 
-static int ctap_make_credential_stream_add_segment(CTAP_make_credential_stream_segment_kind kind, const uint8_t *buf,
-                                                   const char *path, CTAP_mldsa_stream_state *mldsa, size_t file_off,
-                                                   size_t len) {
-  if (mc_stream_state.segment_count >= CTAP_MC_STREAM_MAX_SEGMENTS) return -1;
-  CTAP_make_credential_stream_segment *segment = &mc_stream_segments[mc_stream_state.segment_count++];
+static int ctap_response_stream_add_segment(CTAP_response_stream_segment_kind kind, const uint8_t *buf,
+                                            const char *path, CTAP_mldsa_stream_state *mldsa, size_t file_off,
+                                            size_t len) {
+  if (response_stream_state.segment_count >= CTAP_RESPONSE_STREAM_MAX_SEGMENTS) return -1;
+  CTAP_response_stream_segment *segment = &response_stream_segments[response_stream_state.segment_count++];
   segment->kind = kind;
   segment->buf = buf;
   segment->path = path;
@@ -929,31 +931,31 @@ static int ctap_make_credential_stream_add_segment(CTAP_make_credential_stream_s
   segment->file_off = file_off;
   segment->len = len;
   segment->off = 0;
-  mc_stream_state.total_len += len;
-  mc_stream_state.prepared = true;
+  response_stream_state.total_len += len;
+  response_stream_state.prepared = true;
   return 0;
 }
 
-static int ctap_make_credential_stream_add_mem(const uint8_t *buf, size_t len) {
+static int ctap_response_stream_add_mem(const uint8_t *buf, size_t len) {
   if (len == 0) return 0;
-  return ctap_make_credential_stream_add_segment(CTAP_MC_STREAM_SEG_MEM, buf, NULL, NULL, 0, len);
+  return ctap_response_stream_add_segment(CTAP_RESPONSE_STREAM_SEG_MEM, buf, NULL, NULL, 0, len);
 }
 
-static int ctap_make_credential_stream_add_file(const char *path, size_t file_off, size_t len) {
+static int ctap_response_stream_add_file(const char *path, size_t file_off, size_t len) {
   if (len == 0) return 0;
-  return ctap_make_credential_stream_add_segment(CTAP_MC_STREAM_SEG_FILE, NULL, path, NULL, file_off, len);
+  return ctap_response_stream_add_segment(CTAP_RESPONSE_STREAM_SEG_FILE, NULL, path, NULL, file_off, len);
 }
 
-static int ctap_make_credential_stream_add_mldsa(CTAP_mldsa_stream_state *mldsa, size_t len) {
-  return ctap_make_credential_stream_add_segment(CTAP_MC_STREAM_SEG_MLDSA, NULL, NULL, mldsa, 0, len);
+static int ctap_response_stream_add_mldsa(CTAP_mldsa_stream_state *mldsa, size_t len) {
+  return ctap_response_stream_add_segment(CTAP_RESPONSE_STREAM_SEG_MLDSA, NULL, NULL, mldsa, 0, len);
 }
 
-static int ctap_make_credential_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
-  CTAP_make_credential_stream_state *state = (CTAP_make_credential_stream_state *)ctx;
+static int ctap_response_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
+  CTAP_response_stream_state *state = (CTAP_response_stream_state *)ctx;
   size_t copied = 0;
 
   while (copied < max_len && state->current_segment < state->segment_count) {
-    CTAP_make_credential_stream_segment *segment = &state->storage.segments[state->current_segment];
+    CTAP_response_stream_segment *segment = &state->storage.segments[state->current_segment];
     if (segment->off == segment->len) {
       ++state->current_segment;
       continue;
@@ -962,13 +964,13 @@ static int ctap_make_credential_stream_read(void *ctx, uint8_t *out, size_t max_
     size_t n = MIN(segment->len - segment->off, max_len - copied);
     size_t written_now = n;
     switch (segment->kind) {
-    case CTAP_MC_STREAM_SEG_MEM:
+    case CTAP_RESPONSE_STREAM_SEG_MEM:
       memcpy(out + copied, segment->buf + segment->off, n);
       break;
-    case CTAP_MC_STREAM_SEG_FILE:
+    case CTAP_RESPONSE_STREAM_SEG_FILE:
       if (read_file(segment->path, out + copied, segment->file_off + segment->off, n) != (int)n) return -1;
       break;
-    case CTAP_MC_STREAM_SEG_MLDSA:
+    case CTAP_RESPONSE_STREAM_SEG_MLDSA:
       if (ctap_mldsa_stream_read_generated(segment->mldsa, out + copied, n, &written_now) < 0) return -1;
       if (written_now == 0) return -1;
       break;
@@ -981,12 +983,12 @@ static int ctap_make_credential_stream_read(void *ctx, uint8_t *out, size_t max_
   return 0;
 }
 
-static int ctap_make_credential_stream_read_at(void *ctx, uint32_t offset, uint8_t *out, uint16_t max_len) {
-  CTAP_make_credential_stream_state *state = (CTAP_make_credential_stream_state *)ctx;
+static int ctap_response_stream_read_at(void *ctx, uint32_t offset, uint8_t *out, uint16_t max_len) {
+  CTAP_response_stream_state *state = (CTAP_response_stream_state *)ctx;
   size_t written = 0;
 
   if (offset != state->emitted) return -1;
-  if (ctap_make_credential_stream_read(ctx, out, max_len, &written) < 0) return -1;
+  if (ctap_response_stream_read(ctx, out, max_len, &written) < 0) return -1;
   state->emitted += written;
   return (int)written;
 }
@@ -1638,17 +1640,17 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
   CTAP_mldsa_stream_state *state = &mldsa_stream_state;
   uint8_t cred_protect =
       mc->ext_cred_protect == CRED_PROTECT_ABSENT ? CRED_PROTECT_VERIFICATION_OPTIONAL : mc->ext_cred_protect;
-  uint8_t *extension_buffer = mc_stream_state.storage.build.extension_buffer;
+  uint8_t *extension_buffer = response_stream_state.storage.build.extension_buffer;
   size_t extension_size = 0;
   uint8_t data_buf[sizeof(CTAP_auth_data)];
   uint8_t credential_nonce[CREDENTIAL_NONCE_SIZE + 2];
   bool mldsa = mc->alg_type == COSE_ALG_ML_DSA_65;
   bool large_blob_key = mc->ext_large_blob_key;
   int32_t alg_type = mc->alg_type;
-  uint8_t *public_key = mc_stream_state.storage.build.crypto.public_key;
+  uint8_t *public_key = response_stream_state.storage.build.crypto.public_key;
   uint8_t *prefix;
   uint8_t *p;
-  sha256_ctx_t *sha256 = &mc_stream_state.storage.build.crypto.sha256;
+  sha256_ctx_t *sha256 = &response_stream_state.storage.build.crypto.sha256;
   size_t cert_prefix_len;
   size_t sig_len;
   int cert_len;
@@ -1690,7 +1692,7 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
 
     // The parsed request aliases applet_session_scratch. Preserve the last
     // request field needed below before reusing that storage for the response.
-    memcpy(mc_stream_state.storage.build.client_data_hash, mc->client_data_hash, CLIENT_DATA_HASH_SIZE);
+    memcpy(response_stream_state.storage.build.client_data_hash, mc->client_data_hash, CLIENT_DATA_HASH_SIZE);
     if (mldsa) {
       memset(state, 0, sizeof(*state));
       state->storage_kind = CTAP_MLDSA_STREAM_PK;
@@ -1754,7 +1756,7 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
     }
     memcpy(credential_nonce, cid.nonce, sizeof(cid.nonce));
   }
-  sha256_update(sha256, mc_stream_state.storage.build.client_data_hash, CLIENT_DATA_HASH_SIZE);
+  sha256_update(sha256, response_stream_state.storage.build.client_data_hash, CLIENT_DATA_HASH_SIZE);
   sha256_final(sha256, data_buf);
   sig_len = sign_with_device_key(data_buf, PRIVATE_KEY_LENGTH[SECP256R1], data_buf);
   if (!sig_len) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1811,20 +1813,20 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
                    cert_prefix_len > sizeof(applet_session_scratch.buffer) - prefix_len ||
                    tail_len > sizeof(applet_session_scratch.buffer) - prefix_len - cert_prefix_len))
       return CTAP2_ERR_LIMIT_EXCEEDED;
-    if (ctap_make_credential_stream_add_mem(prefix, prefix_len) < 0 ||
-        (mldsa && ctap_make_credential_stream_add_mldsa(state, MLDSA_PK_BYTES) < 0) ||
-        ctap_make_credential_stream_add_mem(mldsa ? state->storage.pk.suffix : suffix, cert_prefix_len) < 0 ||
-        ctap_make_credential_stream_add_file(CTAP_CERT_FILE, 0, (size_t)cert_len) < 0 ||
-        ctap_make_credential_stream_add_mem(tail, tail_len) < 0)
+    if (ctap_response_stream_add_mem(prefix, prefix_len) < 0 ||
+        (mldsa && ctap_response_stream_add_mldsa(state, MLDSA_PK_BYTES) < 0) ||
+        ctap_response_stream_add_mem(mldsa ? state->storage.pk.suffix : suffix, cert_prefix_len) < 0 ||
+        ctap_response_stream_add_file(CTAP_CERT_FILE, 0, (size_t)cert_len) < 0 ||
+        ctap_response_stream_add_mem(tail, tail_len) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
-    mc_stream_state.prepared = true;
+    response_stream_state.prepared = true;
     if (mldsa) {
       DBG_MSG("makeCredential stream prefix=%zu mldsa-pk=%u suffix=%zu cert=%d total=%zu\n",
               (size_t)state->prefix_len, MLDSA_PK_BYTES, (size_t)state->suffix_len, cert_len,
-              mc_stream_state.total_len);
+              response_stream_state.total_len);
     } else {
       DBG_MSG("makeCredential stream prefix=%zu cert=%d suffix=%zu total=%zu\n", prefix_len, cert_len, tail_len,
-              mc_stream_state.total_len);
+              response_stream_state.total_len);
     }
   } else {
     encoder->data.ptr = q;
@@ -1838,11 +1840,11 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   // Streaming transports can dispatch makeCredential without passing through
   // ctap_process_cbor(), so observe token expiry at the command handler too.
   cp_pin_uv_auth_token_usage_timer_observer();
-  CborParser *parser = &mc_stream_state.storage.parse.parser;
+  CborParser *parser = &response_stream_state.storage.parse.parser;
   CTAP_make_credential *mc = &applet_session_scratch.ctap_mc;
 
-  mc_stream_state.storage.parse.param_src = ctap_param_req_src();
-  int ret = current_req_src.read ? parse_make_credential_src(parser, mc, &mc_stream_state.storage.parse.param_src, len)
+  response_stream_state.storage.parse.param_src = ctap_param_req_src();
+  int ret = current_req_src.read ? parse_make_credential_src(parser, mc, &response_stream_state.storage.parse.param_src, len)
                                  : parse_make_credential(parser, mc, params, len);
   CHECK_PARSER_RET(ret);
   ctap_req_lifetime_end();
@@ -3449,7 +3451,7 @@ static uint8_t __attribute__((noinline)) ctap_large_blobs(const uint8_t *params,
     if (lb.offset + (int)lb.get > size) lb.get = size - lb.offset;
     DBG_MSG("read %hu bytes at %hu\n", lb.get, lb.offset);
     KEEPALIVE();
-    // Reuse the segmented MC response engine: only this small CBOR prefix
+    // Reuse the segmented CTAP response engine: only this small CBOR prefix
     // lives in scratch. The fragment itself is pulled from its existing file,
     // without writing past the encoder window or keeping a file cache open.
     uint8_t *prefix = applet_session_scratch.buffer;
@@ -3458,8 +3460,8 @@ static uint8_t __attribute__((noinline)) ctap_large_blobs(const uint8_t *params,
     *ptr++ = 0xA1;
     *ptr++ = LB_RESP_CONFIG;
     if (cbor_put_bytes_header(&ptr, lb.get) < 0 ||
-        ctap_make_credential_stream_add_mem(prefix, (size_t)(ptr - prefix)) < 0 ||
-        ctap_make_credential_stream_add_file(LB_FILE, lb.offset, lb.get) < 0)
+        ctap_response_stream_add_mem(prefix, (size_t)(ptr - prefix)) < 0 ||
+        ctap_response_stream_add_file(LB_FILE, lb.offset, lb.get) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
   } else {
     const int pin_state = has_pin();
@@ -3634,14 +3636,14 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
     goto set_resp;
   case CTAP_LARGE_BLOBS:
     DBG_MSG("----------------LB--------------------\n");
-    memset(&mc_stream_state, 0, sizeof(mc_stream_state));
+    memset(&response_stream_state, 0, sizeof(response_stream_state));
     status = ctap_large_blobs(req, req_len);
-    if (status == 0 && mc_stream_state.prepared) {
+    if (status == 0 && response_stream_state.prepared) {
       *resp = 0;
       *resp_len = 0;
       if (!hid_cbor_stream_response_active)
-        apdu_response_source_set((uint32_t)mc_stream_state.total_len, SW_NO_ERROR,
-                                ctap_make_credential_stream_read_at, NULL, &mc_stream_state);
+        apdu_response_source_set((uint32_t)response_stream_state.total_len, SW_NO_ERROR,
+                                ctap_response_stream_read_at, NULL, &response_stream_state);
       goto finish;
     }
     goto set_resp;
@@ -3709,7 +3711,7 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
   if (current_cmd_src != CTAP_SRC_NONE) return -1;
 
   memset(source, 0, sizeof(*source));
-  memset(&mc_stream_state, 0, sizeof(mc_stream_state));
+  memset(&response_stream_state, 0, sizeof(response_stream_state));
   memset(&mem_stream_state, 0, sizeof(mem_stream_state));
   ctap_mldsa_apdu_stream_close(&mldsa_stream_state);
 
@@ -3749,11 +3751,11 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
       ctap_req_lifetime_end();
       return -1;
     }
-    if (cmd == CTAP_LARGE_BLOBS && mc_stream_state.prepared && resp[0] == 0) {
-      source->total_len = mc_stream_state.total_len;
-      source->read = ctap_make_credential_stream_read;
+    if (cmd == CTAP_LARGE_BLOBS && response_stream_state.prepared && resp[0] == 0) {
+      source->total_len = response_stream_state.total_len;
+      source->read = ctap_response_stream_read;
       source->close = ctap_close_shared_buffer_source;
-      source->ctx = &mc_stream_state;
+      source->ctx = &response_stream_state;
       ctap_req_lifetime_end();
       return 1;
     }
@@ -3799,11 +3801,11 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
   last_cmd = CTAP_MAKE_CREDENTIAL;
   if (status != 0) last_cmd = CTAP_INVALID_CMD;
 
-  if (status == 0 && mc_stream_state.prepared) {
-    source->total_len = mc_stream_state.total_len;
-    source->read = ctap_make_credential_stream_read;
+  if (status == 0 && response_stream_state.prepared) {
+    source->total_len = response_stream_state.total_len;
+    source->read = ctap_response_stream_read;
     source->close = ctap_close_shared_buffer_source;
-    source->ctx = &mc_stream_state;
+    source->ctx = &response_stream_state;
     return 1;
   }
 
@@ -3834,7 +3836,7 @@ static int __attribute__((noinline)) ctap_prepare_make_credential_apdu_response(
   uint8_t *resp = rapdu->data;
   size_t resp_len = APDU_BUFFER_SIZE;
 
-  memset(&mc_stream_state, 0, sizeof(mc_stream_state));
+  memset(&response_stream_state, 0, sizeof(response_stream_state));
   stream_resp_base = resp;
   stream_make_credential_response = true;
 
@@ -3851,9 +3853,9 @@ static int __attribute__((noinline)) ctap_prepare_make_credential_apdu_response(
   last_cmd = CTAP_MAKE_CREDENTIAL;
   if (status != 0) last_cmd = CTAP_INVALID_CMD;
 
-  if (status == 0 && mc_stream_state.prepared) {
-    apdu_response_source_set((uint32_t)mc_stream_state.total_len, SW_NO_ERROR, ctap_make_credential_stream_read_at,
-                             NULL, &mc_stream_state);
+  if (status == 0 && response_stream_state.prepared) {
+    apdu_response_source_set((uint32_t)response_stream_state.total_len, SW_NO_ERROR, ctap_response_stream_read_at,
+                             NULL, &response_stream_state);
     return 0;
   }
 
@@ -3984,24 +3986,6 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
       .ctx = (void *)capdu->data,
       .base_offset = 0,
       .len = LC,
-  };
-  return ctap_process_apdu_source_with_src(capdu, &req_src, rapdu, src);
-}
-
-int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src, ctap_req_close_t close,
-                                   void *close_ctx) {
-  if (!capdu || capdu->lc == 0 || capdu->lc > pke_buffer_size()) {
-    rapdu->len = 0;
-    rapdu->sw = SW_WRONG_LENGTH;
-    return 0;
-  }
-
-  ctap_req_src_t req_src = {
-      .read = apdu_request_read_pke,
-      .close = close,
-      .ctx = close_ctx,
-      .base_offset = 0,
-      .len = capdu->lc,
   };
   return ctap_process_apdu_source_with_src(capdu, &req_src, rapdu, src);
 }
