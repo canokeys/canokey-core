@@ -62,7 +62,7 @@ static uint8_t transmit_xfrblock(DWORD Lun, const uint8_t *tx, DWORD tx_len, uin
   }
   // Core CCID maintains a single global bulk endpoint state; the virt-card is
   // single-slot, so we ignore Lun beyond stamping it into bSlot.
-  uint8_t *abData = tx_len <= SHORT_ABDATA_SIZE ? bulkout_data.abDataShort : shared_io_buffer;
+  uint8_t *abData = shared_io_buffer;
   memcpy(abData, tx, tx_len);
   ccid_set_bulkout_length(tx_len);
   bulkout_data.bSlot = (uint8_t)Lun;

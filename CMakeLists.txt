@@ -184,6 +184,9 @@ set(canokey_core_public_defs
 set(canokey_core_private_defs
     CBOR_NO_FLOATING_POINT
     CBOR_STATIC_DEFINE
+    # CTAP requires four nesting levels. Bound TinyCBOR's recursive skipping
+    # of unknown containers instead of its default 1024-level call stack.
+    CBOR_PARSER_MAX_RECURSIONS=4
 )
 
 if(ENABLE_DEBUG_OUTPUT)

@@ -406,11 +406,6 @@ static int ctap_mem_req_read(void *ctx, size_t offset, uint8_t *buf, size_t len)
   return 0;
 }
 
-static int ctap_pke_req_read(void *ctx, size_t offset, uint8_t *buf, size_t len) {
-  UNUSED(ctx);
-  return pke_buffer_read(offset, buf, len);
-}
-
 static int ctap_req_read_payload_bytes(size_t offset, uint8_t *buf, size_t len) {
   if (current_req_src.read) {
     if (current_req_src.cancelled && current_req_src.cancelled(current_req_src.ctx)) return -1;
@@ -423,14 +418,7 @@ static int ctap_req_read_payload_bytes(size_t offset, uint8_t *buf, size_t len) 
   return 0;
 }
 
-static void ctap_req_src_clear(void) {
-  current_req_src.read = NULL;
-  current_req_src.cancelled = NULL;
-  current_req_src.close = NULL;
-  current_req_src.ctx = NULL;
-  current_req_src.base_offset = 0;
-  current_req_src.len = 0;
-}
+static void ctap_req_src_clear(void) { memset(&current_req_src, 0, sizeof(current_req_src)); }
 
 static void ctap_req_lifetime_end(void) {
   // Cross the request lifetime boundary before keepalive, WAIT(), crypto, or
@@ -588,7 +576,7 @@ static int ctap_min_pin_rpids_store(const CTAP_config *cfg) {
   return 0;
 }
 
-static bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len) {
+bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len) {
   if (!rp_id || rp_id_len == 0 || rp_id_len > DOMAIN_NAME_MAX_SIZE) return false;
 
   int size = get_file_size(MIN_PIN_RPIDS_FILE);
@@ -978,7 +966,7 @@ static int ctap_make_credential_stream_read(void *ctx, uint8_t *out, size_t max_
       memcpy(out + copied, segment->buf + segment->off, n);
       break;
     case CTAP_MC_STREAM_SEG_FILE:
-      if (read_file(segment->path, out + copied, segment->file_off + segment->off, n) < 0) return -1;
+      if (read_file(segment->path, out + copied, segment->file_off + segment->off, n) != (int)n) return -1;
       break;
     case CTAP_MC_STREAM_SEG_MLDSA:
       if (ctap_mldsa_stream_read_generated(segment->mldsa, out + copied, n, &written_now) < 0) return -1;
@@ -2038,8 +2026,7 @@ step12:
   cp_clear_pin_uv_auth_token_permissions_except_lbw();
 
   // 15. If the extensions parameter is present:
-  bool ext_min_pin_authorized =
-      mc->ext_min_pin_length && ctap_min_pin_rpid_authorized(mc->rp_id_full, mc->rp_id_full_len);
+  bool ext_min_pin_authorized = mc->ext_min_pin_length && mc->min_pin_rpid_authorized;
   if (mc->ext_large_blob_key) {
     if (mc->options.rk != OPTION_TRUE) {
       DBG_MSG("largeBlobKey requires rk\n");
@@ -3404,11 +3391,10 @@ static uint8_t ctap_reset_data(void) {
   return ctap_install(1);
 }
 
-static uint8_t __attribute__((noinline)) ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, size_t len) {
+static uint8_t __attribute__((noinline)) ctap_large_blobs(const uint8_t *params, size_t len) {
   static uint16_t expectedNextOffset, expectedLength;
 
   CborParser parser;
-  CborEncoder map;
   CTAP_large_blobs lb;
   uint8_t set_buf[MAX_FRAGMENT_LENGTH];
   uint8_t buf[256]; // for pin auth
@@ -3463,19 +3449,18 @@ static uint8_t __attribute__((noinline)) ctap_large_blobs(CborEncoder *encoder, 
     if (lb.offset + (int)lb.get > size) lb.get = size - lb.offset;
     DBG_MSG("read %hu bytes at %hu\n", lb.get, lb.offset);
     KEEPALIVE();
-    ret = cbor_encoder_create_map(encoder, &map, 1);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&map, LB_RESP_CONFIG);
-    CHECK_CBOR_RET(ret);
-    // to save RAM, we encode the buffer manually
-    uint8_t *ptr = map.data.ptr;
-    ret = cbor_encode_uint(&map, lb.get);
-    CHECK_CBOR_RET(ret);
-    *ptr |= 0x40; // CBOR Major type 2
-    if (read_file(LB_FILE, map.data.ptr, lb.offset, lb.get) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    map.data.ptr += lb.get;
-    ret = cbor_encoder_close_container(encoder, &map);
-    CHECK_CBOR_RET(ret);
+    // Reuse the segmented MC response engine: only this small CBOR prefix
+    // lives in scratch. The fragment itself is pulled from its existing file,
+    // without writing past the encoder window or keeping a file cache open.
+    uint8_t *prefix = applet_session_scratch.buffer;
+    uint8_t *ptr = prefix;
+    *ptr++ = CTAP1_ERR_SUCCESS;
+    *ptr++ = 0xA1;
+    *ptr++ = LB_RESP_CONFIG;
+    if (cbor_put_bytes_header(&ptr, lb.get) < 0 ||
+        ctap_make_credential_stream_add_mem(prefix, (size_t)(ptr - prefix)) < 0 ||
+        ctap_make_credential_stream_add_file(LB_FILE, lb.offset, lb.get) < 0)
+      return CTAP2_ERR_UNHANDLED_REQUEST;
   } else {
     const int pin_state = has_pin();
     if (pin_state < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -3649,7 +3634,16 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
     goto set_resp;
   case CTAP_LARGE_BLOBS:
     DBG_MSG("----------------LB--------------------\n");
-    status = ctap_large_blobs(&encoder, req, req_len);
+    memset(&mc_stream_state, 0, sizeof(mc_stream_state));
+    status = ctap_large_blobs(req, req_len);
+    if (status == 0 && mc_stream_state.prepared) {
+      *resp = 0;
+      *resp_len = 0;
+      if (!hid_cbor_stream_response_active)
+        apdu_response_source_set((uint32_t)mc_stream_state.total_len, SW_NO_ERROR,
+                                ctap_make_credential_stream_read_at, NULL, &mc_stream_state);
+      goto finish;
+    }
     goto set_resp;
   case CTAP_CONFIG:
     DBG_MSG("----------------CONFIG----------------\n");
@@ -3728,13 +3722,12 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
   }
 
   if (cmd == CTAP_GET_INFO) {
+    ctap_req_lifetime_end();
     cp_pin_uv_auth_token_usage_timer_observer();
     if (ctap_prepare_get_info_stream(source) == 0) {
       last_cmd = CTAP_GET_INFO;
-      ctap_req_lifetime_end();
       return 1;
     }
-    ctap_req_lifetime_end();
     return -1;
   }
 
@@ -3755,6 +3748,14 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
       ctap_release_shared_buffer();
       ctap_req_lifetime_end();
       return -1;
+    }
+    if (cmd == CTAP_LARGE_BLOBS && mc_stream_state.prepared && resp[0] == 0) {
+      source->total_len = mc_stream_state.total_len;
+      source->read = ctap_make_credential_stream_read;
+      source->close = ctap_close_shared_buffer_source;
+      source->ctx = &mc_stream_state;
+      ctap_req_lifetime_end();
+      return 1;
     }
     if (mldsa_stream_state.pending && resp[0] == 0) {
       source->total_len = mldsa_stream_state.total_len;
@@ -3878,18 +3879,17 @@ static int __attribute__((noinline)) ctap_process_apdu_cbor_message(uint8_t *req
   }
 
   if (cmd == CTAP_GET_INFO) {
+    ctap_req_lifetime_end();
     cp_pin_uv_auth_token_usage_timer_observer();
     CTAPHID_TxSource source;
     memset(&source, 0, sizeof(source));
     if (ctap_prepare_get_info_stream(&source) == 0) {
       apdu_response_source_set((uint32_t)source.total_len, SW_NO_ERROR, ctap_const_stream_read_at, NULL, source.ctx);
       last_cmd = CTAP_GET_INFO;
-      ctap_req_lifetime_end();
       return 0;
     }
     last_cmd = CTAP_INVALID_CMD;
     rapdu->sw = SW_UNABLE_TO_PROCESS;
-    ctap_req_lifetime_end();
     return 0;
   }
 
@@ -3997,7 +3997,7 @@ int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t 
   }
 
   ctap_req_src_t req_src = {
-      .read = ctap_pke_req_read,
+      .read = apdu_request_read_pke,
       .close = close,
       .ctx = close_ctx,
       .base_offset = 0,

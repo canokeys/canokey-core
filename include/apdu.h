@@ -94,6 +94,22 @@ typedef struct {
   void *ctx;
 } APDU_RESPONSE_SOURCE_VIEW;
 
+// Request storage belongs to the transport until parsing ends. close must be
+// idempotent: dispatch also closes sources rejected before CTAP is entered.
+typedef int (*apdu_request_read_t)(void *ctx, size_t offset, uint8_t *buf, size_t len);
+typedef int (*apdu_request_cancelled_t)(void *ctx);
+typedef void (*apdu_request_close_t)(void *ctx);
+typedef struct {
+  apdu_request_read_t read;
+  apdu_request_cancelled_t cancelled;
+  apdu_request_close_t close;
+  void *ctx;
+  size_t base_offset;
+  size_t len;
+} apdu_request_source_t;
+
+int apdu_request_read_pke(void *ctx, size_t offset, uint8_t *buf, size_t len);
+
 extern uint8_t *shared_io_buffer;
 
 enum {
@@ -142,6 +158,9 @@ typedef enum {
   APDU_TRANSPORT_HID,
 } apdu_transport_t;
 
+int apdu_fido_selected(void);
+void process_apdu_source_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport,
+                              const apdu_request_source_t *source);
 void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport);
 void process_apdu(CAPDU *capdu, RAPDU *rapdu);
 

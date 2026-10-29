@@ -31,7 +31,7 @@ applet_session_scratch_t applet_session_scratch;
 static volatile uint32_t session_owner;
 static uint8_t apdu_context_owner;
 
-static void device_applet_context_reset(void) {
+void device_applet_context_reset(void) {
   applets_poweroff();
   apdu_response_source_clear();
   apdu_fido_chain_reset();
@@ -122,6 +122,9 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     device_applet_session_touch(owner);
     // Keep blinking, in case other applet stops it
     start_blinking(0);
+#if ENABLE_IFACE_CCID && !ENABLE_IFACE_CTAPHID
+    CCID_ServicePresencePoll();
+#endif
 #if ENABLE_IFACE_CTAPHID
     uint8_t ctaphid_ret = CTAPHID_Loop(1);
     if (owner == DEVICE_APPLET_SESSION_CTAPHID && ctaphid_ret == LOOP_CANCEL) {
@@ -153,6 +156,11 @@ uint8_t wait_for_user_presence(uint8_t entry) {
 }
 
 int send_keepalive_during_processing(uint8_t entry) {
+#if ENABLE_IFACE_CCID
+  if (session_owner == DEVICE_APPLET_SESSION_CCID) {
+    CCID_ServicePresencePoll();
+  }
+#endif
 #if ENABLE_IFACE_CTAPHID
   if (!device_usb_ready()) return LOOP_CANCEL;
   if (session_owner == DEVICE_APPLET_SESSION_CTAPHID || entry == WAIT_ENTRY_CTAPHID) {

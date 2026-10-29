@@ -210,12 +210,12 @@ static const uint8_t USBD_FS_IfDesc_CCID[] = {
     0x00, 0xB0, 0x04, 0x00,   /* dwDataRate: Default ICC I/O data rate */
     0x00, 0xB0, 0x04, 0x00,   /* dwMaxDataRate: Maximum supported ICC I/O data */
     0x00,                     /* bNumDataRatesSupported : no setting from PC */
-    LO(CCID_MAX_XFR_BLOCK_SIZE), /* dwMaxIFSD, B3 */
-    HI(CCID_MAX_XFR_BLOCK_SIZE), /* dwMaxIFSD, B2 */
+    0xFE,                     /* dwMaxIFSD, B3: T=1 information field, 254 bytes */
+    0x00,                     /* dwMaxIFSD, B2 */
     0x00, 0x00,               /* dwMaxIFSD, B1B0 */
     0x00, 0x00, 0x00, 0x00,   /* dwSynchProtocols  */
     0x00, 0x00, 0x00, 0x00,   /* dwMechanical: no special characteristics */
-    0xFE, 0x00, 0x04, 0x00,   /* dwFeatures */
+    0xFE, 0x00, 0x02, 0x00,   /* dwFeatures: short APDU exchange only */
     LO(CCID_MAX_MESSAGE_SIZE), /* dwMaxCCIDMessageLength, B3 */
     HI(CCID_MAX_MESSAGE_SIZE), /* dwMaxCCIDMessageLength, B2 */
     0x00, 0x00,               /* dwMaxCCIDMessageLength, B1B0 */

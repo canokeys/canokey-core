@@ -3,12 +3,10 @@
 #define _CCID_H_
 
 #include <common.h>
-#include <pke.h>
 
 #define ABDATA_SIZE APDU_COMMAND_BUFFER_SIZE
-#define SHORT_ABDATA_SIZE 8 /* Enough for most CCID messages except XfrBlock/Secure */
 #define CCID_CMD_HEADER_SIZE 10
-#define CCID_MAX_XFR_BLOCK_SIZE (PKE_BUFFER_SIZE + 9u)
+#define CCID_MAX_XFR_BLOCK_SIZE 261u // Short Case 4: header + Lc + 255 data bytes + Le
 #define CCID_MAX_MESSAGE_SIZE (CCID_CMD_HEADER_SIZE + CCID_MAX_XFR_BLOCK_SIZE)
 #define CCID_NUMBER_OF_SLOTS 1
 #define TIME_EXTENSION_PERIOD 1500
@@ -22,7 +20,6 @@ typedef struct {
   uint8_t bSpecific_0;                    /* Offset = 7*/
   uint8_t bSpecific_1;                    /* Offset = 8*/
   uint8_t bSpecific_2;                    /* Offset = 9*/
-  uint8_t abDataShort[SHORT_ABDATA_SIZE]; /* Offset = 10*/
 } __packed ccid_bulkout_data_t;
 
 typedef struct {
@@ -147,8 +144,11 @@ uint8_t CCID_Init(void);
 uint32_t ccid_get_le32(const uint8_t value[4]);
 void ccid_put_le32(uint8_t out[4], uint32_t value);
 void ccid_set_bulkout_length(uint32_t length);
-void ccid_release_pke_request(void *ctx);
+// Internal lifecycle cleanup, not the CCID class ABORT protocol.
 void CCID_AbortPendingCommand(void);
+uint8_t CCID_CanReceive(void);
+void CCID_AuxInFinished(void);
+// USBD_BUSY leaves this packet unconsumed: retain/replay it after CanReceive.
 uint8_t CCID_OutEvent(uint8_t *data, uint8_t len);
 void CCID_InFinished(uint8_t is_time_extension_request);
 void CCID_Loop(void);
