@@ -1112,22 +1112,24 @@ static void test_ccid_le32_wire_encoding(void **state) {
   assert_int_equal(sizeof(empty_ccid_bulkin_data_t), CCID_CMD_HEADER_SIZE);
 }
 
-// Literal wire headers pin existing behavior, including unsupported commands.
+// Literal wire headers include failed status for unsupported commands and absent slots.
 static void test_ccid_response_headers(void **state) {
   (void)state;
   static const uint8_t cases[][7] = {
       // request, slot, response, payload length, status, error, specific
       {0x62, 0, 0x80, 17, 0x00, 0x81, 0}, {0x63, 0, 0x81, 0, 0x01, 0x81, 0}, {0x65, 0, 0x81, 0, 0x01, 0x81, 0},
-      {0x6C, 0, 0x82, 7, 0x01, 0x81, 1},  {0x6D, 0, 0x82, 0, 0x01, 0x00, 1}, {0x61, 0, 0x82, 0, 0x01, 0x00, 1},
-      {0x6B, 0, 0x83, 0, 0x01, 0x00, 0},  {0x69, 0, 0x80, 0, 0x01, 0x00, 0}, {0x72, 0, 0x81, 0, 0x01, 0x00, 0},
-      {0x65, 1, 0x81, 0, 0x41, 0x05, 0},  {0x6C, 1, 0x82, 0, 0x41, 0x05, 1}, {0x62, 1, 0x80, 0, 0x41, 0x05, 0},
+      {0x6C, 0, 0x82, 7, 0x01, 0x81, 1},  {0x6D, 0, 0x82, 0, 0x41, 0x00, 1}, {0x61, 0, 0x82, 0, 0x41, 0x00, 1},
+      {0x6B, 0, 0x83, 0, 0x41, 0x00, 0},  {0x69, 0, 0x80, 0, 0x41, 0x00, 0}, {0x72, 0, 0x81, 0, 0x41, 0x00, 0},
+      {0xFF, 0, 0x81, 0, 0x41, 0x00, 0}, {0xFF, 1, 0x81, 0, 0x42, 0x05, 0},
+      {0x65, 1, 0x81, 0, 0x42, 0x05, 0},  {0x6C, 1, 0x82, 0, 0x42, 0x05, 1}, {0x62, 1, 0x80, 0, 0x42, 0x05, 0},
   };
   const uint8_t previous_state = usb_device.dev_state;
   init_apdu_buffer();
   device_init();
+  USBD_CCID_Init(&usb_device);
+  // Keep one session: unsupported replies must not inherit preceding success.
   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
     const uint8_t *c = cases[i];
-    USBD_CCID_Init(&usb_device);
     usb_device.dev_state = USBD_STATE_CONFIGURED;
     EPType *in = dummy_get_ep_by_addr(EP_IN(ccid));
     in->maxpacket = 64;

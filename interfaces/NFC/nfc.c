@@ -31,9 +31,10 @@ static uint8_t retransmit_prologue, retransmit_data[29];
 static struct {
   uint16_t size, sent;
   uint8_t sending, retries, cached_len;
+  // RX_INLINE is zero, so resetting this object also starts inline RX.
   // RX and TX never overlap. Reuse the byte once the request is complete.
   union { uint8_t aggregate, rx_mode; };
-} tx_state;
+} transfer_state;
 static volatile uint8_t cleanup_pending;
 static uint32_t apdu_buffer_rx_size;
 // RX envelope state is separate from the ownership flag in CAPDU.
@@ -54,15 +55,15 @@ static void restart_idle_timeout(void) {
   device_set_timeout(request_idle_recovery, NFC_RECOVERY_PERIOD);
 }
 
-static void reset_tx_state(void) {
-  memset(&tx_state, 0, sizeof(tx_state));
+static void reset_transfer_state(void) {
+  memset(&transfer_state, 0, sizeof(transfer_state));
   retransmit_prologue = 0; // invalid: all supported block types have bit1 set
 }
 
 static void reset_nfc_state(void) {
   block_number = 1;
   apdu_buffer_rx_size = 0;
-  reset_tx_state();
+  reset_transfer_state();
   next_state = TO_RECEIVE;
 }
 
@@ -113,7 +114,7 @@ static int append_rx(const uint8_t *data, size_t len) {
     const uint32_t pos = apdu_buffer_rx_size;
     // Seven bytes alone are Case 2E (Le, not Lc). Do not start staging until
     // a body byte arrives, even when the header spans multiple I-blocks.
-    if (pos == 7 && tx_state.rx_mode == RX_INLINE) {
+    if (pos == 7 && transfer_state.rx_mode == RX_INLINE) {
       if (!((shared_io_buffer[0] == 0 || shared_io_buffer[0] == 0x80) && shared_io_buffer[1] == 0xC0)) {
         // Close an abandoned generator before new RX staging can touch PKE.
         apdu_response_source_clear();
@@ -125,10 +126,12 @@ static int append_rx(const uint8_t *data, size_t len) {
           memcpy(&apdu_cmd.cla, shared_io_buffer, 4);
           apdu_cmd.lc = lc;
           apdu_cmd.extended = 1;
-          tx_state.rx_mode = RX_DISCARD;
+          transfer_state.rx_mode = RX_DISCARD;
           apdu_resp.sw = SW_WRONG_LENGTH;
           if (apdu_cmd.cla == 0x80 && apdu_cmd.ins == CTAP_INS_MSG) {
             apdu_resp.sw = SW_FILE_NOT_FOUND;
+            // Mirror process_apdu_impl's NFC FIDO admission/error order before
+            // staging: selection, P1/P2, then CTAP size. Keep both paths aligned.
             if (apdu_fido_selected()) {
               // Abandon old command chaining before acquiring the new RX staging.
               apdu_fido_chain_reset();
@@ -139,7 +142,7 @@ static int append_rx(const uint8_t *data, size_t len) {
                   apdu_resp.sw = SW_UNABLE_TO_PROCESS;
                   if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) == 0) {
                     apdu_cmd.pke_backed = 1;
-                    tx_state.rx_mode = RX_PKE;
+                    transfer_state.rx_mode = RX_PKE;
                   }
                 }
               }
@@ -149,20 +152,20 @@ static int append_rx(const uint8_t *data, size_t len) {
       }
     }
     size_t n;
-    if (tx_state.rx_mode == RX_MALFORMED) {
+    if (transfer_state.rx_mode == RX_MALFORMED) {
       n = len;
-    } else if (tx_state.rx_mode != RX_INLINE) {
+    } else if (transfer_state.rx_mode != RX_INLINE) {
       const uint32_t end = 7u + apdu_cmd.lc;
       if (pos < end) {
         n = MIN(len, end - pos);
-        if (tx_state.rx_mode == RX_PKE && pke_buffer_write(pos - 7, data, n) < 0) {
+        if (transfer_state.rx_mode == RX_PKE && pke_buffer_write(pos - 7, data, n) < 0) {
           close_rx_request(NULL);
-          tx_state.rx_mode = RX_DISCARD;
+          transfer_state.rx_mode = RX_DISCARD;
           apdu_resp.sw = SW_UNABLE_TO_PROCESS;
         }
       } else {
         if (pos >= end + 2) {
-          tx_state.rx_mode = RX_MALFORMED;
+          transfer_state.rx_mode = RX_MALFORMED;
           continue;
         }
         n = MIN(len, end + 2 - pos);
@@ -171,7 +174,7 @@ static int append_rx(const uint8_t *data, size_t len) {
     } else {
       const uint32_t end = pos < 7 ? 7 : APDU_COMMAND_BUFFER_SIZE;
       if (pos >= end) {
-        tx_state.rx_mode = RX_MALFORMED;
+        transfer_state.rx_mode = RX_MALFORMED;
         continue;
       }
       n = MIN(len, end - pos);
@@ -186,13 +189,13 @@ static int append_rx(const uint8_t *data, size_t len) {
 
 // Hide internal short-buffer chunking only within this command's Le budget.
 static void prepare_tx(RAPDU *rapdu) {
-  tx_state.sent = 0;
+  transfer_state.sent = 0;
   apdu_cmd.le -= MIN(apdu_cmd.le, rapdu->len);
-  tx_state.aggregate = apdu_cmd.extended && apdu_cmd.le && HI(rapdu->sw) == 0x61;
-  tx_state.size = rapdu->len;
-  if (!tx_state.aggregate) {
-    shared_io_buffer[tx_state.size++] = HI(rapdu->sw);
-    shared_io_buffer[tx_state.size++] = LO(rapdu->sw);
+  transfer_state.aggregate = apdu_cmd.extended && apdu_cmd.le && HI(rapdu->sw) == 0x61;
+  transfer_state.size = rapdu->len;
+  if (!transfer_state.aggregate) {
+    shared_io_buffer[transfer_state.size++] = HI(rapdu->sw);
+    shared_io_buffer[transfer_state.size++] = LO(rapdu->sw);
   }
 }
 
@@ -204,13 +207,13 @@ static int load_next_aggregated_chunk(void) {
   if (process_nfc_apdu(&capdu, &rapdu) < 0) return NFC_SEND_ABORTED;
 
   prepare_tx(&rapdu);
-  return tx_state.aggregate;
+  return transfer_state.aggregate;
 }
 
 void nfc_init(void) {
   reset_nfc_state();
   cleanup_pending = 0;
-  tx_state.rx_mode = RX_INLINE;
+  transfer_state.rx_mode = RX_INLINE;
   apdu_cmd.pke_backed = 0;
   // NFC interface uses shared_io_buffer w/o calling acquire_apdu_buffer(), because NFC mode is exclusive with USB mode
   apdu_cmd.data = shared_io_buffer;
@@ -252,7 +255,7 @@ static int do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   // not merely the last I-block from an earlier APDU. The local frame also
   // avoids aliasing when the retransmit cache itself is the input.
   retransmit_prologue = prologue;
-  tx_state.cached_len = len;
+  transfer_state.cached_len = len;
   memcpy(retransmit_data, tx_frame_buf + 1, len);
   // Consume this turn just before TXEN: i2c_stop() can unmask a GPIO IRQ
   // carrying the reader's next frame before the register write returns.
@@ -278,27 +281,27 @@ static int nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
 
 static int send_apdu_buffer(uint8_t resend) {
   if (resend) {
-    if (retransmit_prologue == 0 || tx_state.retries >= NFC_MAX_RETRANSMITS) return NFC_SEND_FAILED;
-    ++tx_state.retries;
-    return nfc_send_frame(retransmit_prologue, retransmit_data, tx_state.cached_len);
+    if (retransmit_prologue == 0 || transfer_state.retries >= NFC_MAX_RETRANSMITS) return NFC_SEND_FAILED;
+    ++transfer_state.retries;
+    return nfc_send_frame(retransmit_prologue, retransmit_data, transfer_state.cached_len);
   }
 
-  if (tx_state.aggregate && tx_state.sent == tx_state.size) {
+  if (transfer_state.aggregate && transfer_state.sent == transfer_state.size) {
     const int more = load_next_aggregated_chunk();
     if (more < 0) return more;
-    tx_state.aggregate = (uint8_t)more;
+    transfer_state.aggregate = (uint8_t)more;
   }
 
-  uint8_t send_len = (uint8_t)MIN(tx_state.size - tx_state.sent, 29);
+  uint8_t send_len = (uint8_t)MIN(transfer_state.size - transfer_state.sent, 29);
   if (send_len == 0) return -1;
   uint8_t prologue = block_number | 0x02;
-  if (tx_state.size - tx_state.sent > send_len || tx_state.aggregate) prologue |= PCB_I_CHAINING;
-  const int ret = nfc_send_frame(prologue, shared_io_buffer + tx_state.sent, send_len);
+  if (transfer_state.size - transfer_state.sent > send_len || transfer_state.aggregate) prologue |= PCB_I_CHAINING;
+  const int ret = nfc_send_frame(prologue, shared_io_buffer + transfer_state.sent, send_len);
   if (ret < 0) return ret;
-  tx_state.sent += send_len;
-  tx_state.retries = 0;
-  if (tx_state.size == tx_state.sent && !tx_state.aggregate) {
-    tx_state.sending = 0;
+  transfer_state.sent += send_len;
+  transfer_state.retries = 0;
+  if (transfer_state.size == transfer_state.sent && !transfer_state.aggregate) {
+    transfer_state.sending = 0;
   }
   return 0;
 }
@@ -313,7 +316,7 @@ static void send_wtx(void) {
   }
   if (next_state == TO_SEND) {
     uint8_t wtxm = 1;
-    tx_state.retries = 0;
+    transfer_state.retries = 0;
     if (do_nfc_send_frame(S_WTX, &wtxm, 1) != 0 && !cleanup_pending)
       send_failed = 1;
   }
@@ -333,10 +336,10 @@ void nfc_loop(void) {
     close_rx_request(NULL);
     apdu_cmd.pke_backed = 0;
     apdu_buffer_rx_size = 0;
-    tx_state.rx_mode = RX_INLINE;
+    transfer_state.rx_mode = RX_INLINE;
     // An IRQ can interrupt FIFO writes; discard any TX bookkeeping written
     // by that old call after the IRQ reset, while retaining a new RX frame.
-    reset_tx_state();
+    reset_transfer_state();
     device_applet_context_reset();
     if (cleanup_pending) return; // another RF reset interrupted cleanup
   }
@@ -345,7 +348,7 @@ void nfc_loop(void) {
       // A transport error or a stale in-flight session counts as dirty; a session that completed
       // cleanly must keep its block-number/retransmit state, because the reader may still hold
       // the same ISO-DEP activation and neither a reset nor an RF silence would be RF-invisible.
-      const uint8_t dirty = idle_recovery_forced || next_state == TO_SEND || apdu_buffer_rx_size != 0 || tx_state.sending;
+      const uint8_t dirty = idle_recovery_forced || next_state == TO_SEND || apdu_buffer_rx_size != 0 || transfer_state.sending;
       if (!dirty) {
         idle_recovery_state = NFC_RECOVERY_NONE;
         restart_idle_timeout();
@@ -396,7 +399,7 @@ void nfc_loop(void) {
       nfc_error_handler(-6);
       return;
     }
-    if (tx_state.sending) {
+    if (transfer_state.sending) {
       nfc_error_handler(-22);
       return;
     }
@@ -412,7 +415,7 @@ void nfc_loop(void) {
     if (cleanup_pending) return;
 
     if (rx_frame_buf[0] & PCB_I_CHAINING) {
-      tx_state.retries = 0;
+      transfer_state.retries = 0;
       if (nfc_send_frame(R_ACK | block_number, NULL, 0) == NFC_SEND_FAILED) nfc_error_handler(-11);
       return;
     }
@@ -420,8 +423,8 @@ void nfc_loop(void) {
       CAPDU *capdu = &apdu_cmd;
       RAPDU *rapdu = &apdu_resp;
 
-      int malformed = tx_state.rx_mode == RX_MALFORMED;
-      if (tx_state.rx_mode == RX_PKE || tx_state.rx_mode == RX_DISCARD) {
+      int malformed = transfer_state.rx_mode == RX_MALFORMED;
+      if (transfer_state.rx_mode == RX_PKE || transfer_state.rx_mode == RX_DISCARD) {
         const uint32_t end = 7u + capdu->lc;
         malformed = apdu_buffer_rx_size != end && apdu_buffer_rx_size != end + 2;
         capdu->le = 0x10000;
@@ -439,22 +442,22 @@ void nfc_loop(void) {
         apdu_response_source_clear();
         apdu_rapdu_chain_reset();
         SW = SW_WRONG_LENGTH;
-      } else if (tx_state.rx_mode != RX_DISCARD) {
+      } else if (transfer_state.rx_mode != RX_DISCARD) {
         CAPDU command = *capdu; // dispatch clamps Le; preserve the NFC response budget
         if (process_nfc_apdu(&command, rapdu) < 0) return;
       }
-      if (!malformed && tx_state.rx_mode == RX_DISCARD && SW == SW_NO_ERROR) {
+      if (!malformed && transfer_state.rx_mode == RX_DISCARD && SW == SW_NO_ERROR) {
         shared_io_buffer[0] = 0x39; // CTAP2_ERR_REQUEST_TOO_LARGE
         LL = 1;
       }
       capdu->pke_backed = 0;
-      tx_state.rx_mode = RX_INLINE;
+      transfer_state.rx_mode = RX_INLINE;
       // Only FIDO's extended responses hide internal GET RESPONSE chunks.
       capdu->extended = capdu->extended && apdu_fido_selected();
       prepare_tx(rapdu);
       apdu_buffer_rx_size = 0;
-      tx_state.sent = 0;
-      tx_state.sending = 1;
+      transfer_state.sent = 0;
+      transfer_state.sending = 1;
       if (send_apdu_buffer(0) == NFC_SEND_FAILED) nfc_error_handler(-12);
     }
   } else if ((rx_frame_buf[0] & PCB_MASK) == PCB_R_BLOCK) {
@@ -466,7 +469,7 @@ void nfc_loop(void) {
       if ((rx_frame_buf[0] & 1) != block_number) { // continue chaining
         // Rule 13: an ACK advances only an outgoing response chain. Ignore
         // unsolicited ACKs without resetting selection or an incoming APDU.
-        if (!tx_state.sending) {
+        if (!transfer_state.sending) {
           next_state = TO_RECEIVE;
           return;
         }
@@ -489,7 +492,7 @@ void nfc_loop(void) {
   }
   return;
 acknowledge:
-  tx_state.retries = 0;
+  transfer_state.retries = 0;
   if (nfc_send_frame(R_ACK | block_number, NULL, 0) == NFC_SEND_FAILED) nfc_error_handler(-11);
 }
 

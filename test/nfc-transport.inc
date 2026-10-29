@@ -257,9 +257,9 @@ static void test_nfc_irq_rx_handoff(void **unused) {
   nfc_test_frame(0x02 | (block_number ^ 1), info, sizeof(info));
   assert_int_equal(next_state, TO_SEND);
   assert_int_equal(rx_frame_size, 3);
-  const uint16_t sent = tx_state.sent;
+  const uint16_t sent = transfer_state.sent;
   nfc_test_loop();
-  assert_true(tx_state.sent > sent);
+  assert_true(transfer_state.sent > sent);
 
   // Pending receive bytes belong to the main loop until it sends a reply.
   // A retry/presence check must be drained without replacing that request.
@@ -279,7 +279,7 @@ static void test_nfc_irq_rx_handoff(void **unused) {
   assert_int_equal(rx_frame_size, saved_len);
   assert_memory_equal(rx_frame_buf, saved, saved_len);
   nfc_test_loop();
-  assert_true(tx_state.sending);
+  assert_true(transfer_state.sending);
   assert_int_equal(nfc_test_tx[1], 0); // CTAP success, not a damaged request
   set_nfc_state(0);
   device_applet_session_clear();
@@ -353,7 +353,7 @@ static void test_nfc_shared_buffer_staging_bytes(void **unused) {
           assert_memory_equal(shared_io_buffer, cmd, off);
         } else {
           const size_t received = MIN(off - 7, lengths[l]);
-          assert_int_equal(tx_state.rx_mode, RX_PKE);
+          assert_int_equal(transfer_state.rx_mode, RX_PKE);
           assert_int_equal(pke_buffer_read(0, staged, received), 0);
           assert_memory_equal(staged, body, received);
         }
@@ -381,7 +381,7 @@ static void test_nfc_ack_without_response_chain(void **unused) {
     const uint8_t bn = block_number;
     const uint32_t received = apdu_buffer_rx_size;
     const uint8_t cached_pcb = retransmit_prologue;
-    assert_false(tx_state.sending);
+    assert_false(transfer_state.sending);
     // A different-BN ACK is meaningful only for an outgoing I-block chain.
     // It must not advance a completed response or abort an incoming command.
     nfc_test_frame(R_ACK | (bn ^ 1), NULL, 0);
@@ -408,23 +408,23 @@ static void test_nfc_nak_does_not_advance_tx(void **unused) {
   nfc_test_fixture(true);
   const uint8_t info[] = {0x80, 0x10, 0, 0, 0, 0, 1, CTAP_GET_INFO, 0, 0};
   nfc_test_frame(0x02 | (block_number ^ 1), info, sizeof(info));
-  assert_true(tx_state.sending);
+  assert_true(transfer_state.sending);
   const uint8_t bn = block_number;
-  const uint16_t sent = tx_state.sent;
-  const uint16_t size = tx_state.size;
+  const uint16_t sent = transfer_state.sent;
+  const uint16_t size = transfer_state.size;
   // ISO-DEP Rule 12 applies even during a chained response. R(NAK) is
   // never an acknowledgement permitting the response source to advance.
   nfc_test_frame(R_NAK | (bn ^ 1), NULL, 0);
   assert_int_equal(nfc_test_tx_len, 1);
   assert_int_equal(nfc_test_tx[0], R_ACK | bn);
   assert_int_equal(block_number, bn);
-  assert_int_equal(tx_state.sent, sent);
-  assert_int_equal(tx_state.size, size);
-  assert_true(tx_state.sending);
+  assert_int_equal(transfer_state.sent, sent);
+  assert_int_equal(transfer_state.size, size);
+  assert_true(transfer_state.sending);
   // Only the subsequent R(ACK) advances to the next I-block.
   nfc_test_frame(R_ACK | (bn ^ 1), NULL, 0);
   assert_int_equal(block_number, bn ^ 1);
-  assert_int_equal(tx_state.sent, sent + 29);
+  assert_int_equal(transfer_state.sent, sent + 29);
   assert_int_equal(nfc_test_tx[0] & PCB_MASK, PCB_I_BLOCK);
   nfc_test_halt();
   nfc_test_loop();
@@ -969,9 +969,9 @@ static void test_nfc_deferred_cancellation(void **unused) {
     assert_false(cleanup_pending);
     assert_false(apdu_fido_selected());
     assert_false(apdu_response_source_active());
-    assert_int_equal(tx_state.size, 0);
-    assert_int_equal(tx_state.sent, 0);
-    assert_int_equal(tx_state.cached_len, 0);
+    assert_int_equal(transfer_state.size, 0);
+    assert_int_equal(transfer_state.sent, 0);
+    assert_int_equal(transfer_state.cached_len, 0);
     assert_int_equal(nfc_test_releases, 1);
     body[0] = CTAP_GET_INFO;
     len = nfc_test_extended(cmd, body, 413, 0);

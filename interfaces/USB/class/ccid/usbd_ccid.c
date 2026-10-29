@@ -7,13 +7,20 @@
 
 #define CCID_BULK_IN_IDLE_TIMEOUT_MS 2000u
 
+// CCID_Response_SendData maps these compact kind values to endpoint states.
+_Static_assert(CCID_TX_TIME_EXTENSION == 1 && CCID_TX_AUXILIARY == 2 &&
+                   CCID_STATE_DATA_IN_AUXILIARY == CCID_STATE_DATA_IN_TIME_EXTENSION + 1,
+               "CCID TX kinds and IN states must retain their arithmetic mapping");
+
 static uint8_t ccid_out_buf[64];
 static volatile uint32_t bulk_in_state;
-static volatile uint8_t rx_paused;
+// REARM retains no packet; REPLAY retains ccid_out_buf until consumption.
+enum { RX_ARMED, RX_REARM, RX_REPLAY };
+static volatile uint8_t rx_state;
 
 uint8_t USBD_CCID_Init(USBD_HandleTypeDef *pdev) {
   bulk_in_state = CCID_STATE_IDLE;
-  rx_paused = 0;
+  rx_state = RX_ARMED;
   USBD_LL_OpenEP(pdev, EP_IN(ccid), USBD_EP_TYPE_BULK, EP_SIZE(ccid));
   USBD_LL_OpenEP(pdev, EP_OUT(ccid), USBD_EP_TYPE_BULK, EP_SIZE(ccid));
   CCID_Init();
@@ -44,11 +51,11 @@ uint8_t USBD_CCID_DataOut(USBD_HandleTypeDef *pdev) {
 
   uint8_t data_len = USBD_GetRxCount(pdev, addr);
   if (CCID_OutEvent(data_buf, data_len) == USBD_BUSY) {
-    rx_paused = 2; // This already received packet still needs to be consumed.
+    rx_state = RX_REPLAY; // This already received packet still needs to be consumed.
     return USBD_BUSY;
   }
   if (!CCID_CanReceive()) {
-    rx_paused = 1;
+    rx_state = RX_REARM;
     return USBD_BUSY;
   }
   USBD_LL_PrepareReceive(pdev, addr, data_buf, size);
@@ -57,9 +64,9 @@ uint8_t USBD_CCID_DataOut(USBD_HandleTypeDef *pdev) {
 }
 
 void USBD_CCID_ServiceReceive(void) {
-  if (!rx_paused || !CCID_CanReceive()) return;
-  const uint8_t pending = rx_paused == 2;
-  rx_paused = 0;
+  if (rx_state == RX_ARMED || !CCID_CanReceive()) return;
+  const uint8_t pending = rx_state == RX_REPLAY;
+  rx_state = RX_ARMED;
   if (pending)
     USBD_CCID_DataOut(&usb_device);
   else

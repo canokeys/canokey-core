@@ -291,7 +291,7 @@ if(ENABLE_TESTS)
     )
     add_virt_card_git_revision(fido-hid-over-udp)
 
-    pkg_search_module(PCSCLITE libpcsclite)
+    pkg_search_module(PCSCLITE IMPORTED_TARGET libpcsclite)
     if(PCSCLITE_FOUND)
         add_library(
             u2f-virt-card
@@ -307,7 +307,7 @@ if(ENABLE_TESTS)
             SYSTEM
             PRIVATE virt-card ${PCSCLITE_INCLUDE_DIRS} littlefs
         )
-        target_link_libraries(u2f-virt-card ${PCSCLITE_LIBRARIES} canokey-core)
+        target_link_libraries(u2f-virt-card PkgConfig::PCSCLITE canokey-core)
         add_virt_card_git_revision(u2f-virt-card)
         if(ENABLE_NFC)
             add_cmocka_test(test_ifdhandler

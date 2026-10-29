@@ -10,8 +10,9 @@
 #include <usb_device.h>
 #include <usbd_ccid.h>
 
-#define HAS_CMD_DISCARDED 2
-#define HAS_CMD_BUSY 3
+// Command disposition is published only after the entire OUT payload is drained.
+// It is independent of transaction_state, which retains the active IN backing.
+enum { CMD_NONE, CMD_READY, CMD_DISCARDED, CMD_BUSY };
 
 #define CCID_UpdateCommandStatus(cmd_status, icc_status)                                                               \
   (bulkin_data.bStatus = ((cmd_status) | (icc_status)))
@@ -40,8 +41,14 @@ ccid_bulkin_data_t bulkin_data;
 ccid_bulkout_data_t bulkout_data;
 static uint32_t bulkout_length;
 static uint32_t ab_data_length;
+// Main transaction lifetime (independent of the auxiliary header):
+// IDLE -> RECEIVING: header accepted; OUT assembly owns command bytes.
+// RECEIVING + CMD_NONE: payload still arriving, including discarded bytes.
+// RECEIVING + CMD_READY/DISCARDED/BUSY: complete and eligible for main-loop dispatch.
+// PROCESSING: handler may poll, but competing commands only use auxiliary.
+// RESPONDING: IN owns backing until completion, including a terminating ZLP.
 static volatile uint8_t bulkout_state;
-static volatile uint8_t has_cmd;
+static volatile uint8_t command_disposition;
 typedef enum {
   CCID_TRANSACTION_IDLE,
   CCID_TRANSACTION_RECEIVING,
@@ -62,8 +69,31 @@ static struct {
 } auxiliary;
 
 static uint8_t CCID_ResponseType(uint8_t command) {
-  // Response classes for 0x61..0x73; unsupported commands retain SlotStatus.
-  static const uint8_t types[] = {2, 0, 1, 1, 1, 1, 1, 1, 0, 1, 3, 2, 2, 1, 0, 1, 1, 1, 4};
+  // Indexed by command 0x61..0x73. Store byte offsets to retain the compact
+  // wire table; spelling out response names makes each mapping auditable.
+#define RESPONSE_OFFSET(type) ((type) - RDR_TO_PC_DATABLOCK)
+  static const uint8_t types[] = {
+      RESPONSE_OFFSET(RDR_TO_PC_PARAMETERS),              // 61 SetParameters
+      RESPONSE_OFFSET(RDR_TO_PC_DATABLOCK),               // 62 IccPowerOn
+      RESPONSE_OFFSET(RDR_TO_PC_SLOTSTATUS),              // 63 IccPowerOff
+      RESPONSE_OFFSET(RDR_TO_PC_SLOTSTATUS),              // 64 reserved
+      RESPONSE_OFFSET(RDR_TO_PC_SLOTSTATUS),              // 65 GetSlotStatus
+      RESPONSE_OFFSET(RDR_TO_PC_SLOTSTATUS),              // 66 reserved
+      RESPONSE_OFFSET(RDR_TO_PC_SLOTSTATUS),              // 67 reserved
+      RESPONSE_OFFSET(RDR_TO_PC_SLOTSTATUS),              // 68 reserved
+      RESPONSE_OFFSET(RDR_TO_PC_DATABLOCK),               // 69 Secure
+      RESPONSE_OFFSET(RDR_TO_PC_SLOTSTATUS),              // 6A T0APDU
+      RESPONSE_OFFSET(RDR_TO_PC_ESCAPE),                  // 6B Escape
+      RESPONSE_OFFSET(RDR_TO_PC_PARAMETERS),              // 6C GetParameters
+      RESPONSE_OFFSET(RDR_TO_PC_PARAMETERS),              // 6D ResetParameters
+      RESPONSE_OFFSET(RDR_TO_PC_SLOTSTATUS),              // 6E IccClock
+      RESPONSE_OFFSET(RDR_TO_PC_DATABLOCK),               // 6F XfrBlock
+      RESPONSE_OFFSET(RDR_TO_PC_SLOTSTATUS),              // 70 reserved
+      RESPONSE_OFFSET(RDR_TO_PC_SLOTSTATUS),              // 71 Mechanical
+      RESPONSE_OFFSET(RDR_TO_PC_SLOTSTATUS),              // 72 Abort
+      RESPONSE_OFFSET(RDR_TO_PC_DATARATEANDCLOCKFREQUENCY), // 73 SetDataRateAndClockFrequency
+  };
+#undef RESPONSE_OFFSET
   const unsigned index = (unsigned)command - PC_TO_RDR_SETPARAMETERS;
   return index < sizeof(types) ? RDR_TO_PC_DATABLOCK + types[index] : RDR_TO_PC_SLOTSTATUS;
 }
@@ -125,7 +155,7 @@ void ccid_init_apdu_buffer(void) { shared_io_buffer = bulkin_data.abData; }
 
 static void CCID_ResetPendingCommand(void) {
   bulkout_state = CCID_STATE_IDLE;
-  has_cmd = 0;
+  command_disposition = CMD_NONE;
   release_apdu_buffer(BUFFER_OWNER_CCID);
   transaction_state = CCID_TRANSACTION_IDLE;
 }
@@ -140,7 +170,7 @@ void CCID_AbortPendingCommand(void) {
   if (transaction_state == CCID_TRANSACTION_RECEIVING && bulkout_data.bMessageType != PC_TO_RDR_XFRBLOCK) return;
   // A refused XfrBlock owns no applet resources. Retain its sequence number
   // and drain any remaining OUT packets so it still gets an error response.
-  if (has_cmd == HAS_CMD_DISCARDED || bulkout_state == CCID_STATE_DISCARD_DATA) return;
+  if (command_disposition == CMD_DISCARDED || bulkout_state == CCID_STATE_DISCARD_DATA) return;
   CCID_ResetPendingCommand();
 }
 
@@ -191,7 +221,7 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
       // Slot-management payloads are unused; drain without touching APDU RAM.
       if (abData) memcpy(abData, data + CCID_CMD_HEADER_SIZE, ab_data_length);
       if (ab_data_length >= bulkout_length)
-        has_cmd = abData ? 1 : HAS_CMD_DISCARDED;
+        command_disposition = abData ? CMD_READY : CMD_DISCARDED;
       else { // ab_data_length < bulkout_length
         bulkout_state = abData ? CCID_STATE_RECEIVE_DATA : CCID_STATE_DISCARD_DATA;
       }
@@ -207,7 +237,7 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
     // Both accepted and refused messages must consume their entire payload.
     ab_data_length += len;
     if (ab_data_length >= bulkout_length) {
-      has_cmd = bulkout_state == CCID_STATE_RECEIVE_DATA ? 1 : HAS_CMD_DISCARDED;
+      command_disposition = bulkout_state == CCID_STATE_RECEIVE_DATA ? CMD_READY : CMD_DISCARDED;
       bulkout_state = CCID_STATE_IDLE;
     }
     break;
@@ -220,11 +250,9 @@ static uint8_t PC_to_RDR_IccPower(uint8_t on) {
   uint8_t error = CCID_CheckCommandParams(on ? 2 : 3);
   if (error != SLOT_NO_ERROR) return error;
   if (on && bulkout_data.bSpecific_0 != 0) {
-    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
     return SLOTERROR_BAD_POWERSELECT;
   }
   if (device_applet_session_reset(DEVICE_APPLET_SESSION_CCID) != 0) {
-    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
     return SLOTERROR_CMD_SLOT_BUSY;
   }
   if (on) {
@@ -261,7 +289,6 @@ uint8_t PC_to_RDR_XfrBlock(void) {
 
   // Also enforce the transport bound for callers bypassing Bulk-OUT.
   if (bulkout_length > CCID_MAX_XFR_BLOCK_SIZE) {
-    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
     return SLOTERROR_BAD_LENTGH;
   }
   DBG_MSG("O: ");
@@ -311,8 +338,9 @@ static uint8_t PC_to_RDR_GetParameters(void) {
 
 /**
  * @brief  CCID_CheckCommandParams
- *         Checks the specific parameters requested by the function and update
- *          status accordingly. This function is called from all
+ *         Checks the specific parameters requested by the function.
+ *         CCID_SendResponse derives wire status from the returned error.
+ *         This function is called from all
  *          PC_to_RDR functions
  * @param  rfu_bytes: Number of RFU bytes for a zero-payload slot command;
  *         zero checks only the slot (XfrBlock).
@@ -328,7 +356,6 @@ static uint8_t CCID_CheckCommandParams(uint8_t rfu_bytes) {
                            (rfu_bytes == 3 && bulkout_data.bSpecific_0))) {
     error = rfu_bytes == 2 ? SLOTERROR_BAD_ABRFU_2B : SLOTERROR_BAD_ABRFU_3B;
   }
-  CCID_UpdateCommandStatus(error == SLOT_NO_ERROR ? BM_COMMAND_STATUS_NO_ERROR : BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
   return error;
 }
 
@@ -339,30 +366,29 @@ void CCID_ServicePresencePoll(void) {
   USBD_CCID_ServiceReceive();
   CCID_ServiceAuxiliary();
   if (transaction_state != CCID_TRANSACTION_RECEIVING) return;
-  if (!has_cmd) return;
+  if (command_disposition == CMD_NONE) return;
   const uint8_t type = bulkout_data.bMessageType;
-  if (type == PC_TO_RDR_XFRBLOCK && has_cmd != HAS_CMD_DISCARDED) return;
+  if (type == PC_TO_RDR_XFRBLOCK && command_disposition != CMD_DISCARDED) return;
   if (type != PC_TO_RDR_XFRBLOCK && type != PC_TO_RDR_GETSLOTSTATUS && type != PC_TO_RDR_GETPARAMETERS)
-    has_cmd = HAS_CMD_BUSY;
+    command_disposition = CMD_BUSY;
   CCID_Loop();
 }
 
 void __attribute__((noinline)) CCID_Loop(void) {
   USBD_CCID_ServiceReceive();
-  if (!has_cmd || transaction_state != CCID_TRANSACTION_RECEIVING) {
+  if (command_disposition == CMD_NONE || transaction_state != CCID_TRANSACTION_RECEIVING) {
     CCID_ServiceAuxiliary();
     return;
   }
   transaction_state = CCID_TRANSACTION_PROCESSING;
 
-  uint8_t errorCode = SLOTERROR_CMD_NOT_SUPPORTED;
+  uint8_t errorCode = bulkout_data.bSlot ? SLOTERROR_BAD_SLOT : SLOTERROR_CMD_NOT_SUPPORTED;
   uint8_t response_type = CCID_ResponseType(bulkout_data.bMessageType);
   uint8_t specific = 0;
   ccid_put_le32(bulkin_short.dwLength, 0);
   ccid_bulkin_data_t *pBulkin = (ccid_bulkin_data_t *)&bulkin_short;
-  if (has_cmd == HAS_CMD_BUSY) {
+  if (command_disposition == CMD_BUSY) {
     errorCode = SLOTERROR_CMD_SLOT_BUSY;
-    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
     goto respond;
   }
   switch (bulkout_data.bMessageType) {
@@ -376,12 +402,11 @@ void __attribute__((noinline)) CCID_Loop(void) {
     errorCode = PC_to_RDR_GetSlotStatus();
     break;
   case PC_TO_RDR_XFRBLOCK:
-    if (has_cmd == HAS_CMD_DISCARDED) {
+    if (command_disposition == CMD_DISCARDED) {
       DBG_MSG("Respond to a data-discarded message\n");
       errorCode = CCID_CheckCommandParams(0);
       if (errorCode == SLOT_NO_ERROR && bulkout_length > CCID_MAX_XFR_BLOCK_SIZE) {
         errorCode = SLOTERROR_BAD_LENTGH;
-        CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
       }
       if (errorCode == SLOT_NO_ERROR) {
         ccid_put_le32(pBulkin->dwLength, 2);
@@ -429,11 +454,13 @@ static void CCID_SendResponse(ccid_bulkin_data_t *pBulkin, uint8_t response_type
   pBulkin->bMessageType = response_type;
   pBulkin->bSlot = bulkout_data.bSlot;
   pBulkin->bSeq = bulkout_data.bSeq;
-  pBulkin->bStatus = bulkin_data.bStatus;
+  // Derive command status from this result, never from the preceding reply.
+  pBulkin->bStatus = (errorCode == SLOT_NO_ERROR ? BM_COMMAND_STATUS_NO_ERROR : BM_COMMAND_STATUS_FAILED) |
+      (bulkout_data.bSlot ? BM_ICC_NO_ICC_PRESENT : CCID_CardStatus());
   pBulkin->bError = errorCode;
   pBulkin->bSpecific = specific;
   const uint16_t len = (uint16_t)ccid_get_le32(pBulkin->dwLength);
-  has_cmd = 0;
+  command_disposition = CMD_NONE;
   transaction_state = CCID_TRANSACTION_RESPONDING;
   const uint8_t send_status = CCID_Response_SendData(&usb_device, (uint8_t *)pBulkin, len + CCID_CMD_HEADER_SIZE, 0);
   if (send_status != USBD_OK) {
