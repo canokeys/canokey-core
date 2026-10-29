@@ -281,7 +281,10 @@
 #define CTAP_MAX_PIN_LENGTH                63
 #define CTAP_MAX_RPIDS_FOR_SET_MIN_PIN_LENGTH 4
 #define MAX_FRAGMENT_LENGTH           (MAX_CTAP_BUFSIZE - 64)
-#define MAX_CTAP_EXTERNAL_STRING_CHUNK MAX_FRAGMENT_LENGTH
+// TinyCBOR transfers a whole definite string even when skipping an unknown
+// value. Its reader window must cover any string within an accepted message,
+// independently of the smaller largeBlobs fragment limit.
+#define MAX_CTAP_EXTERNAL_STRING_CHUNK MAX_CTAP_BUFSIZE
 // clang-format on
 
 typedef struct {
@@ -380,13 +383,14 @@ typedef struct {
   uint8_t pin_protocol;
 } CTAP_hmac_secret_ext;
 
+bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len);
+
 typedef struct {
   uint32_t parsed_params;
   uint8_t client_data_hash[CLIENT_DATA_HASH_SIZE];
   uint8_t rp_id[MAX_STORED_RPID_LENGTH];
   size_t rp_id_len;
-  uint8_t rp_id_full[DOMAIN_NAME_MAX_SIZE];
-  size_t rp_id_full_len;
+  bool min_pin_rpid_authorized;
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
   user_entity user;
   int32_t alg_type;

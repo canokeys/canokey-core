@@ -144,10 +144,28 @@ func commandTests(readOnlyMode bool, app *Applet) func(C) {
 		So(err, ShouldBeNil)
 		return code
 	}
-	readFile := func(offset uint16, len uint16) (data []byte, code uint16) {
-		So(len, ShouldBeGreaterThan, 0)
-		data, code, err := app.SendWithGetResponse([]byte{0x00, 0xB0, byte(offset >> 8), byte(offset & 0xFF), 0x00, byte(len >> 8), byte(len & 0xFF)})
-		So(err, ShouldBeNil)
+	readFile := func(offset uint16, length uint16) (data []byte, code uint16) {
+		So(length, ShouldBeGreaterThan, 0)
+		// USB CCID accepts short APDUs; read larger files by advancing the offset.
+		for remaining := int(length); remaining > 0; {
+			chunkLen := remaining
+			if chunkLen > 256 {
+				chunkLen = 256
+			}
+			chunk, status, err := app.SendWithGetResponse([]byte{0x00, 0xB0, byte(offset >> 8), byte(offset), byte(chunkLen)})
+			So(err, ShouldBeNil)
+			code = status
+			if err != nil || code != 0x9000 {
+				return
+			}
+			So(len(chunk), ShouldEqual, chunkLen)
+			data = append(data, chunk...)
+			if len(chunk) != chunkLen {
+				return
+			}
+			offset += uint16(chunkLen)
+			remaining -= chunkLen
+		}
 		return
 	}
 	writeFile := func(offset uint16, data []byte) (code uint16) {

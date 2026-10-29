@@ -184,8 +184,15 @@ typedef struct {
 
 typedef union {
   CTAP_mldsa_stream_state ctap_mldsa;
-  CTAP_make_credential ctap_mc;
-  CTAP_get_assertion ctap_ga;
+  struct {
+    union {
+      CTAP_make_credential ctap_mc;
+      CTAP_get_assertion ctap_ga;
+    };
+    // One parser runs under the applet session at a time. Keep its temporary
+    // string window disjoint from semantic MC/GA state, including during RX.
+    uint8_t ctap_reader[MAX_CTAP_EXTERNAL_STRING_CHUNK];
+  };
   piv_mldsa_stream_state_t piv_mldsa;
   piv_ga_stream_state_t piv_ga_stream;
   piv_mlkem_scratch_t piv_mlkem;
@@ -193,6 +200,15 @@ typedef union {
   piv_attestation_scratch_t piv_attestation;
   uint8_t buffer[APPLET_SHARED_BUFFER_LENGTH];
 } applet_session_scratch_t;
+
+_Static_assert(sizeof(applet_session_scratch_t) == sizeof(CTAP_mldsa_stream_state),
+               "CTAP reader must not enlarge shared scratch");
+_Static_assert(offsetof(applet_session_scratch_t, ctap_reader) >= sizeof(CTAP_make_credential) &&
+                   offsetof(applet_session_scratch_t, ctap_reader) >= sizeof(CTAP_get_assertion),
+               "CTAP reader overlaps parsed command state");
+_Static_assert(offsetof(applet_session_scratch_t, ctap_reader) + MAX_CTAP_EXTERNAL_STRING_CHUNK <=
+                   offsetof(CTAP_mldsa_stream_state, kind),
+               "CTAP reader overlaps live response stream metadata");
 
 _Static_assert(sizeof(CTAP_make_credential) <= sizeof(CTAP_mldsa_stream_state),
                "MakeCredential parsing should not enlarge the shared scratch union");

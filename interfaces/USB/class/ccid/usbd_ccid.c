@@ -4,15 +4,16 @@
 #include <usbd_canokey.h>
 #include <usb_device.h>
 #include <usbd_ccid.h>
-#include <usbd_ctlreq.h>
 
 #define CCID_BULK_IN_IDLE_TIMEOUT_MS 2000u
 
 static uint8_t ccid_out_buf[64];
-static volatile uint8_t bulk_in_state;
+static volatile uint32_t bulk_in_state;
+static volatile uint8_t rx_paused;
 
 uint8_t USBD_CCID_Init(USBD_HandleTypeDef *pdev) {
   bulk_in_state = CCID_STATE_IDLE;
+  rx_paused = 0;
   USBD_LL_OpenEP(pdev, EP_IN(ccid), USBD_EP_TYPE_BULK, EP_SIZE(ccid));
   USBD_LL_OpenEP(pdev, EP_OUT(ccid), USBD_EP_TYPE_BULK, EP_SIZE(ccid));
   CCID_Init();
@@ -21,12 +22,16 @@ uint8_t USBD_CCID_Init(USBD_HandleTypeDef *pdev) {
 }
 
 uint8_t USBD_CCID_DataIn(USBD_HandleTypeDef *pdev) {
-  if (bulk_in_state == CCID_STATE_DATA_IN_WITH_ZLP) {
+  const uint32_t state = bulk_in_state;
+  if (state == CCID_STATE_DATA_IN_WITH_ZLP) {
     bulk_in_state = CCID_STATE_DATA_IN;
     uint8_t addr = EP_IN(ccid);
     USBD_LL_Transmit(pdev, addr, NULL, 0);
   } else {
-    CCID_InFinished(bulk_in_state == CCID_STATE_DATA_IN_TIME_EXTENSION);
+    if (state == CCID_STATE_DATA_IN_AUXILIARY)
+      CCID_AuxInFinished();
+    else if (state != CCID_STATE_IDLE)
+      CCID_InFinished(state == CCID_STATE_DATA_IN_TIME_EXTENSION);
     bulk_in_state = CCID_STATE_IDLE;
   }
   return USBD_OK;
@@ -38,29 +43,47 @@ uint8_t USBD_CCID_DataOut(USBD_HandleTypeDef *pdev) {
   uint8_t *data_buf = ccid_out_buf;
 
   uint8_t data_len = USBD_GetRxCount(pdev, addr);
-  CCID_OutEvent(data_buf, data_len);
+  if (CCID_OutEvent(data_buf, data_len) == USBD_BUSY) {
+    rx_paused = 2; // This already received packet still needs to be consumed.
+    return USBD_BUSY;
+  }
+  if (!CCID_CanReceive()) {
+    rx_paused = 1;
+    return USBD_BUSY;
+  }
   USBD_LL_PrepareReceive(pdev, addr, data_buf, size);
 
   return USBD_OK;
 }
 
+void USBD_CCID_ServiceReceive(void) {
+  if (!rx_paused || !CCID_CanReceive()) return;
+  const uint8_t pending = rx_paused == 2;
+  rx_paused = 0;
+  if (pending)
+    USBD_CCID_DataOut(&usb_device);
+  else
+    USBD_LL_PrepareReceive(&usb_device, EP_OUT(ccid), ccid_out_buf, EP_SIZE(ccid));
+}
+
 uint8_t CCID_Response_SendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uint16_t len,
-                               uint8_t is_time_extension_request) {
+                               uint8_t kind) {
   if (!USBD_CANOKEY_Ready()) return USBD_BUSY;
   USBD_StatusTypeDef ret = USBD_OK;
   if (pdev->dev_state == USBD_STATE_CONFIGURED) {
+    uint32_t next = kind ? CCID_STATE_DATA_IN_TIME_EXTENSION + kind - 1 :
+                    len % EP_SIZE(ccid) == 0 ? CCID_STATE_DATA_IN_WITH_ZLP : CCID_STATE_DATA_IN;
     uint32_t wait_ms = 0;
-    while (bulk_in_state != CCID_STATE_IDLE) {
-      if (is_time_extension_request) return ret;
-      if (wait_ms++ >= CCID_BULK_IN_IDLE_TIMEOUT_MS) return USBD_BUSY;
+    // Reserve IN atomically against the time-extension IRQ. The reservation
+    // lasts through completion, including an optional terminating ZLP.
+    while (device_atomic_compare_and_swap(&bulk_in_state, CCID_STATE_IDLE, next) != 0) {
+      if (kind != CCID_TX_RESPONSE || wait_ms++ >= CCID_BULK_IN_IDLE_TIMEOUT_MS) return USBD_BUSY;
       device_delay(1);
     }
-    uint8_t ep_size = EP_SIZE(ccid);
-    if (is_time_extension_request)
-      bulk_in_state = CCID_STATE_DATA_IN_TIME_EXTENSION;
-    else
-      bulk_in_state = len % ep_size == 0 ? CCID_STATE_DATA_IN_WITH_ZLP : CCID_STATE_DATA_IN;
     ret = USBD_LL_Transmit(pdev, EP_IN(ccid), buf, len);
-  }
+    if (ret != USBD_OK) bulk_in_state = CCID_STATE_IDLE;
+  } else if (kind == CCID_TX_AUXILIARY) return USBD_BUSY;
   return ret;
 }
+
+uint8_t CCID_Response_IsIdle(void) { return bulk_in_state == CCID_STATE_IDLE; }

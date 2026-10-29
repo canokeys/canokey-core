@@ -184,6 +184,9 @@ set(canokey_core_public_defs
 set(canokey_core_private_defs
     CBOR_NO_FLOATING_POINT
     CBOR_STATIC_DEFINE
+    # CTAP requires four nesting levels. Bound TinyCBOR's recursive skipping
+    # of unknown containers instead of its default 1024-level call stack.
+    CBOR_PARSER_MAX_RECURSIONS=4
 )
 
 if(ENABLE_DEBUG_OUTPUT)
@@ -306,6 +309,15 @@ if(ENABLE_TESTS)
         )
         target_link_libraries(u2f-virt-card ${PCSCLITE_LIBRARIES} canokey-core)
         add_virt_card_git_revision(u2f-virt-card)
+        if(ENABLE_NFC)
+            add_cmocka_test(test_ifdhandler
+                SOURCES test/test_ifdhandler.c
+                LINK_LIBRARIES ${CMOCKA_LIBRARIES} u2f-virt-card canokey-core
+            )
+            target_include_directories(test_ifdhandler PRIVATE
+                virt-card ${PCSCLITE_INCLUDE_DIRS} ${CMOCKA_INCLUDE_DIR}
+            )
+        endif()
     endif()
 endif(ENABLE_TESTS)
 

@@ -58,8 +58,7 @@ static bool bd_read_fails;
 static int bd_read_fail_count;
 static const struct lfs_config *test_apdu_fs_cfg;
 
-static int test_bd_read(const struct lfs_config *cfg, lfs_block_t block, lfs_off_t off, void *buffer,
-                        lfs_size_t size) {
+static int test_bd_read(const struct lfs_config *cfg, lfs_block_t block, lfs_off_t off, void *buffer, lfs_size_t size) {
   if (bd_read_fails || bd_read_fail_count > 0) {
     if (bd_read_fail_count > 0) --bd_read_fail_count;
     return LFS_ERR_IO;
@@ -640,8 +639,7 @@ static void test_ccid_large_hid_request_survives_session_switch(void **state) {
     CTAPHID_Init(capture_hid_report);
     reset_hid_capture();
     if (prior_ccid) {
-      uint8_t select[] = {PC_TO_RDR_XFRBLOCK, 9, 0, 0, 0, 0, 1, 0, 0, 0,
-                         0, 0xA4, 4, 0, 4, 0xDE, 0xAD, 0xBE, 0xEF};
+      uint8_t select[] = {PC_TO_RDR_XFRBLOCK, 9, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0xA4, 4, 0, 4, 0xDE, 0xAD, 0xBE, 0xEF};
       assert_int_equal(CCID_OutEvent(select, sizeof(select)), 0);
       CCID_Loop();
       CCID_InFinished(0);
@@ -1033,7 +1031,7 @@ static void test_ccid_le32_wire_encoding(void **state) {
   assert_int_equal(ccid_get_le32(encoded), 0x78563412u);
 
   assert_int_equal(offsetof(ccid_bulkout_data_t, dwLength), 1);
-  assert_int_equal(offsetof(ccid_bulkout_data_t, abDataShort), CCID_CMD_HEADER_SIZE);
+  assert_int_equal(sizeof(ccid_bulkout_data_t), CCID_CMD_HEADER_SIZE);
   assert_int_equal(offsetof(ccid_bulkin_data_t, dwLength), 1);
   assert_int_equal(offsetof(ccid_bulkin_data_t, abData), CCID_CMD_HEADER_SIZE);
   assert_int_equal(offsetof(ccid_bulkin_short_t, dwLength), 1);
@@ -1047,18 +1045,10 @@ static void test_ccid_response_headers(void **state) {
   (void)state;
   static const uint8_t cases[][7] = {
       // request, slot, response, payload length, status, error, specific
-      {0x62, 0, 0x80, 17, 0x00, 0x81, 0},
-      {0x63, 0, 0x81, 0, 0x01, 0x81, 0},
-      {0x65, 0, 0x81, 0, 0x01, 0x81, 0},
-      {0x6C, 0, 0x82, 7, 0x01, 0x81, 1},
-      {0x6D, 0, 0x82, 0, 0x01, 0x00, 1},
-      {0x61, 0, 0x82, 0, 0x01, 0x00, 1},
-      {0x6B, 0, 0x83, 0, 0x01, 0x00, 0},
-      {0x69, 0, 0x80, 0, 0x01, 0x00, 0},
-      {0x72, 0, 0x81, 0, 0x01, 0x00, 0},
-      {0x65, 1, 0x81, 0, 0x41, 0x05, 0},
-      {0x6C, 1, 0x82, 0, 0x41, 0x05, 1},
-      {0x62, 1, 0x80, 0, 0x41, 0x05, 0},
+      {0x62, 0, 0x80, 17, 0x00, 0x81, 0}, {0x63, 0, 0x81, 0, 0x01, 0x81, 0}, {0x65, 0, 0x81, 0, 0x01, 0x81, 0},
+      {0x6C, 0, 0x82, 7, 0x01, 0x81, 1},  {0x6D, 0, 0x82, 0, 0x01, 0x00, 1}, {0x61, 0, 0x82, 0, 0x01, 0x00, 1},
+      {0x6B, 0, 0x83, 0, 0x01, 0x00, 0},  {0x69, 0, 0x80, 0, 0x01, 0x00, 0}, {0x72, 0, 0x81, 0, 0x01, 0x00, 0},
+      {0x65, 1, 0x81, 0, 0x41, 0x05, 0},  {0x6C, 1, 0x82, 0, 0x41, 0x05, 1}, {0x62, 1, 0x80, 0, 0x41, 0x05, 0},
   };
   const uint8_t previous_state = usb_device.dev_state;
   init_apdu_buffer();
@@ -1088,7 +1078,8 @@ static void test_ccid_response_headers(void **state) {
 static void test_hid_setup_descriptors_and_errors(void **state) {
   (void)state;
   uint8_t (*const setup[])(USBD_HandleTypeDef *, USBD_SetupReqTypedef *) = {
-      USBD_CTAPHID_Setup, USBD_KBDHID_Setup,
+      USBD_CTAPHID_Setup,
+      USBD_KBDHID_Setup,
   };
   const uint8_t report_lengths[] = {34, 87};
   for (size_t i = 0; i < 2; ++i) {
@@ -1133,7 +1124,7 @@ static void test_ccid_power_on_does_not_steal_ctaphid_session(void **state) {
   init_apdu_buffer();
   device_init();
   CCID_Init();
-  uint8_t aid[] = {0xA0, 0, 0, 6, 0x47, 0x2F, 0, 1}, response[16];
+  uint8_t aid[] = {0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44}, response[16];
   CAPDU capdu = {.ins = 0xA4, .p1 = 4, .lc = sizeof(aid), .le = sizeof(response), .data = aid};
   RAPDU rapdu = {.data = response};
   process_apdu(&capdu, &rapdu);
@@ -1166,7 +1157,7 @@ static void test_ccid_power_on_does_not_steal_ctaphid_session(void **state) {
 static void test_ccid_slot_reset_clears_selection(void **state) {
   (void)state;
   static const uint8_t select_fido[] = {
-      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01, 0x00,
+      0x00, 0xA4, 0x04, 0x00, 0x08, 0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44, 0x00,
   };
   static const uint8_t version[] = {0x00, 0x03, 0x00, 0x00, 0x00};
   static const uint8_t reset_commands[] = {PC_TO_RDR_ICCPOWERON, PC_TO_RDR_ICCPOWEROFF};
@@ -1279,8 +1270,8 @@ static void test_ctaphid_wait_services_ccid_without_applet_access(void **state) 
     USBD_CCID_DataIn(&usb_device);
   }
 
-  uint8_t select_piv[] = {PC_TO_RDR_XFRBLOCK, 13, 0, 0, 0, 0, 0x39, 0, 0, 0,
-                        0, 0xA4, 4, 0, 8, 0xA0, 0, 0, 3, 8, 0, 0, 0x10};
+  uint8_t select_piv[] = {
+      PC_TO_RDR_XFRBLOCK, 13, 0, 0, 0, 0, 0x39, 0, 0, 0, 0, 0xA4, 4, 0, 8, 0xA0, 0, 0, 3, 8, 0, 0, 0x10};
   in->xfer_buff = NULL;
   assert_int_equal(CCID_OutEvent(select_piv, sizeof(select_piv)), 0);
   assert_int_equal(CTAPHID_Loop(1), LOOP_SUCCESS);
@@ -1301,8 +1292,8 @@ static void test_ctaphid_wait_services_ccid_without_applet_access(void **state) 
 
 static void test_ccid_refused_apdu_survives_ctaphid_release(void **state) {
   (void)state;
-  uint8_t select_piv[] = {PC_TO_RDR_XFRBLOCK, 13, 0, 0, 0, 0, 0x3A, 0, 0, 0,
-                        0, 0xA4, 4, 0, 8, 0xA0, 0, 0, 3, 8, 0, 0, 0x10};
+  uint8_t select_piv[] = {
+      PC_TO_RDR_XFRBLOCK, 13, 0, 0, 0, 0, 0x3A, 0, 0, 0, 0, 0xA4, 4, 0, 8, 0xA0, 0, 0, 3, 8, 0, 0, 0x10};
   const uint8_t previous_state = usb_device.dev_state;
   for (unsigned fragmented = 0; fragmented < 2; ++fragmented) {
     init_apdu_buffer();
@@ -1336,23 +1327,70 @@ static void test_ccid_rejects_reentrant_command_until_response_finishes(void **s
   (void)state;
 
   static const uint8_t first[] = {
-      PC_TO_RDR_XFRBLOCK, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00,
-      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10,
+      PC_TO_RDR_XFRBLOCK,
+      0x0D,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x11,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0xA4,
+      0x04,
+      0x00,
+      0x08,
+      0xA0,
+      0x00,
+      0x00,
+      0x03,
+      0x08,
+      0x00,
+      0x00,
+      0x10,
   };
   static const uint8_t second[] = {
-      PC_TO_RDR_XFRBLOCK, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x22, 0x00, 0x00, 0x00,
-      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x01,
+      PC_TO_RDR_XFRBLOCK,
+      0x0D,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x22,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0xA4,
+      0x04,
+      0x00,
+      0x08,
+      0xA0,
+      0x00,
+      0x00,
+      0x03,
+      0x08,
+      0x00,
+      0x00,
+      0x01,
   };
   const uint8_t *first_apdu = first + CCID_CMD_HEADER_SIZE;
   const uint8_t *second_apdu = second + CCID_CMD_HEADER_SIZE;
 
   init_apdu_buffer();
   device_init();
-  CCID_Init();
+  USBD_CCID_Init(&usb_device);
+  const uint8_t previous_state = usb_device.dev_state;
+  usb_device.dev_state = USBD_STATE_CONFIGURED;
+  EPType *in = dummy_get_ep_by_addr(EP_IN(ccid));
+  in->maxpacket = 64;
 
   assert_int_equal(CCID_OutEvent((uint8_t *)first, sizeof(first)), 0);
   assert_memory_equal(shared_io_buffer, first_apdu, sizeof(first) - CCID_CMD_HEADER_SIZE);
 
+  // The rejection gets its own header and never takes the APDU buffer.
   assert_int_equal(CCID_OutEvent((uint8_t *)second, sizeof(second)), 0);
   assert_memory_equal(shared_io_buffer, first_apdu, sizeof(first) - CCID_CMD_HEADER_SIZE);
 
@@ -1361,16 +1399,25 @@ static void test_ccid_rejects_reentrant_command_until_response_finishes(void **s
   ccid_bulkin_data_t first_response;
   memcpy(&first_response, &bulkin_data, sizeof(first_response));
 
-  assert_int_equal(CCID_OutEvent((uint8_t *)second, sizeof(second)), 0);
+  assert_int_equal(CCID_OutEvent((uint8_t *)second, sizeof(second)), USBD_BUSY);
   assert_memory_equal(&bulkin_data, &first_response, sizeof(first_response));
 
-  CCID_InFinished(0);
+  USBD_CCID_DataIn(&usb_device);
+  CCID_Loop();
+  const uint8_t *response = in->xfer_buff - CCID_CMD_HEADER_SIZE;
+  assert_int_equal(response[0], RDR_TO_PC_DATABLOCK);
+  assert_int_equal(response[6], 0x22);
+  assert_int_equal(response[7] & ~BM_ICC_STATUS_MASK, BM_COMMAND_STATUS_FAILED);
+  assert_int_equal(response[8], SLOTERROR_CMD_SLOT_BUSY);
+  assert_int_equal(ccid_get_le32(response + 1), 0);
+  USBD_CCID_DataIn(&usb_device);
   assert_int_equal(CCID_OutEvent((uint8_t *)second, sizeof(second)), 0);
   assert_memory_equal(shared_io_buffer, second_apdu, sizeof(second) - CCID_CMD_HEADER_SIZE);
   CCID_Loop();
   assert_int_equal(bulkin_data.bSeq, 0x22);
-  CCID_InFinished(0);
+  USBD_CCID_DataIn(&usb_device);
   device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+  usb_device.dev_state = previous_state;
 }
 
 static void test_ccid_power_on_preempts_idle_webusb_session(void **state) {
@@ -1451,81 +1498,6 @@ static void test_pke_buffer_fallback_for_ctap(void **state) {
   assert_int_equal(pke_buffer_read(0, out, sizeof(out)), 0);
   assert_memory_equal(out, zero, sizeof(out));
   assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_CTAP), 0);
-}
-
-static void test_ccid_extended_fido_request_uses_pke(void **state) {
-  (void)state;
-
-  enum { PAYLOAD_LEN = 300, APDU_LEN = 7 + PAYLOAD_LEN + 2, REQUEST_LEN = CCID_CMD_HEADER_SIZE + APDU_LEN };
-  uint8_t request[REQUEST_LEN];
-  memset(request, 0, sizeof(request));
-
-  request[0] = PC_TO_RDR_XFRBLOCK;
-  request[1] = APDU_LEN & 0xFF;
-  request[2] = (APDU_LEN >> 8) & 0xFF;
-  request[6] = 1;
-
-  uint8_t *apdu = request + CCID_CMD_HEADER_SIZE;
-  apdu[0] = 0x80;
-  apdu[1] = CTAP_INS_MSG;
-  apdu[2] = 0x80;
-  apdu[4] = 0;
-  apdu[5] = PAYLOAD_LEN >> 8;
-  apdu[6] = PAYLOAD_LEN & 0xFF;
-  apdu[7] = CTAP_GET_INFO;
-  // The remaining payload bytes are ignored by GET INFO. Case 4E Le=0000
-  // requests the maximum response and occupies the final two APDU bytes.
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-  // Extended transport staging must not bypass explicit applet selection.
-  CCID_Init();
-  for (size_t offset = 0; offset < sizeof(request);) {
-    const uint8_t chunk = (uint8_t)MIN(sizeof(request) - offset, 64);
-    assert_int_equal(CCID_OutEvent(request + offset, chunk), 0);
-    offset += chunk;
-  }
-  CCID_Loop();
-  assert_int_equal(ccid_get_le32(bulkin_data.dwLength), 2);
-  assert_memory_equal(bulkin_data.abData, "\x6A\x82", 2);
-  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
-  assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
-  CCID_InFinished(0);
-  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
-
-  static const uint8_t select_fido[] = {0x00, 0xA4, 0x04, 0x00, 0x08,
-                                       0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01, 0x00};
-  uint8_t select_data[16], select_response[16];
-  CAPDU select_capdu = {.data = select_data};
-  RAPDU select_rapdu = {.data = select_response};
-  assert_int_equal(build_capdu(&select_capdu, select_fido, sizeof(select_fido)), 0);
-  process_apdu(&select_capdu, &select_rapdu);
-  assert_int_equal(select_rapdu.sw, SW_NO_ERROR);
-  CCID_Init();
-
-  for (size_t offset = 0; offset < sizeof(request);) {
-    const uint8_t chunk = (uint8_t)MIN(sizeof(request) - offset, 64);
-    assert_int_equal(CCID_OutEvent(request + offset, chunk), 0);
-    offset += chunk;
-  }
-  CCID_Loop();
-
-  assert_true(ccid_get_le32(bulkin_data.dwLength) > 2);
-  assert_int_equal(bulkin_data.abData[0], CTAP1_ERR_SUCCESS);
-  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
-  assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
-
-  CCID_InFinished(0);
-  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
-
-  CCID_Init();
-  assert_int_equal(CCID_OutEvent(request, 64), 0);
-  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), -1);
-  CCID_AbortPendingCommand();
-  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
-  assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
-  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
 }
 
 static void test_fido_chained_make_credential_nfc(void **state) {
@@ -1617,11 +1589,11 @@ static void test_fido_ctap1_register_nfc(void **state) {
   set_nfc_state(1);
 
   assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
-  process_apdu(&capdu, &rapdu);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
 
   assert_int_equal(build_capdu(&capdu, register_apdu, sizeof(register_apdu)), 0);
-  process_apdu(&capdu, &rapdu);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
   assert_true(rapdu.len > 0);
   assert_int_equal(rapdu.data[0], 0x05);
 
@@ -1632,7 +1604,7 @@ static void test_fido_ctap1_register_nfc(void **state) {
     assert_int_equal(rapdu.sw & 0xFF00, 0x6100);
     assert_true(++rounds < 64);
     assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
-    process_apdu(&capdu, &rapdu);
+    process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
     total += rapdu.len;
   }
 
@@ -1644,9 +1616,8 @@ static void test_large_blob_noncanonical_string_offset(void **state) {
 
   // Map {2: h'000102...10', 3: 0, 4: 17}; the byte string uses a non-canonical
   // uint16 length header, so its payload starts at offset 5 rather than 3.
-  static const uint8_t request[] = {0xA3, 0x02, 0x59, 0x00, 0x11, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
-                                    0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
-                                    0x03, 0x00, 0x04, 0x11};
+  static const uint8_t request[] = {0xA3, 0x02, 0x59, 0x00, 0x11, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                                    0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x03, 0x00, 0x04, 0x11};
   CborParser parser;
   CTAP_large_blobs large_blobs;
 
@@ -1801,11 +1772,11 @@ static void test_fido_reset_nfc_bypasses_user_presence(void **state) {
   assert_int_equal(ctap_write_sm2_config(&config_capdu, &rapdu), 0);
 
   assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
-  process_apdu(&capdu, &rapdu);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
 
   assert_int_equal(build_capdu(&capdu, reset_apdu, sizeof(reset_apdu)), 0);
-  process_apdu(&capdu, &rapdu);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
 
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
   assert_int_equal(rapdu.len, 1);
@@ -2295,7 +2266,8 @@ static void test_ctap_algorithm_policy(void **state) {
       CTAPHID_TxSource source = {0};
       sha256_raw((const uint8_t *)"pay.example", 11, dc.credential_id.rp_id_hash);
       assert_int_equal(generate_key_handle(&dc.credential_id, pub, algorithms[i], resident,
-                                           CRED_PROTECT_VERIFICATION_OPTIONAL, false), 0);
+                                           CRED_PROTECT_VERIFICATION_OPTIONAL, false),
+                       0);
       assert_int_equal(write_file(DC_FILE, resident ? &dc : NULL, 0, resident ? sizeof(dc) : 0, 1), 0);
       size_t len = build_third_party_payment_get_assertion(req, &dc.credential_id);
       if (mode == 2) {
@@ -2655,10 +2627,8 @@ static void test_ctap_make_credential_rejects_enterprise_attestation(void **stat
     uint8_t value;
     uint8_t status;
   } cases[] = {
-      {0x01, CTAP1_ERR_INVALID_PARAMETER},
-      {0x02, CTAP1_ERR_INVALID_PARAMETER},
-      {0x03, CTAP1_ERR_INVALID_PARAMETER},
-      {0x20, CTAP2_ERR_CBOR_UNEXPECTED_TYPE},
+      {0x01, CTAP1_ERR_INVALID_PARAMETER},    {0x02, CTAP1_ERR_INVALID_PARAMETER},
+      {0x03, CTAP1_ERR_INVALID_PARAMETER},    {0x20, CTAP2_ERR_CBOR_UNEXPECTED_TYPE},
       {0xF5, CTAP2_ERR_CBOR_UNEXPECTED_TYPE},
   };
   uint8_t req[256];
@@ -2936,7 +2906,7 @@ static void test_ctap_apdu_credential_management_streams_mldsa_public_key(void *
   (void)state;
 
   static const uint8_t select_fido[] = {
-      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01,
+      0x00, 0xA4, 0x04, 0x00, 0x08, 0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44,
   };
   static uint8_t response[4096];
   static uint8_t expected_public_key[MLDSA_PK_BYTES];
@@ -2965,9 +2935,9 @@ static void test_ctap_apdu_credential_management_streams_mldsa_public_key(void *
   assert_int_equal(ctap_install(1), 0);
 
   sha256_raw((const uint8_t *)"demo.yubico.com", sizeof("demo.yubico.com") - 1, dc.credential_id.rp_id_hash);
-  assert_int_equal(generate_key_handle(&dc.credential_id, seed, COSE_ALG_ML_DSA_65, 1,
-                                       CRED_PROTECT_VERIFICATION_OPTIONAL, false),
-                   0);
+  assert_int_equal(
+      generate_key_handle(&dc.credential_id, seed, COSE_ALG_ML_DSA_65, 1, CRED_PROTECT_VERIFICATION_OPTIONAL, false),
+      0);
   assert_int_equal(ml_dsa_65_keygen(expected_public_key, NULL, NULL, seed), 0);
   dc.user.id[0] = 1;
   dc.user.id_size = 1;
@@ -3126,6 +3096,15 @@ static void test_ctap_hid_large_cbor_response_keeps_payload(void **state) {
   assert_int_equal(chunk[5], LO(MAX_FRAGMENT_LENGTH));
   assert_int_equal(chunk[6], 0x00);
   assert_int_equal(chunk[7], 0x01);
+  uint8_t response[MAX_FRAGMENT_LENGTH + 6];
+  size_t total = written;
+  memcpy(response, chunk, written);
+  while (total < source.total_len) {
+    assert_int_equal(source.read(source.ctx, response + total, MIN(57, source.total_len - total), &written), 0);
+    assert_true(written > 0);
+    total += written;
+  }
+  assert_memory_equal(response + 6, blob, sizeof(blob));
   if (source.close) source.close(source.ctx);
 }
 
@@ -3736,6 +3715,106 @@ static void test_session_reset_drops_pending_rapdu_chain(void **state) {
   assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
 }
 
+static void check_fido_usb_private_management_select(apdu_transport_t transport) {
+  static const uint8_t standard[] = {0, 0xa4, 4, 0, 8, 0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1, 0};
+  static const uint8_t management[] = {0, 0xa4, 4, 0, 8, 0xf0, 0x43, 0x41, 0x4e, 0x4f, 0x46, 0x49, 0x44, 0};
+  static const uint8_t obsolete[] = {0, 0xa4, 4, 0, 8, 0xf0, 0, 0, 0, 0, 0xf1, 0xd0, 2, 0};
+  static const uint8_t get_response[] = {0, 0xc0, 0, 0, 0};
+  static const uint8_t info[] = {0x80, 0x10, 0, 0, 1, 4, 0};
+  static const uint8_t version[] = {0, 3, 0, 0, 0};
+  uint8_t command[32], response[APDU_COMMAND_BUFFER_SIZE];
+  CAPDU capdu = {.data = command};
+  RAPDU rapdu = {.data = response};
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+
+  assert_int_equal(build_capdu(&capdu, standard, sizeof(standard)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+  assert_int_equal(build_capdu(&capdu, info, sizeof(info)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+  assert_false(apdu_response_source_active());
+  assert_int_equal(build_capdu(&capdu, obsolete, sizeof(obsolete)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+
+  assert_int_equal(build_capdu(&capdu, management, sizeof(management)), 0);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+  assert_int_equal(build_capdu(&capdu, standard, sizeof(standard)), 0);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  for (size_t len = sizeof(management) - 1; len <= sizeof(management); ++len) {
+    assert_int_equal(build_capdu(&capdu, management, len), 0);
+    process_apdu_from(&capdu, &rapdu, transport);
+    assert_int_equal(rapdu.sw, SW_NO_ERROR);
+    assert_int_equal(rapdu.len, 6);
+    assert_memory_equal(rapdu.data, "U2F_V2", 6);
+  }
+  assert_int_equal(build_capdu(&capdu, info, sizeof(info)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_int_equal(rapdu.sw & 0xff00, 0x6100);
+  assert_int_equal(rapdu.data[0], CTAP1_ERR_SUCCESS);
+  size_t total = rapdu.len;
+  unsigned rounds = 0;
+  while ((rapdu.sw & 0xff00) == 0x6100) {
+    assert_true(++rounds < 16);
+    assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+    process_apdu_from(&capdu, &rapdu, transport);
+    total += rapdu.len;
+  }
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_true(total > APDU_BUFFER_SIZE);
+  assert_false(apdu_response_source_active());
+
+  // Leave another response pending to verify failed SELECT abandons it.
+  assert_int_equal(build_capdu(&capdu, info, sizeof(info)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_int_equal(rapdu.sw & 0xff00, 0x6100);
+
+  // Standard USB SELECT followed by U2F_VERSION cannot borrow Console selection.
+  assert_int_equal(build_capdu(&capdu, standard, sizeof(standard)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_false(apdu_response_source_active());
+  assert_int_equal(build_capdu(&capdu, version, sizeof(version)), 0);
+  process_apdu_from(&capdu, &rapdu, transport);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+
+  for (uint8_t len = 7; len <= 9; len += 2) {
+    uint8_t invalid[14];
+    memcpy(invalid, management, sizeof(management));
+    invalid[4] = len;
+    assert_int_equal(build_capdu(&capdu, invalid, 5 + len), 0);
+    process_apdu_from(&capdu, &rapdu, transport);
+    assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+  }
+
+  // Failed USB APDU discovery leaves native HID discovery usable.
+  hid_capture_count = 0;
+  CTAPHID_Init(capture_hid_report);
+  CTAPHID_FRAME frame = {0};
+  frame.cid = 0x12345678;
+  frame.init.cmd = CTAPHID_CBOR;
+  frame.init.bcnth = 0;
+  frame.init.bcntl = 1;
+  frame.init.data[0] = CTAP_GET_INFO;
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  assert_true(hid_capture_count > 1);
+  assert_int_equal(hid_capture[0].init.cmd, CTAPHID_CBOR);
+  assert_int_equal(hid_capture[0].init.data[0], CTAP1_ERR_SUCCESS);
+  device_applet_session_clear();
+}
+
+static void test_fido_usb_private_management_select(void **state) {
+  (void)state;
+  check_fido_usb_private_management_select(APDU_TRANSPORT_CCID);
+  check_fido_usb_private_management_select(APDU_TRANSPORT_WEBUSB);
+}
+
 // fido_apdu_input rejects chains whose accumulated length would exceed the
 // PKE staging buffer. Send maximum-sized chained APDUs until APDU_CHAINING_OVERFLOW
 // fires, which process_apdu maps to SW_WRONG_LENGTH and which must also reset
@@ -3744,7 +3823,7 @@ static void test_fido_apdu_chain_overflow_returns_wrong_length(void **state) {
   (void)state;
 
   static const uint8_t select_fido[] = {
-      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01,
+      0x00, 0xA4, 0x04, 0x00, 0x08, 0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44,
   };
 
   uint8_t c_buf[512], r_buf[64];
@@ -3899,6 +3978,66 @@ static void admin_set_feature_mask(CAPDU *capdu, RAPDU *rapdu, uint8_t mask) {
   assert_int_equal(rapdu->len, 0);
 }
 
+static void test_rejected_usb_select_clears_fido_state(void **state) {
+  (void)state;
+  static const uint8_t management[] = {0, 0xa4, 4, 0, 8, 0xf0, 0x43, 0x41, 0x4e, 0x4f, 0x46, 0x49, 0x44, 0};
+  static const uint8_t bad_p2[] = {0, 0xa4, 4, 1, 8, 0xf0, 0x43, 0x41, 0x4e, 0x4f, 0x46, 0x49, 0x44, 0};
+  static const uint8_t piv[] = {0, 0xa4, 4, 0, 9, 0xa0, 0, 0, 3, 8, 0, 0, 0x10, 0, 0};
+#if ENABLE_APPLET_NDEF
+  static const uint8_t ndef[] = {0, 0xa4, 4, 0, 7, 0xd2, 0x76, 0, 0, 0x85, 1, 1, 0};
+#endif
+  static const uint8_t version[] = {0, 3, 0, 0, 0};
+  static const uint8_t info[] = {0x80, 0x10, 0, 0, 1, 4, 0};
+  static const uint8_t get_response[] = {0, 0xc0, 0, 0, 0};
+  const struct {
+    const uint8_t *command;
+    size_t len;
+    uint16_t sw;
+  } rejected[] = {
+      {bad_p2, sizeof(bad_p2), SW_WRONG_P1P2},
+      {piv, sizeof(piv), SW_FILE_NOT_FOUND},
+#if ENABLE_APPLET_NDEF
+      {ndef, sizeof(ndef), SW_FILE_NOT_FOUND},
+#endif
+  };
+  const apdu_transport_t transports[] = {APDU_TRANSPORT_CCID, APDU_TRANSPORT_WEBUSB};
+  uint8_t command[32], response[APDU_COMMAND_BUFFER_SIZE];
+  CAPDU capdu = {.data = command};
+  RAPDU rapdu = {.data = response};
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(admin_install(1), 0);
+  admin_verify_default_pin(&capdu, &rapdu);
+  admin_set_feature_mask(&capdu, &rapdu, ADMIN_FEATURE_MASK & ~ADMIN_FEATURE_PIV_CCID);
+  admin_send(&capdu, &rapdu, ADMIN_INS_CONFIG, ADMIN_P1_CFG_NDEF, 0, NULL, 0, 0);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  for (size_t t = 0; t < sizeof(transports) / sizeof(transports[0]); ++t) {
+    for (size_t i = 0; i < sizeof(rejected) / sizeof(rejected[0]); ++i) {
+      assert_int_equal(build_capdu(&capdu, management, sizeof(management)), 0);
+      process_apdu_from(&capdu, &rapdu, transports[t]);
+      assert_int_equal(rapdu.sw, SW_NO_ERROR);
+      assert_int_equal(build_capdu(&capdu, info, sizeof(info)), 0);
+      process_apdu_from(&capdu, &rapdu, transports[t]);
+      assert_int_equal(rapdu.sw & 0xff00, 0x6100);
+      ctap_test_seed_credential_management_state();
+      assert_true(ctap_test_credential_management_state_active());
+      assert_int_equal(build_capdu(&capdu, rejected[i].command, rejected[i].len), 0);
+      process_apdu_from(&capdu, &rapdu, transports[t]);
+      assert_int_equal(rapdu.sw, rejected[i].sw);
+      assert_false(ctap_test_credential_management_state_active());
+      assert_false(apdu_response_source_active());
+      assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+      process_apdu_from(&capdu, &rapdu, transports[t]);
+      assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
+      assert_int_equal(build_capdu(&capdu, version, sizeof(version)), 0);
+      process_apdu_from(&capdu, &rapdu, transports[t]);
+      assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+    }
+  }
+  assert_int_equal(admin_install(1), 0);
+}
+
 static uint32_t admin_usage_record_bytes(const uint8_t *data, uint8_t id, uint8_t *flags) {
   for (size_t off = 0; off < ADMIN_APPLET_USAGE_RESPONSE_LENGTH; off += ADMIN_APPLET_USAGE_RECORD_LENGTH) {
     if (data[off] != id) continue;
@@ -4009,9 +4148,15 @@ static void test_platform_config_flags_preserve_other_state(void **state) {
   const uint8_t nfc_enabled = device_config_is_nfc_enabled();
   assert_int_equal(device_config_set_nfc_enabled(0), 0);
 
-  const admin_device_config_t input = {.led_normally_on = 1, .ndef_en = 0, .webusb_landing_en = 1,
-                                       .pass_en = 0, .openpgp_ccid_en = 1, .openpgp_nfc_en = 0,
-                                       .piv_ccid_en = 1, .piv_nfc_en = 0, .webauthn_en = 1};
+  const admin_device_config_t input = {.led_normally_on = 1,
+                                       .ndef_en = 0,
+                                       .webusb_landing_en = 1,
+                                       .pass_en = 0,
+                                       .openpgp_ccid_en = 1,
+                                       .openpgp_nfc_en = 0,
+                                       .piv_ccid_en = 1,
+                                       .piv_nfc_en = 0,
+                                       .webauthn_en = 1};
   assert_int_equal(admin_platform_device_config_write(&input), 0);
   assert_int_equal(admin_platform_device_config_read(&actual), 0);
   assert_int_equal(actual.led_normally_on, 1);
@@ -4048,7 +4193,8 @@ static void test_virt_card_config_page_persistence(void **state) {
 
   assert_int_equal(virt_card_config_page_open(root, true), 0);
   assert_int_equal(platform_config_page_read(0, restored, sizeof(restored)), 0);
-  for (size_t i = 0; i < sizeof(restored); ++i) assert_int_equal(restored[i], 0xFF);
+  for (size_t i = 0; i < sizeof(restored); ++i)
+    assert_int_equal(restored[i], 0xFF);
   assert_int_equal(remove(sidecar), -1);
 }
 
@@ -4539,7 +4685,7 @@ static void test_ctap_cm_mixed_algorithms(void **state) {
   uint8_t c_buf[64], r_buf[64];
   CAPDU capdu = {.data = c_buf};
   RAPDU rapdu = {.data = r_buf};
-  const uint8_t select_fido[] = {0, 0xA4, 4, 0, 8, 0xA0, 0, 0, 6, 0x47, 0x2F, 0, 1};
+  const uint8_t select_fido[] = {0, 0xA4, 4, 0, 8, 0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44};
 
   init_apdu_buffer();
   device_init();
@@ -4635,6 +4781,90 @@ static int client_pin_length_source_read(void *ctx, size_t offset, uint8_t *buf,
   return 0;
 }
 
+static void test_make_credential_min_pin_exact_rpid(void **state) {
+  UNUSED(state);
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+  uint8_t private_key[32] = {1};
+  const uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};
+  assert_int_equal(write_attr(CTAP_CERT_FILE, KEY_ATTR, private_key, sizeof(private_key)), 0);
+  assert_int_equal(write_file(CTAP_CERT_FILE, cert, 0, sizeof(cert), 1), 0);
+  char domain[DOMAIN_NAME_MAX_SIZE + 1];
+  memset(domain, 'a', sizeof(domain) - 1);
+  domain[sizeof(domain) - 1] = 0;
+  CTAP_min_pin_rp_id allowed = {.len = DOMAIN_NAME_MAX_SIZE};
+  memcpy(allowed.id, domain, allowed.len);
+  assert_int_equal(write_file(MIN_PIN_RPIDS_FILE, &allowed, 0, sizeof(allowed), 1), 0);
+  uint8_t stored[MAX_STORED_RPID_LENGTH];
+  for (int source_backed = 0; source_backed < 2; ++source_backed) {
+    for (int match = 1; match >= 0; --match) {
+      // These full RP IDs have the same truncated stored representation.
+      domain[0] = match ? 'a' : 'b';
+      uint8_t req[1024], zero32[32] = {0}, *p = req;
+      *p++ = 0xA5;
+      *p++ = 1;
+      put_cbor_bytes(&p, zero32, sizeof(zero32));
+      *p++ = 2;
+      *p++ = 0xA1;
+      put_cbor_text(&p, "id");
+      put_cbor_text(&p, domain);
+      *p++ = 3;
+      *p++ = 0xA1;
+      put_cbor_text(&p, "id");
+      put_cbor_bytes(&p, zero32, 1);
+      *p++ = 4;
+      *p++ = 0x81;
+      *p++ = 0xA2;
+      put_cbor_text(&p, "alg");
+      put_cbor_int(&p, COSE_ALG_ES256);
+      put_cbor_text(&p, "type");
+      put_cbor_text(&p, "public-key");
+      *p++ = 6;
+      *p++ = 0xA1;
+      put_cbor_text(&p, "minPinLength");
+      *p++ = 0xF5;
+      CborParser parser;
+      CTAP_make_credential *mc = &applet_session_scratch.ctap_mc;
+      ctap_req_src_t source = {.read = client_pin_length_source_read, .ctx = req, .len = p - req};
+      assert_int_equal(source_backed ? parse_make_credential_src(&parser, mc, &source, p - req)
+                                     : parse_make_credential(&parser, mc, req, p - req),
+                       0);
+      assert_true(mc->ext_min_pin_length);
+      assert_int_equal(mc->min_pin_rpid_authorized, match);
+      assert_int_equal(mc->rp_id_len, sizeof(stored));
+      if (match)
+        memcpy(stored, mc->rp_id, sizeof(stored));
+      else
+        assert_memory_equal(stored, mc->rp_id, sizeof(stored));
+
+      // Check the emitted extension, not only the parser's authorization flag.
+      uint8_t command[sizeof(req) + 1], scratch[64], response[2048], auth_data[1024];
+      command[0] = CTAP_MAKE_CREDENTIAL;
+      memcpy(command + 1, req, p - req);
+      CTAPHID_TxSource output = {0};
+      size_t written, auth_len;
+      assert_int_equal(
+          ctap_process_cbor_stream_with_src(command, p - req + 1, scratch, sizeof(scratch), &output, CTAP_SRC_HID), 1);
+      assert_int_equal(read_tx_source_all(&output, response, sizeof(response), &written), 0);
+      assert_int_equal(response[0], 0);
+      assert_int_equal(
+          test_cbor_get_auth_data(response, written, MC_RESP_AUTH_DATA, auth_data, sizeof(auth_data), &auth_len), 0);
+      if (match) {
+        test_cbor_view extensions, value;
+        assert_int_equal(test_cbor_get_auth_data_extensions(response, written, MC_RESP_AUTH_DATA, auth_data,
+                                                            sizeof(auth_data), &extensions),
+                         0);
+        assert_int_equal(test_cbor_map_lookup_text_key(extensions, "minPinLength", &value), 0);
+      } else {
+        assert_false(auth_data[32] & 0x80); // No other extensions were requested.
+      }
+      if (output.close) output.close(output.ctx);
+    }
+  }
+  assert_int_equal(write_file(MIN_PIN_RPIDS_FILE, NULL, 0, 0, 1), 0);
+}
+
 static void test_client_pin_encrypted_length_policy(void **state) {
   UNUSED(state);
   for (uint8_t protocol = 1; protocol <= 2; ++protocol) {
@@ -4655,8 +4885,9 @@ static void test_client_pin_encrypted_length_policy(void **state) {
         assert_int_equal(cbor_encoder_close_container(&encoder, &map), CborNoError);
         size_t request_len = cbor_encoder_get_buffer_size(&encoder, request);
         // An exact-size field passes parsing and reaches the missing-key check.
-        uint8_t expected = lengths[i] > expected_len ? CTAP2_ERR_PIN_POLICY_VIOLATION :
-                           lengths[i] < expected_len ? CTAP2_ERR_INVALID_CBOR : CTAP2_ERR_MISSING_PARAMETER;
+        uint8_t expected = lengths[i] > expected_len   ? CTAP2_ERR_PIN_POLICY_VIOLATION
+                           : lengths[i] < expected_len ? CTAP2_ERR_INVALID_CBOR
+                                                       : CTAP2_ERR_MISSING_PARAMETER;
         CborParser parser;
         CTAP_client_pin cp;
         assert_int_equal(parse_client_pin(&parser, &cp, request, request_len), expected);
@@ -4668,12 +4899,16 @@ static void test_client_pin_encrypted_length_policy(void **state) {
 }
 
 static uint16_t session_ccid_apdu(const uint8_t *apdu, size_t len) {
-  uint8_t frame[64] = {PC_TO_RDR_XFRBLOCK};
-  assert_true(len + CCID_CMD_HEADER_SIZE <= sizeof(frame));
-  frame[1] = (uint8_t)len;
+  uint8_t frame[CCID_CMD_HEADER_SIZE + 261] = {PC_TO_RDR_XFRBLOCK};
+  assert_true(len <= 261);
+  ccid_put_le32(frame + 1, len);
   frame[6] = 0x67;
   memcpy(frame + CCID_CMD_HEADER_SIZE, apdu, len);
-  assert_int_equal(CCID_OutEvent(frame, (uint8_t)(len + CCID_CMD_HEADER_SIZE)), 0);
+  for (size_t offset = 0; offset < len + CCID_CMD_HEADER_SIZE;) {
+    uint8_t chunk = (uint8_t)MIN(64, len + CCID_CMD_HEADER_SIZE - offset);
+    assert_int_equal(CCID_OutEvent(frame + offset, chunk), USBD_OK);
+    offset += chunk;
+  }
   CCID_Loop();
   uint32_t response_len = ccid_get_le32(bulkin_data.dwLength);
   assert_true(response_len >= 2);
@@ -5045,6 +5280,164 @@ static void session_hid_source_retains_lease_until_init(void **unused) {
   set_test_tick(0);
 }
 
+static EPType *ccid_transport_fixture(void) {
+  init_apdu_buffer();
+  device_init();
+  device_applet_session_clear();
+  USBD_CCID_Init(&usb_device);
+  usb_device.dev_state = USBD_STATE_CONFIGURED;
+  EPType *in = dummy_get_ep_by_addr(EP_IN(ccid));
+  in->maxpacket = 64;
+  in->xfer_buff = NULL;
+  return in;
+}
+
+static void ccid_transport_done(void) {
+  device_applet_session_clear();
+  USBD_CCID_Init(&usb_device);
+  usb_device.dev_state = USBD_STATE_DEFAULT;
+  set_test_tick(0);
+}
+
+static void assert_ccid_header(EPType *in, uint8_t type, uint8_t seq, uint8_t error) {
+  assert_non_null(in->xfer_buff);
+  const uint8_t *response = in->xfer_buff - CCID_CMD_HEADER_SIZE;
+  assert_int_equal(response[0], type);
+  assert_int_equal(ccid_get_le32(response + 1), 0);
+  assert_int_equal(response[6], seq);
+  assert_int_equal(response[7] & ~BM_ICC_STATUS_MASK,
+                   error == SLOT_NO_ERROR ? BM_COMMAND_STATUS_NO_ERROR : BM_COMMAND_STATUS_FAILED);
+  assert_int_equal(response[8], error);
+}
+
+static void test_ccid_short_apdu_only(void **unused) {
+  (void)unused;
+  ccid_transport_fixture();
+  // Reject every extended case, including encodings far below the size limit.
+  static const uint8_t extended[][10] = {
+      {0x80, 0x10, 0, 0, 0, 0, 0}, // Case 2E, maximum Le
+      {0x80, 0x10, 0, 0, 0, 0, 1}, // Case 2E, Le=1
+      {0x80, 0x10, 0, 0, 0, 0, 1, CTAP_GET_INFO}, // Case 3E
+      {0x80, 0x10, 0, 0, 0, 0, 1, CTAP_GET_INFO, 0, 0}, // Case 4E
+  };
+  static const size_t lengths[] = {7, 7, 8, 10};
+  const uint8_t select[] = {0, 0xa4, 4, 0, 8, 0xf0, 0x43, 0x41, 0x4e, 0x4f, 0x46, 0x49, 0x44, 0};
+  for (unsigned selected = 0; selected < 2; ++selected) {
+    if (selected) assert_int_equal(session_ccid_apdu(select, sizeof(select)), SW_NO_ERROR);
+    for (unsigned i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
+      uint32_t generation = fs_generation();
+      assert_int_equal(session_ccid_apdu(extended[i], lengths[i]), SW_WRONG_LENGTH);
+      assert_int_equal(fs_generation(), generation);
+    }
+  }
+  // A genuine maximum-length short Case 4 must still reach the applet.
+  uint8_t short_max[261] = {0x90, 0x10, 0, 0, 255};
+  short_max[5] = CTAP_CLIENT_PIN;
+  // clientPIN getRetries with one unknown field carrying a 250-byte bstr.
+  // The complete 260-byte CBOR request requires two short APDUs and PKE.
+  uint8_t body[260] = {CTAP_CLIENT_PIN, 0xa3, 1, 1, 2, 1, 0x18, 0x63, 0x58, 250};
+  memcpy(short_max + 5, body, 255);
+  assert_int_equal(session_ccid_apdu(short_max, sizeof(short_max)), SW_NO_ERROR);
+  assert_false(apdu_session_can_preempt());
+  uint8_t last[11] = {0x80, 0x10, 0, 0, 5};
+  memcpy(last + 5, body + 255, 5);
+  assert_int_equal(session_ccid_apdu(last, sizeof(last)), SW_NO_ERROR);
+  assert_int_equal(bulkin_data.abData[0], CTAP1_ERR_SUCCESS);
+  assert_true(apdu_session_can_preempt());
+  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
+  assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
+  ccid_transport_done();
+}
+
+static void test_ccid_oversized_apdu_drains(void **unused) {
+  (void)unused;
+  EPType *in = ccid_transport_fixture();
+  static const uint32_t lengths[] = {262, 288, 309, 422, 65536};
+  uint8_t sentinel[16], actual[16];
+  memset(sentinel, 0x5a, sizeof(sentinel));
+  for (unsigned i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
+    assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
+    assert_int_equal(acquire_apdu_buffer(BUFFER_OWNER_CTAPHID), 0);
+    assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
+    assert_int_equal(pke_buffer_write(0, sentinel, sizeof(sentinel)), 0);
+    memcpy(shared_io_buffer, sentinel, sizeof(sentinel));
+    uint8_t packet[64] = {PC_TO_RDR_XFRBLOCK};
+    ccid_put_le32(packet + 1, lengths[i]);
+    packet[6] = 0x42;
+    assert_int_equal(CCID_OutEvent(packet, sizeof(packet)), USBD_OK);
+    memset(packet, 0xa5, sizeof(packet));
+    uint32_t remaining = lengths[i] - (64 - CCID_CMD_HEADER_SIZE);
+    while (remaining) {
+      uint8_t chunk = (uint8_t)MIN(remaining, sizeof(packet));
+      // No response or release until the complete rejected payload is drained.
+      CCID_Loop();
+      assert_true(CCID_Response_IsIdle());
+      assert_int_equal(CCID_OutEvent(packet, chunk), USBD_OK);
+      remaining -= chunk;
+    }
+    CCID_Loop();
+    assert_ccid_header(in, RDR_TO_PC_DATABLOCK, 0x42, SLOTERROR_BAD_LENTGH);
+    assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
+    assert_memory_equal(shared_io_buffer, sentinel, sizeof(sentinel));
+    assert_int_equal(pke_buffer_read(0, actual, sizeof(actual)), 0);
+    assert_memory_equal(actual, sentinel, sizeof(sentinel));
+    assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP), -1);
+    USBD_CCID_DataIn(&usb_device);
+    assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
+    release_apdu_buffer(BUFFER_OWNER_CTAPHID);
+    device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+    // The next message must parse normally after every refused length.
+    assert_int_equal(session_ccid_apdu((const uint8_t[]){0, 0x31, 0, 0}, 4), SW_FILE_NOT_FOUND);
+  }
+  // Direct callers must also be bounded before parsing or logging any bytes.
+  extern ccid_bulkout_data_t bulkout_data;
+  bulkout_data.bSlot = 0;
+  ccid_set_bulkout_length(UINT32_MAX);
+  assert_int_equal(PC_to_RDR_XfrBlock(), SLOTERROR_BAD_LENTGH);
+  assert_int_equal(ccid_get_le32(bulkin_data.dwLength), 0);
+  ccid_transport_done();
+}
+
+static void test_ccid_busy_drains_and_backpressures(void **unused) {
+  (void)unused;
+  EPType *in = ccid_transport_fixture();
+  uint8_t first[] = {PC_TO_RDR_XFRBLOCK, 4, 0, 0, 0, 0, 0x11, 0, 0, 0, 0, 0x31, 0, 0};
+  uint8_t second[64] = {PC_TO_RDR_XFRBLOCK, 0, 0, 1, 0, 0, 0x22}; // 65536 payload bytes.
+  uint8_t tail[64] = {0};
+  assert_int_equal(CCID_OutEvent(first, sizeof(first)), USBD_OK);
+  assert_int_equal(CCID_OutEvent(second, sizeof(second)), USBD_OK);
+  for (unsigned i = 0; i < 1023; ++i)
+    assert_int_equal(CCID_OutEvent(tail, sizeof(tail)), USBD_OK);
+  assert_true(CCID_CanReceive()); // Ten bytes remain; the counter must not wrap at 65535.
+  assert_int_equal(CCID_OutEvent(tail, 10), USBD_OK);
+  assert_memory_equal(shared_io_buffer, first + CCID_CMD_HEADER_SIZE, 4);
+  assert_false(CCID_CanReceive());
+  CCID_ServicePresencePoll();
+  assert_ccid_header(in, RDR_TO_PC_DATABLOCK, 0x22, SLOTERROR_CMD_SLOT_BUSY);
+  uint8_t snapshot[CCID_CMD_HEADER_SIZE];
+  memcpy(snapshot, in->xfer_buff - CCID_CMD_HEADER_SIZE, sizeof(snapshot));
+  CCID_TimeExtensionLoop();
+  assert_memory_equal(in->xfer_buff - CCID_CMD_HEADER_SIZE, snapshot, sizeof(snapshot));
+  // A third packet can already be in the DCD when the rejection becomes ready.
+  EPType *out = dummy_get_ep_by_addr(EP_OUT(ccid));
+  uint8_t third[CCID_CMD_HEADER_SIZE] = {PC_TO_RDR_GETSLOTSTATUS, 0, 0, 0, 0, 0, 0x33};
+  memcpy(out->xfer_buff, third, sizeof(third));
+  out->xfer_count = CCID_CMD_HEADER_SIZE;
+  assert_int_equal(USBD_CCID_DataOut(&usb_device), USBD_BUSY);
+  USBD_CCID_DataIn(&usb_device); // Auxiliary completion must keep the first APDU pinned.
+  assert_int_equal(acquire_apdu_buffer(BUFFER_OWNER_WEBUSB), -1);
+  CCID_ServicePresencePoll();
+  assert_ccid_header(in, RDR_TO_PC_SLOTSTATUS, 0x33, SLOTERROR_CMD_SLOT_BUSY);
+  USBD_CCID_DataIn(&usb_device);
+  CCID_Loop();
+  assert_int_equal(bulkin_data.bSeq, 0x11);
+  USBD_CCID_DataIn(&usb_device);
+  assert_int_equal(session_ccid_apdu((const uint8_t[]){0, 0x31, 0, 0}, 4), SW_FILE_NOT_FOUND);
+  ccid_transport_done();
+}
+
+#include "nfc-transport.inc"
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -5079,6 +5472,16 @@ int main() {
   assert_int_equal(applets_install(), 0);
 
   const struct CMUnitTest tests[] = {
+      cmocka_unit_test(test_nfc_extended_envelope_and_recovery),
+      cmocka_unit_test(test_nfc_extended_mc_ga),
+      cmocka_unit_test(test_nfc_extended_make_credential),
+      cmocka_unit_test(test_nfc_large_lists_and_continuations),
+      cmocka_unit_test(test_nfc_deferred_cancellation),
+      cmocka_unit_test(test_nfc_drain_validation_and_control),
+      cmocka_unit_test(test_nfc_large_blob_stream),
+      cmocka_unit_test(test_nfc_other_ctap_handlers),
+      cmocka_unit_test(test_nfc_command_and_frame_errors),
+      cmocka_unit_test(test_ccid_busy_drains_and_backpressures),
       cmocka_unit_test(session_hid_source_retains_lease_until_init),
       cmocka_unit_test(session_usb_reset_defers_cleanup),
       cmocka_unit_test(session_failed_receive_preserves_context),
@@ -5091,7 +5494,10 @@ int main() {
       cmocka_unit_test(session_pending_response_pins_source),
       cmocka_unit_test(session_fido_sign_between_openpgp_apdus),
       cmocka_unit_test(test_client_pin_encrypted_length_policy),
+      cmocka_unit_test(test_make_credential_min_pin_exact_rpid),
       cmocka_unit_test(test_ccid_response_headers),
+      cmocka_unit_test(test_fido_usb_private_management_select),
+      cmocka_unit_test(test_rejected_usb_select_clears_fido_state),
       cmocka_unit_test(test_hid_setup_descriptors_and_errors),
       cmocka_unit_test(test_ccid_large_hid_request_survives_session_switch),
       cmocka_unit_test(test_ctaphid_large_rx_session_cleanup),
@@ -5112,7 +5518,17 @@ int main() {
       cmocka_unit_test(test_ccid_rejects_reentrant_command_until_response_finishes),
       cmocka_unit_test(test_streaming_message_preserves_original_le_for_handler),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
-      cmocka_unit_test(test_ccid_extended_fido_request_uses_pke),
+      cmocka_unit_test(test_nfc_irq_rx_handoff),
+      cmocka_unit_test(test_nfc_coalesced_activation),
+      cmocka_unit_test(test_nfc_retry_last_rx_ack),
+      cmocka_unit_test(test_nfc_shared_buffer_staging_bytes),
+      cmocka_unit_test(test_nfc_recovery_irq_mask),
+      cmocka_unit_test(test_nfc_first_extended_select),
+      cmocka_unit_test(test_nfc_envelope_length_controls),
+      cmocka_unit_test(test_nfc_nak_does_not_advance_tx),
+      cmocka_unit_test(test_nfc_ack_without_response_chain),
+      cmocka_unit_test(test_ccid_short_apdu_only),
+      cmocka_unit_test(test_ccid_oversized_apdu_drains),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
       cmocka_unit_test(test_large_blob_noncanonical_string_offset),
