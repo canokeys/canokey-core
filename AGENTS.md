@@ -282,7 +282,10 @@ While a HID handler executes, consume competing reports without dispatching them
 initialization reports when IN is available, discard continuation reports, and rearm RX. Bound this drain to eight
 reports per poll. A matching zero-length CANCEL must remain reachable even behind a full burst of competitors;
 wrong-CID/malformed cancellation must not cancel the handler. Ignore idle/late CANCEL duplicates. Never overwrite
-an in-flight IN frame just to send a busy refusal; the existing bounded IN wait may drop that refusal on timeout.
+an in-flight IN frame just to send a busy refusal; drop that refusal immediately when IN is busy so draining
+competitors cannot delay cancellation with repeated IN waits.
+Preserve a valid eight-byte same-CID `CTAPHID_INIT` in the queue for resynchronization. Signal cancellation to the
+polled handler and dispatch INIT only after it unwinds and any TX stream finishes; never overwrite live scratch.
 
 CTAPHID must acquire the applet session before staging a large incoming request
 in PKE: cross-transport session cleanup clears that storage. Retain ownership

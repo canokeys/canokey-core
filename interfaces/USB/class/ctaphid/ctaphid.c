@@ -757,19 +757,26 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
 
   while (CTAPHID_PeekRxEntry(&rx_entry)) {
     CTAPHID_FRAME *rx_frame = &rx_entry.frame;
-    const uint8_t is_cancel = FRAME_TYPE(*rx_frame) == TYPE_INIT && rx_frame->init.cmd == CTAPHID_CANCEL &&
-                              channel.executing && rx_frame->cid == channel.cid && MSG_LEN(*rx_frame) == 0;
+    // INIT/CANCEL command bytes include TYPE_INIT, so continuations cannot match.
+    const uint8_t control_cmd = channel.executing && rx_frame->cid == channel.cid ? rx_frame->init.cmd : 0;
+    const uint8_t is_cancel = control_cmd == CTAPHID_CANCEL && MSG_LEN(*rx_frame) == 0;
 
     // Refuse competitors without dispatching them or changing channel state.
     // Leaving them queued blocks CANCEL, and a full queue also NAKs later
     // cancellation packets. Bound this work so a flood cannot starve the applet.
     if (channel.executing && !is_cancel) {
+      // Same-channel INIT resynchronizes the transaction. Leave its nonce in
+      // the queue until the handler unwinds; never dispatch over live scratch.
+      if (control_cmd == CTAPHID_INIT && MSG_LEN(*rx_frame) == 8) {
+        channel.cancel_pending = 1;
+        return wait_for_user ? LOOP_CANCEL : LOOP_SUCCESS;
+      }
       if (busy_budget-- == 0) break;
       CTAPHID_PopRxEntry();
       // Continuations have no independent reply. If the host has stopped IN
       // reads, discard the refusal rather than overwrite active TX backing or
       // prevent cancellation. Normal contenders receive CHANNEL_BUSY.
-      if (FRAME_TYPE(*rx_frame) == TYPE_INIT && !CTAPHID_TxBusy() && USBD_CTAPHID_WaitIdle() == USBD_OK)
+      if (FRAME_TYPE(*rx_frame) == TYPE_INIT && !CTAPHID_TxBusy() && USBD_CTAPHID_IsIdle() == USBD_OK)
         CTAPHID_SendErrorResponse(rx_frame->cid, ERR_CHANNEL_BUSY);
       goto consume_frame;
     }

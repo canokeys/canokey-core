@@ -711,8 +711,8 @@ int acquire_apdu_buffer(uint8_t owner) {
    * command, they must not overwrite backing retained between response chunks.
    * Descriptor callbacks run in USB IRQ context, so the main-loop response
    * state cannot advance between this check and the buffer reservation. */
-  if (owner == BUFFER_OWNER_USBD &&
-      (apdu_response_source_active() || rapdu_chaining.sent < rapdu_chaining.rapdu.len)) return -1;
+  if (owner == BUFFER_OWNER_USBD && (apdu_response_source_active() || rapdu_chaining.sent < rapdu_chaining.rapdu.len))
+    return -1;
   device_atomic_compare_and_swap(&buffer_owner, BUFFER_OWNER_NONE, owner);
   return buffer_owner == owner ? 0 : -1;
 }

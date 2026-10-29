@@ -33,8 +33,6 @@ static void USBD_SetFeature(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req)
 
 static void USBD_ClrFeature(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req);
 
-static uint8_t USBD_GetLen(uint8_t *buf);
-
 /**
  * @brief  USBD_StdDevReq
  *         Handle standard usb device requests
@@ -561,33 +559,16 @@ void USBD_CtlError(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req __attribu
  */
 void USBD_GetString(uint8_t *desc, uint8_t *unicode, uint16_t *len) {
   if (desc != NULL) {
-    uint8_t idx = 0;
-    *len = (uint16_t)(USBD_GetLen(desc) * 2 + 2);
-    unicode[idx++] = (uint8_t)*len;
-    unicode[idx++] = USB_DESC_TYPE_STRING;
-
+    uint8_t idx = 2;
+    // Count while encoding to avoid a second descriptor-string traversal.
     while (*desc != '\0') {
       unicode[idx++] = *desc++;
       unicode[idx++] = 0x00;
     }
+    *len = idx;
+    unicode[0] = idx;
+    unicode[1] = USB_DESC_TYPE_STRING;
   }
-}
-
-/**
- * @brief  USBD_GetLen
- *         return the string length
- * @param  buf : pointer to the ascii string buffer
- * @retval string length
- */
-static uint8_t USBD_GetLen(uint8_t *buf) {
-  uint8_t len = 0;
-
-  while (*buf != '\0') {
-    len++;
-    buf++;
-  }
-
-  return len;
 }
 
 // HID descriptors carry their own length and report-descriptor length.

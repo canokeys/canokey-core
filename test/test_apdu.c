@@ -522,8 +522,10 @@ static void test_ctaphid_cancel_bypasses_competitors(void **state) {
       assert_int_equal(hid_capture[i].init.cmd, CTAPHID_ERROR);
       assert_int_equal(hid_capture[i].init.data[0], ERR_CHANNEL_BUSY);
     }
-    if (cancel_queue_case == 2) assert_int_equal(hid_capture_count, 1);
-    else assert_true(hid_capture_count > 1);
+    if (cancel_queue_case == 2)
+      assert_int_equal(hid_capture_count, 1);
+    else
+      assert_true(hid_capture_count > 1);
     reset_hid_capture();
     assert_int_equal(CTAPHID_OutEvent((uint8_t *)&ping), 1);
     assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
@@ -531,6 +533,73 @@ static void test_ctaphid_cancel_bypasses_competitors(void **state) {
     assert_int_equal(hid_capture[0].init.cmd, CTAPHID_PING);
   }
   usb_device.dev_state = previous_state;
+}
+
+static uint8_t inject_init_on_send;
+static uint8_t init_poll_result;
+static uint8_t capture_hid_report_with_resync(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
+  uint8_t ret = capture_hid_report(pdev, report, len);
+  if (ret != 0 || !inject_init_on_send) return ret;
+  inject_init_on_send = 0;
+  const uint32_t cid = ((CTAPHID_FRAME *)report)->cid;
+  CTAPHID_FRAME other = make_hid_init(0x99887766, CTAPHID_INIT, 8);
+  CTAPHID_FRAME malformed = make_hid_init(cid, CTAPHID_INIT, 7);
+  CTAPHID_FRAME init = make_hid_init(cid, CTAPHID_INIT, 8);
+  memcpy(init.init.data, "resync42", 8);
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&other), 1);
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&malformed), 1);
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&init), 1);
+  init_poll_result = CTAPHID_Loop(1);
+  // Only competitors have replied: the INIT must survive until the handler unwinds.
+  assert_int_equal(hid_capture_count, 3);
+  for (size_t i = 1; i < hid_capture_count; ++i) {
+    assert_int_equal(hid_capture[i].init.cmd, CTAPHID_ERROR);
+    assert_int_equal(hid_capture[i].init.data[0], ERR_CHANNEL_BUSY);
+  }
+  return 0;
+}
+
+static void test_ctaphid_init_survives_execution_poll(void **state) {
+  (void)state;
+  reset_hid_capture();
+  CTAPHID_Init(capture_hid_report_with_resync);
+  inject_init_on_send = 1;
+  init_poll_result = LOOP_SUCCESS;
+  CTAPHID_FRAME ping = make_hid_init(0x12345678, CTAPHID_PING, 0);
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&ping), 1);
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  assert_int_equal(init_poll_result, LOOP_CANCEL);
+  assert_int_equal(hid_capture_count, 4);
+  assert_int_equal(hid_capture[3].cid, ping.cid);
+  assert_int_equal(hid_capture[3].init.cmd, CTAPHID_INIT);
+  assert_memory_equal(hid_capture[3].init.data, "resync42", 8);
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&ping), 1);
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  assert_int_equal(hid_capture_count, 5);
+  assert_int_equal(hid_capture[4].init.cmd, CTAPHID_PING);
+}
+
+static void test_usb_string_descriptor_wire_encoding(void **state) {
+  (void)state;
+  uint8_t buffer[254];
+  uint16_t len = 0;
+  const uint8_t expected[] = {8, USB_DESC_TYPE_STRING, 'A', 0, 'b', 0, '9', 0};
+  USBD_GetString((uint8_t *)"Ab9", buffer, &len);
+  assert_int_equal(len, sizeof(expected));
+  assert_memory_equal(buffer, expected, sizeof(expected));
+  USBD_GetString((uint8_t *)"", buffer, &len);
+  assert_int_equal(len, 2);
+  assert_int_equal(buffer[0], 2);
+  assert_int_equal(buffer[1], USB_DESC_TYPE_STRING);
+  // Largest whole-character payload that fits the one-byte descriptor length.
+  uint8_t text[127];
+  memset(text, 'x', sizeof(text) - 1);
+  text[sizeof(text) - 1] = 0;
+  USBD_GetString(text, buffer, &len);
+  assert_int_equal(len, sizeof(buffer));
+  assert_int_equal(buffer[0], sizeof(buffer));
+  assert_int_equal(buffer[252], 'x');
+  assert_int_equal(buffer[253], 0);
 }
 
 static void test_ctaphid_sustains_fifty_reports(void **state) {
@@ -5015,9 +5084,12 @@ static void session_descriptors_preserve_response(void **unused) {
   const uint8_t partial[] = {0, 0xca, 0, 0x6e, 1};
   const uint8_t get[] = {0, 0xc0, 0, 0, 0};
   const uint8_t *(*descriptors[])(USBD_SpeedTypeDef, uint16_t *) = {
-      usbdDescriptors.GetConfigurationDescriptor, usbdDescriptors.GetProductStrDescriptor,
-      usbdDescriptors.GetManufacturerStrDescriptor, usbdDescriptors.GetSerialStrDescriptor,
-      usbdDescriptors.GetBOSDescriptor, usbdDescriptors.GetMSOS20Descriptor,
+      usbdDescriptors.GetConfigurationDescriptor,
+      usbdDescriptors.GetProductStrDescriptor,
+      usbdDescriptors.GetManufacturerStrDescriptor,
+      usbdDescriptors.GetSerialStrDescriptor,
+      usbdDescriptors.GetBOSDescriptor,
+      usbdDescriptors.GetMSOS20Descriptor,
   };
   for (unsigned i = 0; i < sizeof(descriptors) / sizeof(descriptors[0]); ++i) {
     assert_int_equal(session_ccid_apdu(partial, sizeof(partial)) & 0xff00, 0x6100);
@@ -5564,6 +5636,8 @@ int main() {
       cmocka_unit_test(test_ctaphid_uses_receive_tick_for_timeout),
       cmocka_unit_test(test_ctaphid_cancel_is_consumed_from_queue),
       cmocka_unit_test(test_ctaphid_cancel_bypasses_competitors),
+      cmocka_unit_test(test_ctaphid_init_survives_execution_poll),
+      cmocka_unit_test(test_usb_string_descriptor_wire_encoding),
       cmocka_unit_test(test_ctaphid_sustains_fifty_reports),
       cmocka_unit_test(test_ctaphid_large_ping_is_consumed_incrementally),
       cmocka_unit_test(test_ctaphid_msg_case3_and_case4_send_complete_response),

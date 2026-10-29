@@ -78,8 +78,11 @@ During HID execution, competing initialization reports receive `CHANNEL_BUSY`
 and continuation reports are discarded without dispatch. Each poll drains at
 most eight competitors so a full receive queue cannot indefinitely hide a later
 matching, zero-length `CANCEL`. Idle/late duplicate cancellation is ignored.
-If IN has stalled, a refusal may be dropped after the existing bounded IN wait;
-active TX backing remains untouched and queued cancellation can still proceed.
+An eight-byte `CTAPHID_INIT` on the active CID stays queued for resynchronization:
+it cancels a polled handler, then runs after the handler unwinds and any TX
+stream finishes so its nonce and the execution workspace remain intact.
+If IN is busy, a refusal is dropped immediately; active TX backing remains
+untouched and queued cancellation can still proceed without an IN wait.
 
 CCID and WebUSB share one APDU context. A change between those owners resets
 selection and authorization in the main loop before dispatch, requiring a fresh
