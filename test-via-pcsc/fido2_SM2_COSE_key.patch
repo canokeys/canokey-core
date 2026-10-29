@@ -19,7 +19,7 @@
  
  
 +class SM2(CoseKey):
-+    ALGORITHM = -48
++    ALGORITHM = -54
 +
 +    def verify(self, message, signature):
 +        if self[-1] != 9:

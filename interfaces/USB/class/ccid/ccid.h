@@ -4,27 +4,27 @@
 
 #include <common.h>
 
-#define ABDATA_SIZE (APDU_BUFFER_SIZE + 2)
-#define SHORT_ABDATA_SIZE 8  /* Enough for most CCID messages except XfrBlock/Secure */
+#define ABDATA_SIZE APDU_COMMAND_BUFFER_SIZE
 #define CCID_CMD_HEADER_SIZE 10
+#define CCID_MAX_XFR_BLOCK_SIZE 261u // Short Case 4: header + Lc + 255 data bytes + Le
+#define CCID_MAX_MESSAGE_SIZE (CCID_CMD_HEADER_SIZE + CCID_MAX_XFR_BLOCK_SIZE)
 #define CCID_NUMBER_OF_SLOTS 1
 #define TIME_EXTENSION_PERIOD 1500
 
 typedef struct {
-  uint8_t bMessageType; /* Offset = 0*/
-  uint32_t dwLength;    /* Offset = 1, The length field (dwLength) is the length
-                           of the message not including the 10-byte header.*/
-  uint8_t bSlot;        /* Offset = 5*/
-  uint8_t bSeq;         /* Offset = 6*/
-  uint8_t bSpecific_0;  /* Offset = 7*/
-  uint8_t bSpecific_1;  /* Offset = 8*/
-  uint8_t bSpecific_2;  /* Offset = 9*/
-  uint8_t abDataShort[SHORT_ABDATA_SIZE]; /* Offset = 10*/
+  uint8_t bMessageType;                   /* Offset = 0*/
+  uint8_t dwLength[4];                    /* Offset = 1, The length field (dwLength) is the length
+                                             of the message not including the 10-byte header.*/
+  uint8_t bSlot;                          /* Offset = 5*/
+  uint8_t bSeq;                           /* Offset = 6*/
+  uint8_t bSpecific_0;                    /* Offset = 7*/
+  uint8_t bSpecific_1;                    /* Offset = 8*/
+  uint8_t bSpecific_2;                    /* Offset = 9*/
 } __packed ccid_bulkout_data_t;
 
 typedef struct {
   uint8_t bMessageType;        /* Offset = 0*/
-  uint32_t dwLength;           /* Offset = 1*/
+  uint8_t dwLength[4];         /* Offset = 1*/
   uint8_t bSlot;               /* Offset = 5, Same as Bulk-OUT message */
   uint8_t bSeq;                /* Offset = 6, Same as Bulk-OUT message */
   uint8_t bStatus;             /* Offset = 7, Slot status as defined in § 6.2.6*/
@@ -34,19 +34,19 @@ typedef struct {
 } __packed ccid_bulkin_data_t;
 
 typedef struct {
-  uint8_t bMessageType;        /* Offset = 0*/
-  uint32_t dwLength;           /* Offset = 1*/
-  uint8_t bSlot;               /* Offset = 5, Same as Bulk-OUT message */
-  uint8_t bSeq;                /* Offset = 6, Same as Bulk-OUT message */
-  uint8_t bStatus;             /* Offset = 7, Slot status as defined in § 6.2.6*/
-  uint8_t bError;              /* Offset = 8, Slot error  as defined in § 6.2.6*/
-  uint8_t bSpecific;           /* Offset = 9*/
-  uint8_t abData[17];          /* Offset = 10*/
+  uint8_t bMessageType; /* Offset = 0*/
+  uint8_t dwLength[4];  /* Offset = 1*/
+  uint8_t bSlot;        /* Offset = 5, Same as Bulk-OUT message */
+  uint8_t bSeq;         /* Offset = 6, Same as Bulk-OUT message */
+  uint8_t bStatus;      /* Offset = 7, Slot status as defined in § 6.2.6*/
+  uint8_t bError;       /* Offset = 8, Slot error  as defined in § 6.2.6*/
+  uint8_t bSpecific;    /* Offset = 9*/
+  uint8_t abData[17];   /* Offset = 10*/
 } __packed ccid_bulkin_short_t;
 
 typedef struct {
   uint8_t bMessageType; /* Offset = 0*/
-  uint32_t dwLength;    /* Offset = 1*/
+  uint8_t dwLength[4];  /* Offset = 1*/
   uint8_t bSlot;        /* Offset = 5, Same as Bulk-OUT message */
   uint8_t bSeq;         /* Offset = 6, Same as Bulk-OUT message */
   uint8_t bStatus;      /* Offset = 7, Slot status as defined in § 6.2.6*/
@@ -97,7 +97,7 @@ typedef struct {
 #define SLOTERROR_CMD_SLOT_BUSY 0xE0
 #define SLOTERROR_CMD_NOT_SUPPORTED 0x00
 
-#define BM_ICC_STATUS_MASK    0x03
+#define BM_ICC_STATUS_MASK 0x03
 #define BM_ICC_PRESENT_ACTIVE 0x00
 #define BM_ICC_PRESENT_INACTIVE 0x01
 #define BM_ICC_NO_ICC_PRESENT 0x02
@@ -108,16 +108,6 @@ typedef struct {
 #define BM_COMMAND_STATUS_TIME_EXTN (0x02 << BM_COMMAND_STATUS_OFFSET)
 
 #define LEN_RDR_TO_PC_SLOTSTATUS 10
-
-typedef enum {
-  CHK_PARAM_SLOT = 1,
-  CHK_PARAM_DWLENGTH = (1 << 1),
-  CHK_PARAM_abRFU2 = (1 << 2),
-  CHK_PARAM_abRFU3 = (1 << 3),
-  CHK_PARAM_CARD_PRESENT = (1 << 4),
-  CHK_PARAM_ABORT = (1 << 5),
-  CHK_ACTIVE_STATE = (1 << 6)
-} ChkParam_t;
 
 #define PC_TO_RDR_ICCPOWERON 0x62
 #define PC_TO_RDR_ICCPOWEROFF 0x63
@@ -141,9 +131,18 @@ typedef enum {
 #define RDR_TO_PC_DATARATEANDCLOCKFREQUENCY 0x84
 
 uint8_t CCID_Init(void);
+uint32_t ccid_get_le32(const uint8_t value[4]);
+void ccid_put_le32(uint8_t out[4], uint32_t value);
+void ccid_set_bulkout_length(uint32_t length);
+// Internal lifecycle cleanup, not the CCID class ABORT protocol.
+void CCID_AbortPendingCommand(void);
+uint8_t CCID_CanReceive(void);
+void CCID_AuxInFinished(void);
+// USBD_BUSY leaves this packet unconsumed: retain/replay it after CanReceive.
 uint8_t CCID_OutEvent(uint8_t *data, uint8_t len);
 void CCID_InFinished(uint8_t is_time_extension_request);
 void CCID_Loop(void);
+void CCID_ServicePresencePoll(void);
 void CCID_TimeExtensionLoop(void);
 uint8_t PC_to_RDR_XfrBlock(void); // Exported for test purposes
 // void CCID_eject(void);

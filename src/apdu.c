@@ -4,12 +4,18 @@
 #include <applets.h>
 #include <common.h>
 #include <ctap.h>
+#include <device-config.h>
 #include <device.h>
+#include <pke.h>
+#if ENABLE_APPLET_NDEF
 #include <ndef.h>
+#endif
 #include <oath.h>
 #include <openpgp.h>
 #include <piv.h>
+#if ENABLE_IFACE_KBDHID
 #include <kbdhid.h>
+#endif
 
 enum APPLET {
   APPLET_NULL,
@@ -18,26 +24,31 @@ enum APPLET {
   APPLET_OATH,
   APPLET_ADMIN,
   APPLET_OPENPGP,
+#if ENABLE_APPLET_NDEF
   APPLET_NDEF,
+#endif
   APPLET_ENUM_END,
 } current_applet;
 
-enum PIV_STATE {
-  PIV_STATE_GET_DATA,
-  PIV_STATE_GET_DATA_RESPONSE,
-  PIV_STATE_OTHER,
-};
-
-static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
+static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00};
+#define PIV_AID_RIGHT_TRUNCATED_SIZE 9
+#define PIV_AID_COMPAT_RID_SIZE 5
 static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
 static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
 static const uint8_t FIDO_AID[] = {0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01};
+// Private USB management AID, outside existing applet prefixes even on older firmware.
+static const uint8_t FIDO_USB_AID[] = {0xF0, 0x43, 0x41, 0x4E, 0x4F, 0x46, 0x49, 0x44};
+#if ENABLE_APPLET_NDEF
 static const uint8_t NDEF_AID[] = {0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01};
+#endif
 
 static const uint8_t *const AID[] = {
-    [APPLET_NULL] = NULL,       [APPLET_PIV] = PIV_AID,         [APPLET_FIDO] = FIDO_AID, [APPLET_OATH] = OATH_AID,
-    [APPLET_ADMIN] = ADMIN_AID, [APPLET_OPENPGP] = OPENPGP_AID, [APPLET_NDEF] = NDEF_AID,
+    [APPLET_NULL] = NULL,     [APPLET_PIV] = PIV_AID,     [APPLET_FIDO] = FIDO_AID,
+    [APPLET_OATH] = OATH_AID, [APPLET_ADMIN] = ADMIN_AID, [APPLET_OPENPGP] = OPENPGP_AID,
+#if ENABLE_APPLET_NDEF
+    [APPLET_NDEF] = NDEF_AID,
+#endif
 };
 
 static const uint8_t AID_Size[] = {
@@ -47,60 +58,147 @@ static const uint8_t AID_Size[] = {
     [APPLET_OATH] = sizeof(OATH_AID),
     [APPLET_ADMIN] = sizeof(ADMIN_AID),
     [APPLET_OPENPGP] = sizeof(OPENPGP_AID),
+#if ENABLE_APPLET_NDEF
     [APPLET_NDEF] = sizeof(NDEF_AID),
+#endif
 };
 
-static volatile uint32_t buffer_owner = BUFFER_OWNER_NONE;
-static uint8_t chaining_buffer[APDU_BUFFER_SIZE];
-static CAPDU_CHAINING capdu_chaining = {
-    .capdu.data = chaining_buffer,
-};
-static RAPDU_CHAINING rapdu_chaining = {
-    .rapdu.data = chaining_buffer,
-};
+static uint8_t aid_matches(uint8_t applet, const uint8_t *candidate, uint16_t len, apdu_transport_t transport) {
+  if (applet == APPLET_FIDO && (transport == APDU_TRANSPORT_CCID || transport == APDU_TRANSPORT_WEBUSB)) {
+    return len == sizeof(FIDO_USB_AID) && memcmp(candidate, FIDO_USB_AID, len) == 0;
+  }
+  if (applet == APPLET_PIV) {
+    // Keep the widely deployed RID-only selector in addition to the two forms in SP 800-73.
+    if (len != PIV_AID_COMPAT_RID_SIZE && len != PIV_AID_RIGHT_TRUNCATED_SIZE && len != sizeof(PIV_AID)) return 0;
+  } else if (len != AID_Size[applet]) {
+    return 0;
+  }
+  return memcmp(candidate, AID[applet], len) == 0;
+}
+
+static volatile uint32_t buffer_owner;
+static RAPDU_CHAINING rapdu_chaining;
+static CAPDU_CHAINING fido_capdu_chaining;
+static uint8_t fido_capdu_pke_owner;
+static uint8_t response_tail[APDU_COMMAND_OVERHEAD];
+static uint16_t response_tail_offset;
+static uint16_t response_tail_len;
+uint8_t *shared_io_buffer;
+#if !ENABLE_IFACE_CCID
+static uint8_t apdu_fallback_buffer[APDU_COMMAND_BUFFER_SIZE];
+#endif
+
+static void fido_capdu_reset(void);
+
+// The saved response tail is only valid across GET RESPONSE continuations of
+// the response that produced it. Invalidate it when a new command starts; do
+// NOT invalidate it based on `sent == 0` in apdu_output, because a command
+// with Le absent sends a zero-length first chunk and leaves `sent` at 0 for
+// the following GET RESPONSE.
+static void response_tail_reset(void) {
+  response_tail_offset = 0;
+  response_tail_len = 0;
+}
+
+typedef struct {
+  APDU_RESPONSE_SOURCE_VIEW view;
+  APDU_RESPONSE_SOURCE_CLOSE close;
+} APDU_RESPONSE_SOURCE;
+
+static uint8_t applet_enabled_on_transport(enum APPLET applet, apdu_transport_t transport) {
+  switch (applet) {
+  case APPLET_OPENPGP:
+    return transport == APDU_TRANSPORT_NFC ? device_config_is_openpgp_nfc_enabled()
+                                           : device_config_is_openpgp_ccid_enabled();
+  case APPLET_PIV:
+    return transport == APDU_TRANSPORT_NFC ? device_config_is_piv_nfc_enabled() : device_config_is_piv_ccid_enabled();
+  case APPLET_FIDO:
+    return device_config_is_webauthn_enabled();
+  default:
+    return 1;
+  }
+}
+
+static void rapdu_chaining_reset(void) {
+  memset(&rapdu_chaining, 0, sizeof(rapdu_chaining));
+  rapdu_chaining.rapdu.data = shared_io_buffer;
+}
+
+static void disabled_applet_response(RAPDU *rapdu) {
+  current_applet = APPLET_NULL;
+  apdu_response_source_clear();
+  rapdu_chaining_reset();
+  fido_capdu_reset();
+  LL = 0;
+  SW = SW_FILE_NOT_FOUND;
+}
+
+static APDU_RESPONSE_SOURCE response_source;
+
+#define APDU_RESPONSE_CHUNK_SIZE 250
+
+#if ENABLE_IFACE_CCID
+extern void ccid_init_apdu_buffer(void);
+#endif
+
+void apdu_selection_reset(void) { current_applet = APPLET_NULL; }
+
+void init_apdu_buffer(void) {
+#if !ENABLE_IFACE_CCID
+  shared_io_buffer = apdu_fallback_buffer;
+#endif
+  apdu_response_source_clear();
+  response_tail_reset();
+  if (!fido_capdu_chaining.in_chaining) {
+    memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
+    fido_capdu_pke_owner = 0;
+  }
+  current_applet = APPLET_NULL;
+#if ENABLE_IFACE_CCID
+  ccid_init_apdu_buffer();
+#endif
+  rapdu_chaining_reset();
+  if (!fido_capdu_pke_owner) fido_capdu_chaining.capdu.data = shared_io_buffer;
+}
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
+  capdu->le = 0;
+  capdu->lc = 0;
+  capdu->extended = 0;
+  capdu->pke_backed = 0;
   if (len < 4) return -1;
-  CLA = cmd[0];
-  INS = cmd[1];
-  P1 = cmd[2];
-  P2 = cmd[3];
-  LC = 0;
-  LE = 0;
-
-  if (len == 4) // Case 1
-    return 0;
-  LC = cmd[4];
+  memcpy(&capdu->cla, cmd, 4);
+  if (len == 4) return 0; // Case 1
+  uint32_t payload = cmd[4];
+  uint16_t header = 5, trailer = 1;
+  uint32_t le = 0x100;
   if (len == 5) { // Case 2S
-    LE = LC;
-    LC = 0;
-    if (LE == 0) LE = 0x100;
-  } else if (LC > 0 && len == 5 + LC) { // Case 3S
-    memmove(DATA, cmd + 5, LC);
-    LE = 0x100;
-  } else if (LC > 0 && len == 6 + LC) { // Case 4S
-    memmove(DATA, cmd + 5, LC);
-    LE = cmd[5 + LC];
-    if (LE == 0) LE = 0x100;
-  } else if (len == 7) { // Case 2E
-    if (LC != 0) return -1;
-    LE = (cmd[5] << 8) | cmd[6];
-    if (LE == 0) LE = 0x10000;
-  } else {
-    if (LC != 0 || len < 7) return -1;
-    LC = (cmd[5] << 8) | cmd[6];
-    if (LC == 0) return -1;
-    if (len == 7 + LC) { // Case 3E
-      memmove(DATA, cmd + 7, LC);
-      LE = 0x10000;
-      return 0;
-    } else if (len == 9 + LC) { // Case 4E
-      memmove(DATA, cmd + 7, LC);
-      LE = (cmd[7 + LC] << 8) | cmd[8 + LC];
-      if (LE == 0) LE = 0x10000;
-    } else
-      return -1;
+    LE = payload ? payload : le;
+    return 0;
   }
+  if (!payload) {
+    if (len < 7) return -1;
+    capdu->extended = 1;
+    payload = ((uint16_t)cmd[5] << 8) | cmd[6];
+    header = 7;
+    trailer = 2;
+    le = 0x10000;
+    if (len == 7) { // Case 2E
+      LE = payload ? payload : le;
+      return 0;
+    }
+  }
+  if (!payload || payload > APDU_INCOMING_DATA_SIZE) return -1;
+  const uint32_t end = header + payload;
+  if (len != end) { // Case 4S/4E; Case 3S/3E use the default Le
+    if (len != end + trailer) return -1;
+    uint32_t encoded_le = cmd[end];
+    if (trailer == 2) encoded_le = (encoded_le << 8) | cmd[end + 1];
+    if (encoded_le) le = encoded_le;
+  }
+  LC = payload;
+  LE = le;
+  memmove(DATA, cmd + header, LC);
   return 0;
 }
 
@@ -112,13 +210,15 @@ restart:
     ex->capdu.p1 = sh->p1;
     ex->capdu.p2 = sh->p2;
     ex->capdu.lc = 0;
+    ex->capdu.extended = sh->extended;
+    ex->capdu.pke_backed = 0;
   } else if (ex->capdu.cla != (sh->cla & 0xEF) || ex->capdu.ins != sh->ins || ex->capdu.p1 != sh->p1 ||
              ex->capdu.p2 != sh->p2) {
     ex->in_chaining = 0;
     goto restart;
   }
   ex->in_chaining = 1;
-  if (ex->capdu.lc + sh->lc > APDU_BUFFER_SIZE) return APDU_CHAINING_OVERFLOW;
+  if (ex->capdu.lc + sh->lc > APDU_INCOMING_DATA_SIZE) return APDU_CHAINING_OVERFLOW;
   memcpy(ex->capdu.data + ex->capdu.lc, sh->data, sh->lc);
   ex->capdu.lc += sh->lc;
 
@@ -131,136 +231,497 @@ restart:
   }
 }
 
+static void fido_capdu_release_request(void *ctx) {
+  UNUSED(ctx);
+  if (!fido_capdu_pke_owner) return;
+  fido_capdu_pke_owner = 0;
+  pke_buffer_clear();
+  pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+}
+
+static void fido_capdu_reset(void) {
+  fido_capdu_release_request(NULL);
+  memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
+  fido_capdu_chaining.capdu.data = shared_io_buffer;
+}
+
+void apdu_fido_chain_reset(void) { fido_capdu_reset(); }
+
+void apdu_rapdu_chain_reset(void) { rapdu_chaining_reset(); }
+
+static int fido_apdu_input(const CAPDU *sh) {
+  CAPDU *cmd = &fido_capdu_chaining.capdu;
+  // Compare the complete command header with only the chaining bit masked.
+  uint32_t previous_header, incoming_header;
+  memcpy(&previous_header, &cmd->cla, sizeof(previous_header));
+  memcpy(&incoming_header, &sh->cla, sizeof(incoming_header));
+  incoming_header &= htobe32(0xEFFFFFFFu);
+  if (fido_capdu_chaining.in_chaining && previous_header != incoming_header) fido_capdu_reset();
+  if (!fido_capdu_chaining.in_chaining) {
+    *cmd = *sh;
+    cmd->cla &= 0xEF;
+    cmd->lc = 0;
+    cmd->data = shared_io_buffer;
+  }
+  const uint32_t new_len = (uint32_t)cmd->lc + sh->lc;
+  if (new_len > CTAP_MAX_REQUEST_SIZE) return APDU_CHAINING_OVERFLOW;
+  // This helper is entered only for command chaining. Stage the very first
+  // fragment: receiving the next APDU will overwrite the shared input buffer.
+  if (!fido_capdu_pke_owner) {
+    if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return APDU_CHAINING_ERROR;
+    fido_capdu_pke_owner = 1;
+  }
+  if (pke_buffer_write(cmd->lc, sh->data, sh->lc) < 0) return APDU_CHAINING_ERROR;
+  cmd->lc = (uint16_t)new_len;
+  fido_capdu_chaining.in_chaining = (sh->cla & 0x10) != 0;
+  if (fido_capdu_chaining.in_chaining) return APDU_CHAINING_NOT_LAST_BLOCK;
+  cmd->le = sh->le;
+  return APDU_CHAINING_LAST_BLOCK;
+}
+
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
+  if (response_source.view.read) {
+    uint32_t remaining = response_source.view.total_len - response_source.view.offset;
+    uint16_t to_send = (uint16_t)MIN(remaining, sh->len);
+
+    // The caller writes SW to sh->data + sh->len after we return, which
+    // overwrites bytes that the response source may still need (e.g. the
+    // tail of the auth_data in the first chunk of an MC streaming response).
+    // Restore any bytes saved on the previous call.
+    if (response_tail_len != 0 && response_source.view.offset == response_tail_offset) {
+      memcpy(sh->data + response_tail_offset, response_tail, response_tail_len);
+      response_tail_len = 0;
+    }
+
+    int read = response_source.view.read(response_source.view.ctx, response_source.view.offset, sh->data, to_send);
+    if (read < 0 || read > to_send || (read == 0 && remaining != 0)) {
+      ERR_MSG("source read failed sent=%lu read=%d\n", (unsigned long)response_source.view.offset, read);
+      apdu_response_source_clear();
+      sh->len = 0;
+      sh->sw = SW_UNABLE_TO_PROCESS;
+      return -1;
+    }
+
+    // Save the two bytes at the end of this chunk so that the SW byte
+    // write by the caller does not corrupt response source data.
+    if (sh->data == shared_io_buffer && remaining > (uint32_t)read) {
+      const uint16_t tail_len = 2;
+      memcpy(response_tail, sh->data + read, tail_len);
+      response_tail_offset = (uint16_t)read;
+      response_tail_len = tail_len;
+    }
+
+    sh->len = (uint16_t)read;
+    response_source.view.offset += (uint16_t)read;
+    remaining = response_source.view.total_len - response_source.view.offset;
+    if (remaining != 0) {
+      sh->sw = remaining > 0xFF ? 0x61FF : 0x6100 + remaining;
+    } else {
+      sh->sw = response_source.view.sw;
+      apdu_response_source_clear();
+    }
+    return 0;
+  }
+
   uint16_t to_send = ex->rapdu.len - ex->sent;
   if (to_send > sh->len) to_send = sh->len;
-  memcpy(sh->data, ex->rapdu.data + ex->sent, to_send);
+  if (response_tail_len != 0 && ex->sent == response_tail_offset) {
+    // Restore the pending prefix before moving an aliased response chunk.
+    // The previous SW trailer or incoming GET RESPONSE may have overwritten it.
+    memcpy(ex->rapdu.data + response_tail_offset, response_tail, response_tail_len);
+    response_tail_len = 0;
+  }
+  memmove(sh->data, ex->rapdu.data + ex->sent, to_send);
   sh->len = to_send;
   ex->sent += to_send;
   if (ex->sent < ex->rapdu.len) {
+    if (ex->rapdu.data == sh->data) {
+      response_tail_len = MIN(ex->rapdu.len - ex->sent, sizeof(response_tail));
+      memcpy(response_tail, ex->rapdu.data + ex->sent, response_tail_len);
+      response_tail_offset = ex->sent;
+    }
     if (ex->rapdu.len - ex->sent > 0xFF)
       sh->sw = 0x61FF;
     else
       sh->sw = 0x6100 + (ex->rapdu.len - ex->sent);
-  } else
+  } else {
     sh->sw = ex->rapdu.sw;
+    response_tail_reset();
+  }
   return 0;
 }
 
-void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
-  if (CLA == 0xFF && INS == 0xEE && P1 == 0xFF && P2 == 0xEE) {
-      // A special APDU to trigger Eject
-      KBDHID_Eject();
-      LL = 0;
-      SW = SW_NO_ERROR;
-      return;
+uint8_t apdu_is_get_response(const CAPDU *capdu) {
+  return (capdu->cla == 0x00 || capdu->cla == 0x80) && capdu->ins == 0xC0;
+}
+
+int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu, uint8_t is_get_response,
+                                   uint16_t le_limit, APDU_MESSAGE_HANDLER handler) {
+  const uint16_t response_le = (uint16_t)MIN(capdu->le, le_limit);
+  if (!handler) return -1;
+
+  if (!is_get_response) {
+    apdu_response_source_clear();
+    response_tail_reset();
   }
-  static enum PIV_STATE piv_state;
-  if (current_applet == APPLET_PIV) {
-    // Offload some APDU chaining commands of PIV applet,
-    // because the length of concatenated payloads may exceed chaining buffer size.
-    if (INS == PIV_INS_GET_DATA)
-      piv_state = PIV_STATE_GET_DATA;
-    else if ((piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE) && INS == 0xC0)
-      piv_state = PIV_STATE_GET_DATA_RESPONSE;
-    else
-      piv_state = PIV_STATE_OTHER;
-    if (piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE || INS == PIV_INS_PUT_DATA) {
-      LE = MIN(LE, APDU_BUFFER_SIZE); // Always clamp the Le to valid range
-      piv_process_apdu(capdu, rapdu);
-      return;
+  if (is_get_response) {
+    // Mirror the generic GET RESPONSE path in process_apdu_from: with no
+    // pending chain and no active response source this is an error, not a
+    // replay of the previous (stale) RAPDU status word.
+    if (!apdu_response_source_active() && rapdu_chaining->sent >= rapdu_chaining->rapdu.len) {
+      rapdu->len = 0;
+      rapdu->sw = SW_COMMAND_NOT_ALLOWED;
+      return 0;
     }
+    rapdu->len = response_le;
+    apdu_output(rapdu_chaining, rapdu);
+    return 0;
   }
-  int ret = apdu_input(&capdu_chaining, capdu);
-  if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
-    LL = 0;
-    SW = SW_NO_ERROR;
-  } else if (ret == APDU_CHAINING_LAST_BLOCK) {
-    capdu = &capdu_chaining.capdu;
-    LE = MIN(LE, APDU_BUFFER_SIZE);
-    if ((CLA == 0x80 || CLA == 0x00) && INS == 0xC0) { // GET RESPONSE
-      rapdu->len = LE;
-      apdu_output(&rapdu_chaining, rapdu);
-      return;
-    }
-    rapdu_chaining.sent = 0;
-    if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
-      uint8_t i, end = APPLET_ENUM_END;
-      for (i = APPLET_NULL + 1; i != end; ++i) {
-        if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
-          if (i == APPLET_NDEF && !cfg_is_ndef_enable()) {
-            LL = 0;
-            SW = SW_FILE_NOT_FOUND;
-            DBG_MSG("NDEF is disable\n");
-            return;
-          }
-          if (i == APPLET_PIV) piv_state = PIV_STATE_OTHER; // Reset `piv_state`
-          if (i != current_applet) applets_poweroff();
-          current_applet = i;
-          DBG_MSG("applet switched to: %d\n", current_applet);
-          break;
-        }
-      }
-      if (i == end) {
-        LL = 0;
-        SW = SW_FILE_NOT_FOUND;
-        DBG_MSG("applet not found\n");
-        return;
-      }
-    }
-    switch (current_applet) {
-    case APPLET_OPENPGP:
-      openpgp_process_apdu(capdu, &rapdu_chaining.rapdu);
-      rapdu->len = LE;
-      apdu_output(&rapdu_chaining, rapdu);
-      break;
-    case APPLET_PIV:
-      piv_process_apdu(capdu, &rapdu_chaining.rapdu);
-      rapdu->len = LE;
-      apdu_output(&rapdu_chaining, rapdu);
-      break;
-    case APPLET_FIDO:
-#ifdef TEST
-      if (CLA == 0x00 && INS == 0xEE && LC == 0x04 && memcmp(DATA, "\x12\x56\xAB\xF0", 4) == 0) {
-        printf("MAGIC REBOOT command received!\r\n");
-        testmode_set_initial_ticks(0);
-        testmode_set_initial_ticks(device_get_tick());
-        ctap_install(0);
-        SW = 0x9000;
-        LL = 0;
-        break;
-      }
-      if (CLA == 0x00 && INS == 0xEF) {
-        testmode_inject_error(P1, P2, LC, DATA);
-        SW = 0x9000;
-        LL = 0;
-        break;
-      }
-#endif
-      ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
-      rapdu->len = LE;
-      apdu_output(&rapdu_chaining, rapdu);
-      break;
-    case APPLET_OATH:
-      oath_process_apdu(capdu, rapdu);
-      break;
-    case APPLET_ADMIN:
-      admin_process_apdu(capdu, rapdu);
-      break;
-    case APPLET_NDEF:
-      ndef_process_apdu(capdu, rapdu);
-      break;
-    default:
-      LL = 0;
-      SW = SW_FILE_NOT_FOUND;
-    }
-  } else {
-    LL = 0;
-    SW = SW_CHECKING_ERROR;
+
+  // Same abandonment rule as in process_apdu_from: a new command drops any
+  // pending chain. The handler re-establishes rapdu.len for the new response.
+  rapdu_chaining->sent = 0;
+  rapdu_chaining->rapdu.len = 0;
+  handler(capdu, &rapdu_chaining->rapdu);
+  rapdu->len = response_le;
+  apdu_output(rapdu_chaining, rapdu);
+  return 0;
+}
+
+void apdu_response_source_set(uint32_t total_len, uint16_t sw, APDU_RESPONSE_SOURCE_READ read,
+                              APDU_RESPONSE_SOURCE_CLOSE close, void *ctx) {
+  apdu_response_source_clear();
+  response_source.view.total_len = total_len;
+  response_source.view.offset = 0;
+  response_source.view.sw = sw;
+  response_source.view.read = read;
+  response_source.close = close;
+  response_source.view.ctx = ctx;
+}
+
+void apdu_response_source_clear(void) {
+  if (response_source.view.read && response_source.close) response_source.close(response_source.view.ctx);
+  memset(&response_source, 0, sizeof(response_source));
+}
+
+int apdu_response_source_active(void) { return response_source.view.read != NULL; }
+
+const APDU_RESPONSE_SOURCE_VIEW *apdu_response_source_view(void) {
+  return response_source.view.read ? &response_source.view : NULL;
+}
+
+int apdu_response_source_read_memory(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  memcpy(buf, (const uint8_t *)ctx + offset, len);
+  return len;
+}
+
+int apdu_response_source_read_pke(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  UNUSED(ctx);
+  return pke_buffer_read(offset, buf, len) < 0 ? -1 : len;
+}
+
+int apdu_response_source_output(RAPDU *rapdu, uint32_t le) {
+  rapdu->len = (uint16_t)MIN(le, APDU_RESPONSE_CHUNK_SIZE);
+  return apdu_output(&rapdu_chaining, rapdu);
+}
+
+int apdu_session_can_preempt(void) {
+  if (buffer_owner != BUFFER_OWNER_NONE) return 0;
+  if (apdu_response_source_active() || !openpgp_session_can_yield() || !piv_session_can_yield()) return 0;
+  // Continuations retain their backing even after a transport response ends.
+  if (rapdu_chaining.sent < rapdu_chaining.rapdu.len) return 0;
+  if (fido_capdu_chaining.in_chaining || fido_capdu_pke_owner) return 0;
+  return 1;
+}
+
+int acquire_apdu_interface(uint8_t session_owner, uint8_t buffer_owner) {
+  if (device_applet_session_acquire((device_applet_session_owner_t)session_owner) != 0) return -1;
+  if (acquire_apdu_buffer(buffer_owner) != 0) {
+    device_applet_session_release((device_applet_session_owner_t)session_owner);
+    return -1;
+  }
+  device_applet_session_touch((device_applet_session_owner_t)session_owner);
+  return 0;
+}
+
+void release_apdu_interface(uint8_t session_owner, uint8_t buffer_owner) {
+  release_apdu_buffer(buffer_owner);
+  device_applet_session_release((device_applet_session_owner_t)session_owner);
+}
+
+// Rejected USB probes must not inherit a prior private FIDO selection.
+static void reject_usb_fido_select(apdu_transport_t transport) {
+  if ((transport == APDU_TRANSPORT_CCID || transport == APDU_TRANSPORT_WEBUSB) && current_applet == APPLET_FIDO) {
+    ctap_deselect();
+    fido_capdu_reset();
+    current_applet = APPLET_NULL;
   }
 }
 
+int apdu_request_read_pke(void *ctx, size_t offset, uint8_t *buf, size_t len) {
+  UNUSED(ctx);
+  return pke_buffer_read(offset, buf, len);
+}
+
+int apdu_fido_selected(void) { return current_applet == APPLET_FIDO && device_config_is_webauthn_enabled(); }
+
+
+static void process_apdu_impl(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport,
+                              const apdu_request_source_t *source) {
+  // Only CTAP CBOR consumes non-contiguous input. Never expose it to a
+  // direct-memory applet or implicitly select FIDO based on the command shape.
+  if (source && (current_applet != APPLET_FIDO || CLA != 0x80 || INS != CTAP_INS_MSG)) {
+    disabled_applet_response(rapdu);
+    return;
+  }
+#if ENABLE_IFACE_KBDHID
+  if (device_config_is_pass_enabled() && CLA == 0xFF && INS == 0xEE && P1 == 0xFF && P2 == 0xEE) {
+    // A special APDU to trigger Eject
+    KBDHID_Eject();
+    LL = 0;
+    SW = SW_NO_ERROR;
+    return;
+  }
+#endif
+  // Route every interindustry SELECT-by-DF-name command here so unsupported
+  // P2 values cannot fall through to whichever applet was previously active.
+  const uint8_t is_select_by_aid = CLA == 0x00 && INS == 0xA4 && P1 == 0x04;
+  if (!is_select_by_aid) {
+    if (current_applet == APPLET_PIV) {
+      if (!applet_enabled_on_transport(APPLET_PIV, transport)) {
+        disabled_applet_response(rapdu);
+        return;
+      }
+      piv_process_apdu_message(&rapdu_chaining, capdu, rapdu);
+      return;
+    }
+    if (current_applet == APPLET_OPENPGP) {
+      if (!applet_enabled_on_transport(APPLET_OPENPGP, transport)) {
+        disabled_applet_response(rapdu);
+        return;
+      }
+      openpgp_process_apdu_message(&rapdu_chaining, capdu, rapdu);
+      return;
+    }
+#if ENABLE_APPLET_NDEF
+    if (current_applet == APPLET_NDEF) {
+      ndef_process_apdu_message(&rapdu_chaining, capdu, rapdu);
+      return;
+    }
+#endif
+  }
+  const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0;
+  if (!is_get_response) {
+    apdu_response_source_clear();
+    response_tail_reset();
+  }
+  LE = MIN(LE, APDU_BUFFER_SIZE);
+  if (is_get_response) { // GET RESPONSE
+    if (!apdu_response_source_active() && rapdu_chaining.sent >= rapdu_chaining.rapdu.len) {
+      LL = 0;
+      SW = SW_COMMAND_NOT_ALLOWED;
+      return;
+    }
+    rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
+    apdu_output(&rapdu_chaining, rapdu);
+    return;
+  }
+  // A new command abandons any pending response chain (ISO 7816-4): clear the
+  // stale length as well as the offset, otherwise a later GET RESPONSE would
+  // serve leftover buffer contents from an unfinished previous response
+  // (handlers like OATH/ADMIN write only the transport RAPDU and never touch
+  // rapdu_chaining.rapdu.len). Chaining handlers re-establish rapdu.len below.
+  rapdu_chaining.sent = 0;
+  rapdu_chaining.rapdu.len = 0;
+  if (is_select_by_aid) {
+    if (P2 != 0x00) {
+      reject_usb_fido_select(transport);
+      LL = 0;
+      SW = SW_WRONG_P1P2;
+      return;
+    }
+    uint8_t i, end = APPLET_ENUM_END;
+    for (i = APPLET_NULL + 1; i != end; ++i) {
+      if (aid_matches(i, DATA, LC, transport)) {
+        if (!applet_enabled_on_transport((enum APPLET)i, transport)) {
+          reject_usb_fido_select(transport);
+          disabled_applet_response(rapdu);
+          DBG_MSG("applet disabled: %d\n", i);
+          return;
+        }
+#if ENABLE_APPLET_NDEF
+        if (i == APPLET_NDEF && !device_config_is_ndef_enabled()) {
+          reject_usb_fido_select(transport);
+          LL = 0;
+          SW = SW_FILE_NOT_FOUND;
+          DBG_MSG("NDEF is disable\n");
+          return;
+        }
+#endif
+        if (i != current_applet) {
+          if (current_applet == APPLET_FIDO) {
+            ctap_deselect();
+          }
+          applets_poweroff();
+          fido_capdu_reset();
+        }
+        current_applet = i;
+        DBG_MSG("applet switched to: %d\n", current_applet);
+        break;
+      }
+    }
+    if (i == end) {
+      reject_usb_fido_select(transport);
+      LL = 0;
+      SW = SW_FILE_NOT_FOUND;
+      DBG_MSG("applet not found\n");
+      return;
+    }
+  }
+  // APDU clients must SELECT after selection is cleared; command headers
+  // alone do not select FIDO. Native CTAPHID dispatch bypasses this applet router.
+  switch (current_applet) {
+  case APPLET_OPENPGP:
+    openpgp_process_apdu(capdu, &rapdu_chaining.rapdu);
+    goto output;
+  case APPLET_PIV:
+    piv_process_apdu(capdu, &rapdu_chaining.rapdu);
+    goto output;
+  case APPLET_FIDO:
+    if (!applet_enabled_on_transport(APPLET_FIDO, transport)) {
+      disabled_applet_response(rapdu);
+      break;
+    }
+#if ENABLE_NFC
+    if (transport == APDU_TRANSPORT_NFC) {
+      if (CLA == 0x80 && INS == 0x12) { // NFCCTAP_CONTROL END CTAP_MSG
+        LL = 0;
+        SW = SW_WRONG_P1P2;
+        if (P1 == 1 && P2 == 0) {
+          SW = SW_WRONG_LENGTH;
+          if (LC == 0) {
+            ctap_deselect();
+            fido_capdu_reset();
+            current_applet = APPLET_NULL;
+            SW = SW_NO_ERROR;
+          }
+        }
+        break;
+      }
+      // Large staged commands mirror these checks in NFC append_rx before
+      // acquiring PKE. Boundary tests exercise both inline and staged input.
+      if ((CLA & 0xEF) == 0x80 && INS == CTAP_INS_MSG) {
+        if ((P1 & 0x7F) || P2) {
+          fido_capdu_reset();
+          LL = 0;
+          SW = SW_WRONG_P1P2;
+          break;
+        }
+        // Standalone extended encoding starts a new logical request, even
+        // when its body is small enough for the inline buffer.
+        if (capdu->extended) fido_capdu_reset();
+      }
+    }
+#endif
+#ifdef TESTMODE_INS_HOOKS
+    if (CLA == 0x00 && INS == 0xEE && LC == 0x04 && memcmp(DATA, "\x12\x56\xAB\xF0", 4) == 0) {
+      DBG_MSG("MAGIC REBOOT command received!\r\n");
+      testmode_set_initial_ticks(0);
+      testmode_set_initial_ticks(device_get_tick());
+      ctap_schedule_runtime_reset();
+      ctap_install(0);
+      SW = 0x9000;
+      LL = 0;
+      break;
+    }
+    if (CLA == 0x00 && INS == 0xEF) {
+      testmode_inject_error(P1, P2, LC, DATA);
+      SW = 0x9000;
+      LL = 0;
+      break;
+    }
+#endif
+    if (((CLA & 0xEF) == 0x80) && ((CLA & 0x10) != 0 || fido_capdu_chaining.in_chaining)) {
+      const int chaining = fido_apdu_input(capdu);
+      if (chaining == APDU_CHAINING_OVERFLOW) {
+        fido_capdu_reset();
+        LL = 0;
+        SW = SW_WRONG_LENGTH;
+#if ENABLE_NFC
+        if (transport == APDU_TRANSPORT_NFC) {
+          rapdu->data[0] = 0x39; // CTAP2_ERR_REQUEST_TOO_LARGE
+          LL = 1;
+          SW = SW_NO_ERROR;
+        }
+#endif
+        break;
+      }
+      if (chaining == APDU_CHAINING_ERROR) {
+        fido_capdu_reset();
+        LL = 0;
+        SW = SW_UNABLE_TO_PROCESS;
+        break;
+      }
+      if (chaining == APDU_CHAINING_NOT_LAST_BLOCK) {
+        LL = 0;
+        SW = SW_NO_ERROR;
+        break;
+      }
+      capdu = &fido_capdu_chaining.capdu;
+    }
+    const apdu_request_source_t chained_source = {
+        .read = apdu_request_read_pke, .close = fido_capdu_release_request, .len = LC};
+    if (!source && fido_capdu_pke_owner) source = &chained_source;
+    if (source)
+      ctap_process_apdu_source_with_src(capdu, source, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
+    else
+      ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
+    goto output;
+  case APPLET_OATH:
+    oath_process_apdu(capdu, rapdu);
+    break;
+  case APPLET_ADMIN:
+    admin_process_apdu(capdu, rapdu);
+    break;
+#if ENABLE_APPLET_NDEF
+  case APPLET_NDEF:
+    ndef_process_apdu(capdu, rapdu);
+    break;
+#endif
+  default:
+    LL = 0;
+    SW = SW_FILE_NOT_FOUND;
+  }
+  return;
+
+output:
+  // Common response epilogue for FIDO and PIV/OpenPGP SELECT.
+  rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
+  apdu_output(&rapdu_chaining, rapdu);
+  if (current_applet == APPLET_FIDO) fido_capdu_reset();
+}
+
+void process_apdu_source_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport,
+                              const apdu_request_source_t *source) {
+  process_apdu_impl(capdu, rapdu, transport, source);
+  // CTAP may already have released input before crypto. This final close also
+  // covers pre-dispatch rejection; transport close callbacks are idempotent.
+  if (source && source->close) source->close(source->ctx);
+}
+
+void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
+  process_apdu_source_from(capdu, rapdu, transport, NULL);
+}
+
+void process_apdu(CAPDU *capdu, RAPDU *rapdu) { process_apdu_from(capdu, rapdu, APDU_TRANSPORT_CCID); }
+
 int acquire_apdu_buffer(uint8_t owner) {
+  /* USB descriptors are unrelated to the APDU conversation: unlike its next
+   * command, they must not overwrite backing retained between response chunks.
+   * Descriptor callbacks run in USB IRQ context, so the main-loop response
+   * state cannot advance between this check and the buffer reservation. */
+  if (owner == BUFFER_OWNER_USBD && (apdu_response_source_active() || rapdu_chaining.sent < rapdu_chaining.rapdu.len))
+    return -1;
   device_atomic_compare_and_swap(&buffer_owner, BUFFER_OWNER_NONE, owner);
   return buffer_owner == owner ? 0 : -1;
 }
