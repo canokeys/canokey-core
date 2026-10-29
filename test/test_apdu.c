@@ -4709,6 +4709,10 @@ static void test_make_credential_min_pin_exact_rpid(void **state) {
   init_apdu_buffer();
   device_init();
   assert_int_equal(applets_install(), 0);
+  uint8_t private_key[32] = {1};
+  const uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};
+  assert_int_equal(write_attr(CTAP_CERT_FILE, KEY_ATTR, private_key, sizeof(private_key)), 0);
+  assert_int_equal(write_file(CTAP_CERT_FILE, cert, 0, sizeof(cert), 1), 0);
   char domain[DOMAIN_NAME_MAX_SIZE + 1];
   memset(domain, 'a', sizeof(domain) - 1);
   domain[sizeof(domain) - 1] = 0;
@@ -4756,6 +4760,29 @@ static void test_make_credential_min_pin_exact_rpid(void **state) {
         memcpy(stored, mc->rp_id, sizeof(stored));
       else
         assert_memory_equal(stored, mc->rp_id, sizeof(stored));
+
+      // Check the emitted extension, not only the parser's authorization flag.
+      uint8_t command[sizeof(req) + 1], scratch[64], response[2048], auth_data[1024];
+      command[0] = CTAP_MAKE_CREDENTIAL;
+      memcpy(command + 1, req, p - req);
+      CTAPHID_TxSource output = {0};
+      size_t written, auth_len;
+      assert_int_equal(
+          ctap_process_cbor_stream_with_src(command, p - req + 1, scratch, sizeof(scratch), &output, CTAP_SRC_HID), 1);
+      assert_int_equal(read_tx_source_all(&output, response, sizeof(response), &written), 0);
+      assert_int_equal(response[0], 0);
+      assert_int_equal(
+          test_cbor_get_auth_data(response, written, MC_RESP_AUTH_DATA, auth_data, sizeof(auth_data), &auth_len), 0);
+      if (match) {
+        test_cbor_view extensions, value;
+        assert_int_equal(test_cbor_get_auth_data_extensions(response, written, MC_RESP_AUTH_DATA, auth_data,
+                                                            sizeof(auth_data), &extensions),
+                         0);
+        assert_int_equal(test_cbor_map_lookup_text_key(extensions, "minPinLength", &value), 0);
+      } else {
+        assert_false(auth_data[32] & 0x80); // No other extensions were requested.
+      }
+      if (output.close) output.close(output.ctx);
     }
   }
   assert_int_equal(write_file(MIN_PIN_RPIDS_FILE, NULL, 0, 0, 1), 0);
