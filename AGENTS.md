@@ -191,11 +191,17 @@ Transport sends response
 
 - `shared_io_buffer` is a single shared RAM region. Callers must call `acquire_apdu_buffer(owner)` / `release_apdu_buffer(owner)` around every transaction.
 - APDU chaining (`CAPDU_CHAINING` / `RAPDU_CHAINING`) is handled transparently by `apdu_input` / `apdu_output`.
+- `BUFFER_OWNER_USBD` cannot borrow the shared buffer while an APDU response chain/source remains pending, even
+  after the preceding USB IN completed. Dynamic descriptors stall until the owner drains or abandons the response.
+  Descriptor callbacks run in USB IRQ context; do not move their guard/reservation into concurrent worker threads.
 
 ### Applet session
 
 `device_applet_session_acquire(owner)` / `_release()` serialize multi-step cryptographic transactions (e.g. key generation) across loop iterations.  
-Execution ownership has no idle expiry. Native HID may borrow a yielded workspace without resetting the persistent
+Execution ownership has no idle expiry. Cross-owner acquisition first CAS-reserves a private transition sentinel,
+then checks yieldability; IRQ contenders must refuse that sentinel, including same-owner RX. Checking before
+reservation is unsafe because same-owner RX can change buffer ownership without changing the session owner.
+Native HID may borrow a yielded workspace without resetting the persistent
 APDU card context. CCID/WebUSB owner changes are prepared in the main loop and reset SELECT/PIN state. Protocol
 continuations and response sources retain resources until completion, explicit abandonment, or reset. USB lifecycle
 cleanup/initialization is deferred through optional `device_usb_service()` / `device_usb_ready()` hooks. Weak defaults
@@ -271,6 +277,15 @@ Platforms may override weak symbols to redirect to hardware accelerators (SE, PK
 - When adding a new flow, document explicitly which parts are streamed, which exact bytes are forced to materialize, and why they cannot be streamed further.
 
 ### CTAP request lifetime
+
+While a HID handler executes, consume competing reports without dispatching them: reply `CHANNEL_BUSY` to
+initialization reports when IN is available, discard continuation reports, and rearm RX. Bound this drain to eight
+reports per poll. A matching zero-length CANCEL must remain reachable even behind a full burst of competitors;
+wrong-CID/malformed cancellation must not cancel the handler. Ignore idle/late CANCEL duplicates. Never overwrite
+an in-flight IN frame just to send a busy refusal; drop that refusal immediately when IN is busy so draining
+competitors cannot delay cancellation with repeated IN waits.
+Preserve a valid eight-byte same-CID `CTAPHID_INIT` in the queue for resynchronization. Signal cancellation to the
+polled handler and dispatch INIT only after it unwinds and any TX stream finishes; never overwrite live scratch.
 
 CTAPHID must acquire the applet session before staging a large incoming request
 in PKE: cross-transport session cleanup clears that storage. Retain ownership
