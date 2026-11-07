@@ -202,7 +202,23 @@ impl Session {
             p,
         )?;
         if params.resident {
-            resident::store(params, &id, &rp, w.output, w.input, p)?;
+            // Preserve the ECC private/public view (or PQ seed) needed by respond.
+            // The unused RSA tail holds the other three resident members.
+            const COPY_OFFSET: usize =
+                crate::ports::key_layout::ECC_PUBLIC + crate::ports::key_layout::ECC_PUBLIC_BYTES;
+            const {
+                assert!(crate::ports::key_layout::SIZE - COPY_OFFSET >= resident::COPY_BYTES);
+            }
+            resident::store(
+                params,
+                &id,
+                &rp,
+                w.output,
+                (&mut w.key.bytes[COPY_OFFSET..COPY_OFFSET + resident::COPY_BYTES])
+                    .try_into()
+                    .unwrap(),
+                p,
+            )?;
         }
         respond(
             &Signing {

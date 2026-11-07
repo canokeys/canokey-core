@@ -385,6 +385,19 @@ def run(wire):
     updated = manage(4, {1: hashlib.sha256(rp.encode()).digest(), 0x80: True})
     assert updated[6] == {"id": b"first", "name": "Changed", "displayName": "改" * 21}
     assert 8 not in updated and updated[0x80] == -8
+    # Both a same-size patch and a variable-size publication must fail closed.
+    for replacement_name in ("Altered", "A different length"):
+        wire.command("FAIL_WRITE 80")
+        manage(7, {2: first[7], 3: {"id": b"first", "name": replacement_name}}, 0x7f)
+        manage(1, status=0x33)
+        wire.command("RESET")
+        select()
+        public, secret = protocol.encapsulate(call(6, {1: version, 2: 2})[1])
+        hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
+        token = protocol.decrypt(secret, call(6, {1: version, 2: 9, 3: public, 6: hashed, 9: 4})[2])
+        assert manage(4, {1: hashlib.sha256(rp.encode()).digest(), 0x80: True}) == updated
+    # Repeating normalized (UTF-8 truncated) user information is a no-op.
+    manage(7, {2: first[7], 3: {"id": b"first", "name": "Changed", "displayName": "改" * 30}})
     blob_before = manage(4, {1: hashlib.sha256(b"blob.example").digest()})
     other_before = manage(4, {1: hashlib.sha256(b"rejected.example").digest()})
     wire.command("FAIL_WRITE 80")

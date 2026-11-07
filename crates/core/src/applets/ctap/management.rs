@@ -72,7 +72,7 @@ pub(super) struct Cursor {
     metadata_only: bool,
     next: u8,
     rp: [u8; 32],
-    visited: [u8; VISITED_BYTES],
+    representatives: [u8; VISITED_BYTES],
 }
 impl Cursor {
     pub const fn new() -> Self {
@@ -81,7 +81,7 @@ impl Cursor {
             metadata_only: false,
             next: 0,
             rp: [0; 32],
-            visited: [0; VISITED_BYTES],
+            representatives: [0; VISITED_BYTES],
         }
     }
 }
@@ -224,33 +224,62 @@ fn credential_count(
     }
     Ok(count)
 }
+/// Build a representative-slot bitmap using bounded batches of complete hashes.
+/// Hashes borrow the existing key workspace only during RP_BEGIN. No Flash index
+/// or hash-sized persistent cursor is needed; each batch scans remaining slots.
+#[inline(never)]
+fn collect_rps(
+    cursor: &mut Cursor,
+    buffer: &mut [u8],
+    hashes: &mut [u8; crate::ports::key_layout::SIZE],
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<u8, Status> {
+    const HASH_BYTES: usize = 32;
+    let (hashes, _) = hashes.as_chunks_mut::<HASH_BYTES>();
+    let mut visited = [0u8; VISITED_BYTES];
+    let mut total = 0u32;
+    loop {
+        let mut count = 0;
+        let mut pending = false;
+        let mut scan = resident::Scan::new();
+        for index in 0..Record::CTAP_CREDENTIALS {
+            let byte = usize::from(index / 8);
+            let bit = 1 << (index % 8);
+            if visited[byte] & bit != 0 {
+                continue;
+            }
+            let Some((_, entry)) = scan.read(index, buffer, p)? else {
+                visited[byte] |= bit;
+                continue;
+            };
+            if !hashes[..count].contains(entry.rp_hash) {
+                if count == hashes.len() {
+                    pending = true;
+                    continue;
+                }
+                hashes[count] = *entry.rp_hash;
+                count += 1;
+                total += 1;
+                cursor.representatives[byte] |= bit;
+            }
+            visited[byte] |= bit;
+        }
+        if !pending {
+            return Ok(total as u8);
+        }
+    }
+}
 fn next_rp(
     cursor: &mut Cursor,
     buffer: &mut [u8],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Option<(u8, usize)>, Status> {
-    for index in 0..Record::CTAP_CREDENTIALS {
-        if cursor.visited[usize::from(index / 8)] & (1 << (index % 8)) != 0 {
+    for index in cursor.next..Record::CTAP_CREDENTIALS {
+        if cursor.representatives[usize::from(index / 8)] & (1 << (index % 8)) == 0 {
             continue;
-        }
-        let Some((_, entry)) = resident::read(index, buffer, p)? else {
-            continue;
-        };
-        let hash = *entry.rp_hash;
-        // Group records using the one shared buffer. Scanning can overwrite
-        // the selected entry, so reload it before returning its length.
-        cursor.visited[usize::from(index / 8)] |= 1 << (index % 8);
-        for candidate in (index + 1)..Record::CTAP_CREDENTIALS {
-            if cursor.visited[usize::from(candidate / 8)] & (1 << (candidate % 8)) != 0 {
-                continue;
-            }
-            if let Some((_, entry)) = resident::read(candidate, buffer, p)? {
-                if entry.rp_hash == &hash {
-                    cursor.visited[usize::from(candidate / 8)] |= 1 << (candidate % 8);
-                }
-            }
         }
         let n = resident::load(index, buffer, p)?.ok_or(Status::Other)?;
+        cursor.next = index + 1;
         return Ok(Some((index, n)));
     }
     Ok(None)
@@ -336,10 +365,7 @@ impl Session {
         if subcommand == cm::RP_BEGIN || subcommand == cm::RP_NEXT {
             let mut total = 0;
             if subcommand == cm::RP_BEGIN {
-                let mut cursor = Cursor::new();
-                while next_rp(&mut cursor, w.input, p)?.is_some() {
-                    total += 1;
-                }
+                total = collect_rps(&mut self.management, w.input, &mut w.key.bytes, p)?;
             }
             let (_, n) = next_rp(&mut self.management, w.input, p)?.ok_or(if continued {
                 Status::NotAllowed
@@ -492,7 +518,14 @@ impl Session {
                 p,
             )?;
             if subcommand == cm::DELETE {
-                resident::replace(index, &[], w.output, p)?;
+                resident::replace(
+                    index,
+                    &[],
+                    (&mut w.key.bytes[..resident::COPY_BYTES])
+                        .try_into()
+                        .unwrap(),
+                    p,
+                )?;
             } else {
                 let user = fields.user.as_ref().ok_or(Status::MissingParameter)?;
                 if user.id != entry.user {
@@ -514,14 +547,110 @@ impl Session {
                         entry.blob,
                     ],
                 );
-                // User-information updates deliberately remain best effort:
-                // report success even if publication fails or is uncertain.
-                // Deletion above requires confirmed success instead.
-                let _ = resident::replace(index, &w.output[..at + n], w.input, p);
+                // An uncertain publication must not acknowledge stale user data.
+                // Like deletion, failure revokes the command's continuation/token.
+                resident::replace(
+                    index,
+                    &w.output[..at + n],
+                    (&mut w.key.bytes[..resident::COPY_BYTES])
+                        .try_into()
+                        .unwrap(),
+                    p,
+                )?;
             }
             w.output[0] = 0;
             return Ok(1);
         }
         Err(Status::NoCredentials)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::resident::tests::{Records, resident};
+    use super::*;
+
+    #[test]
+    fn rp_index_batches_full_hashes_in_slot_order_without_writes() {
+        for distinct in [1, 7, 40, 41, 100] {
+            let mut storage = Records::default();
+            storage.records = (0..Record::CTAP_CREDENTIALS)
+                .map(|i| resident(i, i % distinct, 1))
+                .collect();
+            let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                storage: &mut storage,
+                crypto: &mut Records::default(),
+                device: &mut Records::default(),
+                memory: &canokey_ports::default_memory(),
+            };
+            let mut cursor = Cursor::new();
+            let mut out = [0; resident::MAX_BYTES];
+            let mut hashes = [0; crate::ports::key_layout::SIZE];
+            assert_eq!(
+                collect_rps(&mut cursor, &mut out, &mut hashes, &mut p),
+                Ok(distinct)
+            );
+            // 40 hashes fit in the existing key workspace: at most three passes.
+            assert!(p.storage.size_calls + p.storage.read_calls <= 270);
+            for index in 0..distinct {
+                let (slot, n) = next_rp(&mut cursor, &mut out, &mut p).unwrap().unwrap();
+                assert_eq!(slot, index);
+                assert_eq!(
+                    resident::Entry::decode(&out[..n]).unwrap().rp_hash,
+                    &[index; 32]
+                );
+            }
+            assert_eq!(next_rp(&mut cursor, &mut out, &mut p).unwrap(), None);
+            assert_eq!(p.storage.mutations, 0);
+        }
+    }
+
+    #[test]
+    fn rp_index_handles_holes_and_compares_all_hash_bytes() {
+        let first = resident(3, 7, 1);
+        let mut second = resident(10, 7, 1);
+        // Share the first 31 bytes, but represent different RPs.
+        second.1[credential::ID_BYTES + 31] ^= 1;
+        let duplicate = resident(99, 7, 1);
+        let mut storage = Records::default();
+        storage.records = [first, second, duplicate].into();
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+            storage: &mut storage,
+            crypto: &mut Records::default(),
+            device: &mut Records::default(),
+            memory: &canokey_ports::default_memory(),
+        };
+        let mut cursor = Cursor::new();
+        let mut out = [0; resident::MAX_BYTES];
+        // Sparse slots include entire missing groups.
+        assert_eq!(
+            collect_rps(
+                &mut cursor,
+                &mut out,
+                &mut [0; crate::ports::key_layout::SIZE],
+                &mut p
+            ),
+            Ok(2)
+        );
+        assert_eq!(
+            next_rp(&mut cursor, &mut out, &mut p).unwrap().unwrap().0,
+            3
+        );
+        assert_eq!(
+            next_rp(&mut cursor, &mut out, &mut p).unwrap().unwrap().0,
+            10
+        );
+        assert_eq!(next_rp(&mut cursor, &mut out, &mut p).unwrap(), None);
+        p.storage.fail = Some(crate::ports::StorageError::Unavailable);
+        assert_eq!(
+            collect_rps(
+                &mut Cursor::new(),
+                &mut out,
+                &mut [0; crate::ports::key_layout::SIZE],
+                &mut p
+            ),
+            Err(Status::Other)
+        );
+        assert_eq!(p.storage.mutations, 0);
     }
 }

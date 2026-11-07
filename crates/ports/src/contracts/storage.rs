@@ -136,7 +136,7 @@ pub enum StorageError {
 pub trait Storage {
     /// Replace the unpublished staged object with borrowed pieces in one call.
     /// No handle or borrow survives the call; publication still needs commit.
-    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    #[cfg(any(feature = "openpgp", feature = "piv", feature = "ctap"))]
     fn stage_parts(&mut self, parts: &[&[u8]]) -> Result<(), StorageError> {
         let result = (|| {
             self.stage_begin()?;

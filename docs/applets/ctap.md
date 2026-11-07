@@ -751,3 +751,37 @@ prefix through the first colon when present, then an ellipsis and suffix when
 space permits. UTF-8 characters are never split. RP hashing and authentication
 use the complete input ID. Unknown CTAP CBOR commands retain the legacy
 `UNHANDLED_REQUEST` status (0xf1), including unsupported biometric enrollment.
+
+### Resident mutations and RP enumeration
+
+Credential-management user updates, like deletion, return CTAP `Other` (7F) on
+failed or uncertain publication. The common failure path revokes volatile
+authorization and continuations. An error does not prove that the write did not
+commit: reauthorize and enumerate before deciding whether to repeat the update.
+An identical encoded record is acknowledged without a persistent write.
+
+CTG1 record bytes and the 100-slot capacity are unchanged. Equal-length updates
+use one atomic `Storage::replace_at` transaction. Size changes, insertion and
+multi-member deletion buffer the three unchanged members in the existing shared
+key workspace, then publish a staged group. Reads must finish before staging:
+interleaved record reads close the backend's shared-cache stage lease and cause
+extra commits. Creation preserves the ECC key view/PQ seed while lending the
+unused RSA tail; copied credentials are wiped on completion or failure. No new
+static credential buffer, persistent index, journal or format migration is used.
+Size-changing mutations still copy the group; reduced backend writes are not a
+claim of a particular Flash service life.
+
+RP_BEGIN builds a representative-slot bitmap using batches of 40 complete
+32-byte hashes in the shared key workspace and group-header-cached scans. At
+most three passes are needed for 100 distinct RPs. The bitmap replaces the old
+visited bitmap without growing the session; RP_NEXT reads only its next selected
+slot. Hash storage is erased by command cleanup and does not survive responses.
+New commands, errors and applet/session reset discard the continuation.
+
+Unit coverage bounds index construction to 270 Storage calls for a full store,
+checks full-hash equality, ordering, sparse groups, no persistent writes, maximum
+peer-copy capacity, no-op/patch mutations, staging failures and an uncertain
+commit that actually took effect. `ctap-normal` checks same-size and size-changing
+update rejection, reauthorization, reset persistence and normalized no-op updates.
+CIU's storage-cost fixture separately compares physical programs and erases
+against the historical interleaved-read publication path.

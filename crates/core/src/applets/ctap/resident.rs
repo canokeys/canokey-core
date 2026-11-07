@@ -26,6 +26,7 @@ pub(super) const MAX_BYTES: usize = FIXED_BYTES
     + USER_DISPLAY_BYTES
     + CRED_BLOB_BYTES;
 const GROUP_MEMBERS: usize = Record::CTAP_GROUP_MEMBERS as usize;
+pub(super) const COPY_BYTES: usize = (GROUP_MEMBERS - 1) * MAX_BYTES;
 const MEMBER_LENGTH_BYTES: usize = core::mem::size_of::<u16>();
 // CTG1 identifies version 1: four big-endian u16 lengths (zero is absent),
 // followed by present credential payloads in logical member order.
@@ -34,24 +35,25 @@ const GROUP_HEADER: usize = GROUP_FORMAT.len() + GROUP_MEMBERS * MEMBER_LENGTH_B
 
 fn group_header(
     record: Record,
+    header: &mut [u8; GROUP_HEADER],
     p: &mut Platform<'_, impl crate::ports::Backends>,
-) -> Result<[u8; GROUP_HEADER], Status> {
-    let mut header = [0; GROUP_HEADER];
+) -> Result<(), Status> {
+    header.fill(0);
     header[..GROUP_FORMAT.len()].copy_from_slice(GROUP_FORMAT);
     let size = match p.storage.size(record) {
         Ok(n) => n,
-        Err(StorageError::Missing) => return Ok(header),
+        Err(StorageError::Missing) => return Ok(()),
         Err(_) => return Err(Status::Other),
     };
     p.storage
-        .read_at(record, 0, &mut header)
+        .read_at(record, 0, header)
         .map_err(|_| Status::Other)?;
     if &header[..GROUP_FORMAT.len()] != GROUP_FORMAT {
         return Err(Status::Other);
     }
     let mut total = GROUP_HEADER as u32;
     for member in 0..GROUP_MEMBERS {
-        let n = member_length(&header, member);
+        let n = member_length(header, member);
         if n > MAX_BYTES || (n != 0 && n < FIXED_BYTES + FIELD_COUNT) {
             return Err(Status::Other);
         }
@@ -60,18 +62,19 @@ fn group_header(
     if total != size || total == GROUP_HEADER as u32 {
         return Err(Status::Other);
     }
-    Ok(header)
+    Ok(())
 }
 fn member_length(header: &[u8; GROUP_HEADER], member: usize) -> usize {
     let at = GROUP_FORMAT.len() + member * MEMBER_LENGTH_BYTES;
     usize::from(u16::from_be_bytes([header[at], header[at + 1]]))
 }
 
-/// Copy validated unchanged members using the caller's disjoint workspace.
+/// Buffer up to three unchanged members before atomically publishing the group.
+/// The caller lends unused key workspace; no member-sized stack cache is added.
 pub(super) fn replace(
     index: u8,
     value: &[u8],
-    copy: &mut [u8],
+    copy: &mut [u8; COPY_BYTES],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
     let record = Record::ctap_group(index / Record::CTAP_GROUP_MEMBERS).ok_or(Status::Other)?;
@@ -81,43 +84,65 @@ pub(super) fn replace(
         }
         Entry::decode(value)?;
     }
-    let mut header = group_header(record, p)?;
-    let lengths = core::array::from_fn::<_, GROUP_MEMBERS, _>(|i| member_length(&header, i));
-    let target = usize::from(index % Record::CTAP_GROUP_MEMBERS);
-    let length_offset = GROUP_FORMAT.len() + target * MEMBER_LENGTH_BYTES;
-    header[length_offset..length_offset + MEMBER_LENGTH_BYTES]
-        .copy_from_slice(&(value.len() as u16).to_be_bytes());
     let result = (|| {
-        if value.is_empty()
-            && lengths
-                .iter()
-                .enumerate()
-                .all(|(i, &n)| i == target || n == 0)
-        {
-            return p.storage.remove(record).map_err(|_| Status::Other);
-        }
-        p.storage.stage_begin().map_err(|_| Status::Other)?;
-        p.storage.stage_append(&header).map_err(|_| Status::Other)?;
-        let mut offset = GROUP_HEADER as u32;
-        for (member, &n) in lengths.iter().enumerate() {
-            if n != 0 {
+        let mut header = [0; GROUP_HEADER];
+        group_header(record, &mut header, p)?;
+        let target = usize::from(index % Record::CTAP_GROUP_MEMBERS);
+        let before = (0..target)
+            .map(|i| member_length(&header, i))
+            .sum::<usize>();
+        let target_offset = GROUP_HEADER + before;
+        let target_length = member_length(&header, target);
+        if target_length != 0 && target_length == value.len() {
+            let bytes = &mut copy[..target_length];
+            p.storage
+                .read_at(record, target_offset as u32, bytes)
+                .map_err(|_| Status::Other)?;
+            // The replacement is already validated. Only unchanged peers need
+            // decoding; the target is either identical or replaced in full.
+            return if bytes == value {
+                Ok(())
+            } else {
                 p.storage
-                    .read_at(record, offset, &mut copy[..n])
+                    .replace_at(record, target_offset as u32, value)
+                    .map_err(|_| Status::Other)
+            };
+        }
+        let mut offset = GROUP_HEADER as u32;
+        let mut used = 0;
+        // Read and validate before leasing the shared file cache for staging.
+        // Interleaved reads would close/commit the stage once per member.
+        for member in 0..GROUP_MEMBERS {
+            let n = member_length(&header, member);
+            if member != target && n != 0 {
+                let bytes = copy.get_mut(used..used + n).ok_or(Status::Other)?;
+                p.storage
+                    .read_at(record, offset, bytes)
                     .map_err(|_| Status::Other)?;
-                Entry::decode(&copy[..n])?;
+                Entry::decode(bytes)?;
+                used += n;
             }
-            let bytes = if member == target { value } else { &copy[..n] };
-            p.storage.stage_append(bytes).map_err(|_| Status::Other)?;
             offset += n as u32;
         }
-        p.storage.stage_commit(record).map_err(|_| Status::Other)
+        if value.is_empty() && used == 0 {
+            return p.storage.remove(record).map_err(|_| Status::Other);
+        }
+        let length_offset = GROUP_FORMAT.len() + target * MEMBER_LENGTH_BYTES;
+        header[length_offset..length_offset + MEMBER_LENGTH_BYTES]
+            .copy_from_slice(&(value.len() as u16).to_be_bytes());
+        let publication = p
+            .storage
+            .stage_parts(&[&header, &copy[..before], value, &copy[before..used]])
+            .and_then(|()| p.storage.stage_commit(record));
+        if publication.is_err() {
+            p.storage.stage_abort();
+        }
+        publication.map_err(|_| Status::Other)
     })();
     p.memory.wipe(copy);
-    if result.is_err() {
-        p.storage.stage_abort();
-    }
     result
 }
+
 pub(super) struct Entry<'a> {
     pub id: &'a Id,
     pub rp_hash: &'a [u8; RP_HASH_BYTES],
@@ -206,7 +231,8 @@ pub(super) fn load(
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Option<usize>, Status> {
     let record = Record::ctap_group(index / Record::CTAP_GROUP_MEMBERS).ok_or(Status::Other)?;
-    let header = group_header(record, p)?;
+    let mut header = [0; GROUP_HEADER];
+    group_header(record, &mut header, p)?;
     load_member(index, record, &header, out, p)
 }
 #[inline(never)]
@@ -250,7 +276,10 @@ impl Scan {
         let group = index / Record::CTAP_GROUP_MEMBERS;
         let record = Record::ctap_group(group).ok_or(Status::Other)?;
         if self.group != group {
-            self.header = group_header(record, p)?;
+            // A failed read may partially overwrite the header; never retain
+            // the previous group's cache tag across that failure.
+            self.group = Record::CTAP_CREDENTIALS;
+            group_header(record, &mut self.header, p)?;
             self.group = group;
         }
         load_member(index, record, &self.header, out, p)
@@ -285,7 +314,7 @@ pub(super) fn store(
     id: &Id,
     rp_hash: &[u8; RP_HASH_BYTES],
     out: &mut [u8],
-    copy: &mut [u8],
+    copy: &mut [u8; COPY_BYTES],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
     let mut slot = None;
@@ -421,7 +450,7 @@ impl Assertion {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     extern crate std;
     use super::*;
 
@@ -440,13 +469,44 @@ mod tests {
     use std::vec::Vec;
 
     #[derive(Default)]
-    struct Records {
-        records: Vec<(u8, Vec<u8>)>,
-        fail: Option<StorageError>,
-        size_calls: usize,
-        read_calls: usize,
+    pub(crate) struct Records {
+        pub records: Vec<(u8, Vec<u8>)>,
+        pub fail: Option<StorageError>,
+        pub size_calls: usize,
+        pub read_calls: usize,
+        pub mutations: usize,
+        aborts: usize,
+        pub patch_bytes: usize,
+        stage: Vec<u8>,
+        stage_open: bool,
+        fail_mutation: Option<usize>,
+        commit_then_fail: bool,
     }
     impl Records {
+        fn mutation(&mut self) -> Result<(), StorageError> {
+            self.mutations += 1;
+            if self.fail_mutation == Some(self.mutations) {
+                Err(StorageError::Uncertain)
+            } else {
+                Ok(())
+            }
+        }
+        fn publish(&mut self, id: Record, bytes: &[u8]) {
+            self.records
+                .retain(|(index, _)| Record::ctap_group(*index / 4) != Some(id));
+            let header: &[u8; GROUP_HEADER] = bytes[..GROUP_HEADER].try_into().unwrap();
+            let mut at = GROUP_HEADER;
+            for member in 0..GROUP_MEMBERS {
+                let n = member_length(header, member);
+                if n != 0 {
+                    let group = id.id() - Record::CTAP_GROUP_BASE;
+                    self.records
+                        .push((group * 4 + member as u8, bytes[at..at + n].to_vec()));
+                }
+                at += n;
+            }
+            assert_eq!(at, bytes.len());
+        }
         fn group(&self, id: Record) -> Result<Vec<u8>, StorageError> {
             if let Some(error) = self.fail {
                 return Err(error);
@@ -478,10 +538,12 @@ mod tests {
             Ok(bytes.len())
         }
         fn size(&mut self, id: Record) -> Result<u32, StorageError> {
+            assert!(!self.stage_open, "read closes the staging cache lease");
             self.size_calls += 1;
             Ok(self.group(id)?.len() as u32)
         }
         fn read_at(&mut self, id: Record, at: u32, out: &mut [u8]) -> Result<(), StorageError> {
+            assert!(!self.stage_open, "read closes the staging cache lease");
             self.read_calls += 1;
             let bytes = self.group(id)?;
             let at = at as usize;
@@ -489,6 +551,53 @@ mod tests {
                 .get(at..at + out.len())
                 .ok_or(StorageError::Unavailable)?;
             out.copy_from_slice(value);
+            Ok(())
+        }
+        fn replace_at(
+            &mut self,
+            id: Record,
+            offset: u32,
+            value: &[u8],
+        ) -> Result<(), StorageError> {
+            self.mutation()?;
+            let mut bytes = self.group(id)?;
+            bytes[offset as usize..offset as usize + value.len()].copy_from_slice(value);
+            self.publish(id, &bytes);
+            self.patch_bytes += value.len();
+            Ok(())
+        }
+        fn stage_begin(&mut self) -> Result<(), StorageError> {
+            self.mutation()?;
+            self.stage.clear();
+            self.stage_open = true;
+            Ok(())
+        }
+        fn stage_append(&mut self, bytes: &[u8]) -> Result<(), StorageError> {
+            self.mutation()?;
+            assert!(self.stage_open);
+            self.stage.extend_from_slice(bytes);
+            Ok(())
+        }
+        fn stage_commit(&mut self, id: Record) -> Result<(), StorageError> {
+            self.mutation()?;
+            let bytes = self.stage.clone();
+            self.publish(id, &bytes);
+            self.stage_open = false;
+            if self.commit_then_fail {
+                Err(StorageError::Uncertain)
+            } else {
+                Ok(())
+            }
+        }
+        fn stage_abort(&mut self) {
+            self.aborts += 1;
+            self.stage_open = false;
+            self.stage.clear();
+        }
+        fn remove(&mut self, id: Record) -> Result<(), StorageError> {
+            self.mutation()?;
+            self.records
+                .retain(|(index, _)| Record::ctap_group(*index / 4) != Some(id));
             Ok(())
         }
         fn replace(&mut self, _: Record, _: &[u8]) -> Result<(), StorageError> {
@@ -521,12 +630,150 @@ mod tests {
         }
         fn led(&mut self, _: bool) {}
     }
-    fn resident(index: u8, rp: u8, protection: u8) -> (u8, Vec<u8>) {
+    pub(crate) fn resident(index: u8, rp: u8, protection: u8) -> (u8, Vec<u8>) {
         let mut bytes = record()[..HEADER + FIELDS.len()].to_vec();
         bytes[1] |= protection;
         bytes[2] = index;
         bytes[ID_BYTES..HEADER].fill(rp);
         (index, bytes)
+    }
+
+    #[test]
+    fn replacements_skip_identical_data_and_patch_only_the_target() {
+        let mut storage = Records {
+            records: (0..4).map(|i| resident(i, 7, 1)).collect(),
+            ..Records::default()
+        };
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+            storage: &mut storage,
+            crypto: &mut Records::default(),
+            device: &mut Records::default(),
+            memory: &canokey_ports::default_memory(),
+        };
+        let mut copy = [0xa5; COPY_BYTES];
+        let mut value = resident(2, 7, 1).1;
+        replace(2, &value, &mut copy, &mut p).unwrap();
+        assert_eq!(p.storage.mutations, 0);
+        assert!(copy.iter().all(|&b| b == 0));
+        // Change one nonce byte without moving the CTG1 member boundaries.
+        value[3] = 0x7a;
+        replace(2, &value, &mut copy, &mut p).unwrap();
+        assert_eq!(p.storage.mutations, 1);
+        assert_eq!(p.storage.patch_bytes, value.len());
+        assert_eq!(read(2, &mut copy, &mut p).unwrap().unwrap().1.id[3], 0x7a);
+        for i in [0, 1, 3] {
+            assert_eq!(read(i, &mut copy, &mut p).unwrap().unwrap().1.id[2], i);
+        }
+    }
+
+    #[test]
+    fn read_and_patch_failures_do_not_mutate_the_staging_file() {
+        for read_failure in [false, true] {
+            let mut storage = Records {
+                records: std::vec![resident(0, 7, 1)],
+                ..Records::default()
+            };
+            storage.fail = read_failure.then_some(StorageError::Unavailable);
+            storage.fail_mutation = (!read_failure).then_some(1);
+            let mut value = resident(0, 7, 1).1;
+            value[3] = 0x7a;
+            let mut copy = [0xa5; COPY_BYTES];
+            let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                storage: &mut storage,
+                crypto: &mut Records::default(),
+                device: &mut Records::default(),
+                memory: &canokey_ports::default_memory(),
+            };
+            assert_eq!(replace(0, &value, &mut copy, &mut p), Err(Status::Other));
+            assert_eq!(p.storage.aborts, 0);
+            assert_eq!(p.storage.mutations, usize::from(!read_failure));
+            assert!(copy.iter().all(|&b| b == 0));
+        }
+    }
+
+    #[test]
+    fn maximum_group_rewrites_buffer_peers_before_staging_and_preserve_slots() {
+        for target in 0..4 {
+            for delete in [false, true] {
+                let mut storage = Records::default();
+                for index in 0..4 {
+                    let mut bytes = [0; MAX_BYTES];
+                    bytes[1] = RESIDENT;
+                    bytes[2] = index;
+                    encode_fields(
+                        &mut bytes[HEADER..],
+                        &[
+                            &[b'r'; 32],
+                            &[index; 64],
+                            &[b'n'; 64],
+                            &[b'd'; 64],
+                            &[0xfe; 32],
+                        ],
+                    );
+                    storage.records.push((index, bytes.to_vec()));
+                }
+                let original = storage.records.clone();
+                let value = if delete {
+                    Vec::new()
+                } else {
+                    resident(target, 7, 1).1
+                };
+                let mut copy = [0xa5; COPY_BYTES];
+                let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                    storage: &mut storage,
+                    crypto: &mut Records::default(),
+                    device: &mut Records::default(),
+                    memory: &canokey_ports::default_memory(),
+                };
+                replace(target, &value, &mut copy, &mut p).unwrap();
+                assert!(!p.storage.stage_open);
+                assert!(copy.iter().all(|&b| b == 0));
+                for (index, bytes) in original {
+                    let loaded = load(index, &mut copy, &mut p).unwrap();
+                    if index == target && delete {
+                        assert!(loaded.is_none());
+                    } else {
+                        let expected = if index == target { &value } else { &bytes };
+                        assert_eq!(&copy[..loaded.unwrap()], expected);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn failed_group_publication_is_reported_and_scratch_is_erased() {
+        // begin, header, prefix, replacement, suffix, publish: every mutation boundary.
+        for fault in 1..=7 {
+            let original: Vec<_> = (0..4).map(|i| resident(i, 7, 1)).collect();
+            let mut storage = Records {
+                records: original.clone(),
+                fail_mutation: Some(fault),
+                commit_then_fail: fault == 7,
+                ..Records::default()
+            };
+            let mut value = resident(1, 7, 1).1;
+            value.pop();
+            *value.last_mut().unwrap() = 0; // Empty optional blob, valid shorter record.
+            let mut copy = [0xa5; COPY_BYTES];
+            let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                storage: &mut storage,
+                crypto: &mut Records::default(),
+                device: &mut Records::default(),
+                memory: &canokey_ports::default_memory(),
+            };
+            assert_eq!(replace(1, &value, &mut copy, &mut p), Err(Status::Other));
+            assert!(copy.iter().all(|&b| b == 0));
+            assert!(!p.storage.stage_open);
+            if fault < 7 {
+                assert_eq!(p.storage.records, original);
+            } else {
+                assert_eq!(
+                    p.storage.records.iter().find(|(i, _)| *i == 1).unwrap().1,
+                    value
+                );
+            }
+        }
     }
 
     #[test]
@@ -588,6 +835,13 @@ mod tests {
         p.storage.fail = Some(StorageError::Unavailable);
         assert!(matches!(scan.read(1, &mut out, &mut p), Err(Status::Other)));
         assert!(matches!(scan.read(4, &mut out, &mut p), Err(Status::Other)));
+        p.storage.fail = None;
+        // A failed switch must invalidate the old tag even if its header was
+        // overwritten before the error. Reusing this scan must reload group 0.
+        assert_eq!(
+            scan.read(0, &mut out, &mut p).unwrap().unwrap().1.rp_hash,
+            &[7; RP_HASH_BYTES]
+        );
         drop(scan);
         p.storage.fail = None;
         p.storage.records.clear();
