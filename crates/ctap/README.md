@@ -36,7 +36,10 @@ product applications. Firmware uses `no_std` without the `schema` feature.
   lease versus closed-append streaming, and all-member versus target-only patch
   validation. Products lend existing scratch and retain capacity, preflight,
   atomic commit/abort, recovery status and scratch erasure policy. Credential
-  derivation and enumeration remain with their owners during R06 migration.
+  lifecycle uses `credential`. `resident::scan` shares ascending lookup,
+  descending discovery, first-empty/replacement selection and counting while
+  product readers retain validation, filtering, cache and payload ownership.
+  RP deduplication remains with the products during R06 migration.
 - `response`: exact/partial certificate window admission. Product backing and
   source close/erasure remain with their owners. General response cursors and
   segmented reads use `canokey-protocol::response`.

@@ -138,6 +138,8 @@ impl<B: crate::ports::Backends> group::update::Backend for ResidentUpdate<'_, '_
     }
 }
 
+use canokey_ctap::resident::scan;
+
 pub(super) use canokey_ctap::resident::{Entry, display_rp, encode_fields, text_prefix};
 
 pub(super) fn decode(bytes: &[u8]) -> Result<Entry<'_>, Status> {
@@ -236,19 +238,13 @@ pub(super) fn store(
     copy: &mut [u8; COPY_BYTES],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
-    let mut slot = None;
     let mut scan = Scan::new();
-    for index in 0..Record::CTAP_CREDENTIALS {
-        if let Some((_, entry)) = scan.read(index, out, p)? {
-            if equal(entry.rp_hash, rp_hash) && equal(entry.user, &params.user[..params.user_len]) {
-                slot = Some(index);
-                break;
-            }
-        } else {
-            slot.get_or_insert(index);
-        }
-    }
-    let slot = slot.ok_or(Status::KeyStoreFull)?;
+    let slot = scan::replacement(Record::CTAP_CREDENTIALS, |index| {
+        Ok::<_, Status>(scan.read(index, out, p)?.map(|(_, entry)| {
+            equal(entry.rp_hash, rp_hash) && equal(entry.user, &params.user[..params.user_len])
+        }))
+    })?
+    .ok_or(Status::KeyStoreFull)?;
     out[..ID_BYTES].copy_from_slice(id);
     out[ID_BYTES..FIXED_BYTES].copy_from_slice(rp_hash);
     let at = FIXED_BYTES;
@@ -276,14 +272,11 @@ pub(super) fn find(
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Option<(u8, usize)>, Status> {
     let mut scan = Scan::new();
-    for index in 0..Record::CTAP_CREDENTIALS {
-        if let Some((n, entry)) = scan.read(index, out, p)? {
-            if equal(entry.id, id) && equal(entry.rp_hash, rp_hash) {
-                return Ok(Some((index, n)));
-            }
-        }
-    }
-    Ok(None)
+    scan::ascending(0, Record::CTAP_CREDENTIALS, |index| {
+        Ok(scan.read(index, out, p)?.and_then(|(length, entry)| {
+            (equal(entry.id, id) && equal(entry.rp_hash, rp_hash)).then_some(length)
+        }))
+    })
 }
 
 /// Descending discovery shared by initial counting and getNextAssertion.
@@ -296,32 +289,24 @@ pub(super) fn discover(
     out: &mut [u8],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Option<(u8, Id)>, Status> {
-    while *next != 0 {
-        *next -= 1;
-        if let Some((_, entry)) = read(*next, out, p)? {
-            if entry.rp_hash == rp
+    scan::descending(next, |index| {
+        Ok(read(index, out, p)?.and_then(|(_, entry)| {
+            (entry.rp_hash == rp
                 && (uv || entry.id[1] & super::credential::CRED_PROTECT_MASK == 1)
-                && super::credential::permitted_id(entry.id)
-            {
-                return Ok(Some((*next, *entry.id)));
-            }
-        }
-    }
-    Ok(None)
+                && super::credential::permitted_id(entry.id))
+            .then_some(*entry.id)
+        }))
+    })
 }
 
 pub(super) fn count(
     out: &mut [u8],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<u8, Status> {
-    let mut count = 0;
     let mut scan = Scan::new();
-    for index in 0..Record::CTAP_CREDENTIALS {
-        if scan.read(index, out, p)?.is_some() {
-            count += 1;
-        }
-    }
-    Ok(count)
+    scan::count(Record::CTAP_CREDENTIALS, |index| {
+        Ok(scan.read(index, out, p)?.is_some())
+    })
 }
 
 /// Small getNextAssertion cursor, not another request or key workspace.

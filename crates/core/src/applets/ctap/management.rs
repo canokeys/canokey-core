@@ -213,18 +213,14 @@ fn credential_count(
     buffer: &mut [u8],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<u8, Status> {
-    let mut count = 0;
     let mut scan = resident::Scan::new();
-    for index in 0..Record::CTAP_CREDENTIALS {
-        if let Some(n) = scan.load(index, buffer, p)? {
-            if rp.is_none_or(|rp| {
-                resident::decode(&buffer[..n]).is_ok_and(|entry| entry.rp_hash == rp)
-            }) {
-                count += 1;
-            }
-        }
-    }
-    Ok(count)
+    canokey_ctap::resident::scan::count(Record::CTAP_CREDENTIALS, |index| {
+        Ok(scan.load(index, buffer, p)?.is_some_and(|length| {
+            rp.is_none_or(|rp| {
+                resident::decode(&buffer[..length]).is_ok_and(|entry| entry.rp_hash == rp)
+            })
+        }))
+    })
 }
 /// Build a representative-slot bitmap using bounded batches of complete hashes.
 /// Hashes borrow the existing key workspace only during RP_BEGIN. No Flash index

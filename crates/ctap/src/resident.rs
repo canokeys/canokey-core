@@ -2,6 +2,7 @@
 //! CTG1 resident member codec; products own storage, capacity and authorization.
 
 pub mod group;
+pub mod scan;
 
 pub use crate::credential::{ID_BYTES, RESIDENT};
 pub const RP_HASH_BYTES: usize = 32;
