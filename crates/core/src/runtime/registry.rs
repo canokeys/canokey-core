@@ -1097,7 +1097,12 @@ impl RegistryView<'_> {
                 .admin
                 .close_response(&mut self.workspace.classic_with(platform.memory), platform),
             #[cfg(feature = "ctap")]
-            AppletState::Ctap => self.ctap.close(&mut self.workspace, platform),
+            AppletState::Ctap => {
+                // Release the primitive before erasing its backing. Response
+                // completion ends this workspace lease, not the FIDO session.
+                self.ctap.close(&mut self.workspace, platform);
+                self.workspace.wipe_active(platform.memory);
+            }
             #[cfg(feature = "oath")]
             AppletState::Oath(s) => s.close_response(platform),
             #[cfg(feature = "openpgp")]
@@ -1164,3 +1169,6 @@ mod config_tests;
 
 #[cfg(test)]
 mod aid_tests;
+
+#[cfg(all(test, feature = "ctap"))]
+mod ctap_lifetime_tests;
