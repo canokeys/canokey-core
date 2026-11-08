@@ -222,11 +222,22 @@ pub(super) fn run() {
     hw(|h| h.masked = 0);
     transport::device_hooks(now, || true);
     assert_eq!(unsafe { core::install::<Fake>() }, 0);
-    // Lc291: getKeyAgreement and one unknown 280-byte string force PKE RX.
-    let mut bytes = vec![
-        0x80, 0x10, 0, 0, 0, 1, 0x23, 6, 0xa3, 1, 1, 2, 2, 0x18, 99, 0x59, 1, 0x18,
-    ];
-    bytes.extend_from_slice(&[0x37; 280]);
+    // Exercise the minimal staged case and the actual CanoKey request ceiling.
+    // No product limit is enlarged to impersonate the vLEI 2048-byte profile.
+    for body_bytes in [291, canokey_rust_core::config::CTAP_MAX_REQUEST] {
+        run_length(body_bytes);
+    }
+}
+fn run_length(body_bytes: usize) {
+    // CTAP clientPIN getKeyAgreement: command 06, map A3, protocol 01,
+    // subcommand 02, then unknown key 99 and a definite 16-bit-length bstr.
+    const PARAMETER_PREFIX_BYTES: usize = 11;
+    let padding_bytes = body_bytes - PARAMETER_PREFIX_BYTES;
+    let mut bytes = vec![0x80, 0x10, 0x00, 0x00, 0x00];
+    bytes.extend_from_slice(&(body_bytes as u16).to_be_bytes());
+    bytes.extend_from_slice(&[0x06, 0xa3, 0x01, 0x01, 0x02, 0x02, 0x18, 0x63, 0x59]);
+    bytes.extend_from_slice(&(padding_bytes as u16).to_be_bytes());
+    bytes.extend(std::iter::repeat_n(0x37, padding_bytes));
     let mut number = reset();
     let reply = exchange(&bytes, &mut number);
     sw(&reply, 0x9000);
@@ -252,7 +263,9 @@ pub(super) fn run() {
         sw(&recovered, 0x9000);
         assert_eq!(recovered[0], 0);
     }
-    println!("NFC_INPUT_RETRY writes={writes} cases={writes} preserved=1 recovery=pass");
+    println!(
+        "NFC_INPUT_RETRY body={body_bytes} writes={writes} cases={writes} preserved=1 recovery=pass"
+    );
     let mut faults = vec![Fault::Clear, Fault::Release];
     for n in 1..=reads {
         faults.extend([Fault::Read(n), Fault::Before(n), Fault::After(n)]);
@@ -320,10 +333,12 @@ pub(super) fn run() {
                 assert_eq!(recovered[0], 0);
             }
             println!(
-                "NFC_SOURCE_CASE deselect={deselect} fault={fault:?} reads={expected_reads} clear=1 release=1 keys_before_dispatch=0 recovery=pass"
+                "NFC_SOURCE_CASE body={body_bytes} deselect={deselect} fault={fault:?} reads={expected_reads} clear=1 release=1 keys_before_dispatch=0 recovery=pass"
             );
             cases += 1;
         }
     }
-    println!("NFC_SOURCE_FAULTS reads={reads} consumer_wipes={wipes} cases={cases} passed");
+    println!(
+        "NFC_SOURCE_FAULTS body={body_bytes} reads={reads} consumer_wipes={wipes} cases={cases} passed"
+    );
 }
