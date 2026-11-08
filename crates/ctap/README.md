@@ -16,7 +16,15 @@ product applications. Firmware uses `no_std` without the `schema` feature.
 - `client_pin`: PIN/UV protocols 1/2 key derivation over borrowed SHA/HMAC
   capabilities, extraction-key erasure on every return, and unpadded UTF-8 PIN
   validation by byte and Unicode scalar limits. Products retain ECDH, CBC,
-  encrypted-field padding, durable retry order, token lifecycle and permissions.
+  encrypted-field padding, durable retry order and token lifecycle.
+  `client_pin::request` owns ClientPIN command requirements, legacy/scoped token
+  admission, permission filtering over explicit product profiles, and exact
+  encrypted-field lengths. Adapters select required-first versus scope-first
+  error precedence, preserve streaming versus borrowed field admission, and
+  supply existing CBOR/status/RP/ownership policy. `client_pin::agreement`
+  owns the COSE EC2 field schema and strict borrowed five-field decoding;
+  incremental adapters retain ordered optional-field framing and use the same
+  field interpretation. Curve membership validation remains in crypto adapters.
 - `session`: non-sensitive continuation binding and wrapping idle timestamps.
   Products own cursor secrets, timeout policy, refresh points and reset.
 - `provision`, `settings`: attestation read admission, certificate publication

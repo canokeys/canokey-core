@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Incremental COSE EC2 key agreement shared by clientPIN and hmac-secret.
 //! The enclosing schema owns the coordinates and its length-error policy.
-use super::{Key, Status, wire::cose};
+use super::{Key, Status};
+use canokey_ctap::client_pin::agreement::{COORDINATE_BYTES, Field, POINT_BYTES, REQUIRED_FIELDS};
 use canokey_protocol::cbor::Event;
 
 // Sentinel for a non-integer/unsupported-width label. It is outside the
@@ -33,24 +34,24 @@ impl Parser {
     pub fn event(
         &mut self,
         event: &Event<'_>,
-        coordinates: &mut [u8; 64],
+        coordinates: &mut [u8; POINT_BYTES],
         length_error: Status,
     ) -> Result<bool, Status> {
         if super::skip_cbor_event(&mut self.skip, event)? {
             return Ok(false);
         }
         if let Some((key, _)) = self.body {
-            let target = if key == cose::X {
-                &mut coordinates[..32]
+            let target = if Field::decode(i64::from(key)) == Some(Field::X) {
+                &mut coordinates[..COORDINATE_BYTES]
             } else {
-                &mut coordinates[32..]
+                &mut coordinates[COORDINATE_BYTES..]
             };
             super::consume_cbor_body(event, &mut self.body, target)?;
             return Ok(false);
         }
         let Some(key) = self.key.take() else {
             if matches!(event, Event::End) {
-                return if self.seen == cose::AGREEMENT_FIELDS {
+                return if self.seen == REQUIRED_FIELDS {
                     Ok(true)
                 } else {
                     Err(Status::MissingParameter)
@@ -66,9 +67,11 @@ impl Parser {
                 self.skip = 1;
             }
         } else {
-            if matches!(key, cose::X | cose::Y) {
+            if matches!(Field::decode(i64::from(key)), Some(Field::X | Field::Y)) {
                 match *event {
-                    Event::Bytes(32) => self.body = Some((key, 0)),
+                    Event::Bytes(length) if usize::from(length) == COORDINATE_BYTES => {
+                        self.body = Some((key, 0))
+                    }
                     Event::Bytes(_) => return Err(length_error),
                     _ => return Err(Status::UnexpectedType),
                 }
@@ -82,21 +85,16 @@ impl Parser {
 /// Validate one member of the COSE_Key agreement map shared by clientPIN and
 /// hmac-secret. Unknown optional members are ignored by the caller.
 fn field(key: i8, event: &canokey_protocol::cbor::Event<'_>) -> Result<u8, Status> {
-    let (bit, expected) = match key {
-        cose::KTY => (0x01, Some(cose::EC2)),
-        cose::ALG => (0x02, Some(cose::ECDH_ES_HKDF256)),
-        cose::CRV => (0x04, Some(cose::P256)),
-        cose::X => (0x08, None),
-        cose::Y => (0x10, None),
-        _ => return Ok(0),
+    let Some(field) = Field::decode(i64::from(key)) else {
+        return Ok(0x00);
     };
-    if let Some(expected) = expected {
-        if Key::parse(event)?.integer() != Some(expected) {
+    if let Some(expected) = field.scalar() {
+        if Key::parse(event)?.integer().map(i64::from) != Some(expected) {
             return Err(Status::InvalidParameter);
         }
     }
     // Coordinate lengths are checked by the parser using its caller's policy.
-    Ok(bit)
+    Ok(field.bit())
 }
 
 #[cfg(test)]

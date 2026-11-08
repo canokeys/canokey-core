@@ -6,24 +6,23 @@ pub(super) mod cose {
     pub const EDDSA: i32 = -8;
     pub const MLDSA65: i32 = crate::ports::mldsa::DSA65.cose;
     pub const MLDSA44: i32 = crate::ports::mldsa::DSA44.cose;
-    pub const KTY: i8 = 1;
-    pub const ALG: i8 = 3;
     pub const CRV: i8 = -1;
     pub const X: i8 = -2;
     pub const Y: i8 = -3;
-    pub const EC2: i8 = 2;
-    pub const ECDH_ES_HKDF256: i8 = -25;
     pub const P256: i8 = 1;
-    pub const AGREEMENT_FIELDS: u8 = 0x1f; // kty, alg, crv, X, Y.
 }
 pub(super) mod pin_protocol {
-    pub const V1: u8 = 0x01;
-    pub const V2: u8 = 0x02;
+    use canokey_ctap::client_pin::{
+        Protocol,
+        request::{self, Command},
+    };
+    pub const V1: u8 = Protocol::One as u8;
+    pub const V2: u8 = Protocol::Two as u8;
     pub const AES_BLOCK_BYTES: usize = 16;
-    pub const AUTH_V1_BYTES: usize = 16;
-    pub const AUTH_V2_BYTES: usize = 32;
-    pub const PIN_HASH_BYTES: usize = 16; // left(SHA-256(PIN),16).
-    pub const PADDED_PIN_BYTES: usize = 64;
+    pub const AUTH_V1_BYTES: usize = Protocol::One.auth_bytes();
+    pub const AUTH_V2_BYTES: usize = Protocol::Two.auth_bytes();
+    pub const PIN_HASH_BYTES: usize = request::PIN_HASH_BYTES; // left(SHA-256(PIN),16).
+    pub const PADDED_PIN_BYTES: usize = request::PADDED_PIN_BYTES;
     pub const NEW_PIN_V1_BYTES: usize = PADDED_PIN_BYTES;
     pub const NEW_PIN_V2_BYTES: usize = AES_BLOCK_BYTES + PADDED_PIN_BYTES;
     pub const TOKEN_V1_BYTES: usize = 32;
@@ -32,26 +31,26 @@ pub(super) mod pin_protocol {
     pub const MAX_PIN_BYTES: u8 = 63;
     pub const MAX_RETRIES: u8 = 8;
     pub const SESSION_ATTEMPTS: u8 = 0x03; // Reboot required after three bad PIN proofs.
-    pub const GET_RETRIES: u8 = 0x01;
-    pub const GET_AGREEMENT: u8 = 0x02;
-    pub const SET_PIN: u8 = 0x03;
-    pub const CHANGE_PIN: u8 = 0x04;
-    pub const GET_TOKEN: u8 = 0x05;
-    pub const GET_TOKEN_PERMISSIONS: u8 = 0x09;
-    pub const LABEL_PROTOCOL: i8 = 1;
-    pub const LABEL_SUBCOMMAND: i8 = 2;
-    pub const LABEL_AGREEMENT: i8 = 3;
-    pub const LABEL_AUTH: i8 = 4;
-    pub const LABEL_NEW_PIN: i8 = 5;
-    pub const LABEL_PIN_HASH: i8 = 6;
-    pub const LABEL_PERMISSIONS: i8 = 9;
-    pub const LABEL_RP_ID: i8 = 10;
+    pub const GET_RETRIES: u8 = Command::Retries as u8;
+    pub const GET_AGREEMENT: u8 = Command::Agreement as u8;
+    pub const SET_PIN: u8 = Command::Set as u8;
+    pub const CHANGE_PIN: u8 = Command::Change as u8;
+    pub const GET_TOKEN: u8 = Command::Token as u8;
+    pub const GET_TOKEN_PERMISSIONS: u8 = Command::TokenPermissions as u8;
+    pub const LABEL_PROTOCOL: i8 = request::LABEL_PROTOCOL;
+    pub const LABEL_SUBCOMMAND: i8 = request::LABEL_SUBCOMMAND;
+    pub const LABEL_AGREEMENT: i8 = request::LABEL_AGREEMENT;
+    pub const LABEL_AUTH: i8 = request::LABEL_AUTH;
+    pub const LABEL_NEW_PIN: i8 = request::LABEL_NEW_PIN;
+    pub const LABEL_PIN_HASH: i8 = request::LABEL_PIN_HASH;
+    pub const LABEL_PERMISSIONS: i8 = request::LABEL_PERMISSIONS;
+    pub const LABEL_RP_ID: i8 = request::LABEL_RP_ID;
     pub const RESPONSE_TOKEN: u8 = 0x02;
     pub const RESPONSE_RETRIES: u8 = 0x03;
-    pub const PERMISSION_MAKE: u8 = 0x01;
-    pub const PERMISSION_ASSERT: u8 = 0x02;
+    pub const PERMISSION_MAKE: u8 = request::PERMISSION_MAKE as u8;
+    pub const PERMISSION_ASSERT: u8 = request::PERMISSION_ASSERT as u8;
     pub const PERMISSION_BIO: u8 = 0x08;
-    pub const PERMISSION_CREDENTIALS: u8 = 0x04;
+    pub const PERMISSION_CREDENTIALS: u8 = request::PERMISSION_CREDENTIALS as u8;
     pub const PERMISSION_RP: u8 = PERMISSION_MAKE | PERMISSION_ASSERT;
     pub const PERMISSION_MASK: u8 = 0x3f;
     pub const fn auth_bytes(protocol: u8) -> usize {

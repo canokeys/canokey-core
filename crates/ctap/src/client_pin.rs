@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! PIN/UV protocol key derivation and PIN text rules, without session policy.
 
+pub mod agreement;
+pub mod request;
+
 pub const KEY_BYTES: usize = 32;
 pub const MAX_PIN_BYTES: usize = 63;
 const HKDF_SALT: [u8; KEY_BYTES] = [0x00; KEY_BYTES];
@@ -22,13 +25,13 @@ impl Protocol {
             _ => None,
         }
     }
-    pub fn auth_bytes(self) -> usize {
+    pub const fn auth_bytes(self) -> usize {
         match self {
             Self::One => 16,
             Self::Two => 32,
         }
     }
-    pub fn iv_bytes(self) -> usize {
+    pub const fn iv_bytes(self) -> usize {
         match self {
             Self::One => 0,
             Self::Two => 16,

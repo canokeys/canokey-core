@@ -2,7 +2,16 @@
 //! Incremental clientPIN schema. Only owned fields survive request release.
 use super::wire::pin_protocol as wire;
 use super::{Command, Key, Status};
+use canokey_ctap::client_pin::{Protocol, request as schema};
 use canokey_protocol::cbor::Event;
+
+fn schema_error(error: schema::Error) -> Status {
+    match error {
+        schema::Error::MissingParameter => Status::MissingParameter,
+        schema::Error::InvalidParameter => Status::InvalidParameter,
+        schema::Error::UnauthorizedPermission => Status::UnauthorizedPermission,
+    }
+}
 
 // Sentinel for a non-integer/unsupported-width label. It is outside the
 // recognized clientPIN labels 1..=6, 9 and 10 and follows the skip path.
@@ -67,49 +76,19 @@ impl Parser {
         if f.seen & (1 << wire::LABEL_SUBCOMMAND) == 0 {
             return Err(Status::MissingParameter);
         }
-        let required = match f.params.subcommand {
-            wire::GET_RETRIES => return Ok(Command::GetPinRetries),
-            wire::GET_AGREEMENT => 1 << wire::LABEL_PROTOCOL,
-            wire::SET_PIN => {
-                (1 << wire::LABEL_PROTOCOL)
-                    | (1 << wire::LABEL_AGREEMENT)
-                    | (1 << wire::LABEL_AUTH)
-                    | (1 << wire::LABEL_NEW_PIN)
-            }
-            wire::CHANGE_PIN => {
-                (1 << wire::LABEL_PROTOCOL)
-                    | (1 << wire::LABEL_AGREEMENT)
-                    | (1 << wire::LABEL_AUTH)
-                    | (1 << wire::LABEL_NEW_PIN)
-                    | (1 << wire::LABEL_PIN_HASH)
-            }
-            wire::GET_TOKEN => {
-                (1 << wire::LABEL_PROTOCOL)
-                    | (1 << wire::LABEL_AGREEMENT)
-                    | (1 << wire::LABEL_PIN_HASH)
-            }
-            wire::GET_TOKEN_PERMISSIONS => {
-                (1 << wire::LABEL_PROTOCOL)
-                    | (1 << wire::LABEL_AGREEMENT)
-                    | (1 << wire::LABEL_PIN_HASH)
-                    | (1 << wire::LABEL_PERMISSIONS)
-            }
-            _ => return Err(Status::InvalidSubcommand),
-        };
-        if f.seen & required != required {
-            return Err(Status::MissingParameter);
+        let command = schema::Command::decode(u64::from(f.params.subcommand))
+            .ok_or(Status::InvalidSubcommand)?;
+        if f.params.subcommand == wire::GET_RETRIES {
+            return Ok(Command::GetPinRetries);
         }
-        if f.params.subcommand == wire::GET_TOKEN
-            && f.seen & ((1 << wire::LABEL_PERMISSIONS) | (1 << wire::LABEL_RP_ID)) != 0
-        {
-            return Err(Status::InvalidParameter);
-        }
-        if f.params.subcommand == wire::GET_TOKEN_PERMISSIONS
-            && f.params.permissions & wire::PERMISSION_RP != 0
-            && f.params.rp_len == 0
-        {
-            return Err(Status::MissingParameter);
-        }
+        schema::admit(
+            command,
+            f.seen,
+            u16::from(f.params.permissions),
+            f.params.rp_len != 0,
+            schema::ValidationOrder::RequiredFirst,
+        )
+        .map_err(schema_error)?;
         if f.params.subcommand == wire::GET_AGREEMENT {
             Ok(Command::GetKeyAgreement)
         } else {
@@ -194,7 +173,7 @@ impl Fields {
         }
         match key {
             wire::LABEL_PROTOCOL => match *event {
-                Event::Unsigned(n) if n == u64::from(wire::V1) || n == u64::from(wire::V2) => {
+                Event::Unsigned(n) if Protocol::decode(n).is_some() => {
                     self.params.protocol = n as u8
                 }
                 Event::Unsigned(_) | Event::Negative(_) => return Err(Status::InvalidParameter),
@@ -218,43 +197,29 @@ impl Fields {
                 if self.params.protocol == 0 {
                     return Err(Status::MissingParameter);
                 }
-                let n = match key {
-                    wire::LABEL_AUTH => {
-                        if self.params.protocol == wire::V1 {
-                            wire::AUTH_V1_BYTES as u16
-                        } else {
-                            wire::AUTH_V2_BYTES as u16
-                        }
-                    }
-                    wire::LABEL_NEW_PIN => {
-                        if self.params.protocol == wire::V1 {
-                            wire::NEW_PIN_V1_BYTES as u16
-                        } else {
-                            wire::NEW_PIN_V2_BYTES as u16
-                        }
-                    }
-                    _ => {
-                        if self.params.protocol == wire::V1 {
-                            wire::AUTH_V1_BYTES as u16
-                        } else {
-                            wire::AUTH_V2_BYTES as u16
-                        }
-                    }
+                let field = match key {
+                    wire::LABEL_AUTH => schema::EncryptedField::Auth,
+                    wire::LABEL_NEW_PIN => schema::EncryptedField::NewPin,
+                    _ => schema::EncryptedField::PinHash,
                 };
-                self.bytes(key, event, n)?;
+                let protocol = Protocol::decode(u64::from(self.params.protocol))
+                    .ok_or(Status::InvalidParameter)?;
+                self.bytes(key, event, protocol, field)?;
             }
             wire::LABEL_PERMISSIONS => match *event {
-                Event::Unsigned(n)
-                    if n > 0
-                        && n <= u64::from(wire::PERMISSION_MASK)
-                        && n & u64::from(wire::PERMISSION_BIO) == 0 =>
-                {
-                    self.params.permissions = n as u8
+                Event::Unsigned(n) => {
+                    // Core rejects all bits above the defined standard mask.
+                    let policy = schema::PermissionPolicy {
+                        supported: u16::from(wire::PERMISSION_MASK),
+                        rejected: u64::from(wire::PERMISSION_BIO),
+                        maximum: Some(u64::from(wire::PERMISSION_MASK)),
+                        protocol_two_only: 0x00,
+                    };
+                    // Permission admission is protocol-independent in this profile.
+                    self.params.permissions =
+                        policy.validate(Protocol::Two, n).map_err(schema_error)? as u8;
                 }
-                Event::Unsigned(0) => return Err(Status::InvalidParameter),
-                Event::Unsigned(_) | Event::Negative(_) => {
-                    return Err(Status::UnauthorizedPermission);
-                }
+                Event::Negative(_) => return Err(Status::UnauthorizedPermission),
                 _ => return Err(Status::UnexpectedType),
             },
             wire::LABEL_RP_ID => match *event {
@@ -269,14 +234,24 @@ impl Fields {
         }
         Ok(())
     }
-    fn bytes(&mut self, key: i8, event: &Event<'_>, expected: u16) -> Result<(), Status> {
+    fn bytes(
+        &mut self,
+        key: i8,
+        event: &Event<'_>,
+        protocol: Protocol,
+        field: schema::EncryptedField,
+    ) -> Result<(), Status> {
         match *event {
-            Event::Bytes(n) if n == expected => {
+            Event::Bytes(length) => {
+                field
+                    .validate(protocol, usize::from(length))
+                    .map_err(|error| match error {
+                        schema::LengthError::PinTooLong => Status::PinPolicy,
+                        schema::LengthError::WrongLength => Status::InvalidCbor,
+                    })?;
                 self.body = Some((key, 0));
                 Ok(())
             }
-            Event::Bytes(n) if key == wire::LABEL_NEW_PIN && n > expected => Err(Status::PinPolicy),
-            Event::Bytes(_) => Err(Status::InvalidCbor),
             _ => Err(Status::UnexpectedType),
         }
     }
@@ -324,6 +299,53 @@ mod tests {
                         );
                     }
                 }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod schema_tests {
+    use super::*;
+
+    #[test]
+    fn incremental_first_errors_survive_every_fragment_boundary() {
+        // Each map deliberately has more than one problem. Streaming admission
+        // keeps the first field error; finish checks required fields before scope.
+        for (bytes, expected) in [
+            (
+                &[0xa3, 0x01, 0x02, 0x02, 0x05, 0x09, 0x01][..],
+                Status::MissingParameter,
+            ),
+            (
+                &[0xa3, 0x01, 0x02, 0x02, 0x09, 0x09, 0x18, 0x40][..],
+                Status::UnauthorizedPermission,
+            ),
+            (
+                &[0xa3, 0x01, 0x01, 0x02, 0x09, 0x09, 0x00][..],
+                Status::InvalidParameter,
+            ),
+            (
+                &[0xa2, 0x02, 0x01, 0x05, 0x40][..],
+                Status::MissingParameter,
+            ),
+            (
+                &[0xa2, 0x01, 0x03, 0x02, 0x01][..],
+                Status::InvalidParameter,
+            ),
+            (
+                &[0xa2, 0x01, 0x02, 0x02, 0x08][..],
+                Status::InvalidSubcommand,
+            ),
+        ] {
+            for split in 0..=bytes.len() {
+                let mut parser = Parser::new();
+                parser.consume(&bytes[..split]);
+                parser.consume(&bytes[split..]);
+                assert!(
+                    matches!(parser.finish(), Err(error) if error == expected),
+                    "split={split} bytes={bytes:?}"
+                );
             }
         }
     }
