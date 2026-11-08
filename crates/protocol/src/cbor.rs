@@ -312,10 +312,16 @@ pub enum Event<'a> {
     End,
 }
 
-pub struct Decoder {
+/// Default CTAP nesting uses eight container levels plus the root slot.
+pub type Decoder = BoundedDecoder<{ MAX_DEPTH + 1 }>;
+
+/// Incremental decoder with caller-selected static nesting storage.
+/// DEPTH_SLOTS includes the root item; increasing it does not retain input bytes.
+pub struct BoundedDecoder<const DEPTH_SLOTS: usize> {
     head: [u8; 9],
     head_len: u8,
-    pending: [u16; MAX_DEPTH + 1],
+    pending: [u16; DEPTH_SLOTS],
+    depth_limit: u8,
     depth: usize,
     body: u16,
     text: bool,
@@ -326,15 +332,22 @@ pub struct Decoder {
     failed: bool,
     wide_bytes: bool,
 }
-impl Decoder {
+impl<const DEPTH_SLOTS: usize> BoundedDecoder<DEPTH_SLOTS> {
     /// byte_limit bounds total input and declared collection/string lengths.
     pub const fn new(byte_limit: u16) -> Self {
-        let mut pending = [0; MAX_DEPTH + 1];
-        pending[0] = 1; // Exactly one top-level item.
+        let mut pending = [0x00; DEPTH_SLOTS];
+        if DEPTH_SLOTS != 0 {
+            pending[0] = 0x01; // Exactly one top-level item.
+        }
         Self {
             head: [0; 9],
             head_len: 0,
             pending,
+            depth_limit: if DEPTH_SLOTS <= MAX_DEPTH {
+                DEPTH_SLOTS.saturating_sub(1) as u8
+            } else {
+                MAX_DEPTH as u8
+            },
             depth: 0,
             body: 0,
             text: false,
@@ -342,13 +355,27 @@ impl Decoder {
             utf8: Utf8::new(),
             budget: byte_limit,
             limit: byte_limit,
-            failed: false,
+            failed: DEPTH_SLOTS == 0,
             wide_bytes: false,
         }
     }
     /// Preserve legacy definite byte-string widths without relaxing other types.
     pub const fn with_wide_byte_lengths(mut self) -> Self {
         self.wide_bytes = true;
+        self
+    }
+    /// Explicit consumer bound; the default remains at most eight levels.
+    /// Configuration after input consumption and invalid depths fail closed.
+    pub const fn with_depth_limit(mut self, depth: usize) -> Self {
+        if self.budget != self.limit
+            || depth == 0
+            || depth >= DEPTH_SLOTS
+            || depth > u8::MAX as usize
+        {
+            self.failed = true;
+        } else {
+            self.depth_limit = depth as u8;
+        }
         self
     }
     pub fn feed(
@@ -514,7 +541,7 @@ impl Decoder {
                         Event::Bytes(count)
                     })
                 } else {
-                    if self.depth == MAX_DEPTH {
+                    if self.depth >= usize::from(self.depth_limit) {
                         return Err(Error::Limit);
                     }
                     self.depth += 1;

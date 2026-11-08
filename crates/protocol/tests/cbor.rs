@@ -402,3 +402,44 @@ fn consumer_failure_is_terminal() {
     assert_eq!(decoder.feed(&[0, 0], &mut |_| Ok(())), Err(Error::Failed));
     assert_eq!(decoder.finish(), Err(Error::Failed));
 }
+
+#[test]
+fn nesting_capacity_is_static_and_reconfiguration_fails_closed() {
+    use canokey_protocol::cbor::BoundedDecoder;
+    // Eight containers fit the CTAP default; the ninth requires explicit policy.
+    for depth in [8, 9, 17, 18] {
+        let mut input = vec![0x81; depth - 1];
+        input.push(0x80);
+        for split in 0..=input.len() {
+            let mut default = Decoder::new(input.len() as u16);
+            let result = default
+                .feed(&input[..split], &mut |_| Ok(()))
+                .and_then(|_| default.feed(&input[split..], &mut |_| Ok(())))
+                .and_then(|_| default.finish());
+            assert_eq!(result.is_ok(), depth <= 8);
+            let mut deep = BoundedDecoder::<18>::new(input.len() as u16).with_depth_limit(17);
+            let result = deep
+                .feed(&input[..split], &mut |_| Ok(()))
+                .and_then(|_| deep.feed(&input[split..], &mut |_| Ok(())))
+                .and_then(|_| deep.finish());
+            assert_eq!(result.is_ok(), depth <= 17);
+        }
+    }
+    for depth in [0, 9, usize::MAX] {
+        let mut decoder = Decoder::new(1).with_depth_limit(depth);
+        assert!(decoder.feed(&[0x00], &mut |_| Ok(())).is_err());
+    }
+    let mut decoder = BoundedDecoder::<18>::new(2);
+    decoder.feed(&[0x81], &mut |_| Ok(())).unwrap();
+    let mut decoder = decoder.with_depth_limit(17);
+    assert!(decoder.feed(&[0x00], &mut |_| Ok(())).is_err());
+    let mut empty = BoundedDecoder::<0>::new(1);
+    assert!(empty.feed(&[0x00], &mut |_| Ok(())).is_err());
+    assert!(empty.finish().is_err());
+    // An explicitly small storage profile must not permit out-of-bounds nesting.
+    let mut scalar = BoundedDecoder::<1>::new(1);
+    scalar.feed(&[0x00], &mut |_| Ok(())).unwrap();
+    scalar.finish().unwrap();
+    let mut container = BoundedDecoder::<1>::new(1);
+    assert_eq!(container.feed(&[0x80], &mut |_| Ok(())), Err(Error::Limit));
+}
