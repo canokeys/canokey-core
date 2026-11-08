@@ -20,9 +20,13 @@ product applications. Firmware uses `no_std` without the `schema` feature.
   own material; product ADMIN authority and installation policy stay outside.
 - `resident`: borrowed CTG1 member decoding, bounded field encoding, UTF-8
   truncation and RP display. `resident::group` validates CTG1 headers and plans
-  member offsets/replacement lengths without IO. Product capacities, publication
-  strategies and credential
-  derivation remain with their owners during R06 migration.
+  member offsets/replacement lengths without IO. `group::update` shares no-op,
+  same-length patch, variable replacement and deletion across synchronous
+  backend capabilities. Constants express buffered peer reads before a staging
+  lease versus closed-append streaming, and all-member versus target-only patch
+  validation. Products lend existing scratch and retain capacity, preflight,
+  atomic commit/abort, recovery status and scratch erasure policy. Credential
+  derivation and enumeration remain with their owners during R06 migration.
 - `response`: exact/partial certificate window admission. Product backing and
   source close/erasure remain with their owners. General response cursors and
   segmented reads use `canokey-protocol::response`.

@@ -16,7 +16,7 @@ pub(super) use canokey_ctap::resident::{
 pub(super) const LARGE_BLOB_KEY: u8 = 0x08;
 #[cfg(test)]
 use canokey_ctap::resident::group::FORMAT as GROUP_FORMAT;
-use canokey_ctap::resident::group::{self, Replacement, member_length};
+use canokey_ctap::resident::group::{self, member_length};
 use canokey_ctap::resident::group::{HEADER_BYTES as GROUP_HEADER, MEMBERS as GROUP_MEMBERS};
 const _: () = assert!(Record::CTAP_GROUP_MEMBERS as usize == GROUP_MEMBERS);
 pub(super) const COPY_BYTES: usize = (GROUP_MEMBERS - 1) * MAX_BYTES;
@@ -58,60 +58,84 @@ pub(super) fn replace(
     let mut reservation = canokey_ctap::workspace::Reservation::new(copy, p.memory);
     let copy = reservation.bytes();
     let result = (|| {
-        let mut header = [0; GROUP_HEADER];
+        let mut header = [0x00; GROUP_HEADER];
         group_header(record, &mut header, p)?;
-        let target = usize::from(index % Record::CTAP_GROUP_MEMBERS);
-        let replacement =
-            Replacement::new(&header, target, value.len()).map_err(|_| Status::Other)?;
-        let before = replacement.offset - GROUP_HEADER;
-        let target_offset = replacement.offset;
-        let target_length = replacement.old_length;
-        if target_length != 0 && target_length == value.len() {
-            let bytes = &mut copy[..target_length];
-            p.storage
-                .read_at(record, target_offset as u32, bytes)
-                .map_err(|_| Status::Other)?;
-            // The replacement is already validated. Only unchanged peers need
-            // decoding; the target is either identical or replaced in full.
-            return if bytes == value {
-                Ok(())
-            } else {
-                p.storage
-                    .replace_at(record, target_offset as u32, value)
-                    .map_err(|_| Status::Other)
-            };
-        }
-        let mut offset = GROUP_HEADER as u32;
-        let mut used = 0;
-        // Read and validate before leasing the shared file cache for staging.
-        // Interleaved reads would close/commit the stage once per member.
-        for member in 0..GROUP_MEMBERS {
-            let n = member_length(&header, member);
-            if member != target && n != 0 {
-                let bytes = copy.get_mut(used..used + n).ok_or(Status::Other)?;
-                p.storage
-                    .read_at(record, offset, bytes)
-                    .map_err(|_| Status::Other)?;
-                decode(bytes)?;
-                used += n;
-            }
-            offset += n as u32;
-        }
-        if value.is_empty() && used == 0 {
-            return p.storage.remove(record).map_err(|_| Status::Other);
-        }
-        Replacement::set_length(&mut header, target, value.len());
-        let publication = p
-            .storage
-            .stage_parts(&[&header, &copy[..before], value, &copy[before..used]])
-            .and_then(|()| p.storage.stage_commit(record));
-        if publication.is_err() {
-            p.storage.stage_abort();
-        }
-        publication.map_err(|_| Status::Other)
+        group::update::replace(
+            header,
+            usize::from(index % Record::CTAP_GROUP_MEMBERS),
+            value,
+            copy,
+            &mut ResidentUpdate {
+                record,
+                platform: p,
+            },
+        )
     })();
     drop(reservation);
     result
+}
+
+// Core staging owns the shared file cache until commit/abort. The common
+// algorithm must collect all unchanged peers before entering that lease.
+struct ResidentUpdate<'a, 'p, B: crate::ports::Backends> {
+    record: Record,
+    platform: &'a mut Platform<'p, B>,
+}
+impl<B: crate::ports::Backends> group::update::Backend for ResidentUpdate<'_, '_, B> {
+    type Error = Status;
+    const BUFFER_PEERS: bool = true;
+    const VALIDATE_PATCH_PEERS: bool = false;
+    fn invalid_record(&self) -> Status {
+        Status::Other
+    }
+    fn read(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Status> {
+        self.platform
+            .storage
+            .read_at(self.record, offset as u32, out)
+            .map_err(|_| Status::Other)
+    }
+    fn prepare(&mut self, _: usize) -> Result<(), Status> {
+        Ok(())
+    }
+    fn patch(&mut self, offset: usize, value: &[u8]) -> Result<(), Status> {
+        self.platform
+            .storage
+            .replace_at(self.record, offset as u32, value)
+            .map_err(|_| Status::Other)
+    }
+    fn remove(&mut self) -> Result<(), Status> {
+        self.platform
+            .storage
+            .remove(self.record)
+            .map_err(|_| Status::Other)
+    }
+    fn stage_begin(&mut self) -> Result<(), Status> {
+        self.platform
+            .storage
+            .stage_begin()
+            .map_err(|_| Status::Other)
+    }
+    fn stage_append(&mut self, value: &[u8]) -> Result<(), Status> {
+        self.platform
+            .storage
+            .stage_append(value)
+            .map_err(|_| Status::Other)
+    }
+    fn stage_parts(&mut self, parts: &[&[u8]]) -> Result<(), Status> {
+        self.platform
+            .storage
+            .stage_parts(parts)
+            .map_err(|_| Status::Other)
+    }
+    fn stage_commit(&mut self) -> Result<(), Status> {
+        self.platform
+            .storage
+            .stage_commit(self.record)
+            .map_err(|_| Status::Other)
+    }
+    fn stage_abort(&mut self) {
+        self.platform.storage.stage_abort();
+    }
 }
 
 pub(super) use canokey_ctap::resident::{Entry, display_rp, encode_fields, text_prefix};

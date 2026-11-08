@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! CTG1 layout and replacement accounting; IO/publication stay with the owner.
+//! CTG1 layout, replacement accounting and synchronous update mechanisms.
+pub mod update;
 use super::{InvalidRecord, MAX_BYTES, MIN_BYTES};
 
 pub const MEMBERS: usize = 4;
