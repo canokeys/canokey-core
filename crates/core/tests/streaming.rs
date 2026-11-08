@@ -135,38 +135,38 @@ impl Fixture {
     }
 }
 impl Router for Fixture {
-    fn install(&mut self, _: &mut Platform<'_, impl canokey_ports::Backends>) -> Result<(), Sw> {
-        Ok(())
-    }
-    fn reset(&mut self, _: &mut Platform<'_, impl canokey_ports::Backends>) {
-        self.selected = false;
-    }
     fn selected(&self) -> bool {
         self.selected
+    }
+    fn command_limit(&self, _: Header) -> Result<u32, Sw> {
+        Ok(100_000)
+    }
+}
+impl<B: canokey_ports::Backends> canokey_transport_runtime::engine::Dispatch<Platform<'_, B>>
+    for Fixture
+{
+    fn install(&mut self, _: &mut Platform<'_, B>) -> Result<(), Sw> {
+        Ok(())
+    }
+    fn reset(&mut self, _: &mut Platform<'_, B>) {
+        self.selected = false;
     }
     fn select(
         &mut self,
         aid: &[u8],
         _: canokey_protocol::apdu::Transport,
-        _: &mut Platform<'_, impl canokey_ports::Backends>,
+        _: &mut Platform<'_, B>,
     ) -> Result<u32, Sw> {
         assert_eq!(aid, [1]);
         self.selected = true;
         Ok(0)
     }
-    fn command_limit(&self, _: Header) -> Result<u32, Sw> {
-        Ok(100_000)
-    }
-    fn abort_command(&mut self, _: &mut Platform<'_, impl canokey_ports::Backends>) {
+    fn abort_command(&mut self, _: &mut Platform<'_, B>) {
         self.events.push("abort");
         self.sink = Sink::None;
         self.tlv = tlv::Decoder::default();
     }
-    fn begin_command(
-        &mut self,
-        h: Header,
-        _: &mut Platform<'_, impl canokey_ports::Backends>,
-    ) -> Result<(), Sw> {
+    fn begin_command(&mut self, h: Header, _: &mut Platform<'_, B>) -> Result<(), Sw> {
         self.sink = match h.ins {
             0x01 => Sink::Key {
                 components: [[0; 256]; 5],
@@ -180,11 +180,7 @@ impl Router for Fixture {
         };
         Ok(())
     }
-    fn consume(
-        &mut self,
-        bytes: &[u8],
-        p: &mut Platform<'_, impl canokey_ports::Backends>,
-    ) -> Result<(), Sw> {
+    fn consume(&mut self, bytes: &[u8], p: &mut Platform<'_, B>) -> Result<(), Sw> {
         match &mut self.sink {
             Sink::Key {
                 components,
@@ -221,11 +217,7 @@ impl Router for Fixture {
         };
         Ok(())
     }
-    fn end_frame(
-        &mut self,
-        last: bool,
-        _: &mut Platform<'_, impl canokey_ports::Backends>,
-    ) -> Result<(), Sw> {
+    fn end_frame(&mut self, last: bool, _: &mut Platform<'_, B>) -> Result<(), Sw> {
         self.events.push("end");
         if matches!(self.failure, Some(Failure::EndFrame)) {
             return Err(Sw::WRONG_DATA);
@@ -234,12 +226,7 @@ impl Router for Fixture {
         self.last_frame = last;
         Ok(())
     }
-    fn finish(
-        &mut self,
-        h: Header,
-        _: u32,
-        p: &mut Platform<'_, impl canokey_ports::Backends>,
-    ) -> Result<(u32, Sw), Sw> {
+    fn finish(&mut self, h: Header, _: u32, p: &mut Platform<'_, B>) -> Result<(u32, Sw), Sw> {
         self.events.push("finish");
         if matches!(self.failure, Some(Failure::Finish)) {
             return Err(Sw::WRONG_P1P2);
@@ -281,7 +268,7 @@ impl Router for Fixture {
         &mut self,
         offset: u32,
         out: &mut [u8],
-        p: &mut Platform<'_, impl canokey_ports::Backends>,
+        p: &mut Platform<'_, B>,
     ) -> Result<usize, Sw> {
         self.events.push("read");
         assert!(self.response_open);
@@ -303,12 +290,15 @@ impl Router for Fixture {
         self.next += out.len() as u32;
         Ok(out.len())
     }
-    fn close_response(&mut self, _: &mut Platform<'_, impl canokey_ports::Backends>) {
+    fn close_response(&mut self, _: &mut Platform<'_, B>) {
         self.events.push("close");
         if self.response_open {
             self.closes += 1;
             self.response_open = false;
         }
+    }
+    fn wipe(&mut self, bytes: &mut [u8], p: &mut Platform<'_, B>) {
+        canokey_ports::Memory::wipe(p.memory, bytes);
     }
 }
 struct FrameSource<'a> {

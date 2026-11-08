@@ -8,3 +8,7 @@ pub mod nfc;
 pub mod nfc_io;
 pub mod nfc_provision;
 pub mod usb;
+
+pub mod engine;
+
+pub mod frame;

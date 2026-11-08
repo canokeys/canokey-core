@@ -363,7 +363,7 @@ fn cancel_during_unknown_value_rx_is_sequence_error_before_parser_entry() {
 #[test]
 fn apdu_input_abort_preserves_response_backing() {
     use canokey_protocol::apdu::Header;
-    use canokey_rust_core::runtime::{engine::Router, registry::Registry};
+    use canokey_rust_core::runtime::{engine::Dispatch, registry::Registry};
     let mut ctap = Registry::new();
     support::with_platform(&mut support::Backend::default(), |p| {
         ctap.select(

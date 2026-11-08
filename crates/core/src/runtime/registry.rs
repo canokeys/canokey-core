@@ -414,54 +414,8 @@ impl Router for Registry {
     fn native_pending(&self) -> bool {
         self.ctap.pending_message()
     }
-    #[cfg(feature = "ctap")]
-    fn yield_native(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
-        self.close_ctap(p);
-    }
-    #[allow(unused_variables)]
-    fn install(
-        &mut self,
-        platform: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Sw> {
-        self.view().install(platform)
-    }
-    fn reset(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
-        self.view().reset(p)
-    }
     fn selected(&self) -> bool {
         !matches!(self.applet, AppletState::None)
-    }
-    fn select(
-        &mut self,
-        aid: &[u8],
-        transport: canokey_protocol::apdu::Transport,
-        p: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<u32, Sw> {
-        self.view().select(aid, transport, p)
-    }
-    fn reject_select(
-        &mut self,
-        transport: canokey_protocol::apdu::Transport,
-        p: &mut Platform<'_, impl crate::ports::Backends>,
-    ) {
-        #[cfg(feature = "ctap")]
-        if transport == canokey_protocol::apdu::Transport::Usb
-            && matches!(self.applet, AppletState::Ctap)
-        {
-            self.view().reset(p);
-        }
-        let _ = (transport, p);
-    }
-    fn fido_selected(&self, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
-        #[cfg(feature = "ctap")]
-        {
-            matches!(self.applet, AppletState::Ctap) && Selected::Ctap.enabled(p)
-        }
-        #[cfg(not(feature = "ctap"))]
-        {
-            let _ = p;
-            false
-        }
     }
     fn retain_nfc_input(&self) -> bool {
         // C's malformed-envelope cleanup resets only the FIDO transport chain;
@@ -497,10 +451,6 @@ impl Router for Registry {
             Ok(limit)
         }
     }
-    #[allow(unused_variables)]
-    fn abort_command(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
-        self.view().abort_command(platform)
-    }
     fn chain_header(&self, header: Header) -> Header {
         // NDEF UPDATE continues at the first fragment's offset; subsequent
         // P1/P2 values do not restart that applet's write cursor.
@@ -519,28 +469,73 @@ impl Router for Registry {
         }
         header
     }
+    #[cfg(feature = "pass")]
+    fn output_busy(&self) -> bool {
+        // PASS owns the shared output queue; the registry only arbitrates
+        // applet presence and forwards sampling at this composition boundary.
+        self.output.busy()
+    }
+}
+impl<B: crate::ports::Backends> canokey_transport_runtime::engine::Dispatch<Platform<'_, B>>
+    for Registry
+{
+    #[cfg(feature = "ctap")]
+    fn yield_native(&mut self, p: &mut Platform<'_, B>) {
+        self.close_ctap(p);
+    }
     #[allow(unused_variables)]
-    fn begin_command(
+    fn install(&mut self, platform: &mut Platform<'_, B>) -> Result<(), Sw> {
+        self.view().install(platform)
+    }
+    fn reset(&mut self, p: &mut Platform<'_, B>) {
+        self.view().reset(p)
+    }
+    fn select(
         &mut self,
-        header: Header,
-        platform: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Sw> {
+        aid: &[u8],
+        transport: canokey_protocol::apdu::Transport,
+        p: &mut Platform<'_, B>,
+    ) -> Result<u32, Sw> {
+        self.view().select(aid, transport, p)
+    }
+    fn reject_select(
+        &mut self,
+        transport: canokey_protocol::apdu::Transport,
+        p: &mut Platform<'_, B>,
+    ) {
+        #[cfg(feature = "ctap")]
+        if transport == canokey_protocol::apdu::Transport::Usb
+            && matches!(self.applet, AppletState::Ctap)
+        {
+            self.view().reset(p);
+        }
+        let _ = (transport, p);
+    }
+    fn fido_selected(&self, p: &mut Platform<'_, B>) -> bool {
+        #[cfg(feature = "ctap")]
+        {
+            matches!(self.applet, AppletState::Ctap) && Selected::Ctap.enabled(p)
+        }
+        #[cfg(not(feature = "ctap"))]
+        {
+            let _ = p;
+            false
+        }
+    }
+    #[allow(unused_variables)]
+    fn abort_command(&mut self, platform: &mut Platform<'_, B>) {
+        self.view().abort_command(platform)
+    }
+    #[allow(unused_variables)]
+    fn begin_command(&mut self, header: Header, platform: &mut Platform<'_, B>) -> Result<(), Sw> {
         self.view().begin_command(header, platform)
     }
     #[allow(unused_variables)]
-    fn consume(
-        &mut self,
-        bytes: &[u8],
-        platform: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Sw> {
+    fn consume(&mut self, bytes: &[u8], platform: &mut Platform<'_, B>) -> Result<(), Sw> {
         self.view().consume(bytes, platform)
     }
     #[allow(unused_variables)]
-    fn end_frame(
-        &mut self,
-        last: bool,
-        platform: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Sw> {
+    fn end_frame(&mut self, last: bool, platform: &mut Platform<'_, B>) -> Result<(), Sw> {
         self.view().end_frame(last, platform)
     }
     #[allow(unused_variables)]
@@ -549,7 +544,7 @@ impl Router for Registry {
         &mut self,
         header: Header,
         le: u32,
-        platform: &mut Platform<'_, impl crate::ports::Backends>,
+        platform: &mut Platform<'_, B>,
     ) -> Result<(u32, Sw), Sw> {
         self.view().finish(header, le, platform)
     }
@@ -560,16 +555,16 @@ impl Router for Registry {
         &mut self,
         offset: u32,
         out: &mut [u8],
-        platform: &mut Platform<'_, impl crate::ports::Backends>,
+        platform: &mut Platform<'_, B>,
     ) -> Result<usize, Sw> {
         self.view().read_response(offset, out, platform)
     }
     #[allow(unused_variables)]
-    fn close_response(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
+    fn close_response(&mut self, platform: &mut Platform<'_, B>) {
         self.view().close_response(platform)
     }
     #[cfg(feature = "pass")]
-    fn is_eject(&self, h: Header, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
+    fn is_eject(&self, h: Header, p: &mut Platform<'_, B>) -> bool {
         // PASS eject pseudo-APDU: FF EE FF EE, gated by the PASS feature.
         h.cla == 0xff
             && h.ins == 0xee
@@ -578,14 +573,8 @@ impl Router for Registry {
             && super::config::enabled(p.storage, super::config::PASS)
     }
     #[cfg(feature = "pass")]
-    fn eject(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
+    fn eject(&mut self, p: &mut Platform<'_, B>) -> Result<(), Sw> {
         self.view().eject(p)
-    }
-    #[cfg(feature = "pass")]
-    fn output_busy(&self) -> bool {
-        // PASS owns the shared output queue; the registry only arbitrates
-        // applet presence and forwards sampling at this composition boundary.
-        self.output.busy()
     }
     #[cfg(feature = "pass")]
     fn sample_output(
@@ -594,9 +583,16 @@ impl Router for Registry {
         now: u32,
         ready: bool,
         inhibit: bool,
-        p: &mut Platform<'_, impl crate::ports::Backends>,
+        p: &mut Platform<'_, B>,
     ) -> Option<u8> {
         self.view().sample_output(pressed, now, ready, inhibit, p)
+    }
+    fn wipe(&mut self, bytes: &mut [u8], p: &mut Platform<'_, B>) {
+        canokey_ports::Memory::wipe(p.memory, bytes);
+    }
+
+    fn installed(&mut self, p: &mut Platform<'_, B>) {
+        super::config::notify(p);
     }
 }
 impl Default for Registry {
