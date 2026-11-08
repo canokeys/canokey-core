@@ -3,7 +3,7 @@ mod chain;
 mod decode;
 mod header;
 pub use chain::{ChainStep, CommandChain};
-pub use decode::{FrameDecoder, FrameEvent, parse};
+pub use decode::{FrameDecoder, FrameEvent, parse, validate_envelope};
 pub use header::*;
 // FIDO Alliance AID: RID A000000647, PIX 2F0001 (FIDO/U2F applet).
 pub const FIDO_AID: [u8; 8] = [0xa0, 0x00, 0x00, 0x06, 0x47, 0x2f, 0x00, 0x01];

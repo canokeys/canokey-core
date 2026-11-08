@@ -152,7 +152,7 @@ def execute(executable, case, rust):
                                 capture_output=True, text=True, timeout=30)
     actual = [line[5:].strip() for line in result.stdout.splitlines() if line.startswith("WIRE ")]
     if any("expected_c" in step for step in case["steps"]):
-        assert case.get("difference", {}).get("disposition") == "unresolved"
+        validate_difference(case)
         for step in case["steps"]:
             value = step.get("expected_c", step["expected"])
             if value != "STALL":
@@ -176,12 +176,24 @@ def execute(executable, case, rust):
                             if not rust else step.get("expected_hid", "")
                             for step in case["steps"]]
         if any("expected_hid_c" in step for step in case["steps"]):
-            assert case.get("difference", {}).get("disposition") == "unresolved"
+            validate_difference(case)
         for value in expected_reports:
             assert len(bytes.fromhex(value)) % 64 == 0
         comparison["hid_reports"] = reports
         comparison["passed"] &= reports == expected_reports
     return comparison
+
+
+def validate_difference(case):
+    difference = case.get("difference", {})
+    disposition = difference.get("disposition")
+    assert disposition in ("unresolved", "intentional difference")
+    if disposition == "intentional difference":
+        # A named, reviewable decision is required; outputs remain literal and
+        # unequal cases never enter parity totals, regardless of disposition.
+        decision = Path(difference["decision"])
+        assert not decision.is_absolute() and '..' not in decision.parts
+        assert (ROOT / decision).is_file() and difference["reason"].strip()
 
 
 def main():
@@ -241,7 +253,10 @@ def main():
     print(f"{label}: {passed}/{len(results)} passed")
     differences = [result for result in results if result.get("difference")]
     if differences:
-        print(f"Explicit unresolved differences: {len(differences)}; excluded from wire-parity claims")
+        for disposition in ("unresolved", "intentional difference"):
+            count = sum(row["difference"]["disposition"] == disposition for row in differences)
+            if count:
+                print(f"Explicit {disposition}: {count}; excluded from wire-parity claims")
     return 0 if passed == len(results) else 1
 
 

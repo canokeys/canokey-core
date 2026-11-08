@@ -6,13 +6,20 @@ the full NFCC image does not fit Flash, and no physical NFC reader or runtime
 stack acceptance has
 been performed. Do not treat host tests as a release qualification.
 
-`runtime::nfc` owns ISO-DEP block numbers, 261-byte command bounds, chaining,
+`runtime::nfc` owns ISO-DEP block numbers, bounded command delivery, chaining,
 duplicate suppression and at most two packet retransmissions. The facade leases
 the existing CCID byte allocation after quiescing USB. It enters the shared Core
-as owner 4; there is no NFC-private applet or crypto workspace. Case-3 FIDO SELECT
-enables continuous response aggregation for subsequent extended commands. Core
+as owner 4; there is no NFC-private applet or crypto workspace. Request storage
+uses the shared 261-byte buffer plus a 27-byte tail for inline envelopes; selected
+standalone FIDO bodies above 279 bytes use transient PKE staging, up to 1296 bytes.
+Each FIDO extended command's Le controls continuous response aggregation. Core
 GET RESPONSE owns the actual response cursor; intermediate 61xx trailers are
 removed only in this compatibility mode.
+
+Inline envelope length is checked with the shared ISO decoder layout before
+applet dispatch. Malformed requests close FIDO input/output while preserving
+unrelated applet write cursors and grants. They cannot trigger NDEF/OpenPGP
+command abort merely because their header resembles an applet command.
 
 `runtime::nfc_io` owns the IRQ mailbox, 150-ms WTX schedule and 200-ms dirty-link
 recovery. The main-loop facade masks interrupts only around this disjoint state.

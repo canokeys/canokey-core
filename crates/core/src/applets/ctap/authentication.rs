@@ -371,12 +371,7 @@ fn respond(
         if n != credential::public_length(request.algorithm) {
             return Err(Status::Other);
         }
-        w.input[auth_data::HEADER_BYTES..auth_data::CREDENTIAL_LENGTH_OFFSET]
-            .copy_from_slice(&super::provision::AAGUID);
-        w.input[auth_data::CREDENTIAL_LENGTH_OFFSET..auth_data::CREDENTIAL_OFFSET]
-            .copy_from_slice(&(credential::ID_BYTES as u16).to_be_bytes());
-        w.input[auth_data::CREDENTIAL_OFFSET..auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES]
-            .copy_from_slice(request.id);
+        attested_header(&mut w.input[..], request.id);
         auth_len = auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES;
         let tail = &mut w.input[auth_len..];
         let mut e = Encoder::new(tail);
@@ -481,12 +476,7 @@ fn respond(
     p.memory.wipe(&mut w.key.bytes);
     let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
     let mut blob_key = [0; 32];
-    let user = if let Some(index) = request.user_slot {
-        let n = resident::load(index, &mut w.key.bytes, p)?.ok_or(Status::NoCredentials)?;
-        Some(resident::Entry::decode(&w.key.bytes[..n])?)
-    } else {
-        None
-    };
+    let user = load_user(request.user_slot, &mut w.key.bytes, p)?;
     if has_blob_key {
         credential::large_blob_key(request.id, request.rp, &mut blob_key, p)?;
     }
@@ -563,6 +553,34 @@ fn respond(
     Ok(total)
 }
 
+/// Attested credential data header after rpIdHash/flags/counter: AAGUID,
+/// credential ID length and ID. `auth` starts at the authenticator data.
+// These two helpers stay out of line to share code across classic and ML-DSA.
+#[inline(never)]
+fn attested_header(auth: &mut [u8], id: &[u8]) {
+    auth[auth_data::HEADER_BYTES..auth_data::CREDENTIAL_LENGTH_OFFSET]
+        .copy_from_slice(&super::provision::AAGUID);
+    auth[auth_data::CREDENTIAL_LENGTH_OFFSET..auth_data::CREDENTIAL_OFFSET]
+        .copy_from_slice(&(credential::ID_BYTES as u16).to_be_bytes());
+    auth[auth_data::CREDENTIAL_OFFSET..auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES]
+        .copy_from_slice(id);
+}
+
+/// Load and decode the selected resident record into `out`, if any.
+/// The returned entry borrows `out`; no credential or key is copied by value.
+#[inline(never)]
+fn load_user<'a>(
+    slot: Option<u8>,
+    out: &'a mut [u8],
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<Option<resident::Entry<'a>>, Status> {
+    let Some(index) = slot else {
+        return Ok(None);
+    };
+    let n = resident::load(index, out, p)?.ok_or(Status::NoCredentials)?;
+    resident::Entry::decode(&out[..n]).map(Some)
+}
+
 fn append_extensions(
     request: &Signing<'_>,
     w: &mut Workspace,
@@ -580,9 +598,7 @@ fn append_extensions(
         let mut blob = [0; 32];
         let mut blob_len = 0;
         if request.get_cred_blob {
-            if let Some(index) = request.user_slot {
-                let n = resident::load(index, w.output, p)?.ok_or(Status::NoCredentials)?;
-                let entry = resident::Entry::decode(&w.output[..n])?;
+            if let Some(entry) = load_user(request.user_slot, w.output, p)? {
                 blob_len = entry.blob.len();
                 blob[..blob_len].copy_from_slice(entry.blob);
             }
@@ -642,12 +658,7 @@ fn respond_mldsa_assertion(
     let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
     w.input[auth_len..auth_len + 32].copy_from_slice(request.client_hash);
     w.input[auth_len + 32..auth_len + 64].copy_from_slice(&w.key.bytes[..32]);
-    let user = if let Some(index) = request.user_slot {
-        let n = resident::load(index, &mut w.key.bytes, p)?.ok_or(Status::NoCredentials)?;
-        Some(resident::Entry::decode(&w.key.bytes[..n])?)
-    } else {
-        None
-    };
+    let user = load_user(request.user_slot, &mut w.key.bytes, p)?;
     w.output[0] = 0;
     let mut e = Encoder::new(&mut w.output[1..]);
     e.map(3 + u64::from(user.is_some()) + u64::from(request.count > 1) + u64::from(has_blob_key));
@@ -723,14 +734,8 @@ fn respond_mldsa_make(
     e.finish().map_err(|_| Status::Other)?;
     let auth_start = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     w.output[auth_start..auth_start + auth_prefix].copy_from_slice(&w.input[..auth_prefix]);
-    w.output
-        [auth_start + auth_data::HEADER_BYTES..auth_start + auth_data::CREDENTIAL_LENGTH_OFFSET]
-        .copy_from_slice(&super::provision::AAGUID);
-    w.output[auth_start + auth_data::CREDENTIAL_LENGTH_OFFSET
-        ..auth_start + auth_data::CREDENTIAL_OFFSET]
-        .copy_from_slice(&(credential::ID_BYTES as u16).to_be_bytes());
+    attested_header(&mut w.output[auth_start..], request.id);
     let cose_at = auth_start + auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES;
-    w.output[auth_start + auth_data::CREDENTIAL_OFFSET..cose_at].copy_from_slice(request.id);
     let public_at = cose_at + cose_prefix_len;
     w.output[cose_at..public_at].copy_from_slice(&cose[..cose_prefix_len]);
     w.output[public_at..public_at + extension_len].copy_from_slice(&w.input[auth_prefix..auth_end]);

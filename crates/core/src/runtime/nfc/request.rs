@@ -138,11 +138,14 @@ impl Request {
             bytes = &bytes[count..];
         }
     }
-    /// Inline structural validation stays in the shared FrameDecoder. A staged
-    /// or discarded envelope must be exact before its recorded status is used.
-    pub fn finish(&mut self, backend: &mut impl Backend) -> Result<(), Rejection> {
+    /// Reject malformed envelopes before entering any applet's abort path.
+    /// Inline and staged requests use the same ISO layout rules as FrameDecoder;
+    /// a drained prefix rejection still requires an exact final envelope.
+    pub fn finish(&mut self, inline: &[u8], backend: &mut impl Backend) -> Result<(), Rejection> {
         let end = apdu::EXTENDED_HEADER_BYTES + self.body;
         if self.mode == Mode::Malformed
+            || (self.mode == Mode::Inline
+                && apdu::validate_envelope(inline, self.received).is_err())
             || (self.mode != Mode::Inline && self.received != end && self.received != end + 2)
         {
             if self.mode == Mode::Staged {

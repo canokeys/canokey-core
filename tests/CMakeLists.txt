@@ -147,6 +147,12 @@ if(BUILD_TESTING)
         --vectors "${CANOKEY_ROOT}/tests/fixtures/c312-hid-channels/vectors.json"
         --output "${CMAKE_CURRENT_BINARY_DIR}/c312-hid-channels-rust.json")
       set_tests_properties(c312-hid-channels-wire PROPERTIES TIMEOUT 45)
+      add_test(NAME c312-correctness-wire COMMAND "${Python3_EXECUTABLE}"
+        "${CANOKEY_ROOT}/tests/support/c312_ccid.py" --rust-only
+        --rust-runner $<TARGET_FILE:usb-sessions-image>
+        --vectors "${CANOKEY_ROOT}/tests/fixtures/c312-correctness/vectors.json"
+        --output "${CMAKE_CURRENT_BINARY_DIR}/c312-correctness-rust.json")
+      set_tests_properties(c312-correctness-wire PROPERTIES TIMEOUT 60)
       add_test(NAME c312-large-blob-usb-wire COMMAND "${Python3_EXECUTABLE}"
         "${CANOKEY_ROOT}/tests/support/c312_ccid.py" --rust-only
         --rust-runner $<TARGET_FILE:usb-sessions-image>
@@ -212,6 +218,12 @@ if(BUILD_TESTING)
               --vectors "${CANOKEY_ROOT}/tests/fixtures/c312-nfc-rejection/vectors.json"
               --output "${CMAKE_CURRENT_BINARY_DIR}/c312-nfc-rejection-rust.json")
             set_tests_properties(c312-nfc-rejection-wire PROPERTIES TIMEOUT 120)
+            add_test(NAME c312-nfc-inline-wire COMMAND "${Python3_EXECUTABLE}"
+              "${CANOKEY_ROOT}/tests/support/c312_ccid.py" --rust-only
+              --rust-runner $<TARGET_FILE:nfc-wire-image>
+              --vectors "${CANOKEY_ROOT}/tests/fixtures/c312-nfc-inline/vectors.json"
+              --output "${CMAKE_CURRENT_BINARY_DIR}/c312-nfc-inline-rust.json")
+            set_tests_properties(c312-nfc-inline-wire PROPERTIES TIMEOUT 120)
           endif()
           add_test(NAME c312-auth-response-wire COMMAND "${Python3_EXECUTABLE}"
             "${CANOKEY_ROOT}/tests/support/c312_auth_response.py"

@@ -328,6 +328,52 @@ mod registers {
         assert_eq!(io.generation(), generation);
     }
     #[test]
+    fn mismatched_wtx_echo_never_authorizes_an_apdu_reply() {
+        for computed in [false, true] {
+            for multiplier in 0..=u8::MAX {
+                if multiplier == 1 {
+                    continue; // Only the exact requested multiplier is an echo.
+                }
+                let mut io = Io::new(0);
+                let mut chip = Fake::default();
+                let mut out = [0; nfc::FRAME_LIMIT];
+                frame(&mut io, &mut chip, 0, &[nfc::PCB_I, 7, 0, 0]);
+                assert_eq!(io.take(&mut out), Some(4));
+                assert!(io.begin_execution(0));
+                let sent = u32::from(nfc::WTX_INTERVAL_MS);
+                io.tick(sent, &mut chip);
+                if computed {
+                    io.computed(sent);
+                    assert_eq!(io.complete_execution(), None);
+                }
+                frame(
+                    &mut io,
+                    &mut chip,
+                    sent + 1,
+                    &[nfc::PCB_WTX, multiplier, 0, 0],
+                );
+                if !computed {
+                    io.computed(sent + 1);
+                }
+                // Reject both legal-but-mismatched and invalid multipliers.
+                // This invariant does not choose a final WTX retry policy.
+                assert_ne!(io.complete_execution(), Some(true));
+                assert!(!io.send(
+                    &Packet::information(0, false, &[0x90, 0]).unwrap(),
+                    &mut chip
+                ));
+                assert_eq!(io.take(&mut out), None);
+                assert_eq!(
+                    chip.writes,
+                    [
+                        (nfc::FM_REG_FIFO_ACCESS, vec![nfc::PCB_WTX, 1]),
+                        (nfc::FM_REG_RF_TXEN, vec![nfc::FM_RF_TX_ENABLE])
+                    ]
+                );
+            }
+        }
+    }
+    #[test]
     fn field_reset_revokes_execution_and_queued_frames_survive_reader_retries() {
         let mut io = Io::new(0);
         let mut chip = Fake::default();

@@ -93,7 +93,7 @@ fn nfc_receive(bytes: &[u8], fido: bool) -> Vec<u8> {
                 .unwrap();
         }
     }
-    let result = request.finish(&mut stage);
+    let result = request.finish(&inline, &mut stage);
     let malformed = request.is_malformed();
     let reply = unsafe {
         core::with_core::<Fake, _>(|core, p| {

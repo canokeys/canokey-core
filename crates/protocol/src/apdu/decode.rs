@@ -115,6 +115,20 @@ pub fn parse(bytes: &[u8]) -> Result<Command<'_>, Error> {
     })
 }
 
+/// Validate ISO framing from a buffered prefix and the final transport length.
+/// `prefix` must contain at least `min(total, EXTENDED_HEADER_BYTES)` bytes;
+/// the remaining body and Le bytes need not be buffered here. Shares decoder
+/// layout rules so malformed envelopes can be rejected before applet dispatch.
+pub fn validate_envelope(prefix: &[u8], total: usize) -> Result<(), Error> {
+    if total < 4
+        || total > super::MAX_FRAME
+        || prefix.len() < total.min(super::EXTENDED_HEADER_BYTES)
+    {
+        return Err(Error::Length);
+    }
+    Layout::decode(prefix, total).map(|_| ())
+}
+
 /// Decode one APDU whose total frame length is supplied by the transport.
 /// Payload slices are borrowed only during emit; no payload is retained or reread.
 /// Emissions are provisional until finish succeeds. The consumer must discard

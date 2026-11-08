@@ -77,6 +77,7 @@ impl Link {
         self.retransmits += 1;
         Ok(Event::Send(packet))
     }
+    #[inline(never)]
     fn acknowledge(&mut self) -> Event {
         let packet = Packet::acknowledgement(self.number);
         // Rule11 retries the last transmitted block, including control ACKs.

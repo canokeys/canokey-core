@@ -211,6 +211,14 @@ chains/responses cover admission and recovery. See the
 
 ## C 3.1.2 synchronization gate
 
+`c312-nfc-inline-wire` adds 540 malformed inline NFC contracts with actual
+retained FIDO/NDEF/OpenPGP state. `c312-correctness-wire` reuses 134 historical
+USB cases with explicit current decisions for 17 unequal outputs. The original
+reports stay unchanged; these decisions preserve Rust correctness rather than
+reproducing C defects. See the fixture READMEs and the
+[decision record](../sync/c312-correctness-decisions.md). WTX and physical/source
+acceptance remain separate.
+
 The [synchronization manifest](../sync/README.md) tracks the fixed C commit
 range and independent baseline findings. Run `python3 tests/check_c312_sync.py
 --source-repository /path/to/pinned-c-core` for the release check. It currently

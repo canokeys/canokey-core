@@ -81,7 +81,7 @@ fn inline_and_staged_envelopes_survive_every_split_and_bounded_read() {
                 let mut stage = Stage::default();
                 request.append(&bytes[..split], &mut inline, &mut stage);
                 request.append(&bytes[split..], &mut inline, &mut stage);
-                assert_eq!(request.finish(&mut stage), Ok(()));
+                assert_eq!(request.finish(&inline, &mut stage), Ok(()));
                 let mut actual = Vec::new();
                 while actual.len() < bytes.len() {
                     let mut chunk = [0; 64];
@@ -110,7 +110,7 @@ fn case2e_never_stages_and_non_fido_over279_drains_without_borrowing_pke() {
         for byte in &bytes {
             request.append(&[*byte], &mut inline, &mut stage);
         }
-        assert_eq!(request.finish(&mut stage), Ok(()));
+        assert_eq!(request.finish(&inline, &mut stage), Ok(()));
         assert_eq!(stage.prepare, 0);
     }
     for body in [279, 280, 281, 282, 1024] {
@@ -123,7 +123,7 @@ fn case2e_never_stages_and_non_fido_over279_drains_without_borrowing_pke() {
         }
         assert_eq!(request.len(), bytes.len());
         assert_eq!(
-            request.finish(&mut stage),
+            request.finish(&inline, &mut stage),
             if body <= 279 {
                 Ok(())
             } else {
@@ -161,12 +161,50 @@ fn rejection_and_write_failure_drain_but_malformed_final_envelope_wins() {
             } else {
                 rejection.unwrap_or(Rejection::Status(Sw::UNABLE_TO_PROCESS))
             };
-            assert_eq!(request.finish(&mut stage), Err(expected));
+            assert_eq!(request.finish(&inline, &mut stage), Err(expected));
             assert_eq!(request.is_malformed(), trailer == 1 || trailer == 3);
             request.reset(&mut stage);
             assert!(!request.is_malformed());
             assert!(!stage.held);
             assert_eq!(stage.closes, usize::from(rejection.is_none()));
+        }
+    }
+}
+#[test]
+fn malformed_inline_envelopes_reject_before_backend_or_applet_admission() {
+    let mut cases = vec![vec![], vec![0], vec![0, 0xa4], vec![0, 0xa4, 4]];
+    for bytes in [
+        &[0, 0xd6, 0, 0, 0, 1][..],
+        &[0, 0xd6, 0, 0, 0, 0, 0, 1],
+        &[0, 0xd6, 0, 0, 2, 1],
+        &[0, 0xd6, 0, 0, 1, 1, 0, 0],
+    ] {
+        cases.push(bytes.to_vec());
+    }
+    for body in [1, 254, 255, 256, 279] {
+        let mut bytes = envelope(0, body, None);
+        bytes.push(0); // Extended Le must have two bytes.
+        cases.push(bytes);
+    }
+    for bytes in cases {
+        for split in 0..=bytes.len() {
+            let mut request = Request::new();
+            let mut inline = [0; apdu::SHORT_FRAME_BYTES];
+            let mut stage = Stage::default();
+            request.append(&bytes[..split], &mut inline, &mut stage);
+            request.append(&bytes[split..], &mut inline, &mut stage);
+            assert_eq!(
+                request.finish(&inline, &mut stage),
+                Err(Rejection::Status(Sw::WRONG_LENGTH)),
+                "frame={bytes:?} split={split}"
+            );
+            assert!(request.is_malformed());
+            assert_eq!((stage.prepare, stage.writes, stage.closes), (0, 0, 0));
+            request.reset(&mut stage);
+            // A malformed envelope must not poison the next valid Case2E.
+            request.append(&[0, 0xca, 0, 0, 0, 0, 1], &mut inline, &mut stage);
+            assert_eq!(request.finish(&inline, &mut stage), Ok(()));
+            assert!(!request.is_malformed());
         }
     }
 }
@@ -200,7 +238,7 @@ fn real_link_retransmission_never_writes_staged_payload_twice() {
         }
         number ^= 1;
     }
-    assert_eq!(request.finish(&mut stage), Ok(()));
+    assert_eq!(request.finish(&inline, &mut stage), Ok(()));
     request.reset(&mut stage);
     assert_eq!(stage.closes, 1);
 }

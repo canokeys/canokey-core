@@ -215,6 +215,7 @@ impl<R: Router> Runtime<R> {
     fn close_response(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.response.clear(&mut RoutedSource(&mut self.router, p));
     }
+    #[inline(never)]
     fn abort_input(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.frame = None;
         self.route = FrameRoute::None;

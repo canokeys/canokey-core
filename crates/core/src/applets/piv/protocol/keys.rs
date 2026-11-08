@@ -8,18 +8,24 @@ use crate::runtime::workspace::agreement_layout as agreement;
 
 // GM/T 0003.4 default SM2 user identity, used for both parties unless supplied.
 const SM2_DEFAULT_ID: &[u8; 16] = b"1234567812345678";
+// SEC1 uncompressed point: 04 followed by the two SM2 coordinates.
+const SM2_POINT_BYTES: usize = 1 + agreement::PUBLIC_BYTES;
+// Response tag and one-byte point length precede that point in the GA reply.
+const SM2_POINT_END: usize = 2 + SM2_POINT_BYTES;
 
+// The caller supplies a zeroed packet so unused identity bytes and the scalar
+// start empty. Filling it in place avoids returning a second packet aggregate.
 fn parse_sm2_packet(
     exp: &mut &[u8],
     own: Option<&[u8]>,
-) -> Result<([u8; sm2_packet::SIZE], usize), Sw> {
-    let mut packet = [0; sm2_packet::SIZE];
+    packet: &mut [u8; sm2_packet::SIZE],
+) -> Result<usize, Sw> {
     for (tag, at) in [
         (ga_tag::PEER_STATIC, sm2_packet::PEER_STATIC),
         (ga_tag::PEER_EPHEMERAL, sm2_packet::PEER_EPHEMERAL),
     ] {
         let (t, v) = codec::take(exp)?;
-        if t != tag || v.len() != 65 || v[0] != EC_POINT_UNCOMPRESSED {
+        if t != tag || v.len() != SM2_POINT_BYTES || v[0] != EC_POINT_UNCOMPRESSED {
             return Err(Sw::WRONG_DATA);
         }
         packet[at..at + 64].copy_from_slice(&v[1..]);
@@ -56,7 +62,7 @@ fn parse_sm2_packet(
     if !exp.is_empty() || klen == 0 || klen > limits::SM2_KDF_MAX_BYTES {
         return Err(Sw::WRONG_DATA);
     }
-    Ok((packet, klen))
+    Ok(klen)
 }
 
 pub(super) fn public_envelope(
@@ -320,9 +326,7 @@ impl Piv {
         w: &mut Workspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
-        p.crypto
-            .key_operation(KeyOperation::Public, alg::SM2, &mut w.key, &[], w.output)
-            .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+        sm2_key(KeyOperation::Public, w, p)?;
         if !codec::equal(
             &w.output[..64],
             &w.agreement[agreement::STATIC_PUBLIC..agreement::ID_LENGTH],
@@ -337,9 +341,7 @@ impl Piv {
                 .copy_from_slice(&w.agreement[agreement::ID..agreement::ID + n]);
         }
         w.key.bytes[..32].copy_from_slice(&packet[..32]);
-        p.crypto
-            .key_operation(KeyOperation::Public, alg::SM2, &mut w.key, &[], w.output)
-            .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+        sm2_key(KeyOperation::Public, w, p)?;
         if !codec::equal(
             &w.output[..64],
             &w.agreement[agreement::EPHEMERAL_PUBLIC..agreement::STATIC_PUBLIC],
@@ -354,20 +356,16 @@ impl Piv {
         packet: &mut [u8; sm2_packet::SIZE],
         w: &mut Workspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<[u8; 65], Sw> {
-        // parse_sm2_packet already owns the validated identity, including the
-        // default when no witness is supplied; it survives workspace reuse.
-        p.crypto
-            .key_operation(KeyOperation::Generate, alg::SM2, &mut w.key, &[], w.output)
-            .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+    ) -> Result<(), Sw> {
+        sm2_key(KeyOperation::Generate, w, p)?;
         packet[..32].copy_from_slice(&w.key.bytes[..32]);
-        p.crypto
-            .key_operation(KeyOperation::Public, alg::SM2, &mut w.key, &[], w.output)
-            .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-        let mut ephemeral = [0; 65];
-        ephemeral[0] = EC_POINT_UNCOMPRESSED;
-        ephemeral[1..].copy_from_slice(&w.output[..64]);
-        Ok(ephemeral)
+        sm2_key(KeyOperation::Public, w, p)?;
+        // The peer template and IDs now belong to packet; GA no longer reads
+        // w.input. Preserve any other slot's initiator state in w.agreement.
+        // finish_classic wipes this public-point scratch on either outcome.
+        w.input[0] = EC_POINT_UNCOMPRESSED;
+        w.input[1..SM2_POINT_BYTES].copy_from_slice(&w.output[..agreement::PUBLIC_BYTES]);
+        Ok(())
     }
 
     #[inline(never)]
@@ -410,12 +408,12 @@ impl Piv {
             if exp.first() == Some(&EC_POINT_UNCOMPRESSED) {
                 return Err(Sw::WRONG_DATA);
             }
-            let (mut packet, klen) = parse_sm2_packet(&mut exp, own)?;
+            let mut packet = [0; sm2_packet::SIZE];
+            let klen = parse_sm2_packet(&mut exp, own, &mut packet)?;
             // Same-slot retained state means initiator step 2; otherwise this
             // is the responder path. Step 2 must reuse its original own ID,
             // so a new witness/identity field is forbidden.
             let step2 = self.agreement == Some(id);
-            let mut ephemeral = [0; 65];
             if step2 && own.is_some() {
                 return Err(Sw::WRONG_DATA);
             }
@@ -424,7 +422,7 @@ impl Piv {
             if step2 {
                 self.sm2_step2(&mut packet, w, p)?;
             } else {
-                ephemeral = Self::sm2_responder(&mut packet, w, p)?;
+                Self::sm2_responder(&mut packet, w, p)?;
             }
             repo::load(id, m, &mut w.key.bytes, p)?;
             packet[sm2_packet::ROLE] = u8::from(!step2);
@@ -449,13 +447,12 @@ impl Piv {
             }
             let mut h = [0; 4];
             let hl = codec::header(&mut h, &[ga_tag::EXPONENTIATION], n)?;
-            w.output.copy_within(0..n, 67 + hl);
-            // Responder reply carries a 65-byte SEC1 ephemeral point in 82,
-            // followed by the derived key in 85; 7C wraps both fields.
-            w.output[..2].copy_from_slice(&[ga_tag::RESPONSE, 0x41]);
-            w.output[2..67].copy_from_slice(&ephemeral);
-            w.output[67..67 + hl].copy_from_slice(&h[..hl]);
-            self.memory(67 + hl + n);
+            w.output.copy_within(0..n, SM2_POINT_END + hl);
+            // 82 carries the ephemeral point, 85 the derived key; 7C wraps both.
+            w.output[..2].copy_from_slice(&[ga_tag::RESPONSE, SM2_POINT_BYTES as u8]);
+            w.output[2..SM2_POINT_END].copy_from_slice(&w.input[..SM2_POINT_BYTES]);
+            w.output[SM2_POINT_END..SM2_POINT_END + hl].copy_from_slice(&h[..hl]);
+            self.memory(SM2_POINT_END + hl + n);
             self.header_len = codec::header(&mut self.header, &[ga_tag::TEMPLATE], self.body_len)?;
             Ok((self.header_len + self.body_len) as u32)
         })();
@@ -475,19 +472,13 @@ impl Piv {
         if self.agreement.is_some() {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
         }
-        p.crypto
-            .key_operation(KeyOperation::Public, alg::SM2, &mut w.key, &[], w.output)
-            .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+        sm2_key(KeyOperation::Public, w, p)?;
         w.agreement[agreement::STATIC_PUBLIC..agreement::ID_LENGTH]
             .copy_from_slice(&w.output[..64]);
-        p.crypto
-            .key_operation(KeyOperation::Generate, alg::SM2, &mut w.key, &[], w.output)
-            .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+        sm2_key(KeyOperation::Generate, w, p)?;
         w.agreement[agreement::SCALAR..agreement::EPHEMERAL_PUBLIC]
             .copy_from_slice(&w.key.bytes[..32]);
-        p.crypto
-            .key_operation(KeyOperation::Public, alg::SM2, &mut w.key, &[], w.output)
-            .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+        sm2_key(KeyOperation::Public, w, p)?;
         w.agreement[agreement::EPHEMERAL_PUBLIC..agreement::STATIC_PUBLIC]
             .copy_from_slice(&w.output[..64]);
         w.agreement[agreement::ID_LENGTH] = own.map_or(0, |v| v.len() as u8);
@@ -497,6 +488,21 @@ impl Piv {
         w.output.copy_within(0..64, 1);
         w.output[0] = EC_POINT_UNCOMPRESSED;
         self.agreement = Some(id);
-        self.wrapped(65)
+        self.wrapped(SM2_POINT_BYTES)
     }
+}
+
+/// SM2 public/generate primitive on the loaded workspace key; the output
+/// stays in `w.output` and any failure maps to the shared 6F00 status.
+// Keep the native adapter out of line across the seven agreement call sites.
+#[inline(never)]
+fn sm2_key(
+    op: KeyOperation,
+    w: &mut Workspace,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Sw> {
+    p.crypto
+        .key_operation(op, alg::SM2, &mut w.key, &[], w.output)
+        .map(|_| ())
+        .map_err(|_| Sw::UNABLE_TO_PROCESS)
 }

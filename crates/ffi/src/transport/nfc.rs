@@ -189,7 +189,10 @@ unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outco
     }
     unsafe {
         crate::composition::core::with_core::<P, _>(|core, p| {
-            let result = request.finish(&mut Stager::<P>(core::marker::PhantomData));
+            let result = request.finish(
+                core::slice::from_raw_parts(buffer, apdu::SHORT_FRAME_BYTES),
+                &mut Stager::<P>(core::marker::PhantomData),
+            );
             let (reply, info) = match result {
                 Ok(()) => {
                     let total = request.len();

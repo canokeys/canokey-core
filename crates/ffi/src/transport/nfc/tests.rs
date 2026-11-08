@@ -65,7 +65,10 @@ pub(super) fn stage_close() {
 }
 pub(super) unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outcome {
     let mut backend = Stager::<P>(core::marker::PhantomData);
-    let result = request.finish(&mut backend);
+    let result = request.finish(
+        unsafe { core::slice::from_raw_parts(buffer, apdu::SHORT_FRAME_BYTES) },
+        &mut backend,
+    );
     let mut input = std::vec![0; request.len()];
     if result.is_ok() {
         assert!(request.read(

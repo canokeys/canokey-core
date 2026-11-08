@@ -85,6 +85,7 @@ fn classify_error(cid: u32, command: u8, executing: Option<u32>) -> Error {
 pub unsafe extern "C" fn ck_hid_active() -> u8 {
     unsafe { u8::from(LINK.active) }
 }
+#[inline(never)]
 pub unsafe extern "C" fn ck_hid_busy() -> u8 {
     unsafe { u8::from(LINK.active || LINK.retained || LINK.transmitting) }
 }

@@ -69,7 +69,10 @@
     "T25",
     "T26",
     "T27",
-    "T28"
+    "T28",
+    "C1-RETRIES",
+    "CID1",
+    "T29"
   ],
   "behaviors": [
     {
@@ -149,7 +152,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9f6631f076580981192f9f9a4ff060b35dda934fd0cf28c640db90146b0777b6"
+          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
         }
       ],
       "regressions": [
@@ -260,11 +263,11 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
-          "sha256": "e1e17addab179b3859a7c2b97bad2e0b07052b23c6b04f3caa502ce0459c27f0"
+          "sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5"
         },
         {
           "path": "crates/core/src/runtime/webusb.rs",
@@ -272,7 +275,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9f6631f076580981192f9f9a4ff060b35dda934fd0cf28c640db90146b0777b6"
+          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
         },
         {
           "path": "crates/host/src/pcsc.rs",
@@ -287,7 +290,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions/envelopes.rs",
-          "sha256": "6da45d5c69d99d9b6d994f8dba5c4d5e476e304c5e422982e85badde5f0232cf",
+          "sha256": "a12a5927f8bc289e33bc275e05b72306dbc3dd9689c899090fe689c0b6de9b61",
           "id": "logical_capacity_1023_1024_1025_1295_1296_1297_actual_transports"
         },
         {
@@ -435,7 +438,7 @@
       "targets": [
         {
           "path": "crates/protocol/src/apdu.rs",
-          "sha256": "b8777d48651c8147daa10acced81489a51870509290d2defe8c6dfbeb0429467"
+          "sha256": "c39cbd3ffc87645b5c12400bb8a83611e80d24a026192b1bc1191e168e553864"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -443,7 +446,7 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/host/src/pcsc.rs",
@@ -509,7 +512,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -560,7 +563,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -667,30 +670,30 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/nfc.rs",
-          "sha256": "9b5dadd6c959d6fc56b342c483e8e4486160bc0e83ad66d97c8a8d01f5074f25"
+          "sha256": "d9438cd842846deca822d88df8df3782f3176f7fc065c74d06ebd0a8851b8fa2"
         },
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
-          "sha256": "e1e17addab179b3859a7c2b97bad2e0b07052b23c6b04f3caa502ce0459c27f0"
+          "sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9f6631f076580981192f9f9a4ff060b35dda934fd0cf28c640db90146b0777b6"
+          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/nfc_request.rs",
-          "sha256": "296225e464b598fbede42e67a407e018cba67feafd424f60909041b3a64b433b",
+          "sha256": "2ca1b4760dc33a34bba75e657505803590e75afd47cf04dfee8cac99ece26e47",
           "id": "real_link_retransmission_never_writes_staged_payload_twice"
         },
         {
           "path": "tests/card/src/bin/usb_sessions/envelopes.rs",
-          "sha256": "6da45d5c69d99d9b6d994f8dba5c4d5e476e304c5e422982e85badde5f0232cf",
+          "sha256": "a12a5927f8bc289e33bc275e05b72306dbc3dd9689c899090fe689c0b6de9b61",
           "id": "actual_nfc_applet_transport"
         },
         {
@@ -747,11 +750,11 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
-          "sha256": "e1e17addab179b3859a7c2b97bad2e0b07052b23c6b04f3caa502ce0459c27f0"
+          "sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/applets/ndef.rs",
@@ -765,12 +768,12 @@
       "regressions": [
         {
           "path": "crates/core/tests/nfc_request.rs",
-          "sha256": "296225e464b598fbede42e67a407e018cba67feafd424f60909041b3a64b433b",
+          "sha256": "2ca1b4760dc33a34bba75e657505803590e75afd47cf04dfee8cac99ece26e47",
           "id": "case2e_never_stages_and_non_fido_over279_drains_without_borrowing_pke"
         },
         {
           "path": "tests/card/src/bin/usb_sessions/envelopes.rs",
-          "sha256": "6da45d5c69d99d9b6d994f8dba5c4d5e476e304c5e422982e85badde5f0232cf",
+          "sha256": "a12a5927f8bc289e33bc275e05b72306dbc3dd9689c899090fe689c0b6de9b61",
           "id": "actual_nfc_applet_transport"
         },
         {
@@ -878,21 +881,21 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
-          "sha256": "e1e17addab179b3859a7c2b97bad2e0b07052b23c6b04f3caa502ce0459c27f0"
+          "sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9f6631f076580981192f9f9a4ff060b35dda934fd0cf28c640db90146b0777b6"
+          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
         }
       ],
       "regressions": [
         {
           "path": "crates/ffi/src/transport/nfc/tests.rs",
-          "sha256": "ed40db6747e88f4fe67b7d8875f3ddb927b8cd0daee526c02c5f088442381d3c",
+          "sha256": "efdf082321775b32b58e66642908781ea8bdf9f591427004f2d5841a31d5b7d2",
           "id": "nfc_link_chaining_wtx_reset_and_fido_aggregation"
         },
         {
@@ -930,7 +933,7 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
@@ -944,7 +947,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions/envelopes.rs",
-          "sha256": "6da45d5c69d99d9b6d994f8dba5c4d5e476e304c5e422982e85badde5f0232cf",
+          "sha256": "a12a5927f8bc289e33bc275e05b72306dbc3dd9689c899090fe689c0b6de9b61",
           "id": "actual-WebUSB-288-289-and-applet-cases"
         },
         {
@@ -1112,7 +1115,7 @@
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "8abfe5093ca1ab9f3ec40ccf26fc9b779ce5c7c162acc5a0b8fc04dfa11f60ab"
+          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
         }
       ],
       "regressions": [
@@ -1152,7 +1155,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -1212,11 +1215,11 @@
       "targets": [
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "8abfe5093ca1ab9f3ec40ccf26fc9b779ce5c7c162acc5a0b8fc04dfa11f60ab"
+          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -1288,7 +1291,7 @@
         }
       ],
       "remaining": [
-        "Recorded same/other-CID controls retain exact output and foreign MSG is refused without advancing it. CID1/E43 remains unresolved relative to C; broader channel/withheld-IN/endpoint/IRQ and physical USB schedules remain open."
+        "Recorded same/other-CID controls retain exact output and foreign MSG is refused without advancing it. CID1/E43 is an intentional isolation difference; broader channel/withheld-IN/endpoint/IRQ and physical USB schedules remain open."
       ]
     },
     {
@@ -1298,11 +1301,11 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/nfc.rs",
-          "sha256": "9b5dadd6c959d6fc56b342c483e8e4486160bc0e83ad66d97c8a8d01f5074f25"
+          "sha256": "d9438cd842846deca822d88df8df3782f3176f7fc065c74d06ebd0a8851b8fa2"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9f6631f076580981192f9f9a4ff060b35dda934fd0cf28c640db90146b0777b6"
+          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
         }
       ],
       "regressions": [
@@ -1481,7 +1484,7 @@
         },
         {
           "path": "crates/protocol/src/apdu/decode.rs",
-          "sha256": "1d8a601a5729bc53b9e9e7502df49b73b84200dfa97a8fa8126ec927b1cef2b8"
+          "sha256": "8e28cadac97229769328fcc34e0b936a0dc32536dcb3b8e06e28b96315b83c6f"
         },
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
@@ -1613,7 +1616,7 @@
         }
       ],
       "remaining": [
-        "WINK payloads, disabled dispatch and recorded CID schedules are now covered. CID1/E43 remains unresolved relative to C; withheld-IN/endpoint/IRQ and physical USB acceptance remain open."
+        "WINK payloads, disabled dispatch and recorded CID schedules are now covered. CID1/E43 is an intentional isolation difference; withheld-IN/endpoint/IRQ and physical USB acceptance remain open."
       ]
     },
     {
@@ -1751,7 +1754,7 @@
       "targets": [
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "8abfe5093ca1ab9f3ec40ccf26fc9b779ce5c7c162acc5a0b8fc04dfa11f60ab"
+          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
         },
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
@@ -1801,7 +1804,7 @@
       "targets": [
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "8abfe5093ca1ab9f3ec40ccf26fc9b779ce5c7c162acc5a0b8fc04dfa11f60ab"
+          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
         },
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
@@ -1950,7 +1953,7 @@
     {
       "id": "U3",
       "behavior": "Rust endpoint GET_STATUS validates exact fields while pinned C accepts malformed requests; retain Rust rejection.",
-      "disposition": "implemented",
+      "disposition": "intentional difference",
       "targets": [
         {
           "path": "crates/core/src/runtime/usb/mod.rs",
@@ -1969,8 +1972,13 @@
         },
         {
           "path": "tests/support/c312_ccid.py",
-          "sha256": "e0016f69c25b588c6e0f5a23121d725e8727db237f6ffba6d05d1cd6a807ee47",
+          "sha256": "a8c93fd0a78b43d63f27cb2e6b9fd4ea9e9acba0573a5b75379f073f3d26158e",
           "id": "explicit-unresolved-expected_c-without-response-normalization"
+        },
+        {
+          "path": "tests/fixtures/c312-correctness/vectors.json",
+          "sha256": "988a824de99b40cc959d140fdcbbb6e510e76259d5d5ba623b1336dbac35410f",
+          "id": "c312-correctness-wire"
         }
       ],
       "evidence": [
@@ -1985,16 +1993,26 @@
           "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "91 explicitly reviewed source units in13 parent/file diffs, including merge duplicates; acceptance remains separately scoped."
+        },
+        {
+          "path": "docs/sync/c312-correctness-decisions.md",
+          "sha256": "d43f9badfb9530559aa254dd9667a3d097425b1a140f05a09446164efe86283d",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "Current correctness decisions; no source-hunk or physical acceptance is inferred."
+        },
+        {
+          "path": "tests/fixtures/c312-correctness/report.json",
+          "sha256": "179ecd518c264f6a8c8fb42c62d94ca8e3ec2cb497dfe3283fa389498c287754",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "Fresh paired134-case execution:117 equal,17 intentional unequal outputs. All output arrays match original reports unchanged."
         }
       ],
-      "remaining": [
-        "Unresolved U3/E47 release disposition: five literal cases have different C/Rust output; not approved parity."
-      ]
+      "remaining": []
     },
     {
       "id": "U4",
       "behavior": "Independent Rust control storage answers descriptors while a FIDO response remains retained; preserve the exact next source byte.",
-      "disposition": "implemented",
+      "disposition": "intentional difference",
       "targets": [
         {
           "path": "crates/core/src/runtime/usb/descriptors.rs",
@@ -2014,6 +2032,11 @@
           "path": "tests/fixtures/c312-usb-control/vectors.json",
           "sha256": "8c687c2ba3dabe830b16736ae0d23d1c810c5efa323a7b272dd528b8c71c9082",
           "id": "E48-pending-manufacturer-configuration-stall-versus-success"
+        },
+        {
+          "path": "tests/fixtures/c312-correctness/vectors.json",
+          "sha256": "988a824de99b40cc959d140fdcbbb6e510e76259d5d5ba623b1336dbac35410f",
+          "id": "c312-correctness-wire"
         }
       ],
       "evidence": [
@@ -2028,10 +2051,21 @@
           "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "91 explicitly reviewed source units in13 parent/file diffs, including merge duplicates; acceptance remains separately scoped."
+        },
+        {
+          "path": "docs/sync/c312-correctness-decisions.md",
+          "sha256": "d43f9badfb9530559aa254dd9667a3d097425b1a140f05a09446164efe86283d",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "Current correctness decisions; no source-hunk or physical acceptance is inferred."
+        },
+        {
+          "path": "tests/fixtures/c312-correctness/report.json",
+          "sha256": "179ecd518c264f6a8c8fb42c62d94ca8e3ec2cb497dfe3283fa389498c287754",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "Fresh paired134-case execution:117 equal,17 intentional unequal outputs. All output arrays match original reports unchanged."
         }
       ],
       "remaining": [
-        "Unresolved U4/E48 release disposition: C stalls dynamic descriptor acquisition but Rust replies. Two cases preserve both outputs, not parity.",
         "Broader descriptor/control abort and lifecycle schedules remain open."
       ]
     },
@@ -2095,7 +2129,7 @@
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "8abfe5093ca1ab9f3ec40ccf26fc9b779ce5c7c162acc5a0b8fc04dfa11f60ab"
+          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
         },
         {
           "path": "crates/ffi/src/composition.rs",
@@ -2115,7 +2149,7 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -2296,7 +2330,7 @@
     {
       "id": "L8",
       "behavior": "Rust returns the new native VERSION result or invalid-C0 error instead of C retained-generator bytes; preserve response isolation and literal per-implementation expectations.",
-      "disposition": "implemented",
+      "disposition": "intentional difference",
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/message.rs",
@@ -2313,6 +2347,11 @@
           "path": "tests/fixtures/c312-hid-ownership/vectors.json",
           "sha256": "b5561d90de7116bb5b3f6c664a9a56efa8426aeaea867d8755f3ede0adc1ab91",
           "id": "E35-native-new-response-isolation"
+        },
+        {
+          "path": "tests/fixtures/c312-correctness/vectors.json",
+          "sha256": "988a824de99b40cc959d140fdcbbb6e510e76259d5d5ba623b1336dbac35410f",
+          "id": "c312-correctness-wire"
         }
       ],
       "evidence": [
@@ -2333,11 +2372,21 @@
           "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+        },
+        {
+          "path": "docs/sync/c312-correctness-decisions.md",
+          "sha256": "d43f9badfb9530559aa254dd9667a3d097425b1a140f05a09446164efe86283d",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "Current correctness decisions; no source-hunk or physical acceptance is inferred."
+        },
+        {
+          "path": "tests/fixtures/c312-correctness/report.json",
+          "sha256": "179ecd518c264f6a8c8fb42c62d94ca8e3ec2cb497dfe3283fa389498c287754",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "Fresh paired134-case execution:117 equal,17 intentional unequal outputs. All output arrays match original reports unchanged."
         }
       ],
-      "remaining": [
-        "Unresolved L8/E35/E53 release disposition: C retained output overrides new response/errors; five literal cases have differing output. Not approved parity."
-      ]
+      "remaining": []
     },
     {
       "id": "L1",
@@ -2346,7 +2395,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -2354,7 +2403,7 @@
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "8abfe5093ca1ab9f3ec40ccf26fc9b779ce5c7c162acc5a0b8fc04dfa11f60ab"
+          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
@@ -2404,7 +2453,7 @@
       ],
       "remaining": [
         "Complete remaining takeover/IRQ/endpoint-failure schedules and physical/CIU acceptance.",
-        "L8/CID1 differences remain unresolved; no stale-response or cross-CID disclosure parity is inferred."
+        "L8/CID1 intentionally preserve Rust response isolation; remaining physical/source acceptance is separate."
       ]
     },
     {
@@ -2418,7 +2467,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/authentication.rs",
-          "sha256": "94ea92417a65458db231df429faa9fdf9aee9f44c1e75094a40226bdd72b6610"
+          "sha256": "7f2b625f003f6443c7fce12c392d63932423d1d4a3b6d7074f742208cfbacce6"
         }
       ],
       "regressions": [
@@ -2478,11 +2527,11 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9f6631f076580981192f9f9a4ff060b35dda934fd0cf28c640db90146b0777b6"
+          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
         }
       ],
       "regressions": [
@@ -3019,7 +3068,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -3043,7 +3092,7 @@
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "8abfe5093ca1ab9f3ec40ccf26fc9b779ce5c7c162acc5a0b8fc04dfa11f60ab"
+          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
@@ -3103,17 +3152,17 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/nfc.rs",
-          "sha256": "9b5dadd6c959d6fc56b342c483e8e4486160bc0e83ad66d97c8a8d01f5074f25"
+          "sha256": "d9438cd842846deca822d88df8df3782f3176f7fc065c74d06ebd0a8851b8fa2"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9f6631f076580981192f9f9a4ff060b35dda934fd0cf28c640db90146b0777b6"
+          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/nfc.rs",
-          "sha256": "be25b340bd2e325d156e0ec63175be496306cf163405152a1e559b04fbc5f278",
+          "sha256": "31d12f1a5fab72e0683b0497884f0bc9d324754811747a9791ef724c0c4418b4",
           "id": "control_ack_cache_and_unsolicited_ack_preserve_input"
         },
         {
@@ -3168,7 +3217,7 @@
       "regressions": [
         {
           "path": "crates/core/tests/nfc.rs",
-          "sha256": "be25b340bd2e325d156e0ec63175be496306cf163405152a1e559b04fbc5f278",
+          "sha256": "31d12f1a5fab72e0683b0497884f0bc9d324754811747a9791ef724c0c4418b4",
           "id": "coalesced_halt_activation_uses_live_state_and_preserves_new_rx;rf_status_failure_and_irq_errors_do_not_publish_coalesced_rx;silence_masks_active_high_irqs_and_drains_latched_activation"
         },
         {
@@ -3206,13 +3255,13 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9f6631f076580981192f9f9a4ff060b35dda934fd0cf28c640db90146b0777b6"
+          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/nfc.rs",
-          "sha256": "be25b340bd2e325d156e0ec63175be496306cf163405152a1e559b04fbc5f278",
+          "sha256": "31d12f1a5fab72e0683b0497884f0bc9d324754811747a9791ef724c0c4418b4",
           "id": "pending_mailbox_drains_later_frames_without_decoding_or_replacing_input;ignored_ack_releases_turn_without_revoking_selection_or_starting_recovery"
         },
         {
@@ -3256,13 +3305,13 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9f6631f076580981192f9f9a4ff060b35dda934fd0cf28c640db90146b0777b6"
+          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/nfc.rs",
-          "sha256": "be25b340bd2e325d156e0ec63175be496306cf163405152a1e559b04fbc5f278",
+          "sha256": "31d12f1a5fab72e0683b0497884f0bc9d324754811747a9791ef724c0c4418b4",
           "id": "execution_drains_early_frames_but_accepts_deselect_after_wtx_returns_the_turn"
         },
         {
@@ -3274,6 +3323,11 @@
           "path": "tests/card/src/bin/usb_sessions/nfc_source.rs",
           "sha256": "e01a8616a1f3bbac0967a78794ef8d77f78d0b1571f712a0b1f7fce47c2eb1ae",
           "id": "deselect-after-real-WTX-turn"
+        },
+        {
+          "path": "crates/core/tests/nfc.rs",
+          "sha256": "31d12f1a5fab72e0683b0497884f0bc9d324754811747a9791ef724c0c4418b4",
+          "id": "mismatched_wtx_echo_never_authorizes_an_apdu_reply"
         }
       ],
       "evidence": [
@@ -3303,7 +3357,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         }
       ],
       "regressions": [
@@ -3380,7 +3434,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -3437,7 +3491,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -3476,7 +3530,7 @@
       "remaining": [
         "Further pending CTAP/configuration transitions, inline-size/header/body mutations and complete volatile native-HID equivalence remain open.",
         "Physical USB/RF/WTX, total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open.",
-        "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 and the17 prior unequal literal cases remain unresolved."
+        "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 and the17 prior unequal literal cases are intentional correctness differences."
       ]
     },
     {
@@ -3486,7 +3540,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         }
       ],
       "regressions": [
@@ -3512,7 +3566,7 @@
       ],
       "remaining": [
         "Malformed/rejected staged NFC retention, full parameter/header/body mutations, pending configuration and volatile native-HID transitions still require review.",
-        "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 and17 previous unequal literal cases remain unresolved.",
+        "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 remain open; the17 previous unequal literal cases are intentional correctness differences.",
         "Physical USB/RF/WTX, CIU total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open."
       ]
     },
@@ -3523,7 +3577,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -3531,11 +3585,11 @@
         },
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
-          "sha256": "e1e17addab179b3859a7c2b97bad2e0b07052b23c6b04f3caa502ce0459c27f0"
+          "sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9f6631f076580981192f9f9a4ff060b35dda934fd0cf28c640db90146b0777b6"
+          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
         }
       ],
       "regressions": [
@@ -3560,10 +3614,122 @@
         }
       ],
       "remaining": [
-        "Inline malformed NFC envelopes still reach FrameDecoder cleanup and require a separate probe/review. This checkpoint covers large Request discard/malformed paths only; no claim of complete malformed-NFC alignment.",
         "Other response-source classes, full parameter/header/body mutations, pending configuration and volatile native-HID transitions still require review.",
-        "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 and17 previous unequal literal cases remain unresolved.",
+        "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 remain open; the17 previous unequal literal cases are intentional correctness differences.",
         "Physical USB/RF/WTX, CIU total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open."
+      ]
+    },
+    {
+      "id": "C1-RETRIES",
+      "behavior": "A fresh no-PIN authenticator returns eight retries, never a missing-attribute filesystem error as a negative counter.",
+      "disposition": "intentional difference",
+      "targets": [
+        {
+          "path": "crates/core/src/applets/ctap/pin.rs",
+          "sha256": "3e3f98b70cbd93329eaaa3c18ceb6316397904be20b949127d3f8cf7843a8492"
+        }
+      ],
+      "regressions": [
+        {
+          "path": "tests/fixtures/c312-correctness/vectors.json",
+          "sha256": "988a824de99b40cc959d140fdcbbb6e510e76259d5d5ba623b1336dbac35410f",
+          "id": "c312-correctness-wire"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/sync/c312-correctness-decisions.md",
+          "sha256": "d43f9badfb9530559aa254dd9667a3d097425b1a140f05a09446164efe86283d",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "Independent retry-counter/channel-isolation decisions; historical outputs remain literal."
+        },
+        {
+          "path": "tests/fixtures/c312-correctness/report.json",
+          "sha256": "179ecd518c264f6a8c8fb42c62d94ca8e3ec2cb497dfe3283fa389498c287754",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "Paired pinned C/current Rust; output bytes unchanged from historical reports."
+        }
+      ],
+      "remaining": []
+    },
+    {
+      "id": "CID1",
+      "behavior": "Native HID continuations remain bound to the producing CID; foreign GET RESPONSE returns busy without reading or advancing the source.",
+      "disposition": "intentional difference",
+      "targets": [
+        {
+          "path": "crates/core/src/runtime/ctaphid.rs",
+          "sha256": "d9421a46ebf27a6e3203cbae1adaff1bd47b3a2382e88fd1862ba9d489763f2e"
+        }
+      ],
+      "regressions": [
+        {
+          "path": "tests/fixtures/c312-correctness/vectors.json",
+          "sha256": "988a824de99b40cc959d140fdcbbb6e510e76259d5d5ba623b1336dbac35410f",
+          "id": "c312-correctness-wire"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/sync/c312-correctness-decisions.md",
+          "sha256": "d43f9badfb9530559aa254dd9667a3d097425b1a140f05a09446164efe86283d",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "Independent retry-counter/channel-isolation decisions; historical outputs remain literal."
+        },
+        {
+          "path": "tests/fixtures/c312-correctness/report.json",
+          "sha256": "179ecd518c264f6a8c8fb42c62d94ca8e3ec2cb497dfe3283fa389498c287754",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "Paired pinned C/current Rust; output bytes unchanged from historical reports."
+        }
+      ],
+      "remaining": []
+    },
+    {
+      "id": "T29",
+      "behavior": "Reject malformed inline NFC envelopes before applet routing: close FIDO input/output, retain unrelated NDEF/OpenPGP cursors and grants, and preserve valid Case2E/3E/4E admission.",
+      "disposition": "implemented",
+      "targets": [
+        {
+          "path": "crates/protocol/src/apdu/decode.rs",
+          "sha256": "8e28cadac97229769328fcc34e0b936a0dc32536dcb3b8e06e28b96315b83c6f"
+        },
+        {
+          "path": "crates/core/src/runtime/nfc/request.rs",
+          "sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5"
+        },
+        {
+          "path": "crates/ffi/src/transport/nfc.rs",
+          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
+        }
+      ],
+      "regressions": [
+        {
+          "path": "crates/core/tests/nfc_request.rs",
+          "sha256": "2ca1b4760dc33a34bba75e657505803590e75afd47cf04dfee8cac99ece26e47",
+          "id": "malformed_inline_envelopes_reject_before_backend_or_applet_admission"
+        },
+        {
+          "path": "tests/fixtures/c312-nfc-inline/vectors.json",
+          "sha256": "00d977d4eea05bac15fd7a68949a574f409f4b245d29ca61b580276589d1d5d3",
+          "id": "c312-nfc-inline-wire"
+        },
+        {
+          "path": "tests/support/c312_nfc_inline_vectors.py",
+          "sha256": "9cafde55419da219c11a9484df0cbe5fedf43e98a6ca3b93a1dafb5f33c3d28c",
+          "id": "independent-inline-envelope-contracts"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "tests/fixtures/c312-nfc-inline/report.json",
+          "sha256": "e302385ea1cb602fcd85f4db66a58f5945d5ea9ed8e15530606b84f683c7f9fe",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "540 literal paired NFC cases: pinned C540, repaired Rust540 with identical outputs. Five real retained contexts, malformed boundaries and70 RF split/retry schedules. Physical/WTX/resource acceptance remains open."
+        }
+      ],
+      "remaining": [
+        "Other response-source classes, configuration/native-HID transitions, arbitrary cancellation/IRQ and physical RF/WTX/resource acceptance remain open."
       ]
     }
   ],
@@ -9241,10 +9407,6 @@
     "Complete uncovered E01-E55 transport/fault/ownership schedules against pinned C and Rust; current literal cases establish partial row coverage only.",
     "Physical USB/RF/WTX and CIU call-path stack/PKE acceptance is open.",
     "Linux ASan/LeakSanitizer acceptance is open; local Docker daemon is unavailable.",
-    "Unresolved L8/E35/E53: native MSG VERSION or invalid C0 P1/P2/body/CLA while GetInfo is pending emits stale C output instead of the new Rust response/error. See tests/fixtures/c312-hid-ownership/report.json and tests/fixtures/c312-usb-readiness/report.json; do not mark parity or choose a disposition without review.",
-    "Unresolved C1-RETRIES/E39: fresh C no-PIN getPinRetries encodes-61 while Rust returns8. Preserve Rust correctness and literal outputs; no completed disposition without review.",
-    "Unresolved CID1/E43: C discloses a retained source across HID channels. Rust isolation fix has four literal cases; preserve correctness and do not count it as parity or approved disposition.",
-    "Unresolved U3/E47 and U4/E48: malformed GET_STATUS and pending-source descriptor differences retain raw C/Rust outputs; no approved parity disposition.",
     "Unresolved E63: after-WTX wrong multiplier/ACK/NAK/deselect differ from pinned C permissive continuation; no parity or intentional-difference disposition is approved."
   ]
 }
