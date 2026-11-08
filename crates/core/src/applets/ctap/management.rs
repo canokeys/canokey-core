@@ -9,6 +9,7 @@ use crate::{
     ports::{KeyOperation, Platform, Record},
     runtime::workspace::Workspace,
 };
+use canokey_ctap::resident::{rp, scan};
 use canokey_ports::{Crypto as _, Memory as _};
 use canokey_protocol::cbor::Encoder;
 #[cfg(test)]
@@ -19,7 +20,7 @@ pub(super) use parser::{Parsed, Parser};
 const PUBLIC_KEY_OFFSET: usize = crate::ports::key_layout::P;
 use super::wire::management as cm;
 const CREDENTIAL_MANAGEMENT_PERMISSION: u8 = super::wire::pin_protocol::PERMISSION_CREDENTIALS;
-const VISITED_BYTES: usize = (Record::CTAP_CREDENTIALS as usize).div_ceil(8);
+const VISITED_BYTES: usize = rp::bitmap_bytes(Record::CTAP_CREDENTIALS);
 const LARGE_BLOB_KEY_OFFSET: usize = 320;
 const LARGE_BLOB_KEY_END: usize = LARGE_BLOB_KEY_OFFSET + 32;
 
@@ -222,9 +223,26 @@ fn credential_count(
         }))
     })
 }
-/// Build a representative-slot bitmap using bounded batches of complete hashes.
-/// Hashes borrow the existing key workspace only during RP_BEGIN. No Flash index
-/// or hash-sized persistent cursor is needed; each batch scans remaining slots.
+// The read-only group cache belongs to one synchronous collection pass. It is
+// reset before each batch and dropped before key derivation or response work.
+struct RpReader<'a, 'p, B: crate::ports::Backends> {
+    scan: resident::Scan,
+    buffer: &'a mut [u8],
+    platform: &'a mut Platform<'p, B>,
+}
+impl<B: crate::ports::Backends> rp::Reader for RpReader<'_, '_, B> {
+    type Error = Status;
+    fn begin_pass(&mut self) {
+        self.scan = resident::Scan::new();
+    }
+    fn read(&mut self, index: u8) -> Result<Option<&[u8; resident::RP_HASH_BYTES]>, Status> {
+        Ok(self
+            .scan
+            .read(index, self.buffer, self.platform)?
+            .map(|(_, entry)| entry.rp_hash))
+    }
+}
+/// Hash batches borrow the existing key workspace only during RP_BEGIN.
 #[inline(never)]
 fn collect_rps(
     cursor: &mut Cursor,
@@ -232,55 +250,31 @@ fn collect_rps(
     hashes: &mut [u8; crate::ports::key_layout::SIZE],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<u8, Status> {
-    const HASH_BYTES: usize = 32;
-    let (hashes, _) = hashes.as_chunks_mut::<HASH_BYTES>();
-    let mut visited = [0u8; VISITED_BYTES];
-    let mut total = 0u32;
-    loop {
-        let mut count = 0;
-        let mut pending = false;
-        let mut scan = resident::Scan::new();
-        for index in 0..Record::CTAP_CREDENTIALS {
-            let byte = usize::from(index / 8);
-            let bit = 1 << (index % 8);
-            if visited[byte] & bit != 0 {
-                continue;
-            }
-            let Some((_, entry)) = scan.read(index, buffer, p)? else {
-                visited[byte] |= bit;
-                continue;
-            };
-            if !hashes[..count].contains(entry.rp_hash) {
-                if count == hashes.len() {
-                    pending = true;
-                    continue;
-                }
-                hashes[count] = *entry.rp_hash;
-                count += 1;
-                total += 1;
-                cursor.representatives[byte] |= bit;
-            }
-            visited[byte] |= bit;
-        }
-        if !pending {
-            return Ok(total as u8);
-        }
-    }
+    let (hashes, _) = hashes.as_chunks_mut::<{ resident::RP_HASH_BYTES }>();
+    let mut visited = [0x00; VISITED_BYTES];
+    rp::collect(
+        Record::CTAP_CREDENTIALS,
+        &mut visited,
+        &mut cursor.representatives,
+        hashes,
+        &mut RpReader {
+            scan: resident::Scan::new(),
+            buffer,
+            platform: p,
+        },
+    )
 }
 fn next_rp(
     cursor: &mut Cursor,
     buffer: &mut [u8],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Option<(u8, usize)>, Status> {
-    for index in cursor.next..Record::CTAP_CREDENTIALS {
-        if cursor.representatives[usize::from(index / 8)] & (1 << (index % 8)) == 0 {
-            continue;
-        }
-        let n = resident::load(index, buffer, p)?.ok_or(Status::Other)?;
-        cursor.next = index + 1;
-        return Ok(Some((index, n)));
-    }
-    Ok(None)
+    rp::next_representative(
+        Record::CTAP_CREDENTIALS,
+        &cursor.representatives,
+        &mut cursor.next,
+        |index| resident::load(index, buffer, p)?.ok_or(Status::Other),
+    )
 }
 impl Session {
     #[inline(never)]
@@ -398,10 +392,13 @@ impl Session {
             } else {
                 0
             };
-            for index in self.management.next..Record::CTAP_CREDENTIALS {
-                if let Some((_, entry)) = resident::read(index, w.input, p)? {
+            let selected =
+                scan::ascending(self.management.next, Record::CTAP_CREDENTIALS, |index| {
+                    let Some((_, entry)) = resident::read(index, w.input, p)? else {
+                        return Ok(None);
+                    };
                     if *entry.rp_hash != self.management.rp {
-                        continue;
+                        return Ok(None);
                     }
                     self.management.next = index + 1;
                     self.management.mode = cm::CREDENTIAL_NEXT;
@@ -455,7 +452,7 @@ impl Session {
                         // it for the stream seed; maximal user records exceed 256 B.
                         w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
                         self.auth_response = Some(super::Response::Pending(plan));
-                        return Ok(length + credential::public_length(algorithm));
+                        return Ok(Some(length + credential::public_length(algorithm)));
                     }
                     w.output[0] = 0;
                     let mut e = Encoder::new(&mut w.output[1..]);
@@ -489,8 +486,12 @@ impl Session {
                         e.finish()
                     })();
                     result.map_err(|_| Status::Other)?;
-                    return Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len());
-                }
+                    Ok(Some(
+                        crate::runtime::workspace::OUTPUT_BYTES - e.writer().len(),
+                    ))
+                })?;
+            if let Some((_, length)) = selected {
+                return Ok(length);
             }
             return Err(if continued {
                 Status::NotAllowed
@@ -499,13 +500,13 @@ impl Session {
             });
         }
         let id = fields.id.ok_or(Status::MissingParameter)?;
-        for index in 0..Record::CTAP_CREDENTIALS {
+        let selected = scan::ascending(0, Record::CTAP_CREDENTIALS, |index| {
             let Some(n) = resident::load(index, w.input, p)? else {
-                continue;
+                return Ok(None);
             };
             let entry = resident::decode(&w.input[..n])?;
             if entry.id != id {
-                continue;
+                return Ok(None);
             }
             self.authorize(
                 params.protocol,
@@ -557,7 +558,10 @@ impl Session {
                 )?;
             }
             w.output[0] = 0;
-            return Ok(1);
+            Ok(Some(1))
+        })?;
+        if let Some((_, length)) = selected {
+            return Ok(length);
         }
         Err(Status::NoCredentials)
     }
