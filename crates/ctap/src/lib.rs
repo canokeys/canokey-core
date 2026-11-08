@@ -8,6 +8,7 @@ pub mod ports;
 pub mod presence;
 pub mod request;
 pub mod status;
+pub mod workspace;
 
 pub mod info;
 #[cfg(feature = "schema")]

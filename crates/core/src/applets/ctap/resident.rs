@@ -7,7 +7,7 @@ use super::{
     crypto::equal,
 };
 use crate::ports::{Platform, Record, StorageError};
-use canokey_ports::{Memory as _, Storage as _};
+use canokey_ports::Storage as _;
 
 pub(super) const RESIDENT: u8 = 0x04;
 pub(super) const LARGE_BLOB_KEY: u8 = 0x08;
@@ -84,6 +84,10 @@ pub(super) fn replace(
         }
         Entry::decode(value)?;
     }
+    // The key workspace is exclusively scratch until this synchronous update
+    // returns. Every exit after admission wipes the complete peer reservation.
+    let mut reservation = canokey_ctap::workspace::Reservation::new(copy, p.memory);
+    let copy = reservation.bytes();
     let result = (|| {
         let mut header = [0; GROUP_HEADER];
         group_header(record, &mut header, p)?;
@@ -139,7 +143,7 @@ pub(super) fn replace(
         }
         publication.map_err(|_| Status::Other)
     })();
-    p.memory.wipe(copy);
+    drop(reservation);
     result
 }
 
