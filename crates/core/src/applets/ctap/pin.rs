@@ -13,7 +13,27 @@ use crate::{
     ports::{KeyOperation, Platform, Record, alg},
     runtime::workspace::Workspace,
 };
+use canokey_ctap::client_pin as shared_pin;
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
+
+struct PinDerivation<'a, 'p, B: crate::ports::Backends>(&'a mut Platform<'p, B>);
+impl<B: crate::ports::Backends> shared_pin::Derivation for PinDerivation<'_, '_, B> {
+    type Error = Status;
+    fn sha256(&mut self, input: &[u8], out: &mut [u8; 32]) -> Result<(), Status> {
+        self.0.crypto.sha256(input, out).map_err(|_| Status::Other)
+    }
+    fn hmac_sha256(
+        &mut self,
+        key: &[u8; 32],
+        input: &[u8],
+        out: &mut [u8; 32],
+    ) -> Result<(), Status> {
+        mac(key, input, out, self.0)
+    }
+    fn wipe(&mut self, bytes: &mut [u8]) {
+        self.0.memory.wipe(bytes);
+    }
+}
 
 // PIN hash, retries, code-point count, minimum length, flags/RP count,
 // followed by at most four RP hashes. One atomic record; no padding or prefix.
@@ -170,33 +190,16 @@ impl Session {
         if n != 32 {
             return Err(Status::Other);
         }
-        if protocol == wire::V1 {
-            p.crypto
-                .sha256(&w.input[..32], (&mut shared[..32]).try_into().unwrap())
-                .map_err(|_| Status::Other)?;
-            shared.copy_within(..32, 32);
-        } else {
-            let mut prk = [0; 32];
-            let derive = (|| {
-                mac(&[0; 32], &w.input[..32], &mut prk, p)?;
-                mac(
-                    &prk,
-                    // CTAP2 protocol2 HKDF-Expand info plus block counter 0x01.
-                    b"CTAP2 HMAC key\x01",
-                    (&mut shared[..32]).try_into().unwrap(),
-                    p,
-                )?;
-                mac(
-                    &prk,
-                    // Separate HKDF info derives the AES key, block counter 0x01.
-                    b"CTAP2 AES key\x01",
-                    (&mut shared[32..]).try_into().unwrap(),
-                    p,
-                )
-            })();
-            p.memory.wipe(&mut prk);
-            derive?;
-        }
+        let protocol =
+            shared_pin::Protocol::decode(u64::from(protocol)).ok_or(Status::InvalidParameter)?;
+        let (mac_key, aes_key) = shared.split_at_mut(shared_pin::KEY_BYTES);
+        shared_pin::derive(
+            protocol,
+            (&w.input[..shared_pin::KEY_BYTES]).try_into().unwrap(),
+            mac_key.try_into().unwrap(),
+            aes_key.try_into().unwrap(),
+            &mut PinDerivation(p),
+        )?;
         Ok(())
     }
     pub(super) fn retries(
@@ -332,14 +335,10 @@ impl Session {
                 .iter()
                 .rposition(|b| *b != 0)
                 .map_or(0, |i| i + 1);
-            if n == 0 || n > usize::from(MAX_PIN_BYTES) {
-                return Err(Status::PinPolicy);
-            }
-            let pin = core::str::from_utf8(&cp.new_pin[..n]).map_err(|_| Status::PinPolicy)?;
+            let pin =
+                shared_pin::validate_pin(&cp.new_pin[..n], usize::from(record[MIN_PIN_LENGTH]))
+                    .ok_or(Status::PinPolicy)?;
             let count = pin.chars().count();
-            if count < usize::from(record[MIN_PIN_LENGTH]) || pin.contains('\0') {
-                return Err(Status::PinPolicy);
-            }
             let mut digest = [0; 32];
             let hash = p
                 .crypto

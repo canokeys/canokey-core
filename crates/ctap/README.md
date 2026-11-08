@@ -13,6 +13,10 @@ product applications. Firmware uses `no_std` without the `schema` feature.
   unpublished bytes; publish ends the loan without allocating or retaining it.
 - `presence`: synchronous time/touch/progress capability and the two product
   gesture mechanisms. Reset policy and transport ownership stay in adapters.
+- `client_pin`: PIN/UV protocols 1/2 key derivation over borrowed SHA/HMAC
+  capabilities, extraction-key erasure on every return, and unpadded UTF-8 PIN
+  validation by byte and Unicode scalar limits. Products retain ECDH, CBC,
+  encrypted-field padding, durable retry order, token lifecycle and permissions.
 - `session`: non-sensitive continuation binding and wrapping idle timestamps.
   Products own cursor secrets, timeout policy, refresh points and reset.
 - `provision`, `settings`: attestation read admission, certificate publication
