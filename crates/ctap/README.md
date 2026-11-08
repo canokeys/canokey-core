@@ -18,6 +18,9 @@ product applications. Firmware uses `no_std` without the `schema` feature.
 - `provision`, `settings`: attestation read admission, certificate publication
   latch, and the eight-byte SM2 settings codec. Capabilities address only their
   own material; product ADMIN authority and installation policy stay outside.
+- `resident`: borrowed CTG1 member decoding, bounded field encoding, UTF-8
+  truncation and RP display. Product capacities, group updates and credential
+  derivation remain with their owners during R06 migration.
 - `response`: exact/partial certificate window admission. Product backing and
   source close/erasure remain with their owners. General response cursors and
   segmented reads use `canokey-protocol::response`.

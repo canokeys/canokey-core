@@ -580,7 +580,7 @@ fn load_user<'a>(
         return Ok(None);
     };
     let n = resident::load(index, out, p)?.ok_or(Status::NoCredentials)?;
-    resident::Entry::decode(&out[..n]).map(Some)
+    resident::decode(&out[..n]).map(Some)
 }
 
 fn append_extensions(

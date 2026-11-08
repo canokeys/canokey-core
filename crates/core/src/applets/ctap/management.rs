@@ -218,7 +218,7 @@ fn credential_count(
     for index in 0..Record::CTAP_CREDENTIALS {
         if let Some(n) = scan.load(index, buffer, p)? {
             if rp.is_none_or(|rp| {
-                resident::Entry::decode(&buffer[..n]).is_ok_and(|entry| entry.rp_hash == rp)
+                resident::decode(&buffer[..n]).is_ok_and(|entry| entry.rp_hash == rp)
             }) {
                 count += 1;
             }
@@ -375,7 +375,7 @@ impl Session {
                 Status::NoCredentials
             })?;
             self.management.mode = cm::RP_NEXT;
-            let entry = resident::Entry::decode(&w.input[..n])?;
+            let entry = resident::decode(&w.input[..n])?;
             let mut e = Encoder::new(&mut w.output[1..]);
             let result = (|| {
                 e.map(if subcommand == cm::RP_BEGIN { 3 } else { 2 })
@@ -507,7 +507,7 @@ impl Session {
             let Some(n) = resident::load(index, w.input, p)? else {
                 continue;
             };
-            let entry = resident::Entry::decode(&w.input[..n])?;
+            let entry = resident::decode(&w.input[..n])?;
             if entry.id != id {
                 continue;
             }
@@ -597,10 +597,7 @@ mod tests {
             for index in 0..distinct {
                 let (slot, n) = next_rp(&mut cursor, &mut out, &mut p).unwrap().unwrap();
                 assert_eq!(slot, index);
-                assert_eq!(
-                    resident::Entry::decode(&out[..n]).unwrap().rp_hash,
-                    &[index; 32]
-                );
+                assert_eq!(resident::decode(&out[..n]).unwrap().rp_hash, &[index; 32]);
             }
             assert_eq!(next_rp(&mut cursor, &mut out, &mut p).unwrap(), None);
             assert_eq!(p.storage.mutations, 0);

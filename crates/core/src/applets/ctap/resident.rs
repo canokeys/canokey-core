@@ -3,28 +3,17 @@
 use super::{
     Status,
     credential::{ID_BYTES, Id},
-    credential_request::{CRED_BLOB_BYTES, Parameters},
+    credential_request::Parameters,
     crypto::equal,
 };
 use crate::ports::{Platform, Record, StorageError};
 use canokey_ports::Storage as _;
 
-pub(super) const RESIDENT: u8 = 0x04;
+pub(super) use canokey_ctap::resident::{
+    FIELD_COUNT, FIXED_BYTES, MAX_BYTES, RESIDENT, RP_DISPLAY_BYTES, RP_HASH_BYTES, USER_DISPLAY_BYTES,
+    USER_ID_BYTES, USER_NAME_BYTES,
+};
 pub(super) const LARGE_BLOB_KEY: u8 = 0x08;
-const RP_HASH_BYTES: usize = 32;
-const RP_DISPLAY_BYTES: usize = 32;
-pub(super) const USER_ID_BYTES: usize = 64;
-pub(super) const USER_NAME_BYTES: usize = 64;
-pub(super) const USER_DISPLAY_BYTES: usize = 64;
-const FIELD_COUNT: usize = 5;
-const FIXED_BYTES: usize = ID_BYTES + RP_HASH_BYTES;
-pub(super) const MAX_BYTES: usize = FIXED_BYTES
-    + FIELD_COUNT
-    + RP_DISPLAY_BYTES
-    + USER_ID_BYTES
-    + USER_NAME_BYTES
-    + USER_DISPLAY_BYTES
-    + CRED_BLOB_BYTES;
 const GROUP_MEMBERS: usize = Record::CTAP_GROUP_MEMBERS as usize;
 pub(super) const COPY_BYTES: usize = (GROUP_MEMBERS - 1) * MAX_BYTES;
 const MEMBER_LENGTH_BYTES: usize = core::mem::size_of::<u16>();
@@ -82,7 +71,7 @@ pub(super) fn replace(
         if value.len() > MAX_BYTES {
             return Err(Status::Other);
         }
-        Entry::decode(value)?;
+        decode(value)?;
     }
     // The key workspace is exclusively scratch until this synchronous update
     // returns. Every exit after admission wipes the complete peer reservation.
@@ -123,7 +112,7 @@ pub(super) fn replace(
                 p.storage
                     .read_at(record, offset, bytes)
                     .map_err(|_| Status::Other)?;
-                Entry::decode(bytes)?;
+                decode(bytes)?;
                 used += n;
             }
             offset += n as u32;
@@ -147,86 +136,10 @@ pub(super) fn replace(
     result
 }
 
-pub(super) struct Entry<'a> {
-    pub id: &'a Id,
-    pub rp_hash: &'a [u8; RP_HASH_BYTES],
-    pub rp: &'a str,
-    pub user: &'a [u8],
-    pub name: &'a str,
-    pub display: &'a str,
-    pub blob: &'a [u8],
-}
-impl<'a> Entry<'a> {
-    pub fn decode(bytes: &'a [u8]) -> Result<Self, Status> {
-        if bytes.len() < FIXED_BYTES {
-            return Err(Status::Other);
-        }
-        let id: &Id = bytes[..ID_BYTES].try_into().unwrap();
-        let rp_hash = bytes[ID_BYTES..FIXED_BYTES].try_into().unwrap();
-        let mut rest = &bytes[FIXED_BYTES..];
-        let rp = take(&mut rest, RP_DISPLAY_BYTES)?;
-        let user = take(&mut rest, USER_ID_BYTES)?;
-        let name = take(&mut rest, USER_NAME_BYTES)?;
-        let display = take(&mut rest, USER_DISPLAY_BYTES)?;
-        let blob = take(&mut rest, CRED_BLOB_BYTES)?;
-        if user.is_empty() || !rest.is_empty() || id[1] & RESIDENT == 0 {
-            return Err(Status::Other);
-        }
-        let rp = core::str::from_utf8(rp).map_err(|_| Status::Other)?;
-        let name = core::str::from_utf8(name).map_err(|_| Status::Other)?;
-        let display = core::str::from_utf8(display).map_err(|_| Status::Other)?;
-        let entry = Self {
-            id,
-            rp_hash,
-            rp,
-            user,
-            name,
-            display,
-            blob,
-        };
-        if entry.rp.is_empty() {
-            return Err(Status::Other);
-        }
-        Ok(entry)
-    }
-}
-fn take<'a>(rest: &mut &'a [u8], limit: usize) -> Result<&'a [u8], Status> {
-    let n = usize::from(*rest.first().ok_or(Status::Other)?);
-    if n > limit || rest.len() < 1 + n {
-        return Err(Status::Other);
-    }
-    let value = &rest[1..1 + n];
-    *rest = &rest[1 + n..];
-    Ok(value)
-}
-pub(super) fn text_prefix(bytes: &[u8]) -> &[u8] {
-    match core::str::from_utf8(bytes) {
-        Ok(_) => bytes,
-        Err(error) => &bytes[..error.valid_up_to()],
-    }
-}
-// Preserve scheme and domain suffix for the legacy 32-byte RP display field.
-// Hashing and credential matching always use the complete original RP ID.
-fn display_rp<'a>(rp: &'a [u8], out: &'a mut [u8; RP_DISPLAY_BYTES]) -> &'a [u8] {
-    if rp.len() <= out.len() {
-        return rp;
-    }
-    let prefix = rp.iter().position(|&b| b == b':').map_or(0, |n| n + 1);
-    let prefix = text_prefix(&rp[..prefix.min(out.len())]);
-    let mut used = prefix.len();
-    out[..used].copy_from_slice(prefix);
-    if out.len() - used >= 3 {
-        out[used..used + 3].copy_from_slice("…".as_bytes());
-        used += 3;
-        let mut start = rp.len() - (out.len() - used);
-        // Never start the suffix inside a UTF-8 code point.
-        while start < rp.len() && rp[start] & 0xc0 == 0x80 {
-            start += 1;
-        }
-        out[used..used + rp.len() - start].copy_from_slice(&rp[start..]);
-        used += rp.len() - start;
-    }
-    &out[..used]
+pub(super) use canokey_ctap::resident::{Entry, display_rp, encode_fields, text_prefix};
+
+pub(super) fn decode(bytes: &[u8]) -> Result<Entry<'_>, Status> {
+    Entry::decode(bytes).map_err(|_| Status::Other)
 }
 
 pub(super) fn load(
@@ -311,7 +224,7 @@ fn decode_loaded(length: Option<usize>, out: &[u8]) -> Result<Option<(usize, Ent
     let Some(n) = length else {
         return Ok(None);
     };
-    Ok(Some((n, Entry::decode(&out[..n])?)))
+    Ok(Some((n, decode(&out[..n])?)))
 }
 pub(super) fn store(
     params: &Parameters,
@@ -352,20 +265,6 @@ pub(super) fn store(
         ],
     );
     replace(slot, &out[..at + n], copy, p)
-}
-
-/// Encode the five bounded variable fields shared by creation and user updates.
-pub(super) fn encode_fields(out: &mut [u8], fields: &[&[u8]; FIELD_COUNT]) -> usize {
-    let capacity = out.len();
-    let mut tail = out;
-    for field in fields {
-        let (length, remaining) = tail.split_first_mut().unwrap();
-        *length = field.len() as u8;
-        let (value, remaining) = remaining.split_at_mut(field.len());
-        value.copy_from_slice(field);
-        tail = remaining;
-    }
-    capacity - tail.len()
 }
 
 pub(super) fn find(
@@ -971,7 +870,7 @@ pub(super) mod tests {
             assert_eq!(display_rp(rp.as_bytes(), &mut out), expected.as_bytes());
         }
         let bytes = record();
-        let entry = Entry::decode(&bytes[..HEADER + FIELDS.len()]).unwrap();
+        let entry = decode(&bytes[..HEADER + FIELDS.len()]).unwrap();
         assert_eq!(entry.rp, "r");
         assert_eq!(entry.user, b"\xff");
         assert_eq!(entry.name, "é");
@@ -998,32 +897,23 @@ pub(super) mod tests {
         let bytes = record();
         let length = HEADER + FIELDS.len();
         for cut in 0..length {
-            assert!(matches!(Entry::decode(&bytes[..cut]), Err(Status::Other)));
+            assert!(matches!(decode(&bytes[..cut]), Err(Status::Other)));
         }
-        assert!(matches!(
-            Entry::decode(&bytes[..length + 1]),
-            Err(Status::Other)
-        ));
+        assert!(matches!(decode(&bytes[..length + 1]), Err(Status::Other)));
         for offset in [1, 5, 8] {
             let mut corrupt = bytes;
             corrupt[HEADER + offset] = 0xff;
-            assert!(matches!(
-                Entry::decode(&corrupt[..length]),
-                Err(Status::Other)
-            ));
+            assert!(matches!(decode(&corrupt[..length]), Err(Status::Other)));
         }
         for (offset, invalid) in [(0, 33), (2, 65), (4, 65), (7, 65), (12, 33)] {
             let mut corrupt = bytes;
             corrupt[HEADER + offset] = invalid;
-            assert!(matches!(
-                Entry::decode(&corrupt[..length]),
-                Err(Status::Other)
-            ));
+            assert!(matches!(decode(&corrupt[..length]), Err(Status::Other)));
         }
         let mut non_resident = bytes;
         non_resident[1] = 0;
         assert!(matches!(
-            Entry::decode(&non_resident[..length]),
+            decode(&non_resident[..length]),
             Err(Status::Other)
         ));
     }
@@ -1043,7 +933,7 @@ pub(super) mod tests {
             ],
         );
         assert_eq!(HEADER + n, MAX_BYTES);
-        let entry = Entry::decode(&bytes).unwrap();
+        let entry = decode(&bytes).unwrap();
         assert_eq!(entry.rp, "r".repeat(32));
         assert_eq!(entry.user, &[0xff; 64]);
         assert_eq!(entry.name, "n".repeat(64));
@@ -1056,7 +946,7 @@ pub(super) mod tests {
             &mut bytes[HEADER..],
             &[b"r", b"u", text_prefix(&"é".as_bytes()[..1]), b"", b""],
         );
-        let entry = Entry::decode(&bytes[..HEADER + n]).unwrap();
+        let entry = decode(&bytes[..HEADER + n]).unwrap();
         assert_eq!((entry.name, entry.display, entry.blob), ("", "", &b""[..]));
     }
 }

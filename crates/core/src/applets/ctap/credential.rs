@@ -19,7 +19,7 @@ mod scheme {
     pub const MLDSA65: u8 = 0x03;
     pub const MLDSA44: u8 = 0x04;
 }
-pub(super) const ID_BYTES: usize = 34;
+pub(super) use canokey_ctap::resident::ID_BYTES;
 pub(super) type Id = [u8; ID_BYTES];
 const TAG: usize = 18;
 

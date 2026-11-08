@@ -8,6 +8,7 @@ pub mod ports;
 pub mod presence;
 pub mod provision;
 pub mod request;
+pub mod resident;
 pub mod response;
 pub mod session;
 pub mod settings;
