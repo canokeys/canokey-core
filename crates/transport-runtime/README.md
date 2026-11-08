@@ -32,3 +32,14 @@ product reset action, selected statically by the profile.
 Run `cargo test -p canokey-transport-runtime` and the owning products' transport
 and USB composition suites. A host test does not qualify physical USB/RF IO or
 prove an embedded stack budget; the linked product ELF needs its own review.
+
+`ccid::Transport<P, I>` shares envelope draining, dispatch, reply and endpoint
+completion state. `Buffered` retains one short APDU for CanoKey; receive uses a
+no-op backend and cannot enter the application. `Streaming` retains only begin
+and timeout metadata and feeds the product's existing application owner.
+Product `Policy` preserves validation precedence, ATR/T=1 bytes, parameter
+commands and success sentinels. The facade owns reply storage and its in-flight
+lease. `Polling<P>` handles asynchronous status/cancel with only a five-byte
+prefix and cannot borrow a backend. Header progress and remaining u32 payload
+are separate counters, so UINT32_MAX payloads cannot overflow header addition.
+Neither ingress strategy admits extended APDUs; NFC admission is independent.

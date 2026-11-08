@@ -3,7 +3,7 @@
 #[cfg(all(feature = "ctap", feature = "usb-hid"))]
 use crate::transport::hid::link::ck_hid_busy;
 use canokey_protocol::ccid::HEADER;
-use canokey_rust_core::runtime::ccid::{Backend, Request, Transport};
+use canokey_rust_core::runtime::ccid::{Backend, Transport};
 
 use crate::composition::{Provider, core as core_ops};
 use crate::transport::owners::OWNER_CCID;
@@ -72,8 +72,8 @@ impl<P: Provider> Backend for Platform<P> {
             true
         }
     }
-    fn exchange(&mut self, request: &Request, out: &mut [u8]) -> Result<usize, ()> {
-        let input = request.short();
+    fn exchange(&mut self, request: &[u8], out: &mut [u8]) -> Result<usize, ()> {
+        let input = request;
         let n = unsafe {
             core_ops::exchange::<P>(
                 OWNER_CCID,

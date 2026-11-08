@@ -58,3 +58,20 @@ pub fn extension(slot: u8, sequence: u8) -> [u8; HEADER] {
     // RDR_to_PC_DataBlock time extension, bError=1 requests one more BWT.
     [DATA, 0, 0, 0, 0, slot, sequence, TIME_EXTENSION, 1, 0]
 }
+
+// CCID 1.1 response family remains tied to the request, including failed commands.
+pub const SECURE: u8 = 0x69;
+pub const ESCAPE: u8 = 0x6b;
+pub const SET_DATA_RATE_AND_CLOCK: u8 = 0x73;
+pub const ESCAPE_RESPONSE: u8 = 0x83;
+pub const DATA_RATE_AND_CLOCK: u8 = 0x84;
+pub const ICC_ABSENT: u8 = 0x02;
+pub const fn response_type(command: u8) -> u8 {
+    match command {
+        POWER_ON | TRANSFER | SECURE => DATA,
+        GET_PARAMETERS | RESET_PARAMETERS | SET_PARAMETERS => PARAMETERS,
+        ESCAPE => ESCAPE_RESPONSE,
+        SET_DATA_RATE_AND_CLOCK => DATA_RATE_AND_CLOCK,
+        _ => STATUS,
+    }
+}

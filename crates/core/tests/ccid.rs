@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! C 3.1.2 short-only contract through the production CCID state machine.
 use canokey_protocol::ccid::*;
-use canokey_rust_core::runtime::ccid::{Backend, CONTROL_REPLY, REPLY, Request, Transport};
+use canokey_rust_core::runtime::ccid::{Backend, CONTROL_REPLY, REPLY, Transport};
 #[derive(Default)]
 struct Mock {
     resets: usize,
@@ -24,9 +24,9 @@ impl Backend for Mock {
         self.power_cycles += 1;
         true
     }
-    fn exchange(&mut self, request: &Request, out: &mut [u8]) -> Result<usize, ()> {
+    fn exchange(&mut self, request: &[u8], out: &mut [u8]) -> Result<usize, ()> {
         self.executions += 1;
-        self.input = request.short().to_vec();
+        self.input = request.to_vec();
         if self.fail {
             return Err(());
         }
