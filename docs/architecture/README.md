@@ -106,6 +106,15 @@ for presence or invoking crypto. Response streams release leases on completion,
 replacement, failure or reset. USB interrupts queue events; only serialized
 main-loop code enters the runtime. Reset invalidates generations without freeing
 memory still borrowed by an active operation.
+After global USB reset/reconfiguration, data callbacks and submissions remain
+closed until serialized reset service acknowledges the current mailbox generation.
+A reset during cleanup invalidates that acknowledgement. Service rearms OUT
+reception once. WebUSB command SETUP follows the same readiness gate; status
+and standard EP0 enumeration remain independent of application admission.
+Response fetch also requires readiness. Global reset retains nonexecuting
+WebUSB status until serialized class initialization, without exposing old bytes.
+Executing calls are cancelled immediately and cannot publish their old result.
+Local EP0 failures/reset remain distinct from global lifecycle initialization.
 
 Keep authentication, persistent record encodings, retry ordering and wire behavior
 unchanged during structural refactors. Platform-specific Flash and stack limits

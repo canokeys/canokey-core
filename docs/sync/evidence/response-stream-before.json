@@ -1,0 +1,85 @@
+{
+  "scope": "Selected first raw C/Rust output differences from exploratory runs before production fixes. Initial expected flags used256-byte chunks and an undersized WebUSB fetch; those flags are not acceptance or a valid failure count. Final paired reports supersede them.",
+  "observations": [
+    {
+      "case": "ccid-4096-upload-clipped-reads",
+      "event": 82,
+      "c_bytes": 262,
+      "rust_bytes": 268,
+      "c": "80fc000000001400810000a1015904d081590fec135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079c20b549de62f78c10a539ce52e77c009529be42d76bf08519ae32c75be075099e22b74bd064f98e12a73bc054e97e02972bb044d96df2871ba034c95de2770b9024b94dd266fb8014a93dc256eb7004992db246db6ff4891da236cb5fe4790d9226bb4fd468fd8216ab3fc458ed72069b2fb448dd61f68b1fa438cd51e67b0f9428bd41d66aff8418ad31c65aef74089d21b64adf63f88d11a63acf53e87d01962abf43d86cf1861aaf33c85ce1760a9f23b84cd165fa8f13a61ff",
+      "rust": "8002010000001400810000a1015904d081590fec135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079c20b549de62f78c10a539ce52e77c009529be42d76bf08519ae32c75be075099e22b74bd064f98e12a73bc054e97e02972bb044d96df2871ba034c95de2770b9024b94dd266fb8014a93dc256eb7004992db246db6ff4891da236cb5fe4790d9226bb4fd468fd8216ab3fc458ed72069b2fb448dd61f68b1fa438cd51e67b0f9428bd41d66aff8418ad31c65aef74089d21b64adf63f88d11a63acf53e87d01962abf43d86cf1861aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f061ff"
+    },
+    {
+      "case": "ccid-prefix-and-file-splits",
+      "event": 83,
+      "c_bytes": 262,
+      "rust_bytes": 268,
+      "c": "80fc0000000015008100a1015904d081590fec135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079c20b549de62f78c10a539ce52e77c009529be42d76bf08519ae32c75be075099e22b74bd064f98e12a73bc054e97e02972bb044d96df2871ba034c95de2770b9024b94dd266fb8014a93dc256eb7004992db246db6ff4891da236cb5fe4790d9226bb4fd468fd8216ab3fc458ed72069b2fb448dd61f68b1fa438cd51e67b0f9428bd41d66aff8418ad31c65aef74089d21b64adf63f88d11a63acf53e87d01962abf43d86cf1861aaf33c85ce1760a9f23b84cd165fa8f13a8361ff",
+      "rust": "80020100000015008100a1015904d081590fec135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079c20b549de62f78c10a539ce52e77c009529be42d76bf08519ae32c75be075099e22b74bd064f98e12a73bc054e97e02972bb044d96df2871ba034c95de2770b9024b94dd266fb8014a93dc256eb7004992db246db6ff4891da236cb5fe4790d9226bb4fd468fd8216ab3fc458ed72069b2fb448dd61f68b1fa438cd51e67b0f9428bd41d66aff8418ad31c65aef74089d21b64adf63f88d11a63acf53e87d01962abf43d86cf1861aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f03961ff"
+    },
+    {
+      "case": "nfc-4096-upload-clipped-reads",
+      "event": 156,
+      "c_bytes": 21,
+      "rust_bytes": 27,
+      "c": "0261aaf33c85ce1760a9f23b84cd165fa8f13a61ff",
+      "rust": "0261aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f061ff"
+    },
+    {
+      "case": "nfc-prefix-and-file-splits",
+      "event": 158,
+      "c_bytes": 21,
+      "rust_bytes": 27,
+      "c": "03aaf33c85ce1760a9f23b84cd165fa8f13a8361ff",
+      "rust": "03aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f03961ff"
+    },
+    {
+      "case": "nfc-extended-Le1",
+      "event": 158,
+      "c_bytes": 21,
+      "rust_bytes": 27,
+      "c": "03aaf33c85ce1760a9f23b84cd165fa8f13a8361ff",
+      "rust": "03aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f03961ff"
+    },
+    {
+      "case": "nfc-extended-Le255",
+      "event": 157,
+      "c_bytes": 19,
+      "rust_bytes": 26,
+      "c": "1261aaf33c85ce1760a9f23b84cd165fa8f13a",
+      "rust": "0261aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea761ff"
+    },
+    {
+      "case": "nfc-extended-Le256",
+      "event": 157,
+      "c_bytes": 19,
+      "rust_bytes": 27,
+      "c": "1261aaf33c85ce1760a9f23b84cd165fa8f13a",
+      "rust": "0261aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f061ff"
+    },
+    {
+      "case": "nfc-extended-Le257",
+      "event": 157,
+      "c_bytes": 19,
+      "rust_bytes": 25,
+      "c": "1261aaf33c85ce1760a9f23b84cd165fa8f13a",
+      "rust": "1261aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f0"
+    },
+    {
+      "case": "nfc-extended-Le1237",
+      "event": 157,
+      "c_bytes": 19,
+      "rust_bytes": 25,
+      "c": "1261aaf33c85ce1760a9f23b84cd165fa8f13a",
+      "rust": "1261aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f0"
+    },
+    {
+      "case": "nfc-extended-Le65536",
+      "event": 157,
+      "c_bytes": 19,
+      "rust_bytes": 25,
+      "c": "1261aaf33c85ce1760a9f23b84cd165fa8f13a",
+      "rust": "1261aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f0"
+    }
+  ]
+}

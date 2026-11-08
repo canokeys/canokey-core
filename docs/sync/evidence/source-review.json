@@ -1,0 +1,292 @@
+{
+  "scope": "Pinned-source review, current Rust host integration checkpoint and separately scoped pinned-C/Rust transport executions; no physical acceptance.",
+  "source_revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "rust_baseline": "15d2b3bac17c6db238a9c12da1c0a02cc736e430",
+  "target_state": "Uncommitted worktree; exact target/test SHA256 values live in the synchronization manifest.",
+  "host_checkpoint": {
+    "path": "docs/sync/evidence/host-ctest.log",
+    "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+    "command": "ctest --test-dir build/host-core --output-on-failure",
+    "result": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+  },
+  "source_review": [
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "src/apdu.c",
+      "sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "observed": "Explicit selection, private USB AID, rejected-select revocation and transport-bound selection routing."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/NFC/nfc.c",
+      "sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "observed": "Inline extended Lc279, selected standalone FIDO PKE staging and per-command finite response budget."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/class/ccid/ccid.c",
+      "sha256": "3e2e411b7ef20f8999ab4ef7548bb59c0975dd630e7ca426c82617554f4c1bea",
+      "observed": "Short-only full declared-length drain; separate bulkin_short for passive/refused replies; bounded first-header acquisition; discarded XfrBlock6400 after slot/length validation; validated power reset returns busy on foreign pending state."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/device/usbd_desc.c",
+      "sha256": "0c3aa9d0162385ed51fa0691fa3a39f075b1b62e84f4865726f79c5082135423",
+      "observed": "Short-only CCID descriptor and shared refusal/string helpers. Rust uses independent bounded control storage; U4 retains the pending-source descriptor stall/success difference."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/class/webusb/webusb.c",
+      "sha256": "3f6b93223ef0b7c055153bcc76cd02b2001d31c0ec081a334bb7b7eec74ecadf",
+      "observed": "Only completed Hold expires at strictly >2000ms since WebUSB SETUP; IN completion does not refresh time. Superseding SETUP releases byte-stage bookkeeping without applet reset; foreign preparation occurs only during complete command dispatch."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/core/src/usbd_core.c",
+      "sha256": "b9222d0955e326239cbad542390b107c41fed56a617ee0a809d89421fae114fa",
+      "observed": "All SETUP stages invoke guarded WebUSB data-stage abort before dispatch; Rust quiesces EP0 and invokes the equivalent byte-only abort."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "src/device.c",
+      "sha256": "e375e3f61ef1c5559c462094dfe5231c5e37cefe3762b8a2cd74db51f3a9f8bb",
+      "observed": "Session release does not reset applet context; acquisition retains pending-APDU preemption checks after execution reservation becomes NONE."
+    },
+    {
+      "path": "interfaces/USB/class/ctaphid/ctaphid.c",
+      "observed": "Fixed native MSG seven-byte header/Lc16, ignored fifth byte, absent/two-byte Le. Malformed-envelope rejection preserves old continuation. Sender synchronously pumps reports and waits for endpoint IN completion; the adapter models those completions rather than replacing TX. E35 stale-generator replacement remains unresolved. E36-E38 additionally verify1296 total-envelope ceiling, pre-staging pending-source refusal, inline same-CID PING/WINK preservation and strict >800ms RX expiry, including tick wrap. E40-E45 cover bounded WINK, retained source across controls/pre-parser errors, disabled dispatch and phase-specific CANCEL. C source has no CID binding; CID1 is explicit, not parity. CTAPHID_Execute_Msg validates native envelope before CTAP dispatch. An absent response source leaves unsupported INS status intact.",
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "sha256": "51143d315423af4f620209d12275867cb10982a530033c404ebbdb095517d6a6"
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/core/src/usbd_ctlreq.c",
+      "sha256": "740bc4162533fe017eb732fbecc4a729853694b1e00e7d4bb41a1982578486e2",
+      "observed": "HALT validation/active endpoint masks and little-endian status; shared string helper removes the length traversal. U3 exposes weak C GET_STATUS validation. USBD_SetConfig acknowledges unchanged cfgidx without class init/deinit; E49 preserves HALT/auth/RX/output."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/device/usbd_canokey.c",
+      "sha256": "673236df9e96765674ea6ae91e4974dc9ccbf72b83003efe843ac0d6aeeba8fe",
+      "observed": "Reviewed lifecycle main-loop service and readiness/epoch policy; actual device_loop used by adapter."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/core/inc/usbd_def.h",
+      "sha256": "e6eb26259730c4d6f6428788d5067876630833d7b60d2f8ee249ef6ecbfb16f6",
+      "observed": "Directional endpoint masks; feature-scoped Rust descriptor/configuration tests."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "applets/ctap/ctap.c",
+      "sha256": "d6c32d99aacebb0017def6ef232c6c1fc6674f766a201c3160a5bcd9ede21e0d",
+      "observed": "ctap_process_apdu_source_with_src routes CLA00/80 INS C0 to unsupported instruction when no response source exists. Generic APDU GET RESPONSE is a separate route."
+    }
+  ],
+  "dual_wire_reports": [
+    {
+      "core_path": "tests/fixtures/c312-ccid/report.json",
+      "sha256": "6debb7ab8ec444d411734acbeb4af5a81feb1e2a952613c75aa981f943059b0b",
+      "cases": 47,
+      "events": 454,
+      "wire_equal_cases": 47,
+      "unresolved_cases": 0,
+      "scope": "Actual CCID receive/execute with real applets. Shared literal packets, explicit USB packet boundaries and tick schedules. Covers E01/E02/E03/E04/E21/E23 subsets and newly audited first-header/error fields. No NFC/WebUSB, busy/IRQ races, PKE failure injection or physical hardware acceptance is inferred."
+    },
+    {
+      "core_path": "tests/fixtures/c312-webusb/report.json",
+      "sha256": "89ef872dfeb91f50f28baaabd2e7f7585845b63ef330e79a80356a7bd10b8c8d",
+      "cases": 28,
+      "events": 576,
+      "wire_equal_cases": 28,
+      "unresolved_cases": 0,
+      "scope": "Literal EP0 event replay through pinned C USB/WebUSB and Rust production USB/WebUSB facade, with real applets. No physical USB, cross-transport concurrency or CIU resource acceptance inferred."
+    },
+    {
+      "core_path": "tests/fixtures/c312-nfc/report.json",
+      "sha256": "5e6eb5f23cd162dac1b72192091571df0629fefe73a43f7c110336b1728cdcbf",
+      "cases": 60,
+      "events": 2566,
+      "wire_equal_cases": 60,
+      "unresolved_cases": 0,
+      "scope": "Literal NFC FIFO/IRQ replay through pinned C FM11NT nfc.c and Rust production NFC facade with real applets; no physical RF/WTX timing claim."
+    },
+    {
+      "core_path": "tests/fixtures/c312-usb-ownership/report.json",
+      "sha256": "3df39cadfc612b29446240d0d69e8f8b6a34d710271c44fbf1914d07b27c6d3f",
+      "cases": 18,
+      "events": 408,
+      "wire_equal_cases": 18,
+      "unresolved_cases": 0,
+      "scope": "Literal interleaved CCID and WebUSB events through unchanged pinned C and Rust production facades with real applets. Reports EP0 and CCID bytes separately without normalization. Only the recorded serialized poll schedule; no HID, physical USB, arbitrary IRQ race or CIU resource acceptance."
+    },
+    {
+      "core_path": "tests/fixtures/c312-hid-ownership/report.json",
+      "sha256": "bf8f72b3fbec0b9ef6872dc5ed9c766765bf138632c4eaf360536ad97cb755e4",
+      "cases": 21,
+      "events": 221,
+      "wire_equal_cases": 20,
+      "unresolved_cases": 1,
+      "scope": "Explicit serialized CCID/HID/WebUSB events through actual pinned C and Rust state machines/applets. HID IN drains to idle per event; literal report boundaries/bytes remain intact. No withheld-HID-IN, physical USB or arbitrary IRQ acceptance."
+    },
+    {
+      "core_path": "tests/fixtures/c312-hid-admission/report.json",
+      "sha256": "00f92f1b970ffa2b17682e55e8f2fbe6896309c1aff92845b47e6c4e93734d2a",
+      "cases": 28,
+      "events": 364,
+      "wire_equal_cases": 27,
+      "unresolved_cases": 1,
+      "scope": "Literal native HID total-envelope and pending-source admission through pinned C and Rust. Same event-level drained HID IN schedule as HID ownership suite; no physical or withheld-IN acceptance."
+    },
+    {
+      "core_path": "tests/fixtures/c312-hid-channels/report.json",
+      "sha256": "bb85e20e095a1b668028f8f0d8217a0ff83be4576d7f29d38f0d2c8177944622",
+      "cases": 40,
+      "events": 433,
+      "wire_equal_cases": 36,
+      "unresolved_cases": 4,
+      "scope": "Literal cross-CID response ownership, bounded WINK payload, pre-parser framing failure and disabled-WebAuthn dispatch. Actual production C/Rust with per-event drained HID IN; no physical or withheld-IN/IRQ acceptance."
+    },
+    {
+      "core_path": "tests/fixtures/c312-usb-control/report.json",
+      "sha256": "489cb63291cce60e9d6775eedbc0c87b960e35b337faede68daf5db7cd556695",
+      "cases": 36,
+      "events": 228,
+      "wire_equal_cases": 29,
+      "unresolved_cases": 7,
+      "scope": "Literal USB HALT/GET_STATUS and descriptor-control events through pinned C and actual Rust facades. No endpoint-register, DATA-toggle waveform, physical USB or arbitrary IRQ acceptance. Explicit C/Rust differences retain separate raw expectations."
+    },
+    {
+      "core_path": "tests/fixtures/c312-usb-lifecycle/report.json",
+      "sha256": "8e5a8c6ca1fa3461a3d0cfceb48239f9baf71904a3af07aea30b4a84be835b18",
+      "cases": 33,
+      "events": 302,
+      "wire_equal_cases": 33,
+      "unresolved_cases": 0,
+      "scope": "Literal duplicate SET_CONFIGURATION, real deconfigure/reconfigure and bus-reset schedules. Production C device_loop and Rust USB service run before applet dispatch. Tests cover retained authorization/output and partial RX, with event-level drained IN. No arbitrary IRQ, withheld-HID-IN, physical USB or runtime resource acceptance."
+    },
+    {
+      "core_path": "tests/fixtures/c312-usb-readiness/report.json",
+      "sha256": "77b18998ec1a8e5d8e993b8dfbdfbbee8bd443fe58f2fd4e99ed686f23507496",
+      "cases": 9,
+      "events": 75,
+      "wire_equal_cases": 5,
+      "unresolved_cases": 4,
+      "scope": "Deferred global USB cleanup and pending-native error precedence through real transports. Class readiness uses actual C class callbacks. Event-level IN draining; not physical USB or arbitrary IRQ timing."
+    },
+    {
+      "core_path": "tests/fixtures/c312-webusb-readiness/report.json",
+      "sha256": "893685d49510438ec7688912bf3682824c3ec1260fc9135223f1cb3bef589faf",
+      "cases": 8,
+      "events": 126,
+      "wire_equal_cases": 8,
+      "unresolved_cases": 0,
+      "scope": "WebUSB command admission before global USB cleanup, with status/configuration/response-fetch controls and actual post-cleanup SELECT recovery. Fresh product; event-level IN draining. Not physical USB, retained pre-reset WebUSB states or arbitrary IRQ timing."
+    },
+    {
+      "core_path": "tests/fixtures/c312-webusb-retained/report.json",
+      "sha256": "dff485213fdf8a74aee69ba4dd253a7f860f9973b2a2abeb1d56e4926892dacb",
+      "cases": 14,
+      "events": 605,
+      "wire_equal_cases": 14,
+      "unresolved_cases": 0,
+      "scope": "Existing WebUSB waiting/partial-RX/response/sending/Hold/PIN/FIDO-source states across two global lifecycle transitions, with deferred status and refused requests, serialized cleanup, old-source rejection, PIN revocation and recovery. Event-level EP0 completions; no arbitrary executing IRQ or physical USB/CIU acceptance."
+    },
+    {
+      "core_path": "tests/fixtures/c312-large-blob-usb/report.json",
+      "sha256": "528e5baeaf785ff9ae200980bf830a73c7df9bbae8e5b78dac68138cab912541",
+      "cases": 12,
+      "events": 2859,
+      "wire_equal_cases": 12,
+      "unresolved_cases": 0,
+      "scope": "CTAP largeBlobs segmented output using wire-provisioned deterministic4096-byte data. Exact bytes on actual pinned C and Rust transports; no storage fault, physical USB/RF/WTX or CIU resource acceptance."
+    },
+    {
+      "core_path": "tests/fixtures/c312-large-blob-nfc/report.json",
+      "sha256": "2e8d9499b59fe25e17f8ad165ca7fa19b8bae693ab2efb6d09c10cc321d13443",
+      "cases": 11,
+      "events": 2478,
+      "wire_equal_cases": 11,
+      "unresolved_cases": 0,
+      "scope": "CTAP largeBlobs segmented output using wire-provisioned deterministic4096-byte data. Exact bytes on actual pinned C and Rust transports; no storage fault, physical USB/RF/WTX or CIU resource acceptance."
+    }
+  ],
+  "unresolved_behaviors": [
+    {
+      "id": "L8",
+      "source": "interfaces/USB/class/ctaphid/ctaphid.c::CTAPHID_Execute_Msg",
+      "observed": "Pending GetInfo followed by VERSION or invalid C0 P1/P2/body/CLA: C emits and advances old output instead of the new result/error. Rust returns the new VERSION/error. E35/E53 keep literal outputs; malformed native trailer preserves the source equally. No parity disposition.",
+      "evidence": "tests/fixtures/c312-hid-ownership/report.json",
+      "disposition": "unresolved",
+      "additional_evidence": "tests/fixtures/c312-usb-readiness/report.json"
+    },
+    {
+      "id": "C1-RETRIES",
+      "source": "applets/ctap/secret.c::get_pin_retries and ctap.c::ctap_client_pin",
+      "observed": "Fresh C install with no PIN omits PIN_CTR_ATTR and encodes LFS_ERR_NOATTR(-61) as the retry count; Rust returns8. Three max-size clientPIN vectors explicitly provision counter8; a separate raw-default case preserves the difference.",
+      "evidence": "tests/fixtures/c312-hid-admission/report.json",
+      "disposition": "unresolved"
+    },
+    {
+      "id": "CID1",
+      "source": "interfaces/USB/class/ctaphid/ctaphid.c::CTAPHID_Execute_Msg",
+      "observed": "C exposes another HID CID's retained response. Rust now binds to the producing CID and returns busy; the old Rust after-refused-CBOR leak is reproduced and fixed. Four literal schedules remain outside parity.",
+      "evidence": "tests/fixtures/c312-hid-channels/report.json",
+      "disposition": "unresolved"
+    },
+    {
+      "id": "U3",
+      "source": "interfaces/USB/core/src/usbd_ctlreq.c::USBD_StdEPReq",
+      "observed": "Endpoint GET_STATUS accepts high wIndex, nonzero wValue and wLength other than2 in C, but Rust rejects. Raw output is retained; no approved disposition.",
+      "evidence": "tests/fixtures/c312-usb-control/report.json",
+      "disposition": "unresolved"
+    },
+    {
+      "id": "U4",
+      "source": "interfaces/USB/device/usbd_desc.c::usbd_descriptor_buffer_acquire",
+      "observed": "C stalls dynamic descriptors while FIDO owns shared IO; Rust replies using independent control storage. Both retain the next source byte. Raw difference remains unresolved.",
+      "evidence": "tests/fixtures/c312-usb-control/report.json",
+      "disposition": "unresolved"
+    }
+  ],
+  "hid_source_followup": {
+    "path": "docs/sync/evidence/hid-source-review.json",
+    "sha256": "5525464d2d3cd07e31bc3d09b2d28d476b4affe42cb487fc389a4c4e415612e6"
+  },
+  "usb_source_followup": {
+    "path": "docs/sync/evidence/usb-control-source-review.json",
+    "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5"
+  },
+  "usb_lifecycle_followup": {
+    "path": "docs/sync/evidence/usb-lifecycle-source-review.json",
+    "sha256": "2a13036534bc5261b1a92d502e4eb4fa65d47d971d6c06c030e998910c828054"
+  },
+  "usb_readiness_followup": {
+    "path": "docs/sync/evidence/usb-readiness-source-review.json",
+    "sha256": "bad0d2bc46194afda6f6cd91e4fc3f33ec43c1d161064d8e4096e2e13c4fb375"
+  },
+  "webusb_readiness_followup": {
+    "path": "docs/sync/evidence/webusb-readiness-source-review.json",
+    "sha256": "9cc35aeb236c894a79bba015b02f269ec791ff5171d8b6616102ea10f1b48341"
+  },
+  "webusb_retained_followup": {
+    "path": "docs/sync/evidence/webusb-retained-source-review.json",
+    "sha256": "beecfb93164f6498b9ed51c9029776cc2d177d65658def2e36f5523438b4f368"
+  },
+  "cleanup_irq_followup": {
+    "path": "docs/sync/evidence/cleanup-irq-source-review.json",
+    "sha256": "8c486e546be44894a9ce54e7033dfe8ec76e2983aa6a407f4eb9236962d03e25"
+  },
+  "ctap_parser_followup": {
+    "path": "docs/sync/evidence/ctap-parser-source-review.json",
+    "sha256": "df7bc965af4bead6112e3ad0c58ffc1345ddd2713e95af16592f2ac75d9dfe43"
+  },
+  "nfc_source_followup": {
+    "path": "docs/sync/evidence/nfc-source.json",
+    "sha256": "43afedd41da56f2a6ff7608b50451d98829bbfdd84e62cbb34b1bd26df8856e4"
+  },
+  "response_stream_followup": {
+    "path": "docs/sync/evidence/response-stream-source-review.json",
+    "sha256": "0420fd272ceb2d643d2c47818a5ebc928ca62643b35e6efd924ae1669de2b0ca"
+  }
+}

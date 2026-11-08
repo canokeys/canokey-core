@@ -4,9 +4,13 @@
 use canokey_rust_core::runtime::config;
 #[cfg(test)]
 pub(crate) mod tests;
+#[cfg(not(test))]
+use crate::composition::usb::service as service_usb;
 use crate::composition::{FirmwareProvider, Provider};
 #[cfg(not(test))]
 use crate::{composition::core as core_ops, sys as hal, transport};
+#[cfg(test)]
+use tests::transport::usb::service as service_usb;
 #[cfg(test)]
 use tests::{abi::core as core_ops, hal, transport};
 // Stable u8 board ABI; keep values aligned with platform/rust-core/board.h.
@@ -53,6 +57,7 @@ pub unsafe fn progress<P: Provider>() -> u8 {
         transport::usb::progress::<P>()
     }
 }
+// Fatal/first-boot diagnostics deliberately use the raw LED, including NFC.
 unsafe fn blink(on_ms: i32, off_ms: i32) -> ! {
     loop {
         unsafe {
@@ -85,6 +90,21 @@ enum Stop {
 unsafe fn run() -> Stop {
     unsafe { run_with::<crate::platform::Native>() }
 }
+#[cfg(feature = "nfc")]
+unsafe fn detect_nfc() -> bool {
+    // Observe the raw pin throughout the entire window; any low selects USB.
+    unsafe {
+        let started = hal::device_get_tick();
+        loop {
+            if ck_board_mode_pin() == 0 {
+                return false;
+            }
+            if hal::device_get_tick().wrapping_sub(started) >= 10 {
+                return true;
+            }
+        }
+    }
+}
 unsafe fn run_with<P: FirmwareProvider>() -> Stop {
     unsafe {
         ck_board_prepare();
@@ -93,7 +113,7 @@ unsafe fn run_with<P: FirmwareProvider>() -> Stop {
         #[cfg(any(feature = "storage", feature = "nfc"))]
         let flags = stored_flags.unwrap_or(config::DEFAULT_FLAGS | config::INITIALIZED);
         #[cfg(feature = "nfc")]
-        let nfc_mode = readable && flags & config::NFC != 0 && ck_board_mode_pin() != 0;
+        let nfc_mode = readable && flags & config::NFC != 0 && detect_nfc();
         #[cfg(not(feature = "nfc"))]
         let nfc_mode = false;
         #[cfg(feature = "nfc")]
@@ -122,6 +142,7 @@ unsafe fn run_with<P: FirmwareProvider>() -> Stop {
         }
         #[cfg(feature = "nfc")]
         {
+            hal::ck_board_nfc_prepare();
             if transport::nfc::ck_nfc_configure() != 0 {
                 return Stop::Blink(10, 1000);
             }
@@ -147,7 +168,7 @@ unsafe fn run_with<P: FirmwareProvider>() -> Stop {
         } else {
             transport::usb::init();
             while ck_board_usb_ready() == 0 {
-                transport::ccid::poll::<P>();
+                service_usb::<P>();
             }
             ck_board_clock(CLOCK_USB_OPERATING);
             for primitive in 0..CRYPTO_CHECK_COUNT {

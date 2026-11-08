@@ -1,0 +1,125 @@
+{
+  "scope": "Response classification and native buffered Le only; independent cryptographic/transport contracts, not whole CTAP or release acceptance",
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "proof": {
+    "path": "docs/sync/evidence/auth-response-source-review.json",
+    "sha256": "cf4bb34b7b101fcd878275a1d996d72cd951fe54d0cfdc8735e0e5f1e0e3af1d"
+  },
+  "report": {
+    "path": "tests/fixtures/c312-auth-response/report.json",
+    "sha256": "b387c797a93391fb22d16f8ab5fb28b1099a4bef0163dbc349815d92e72fb5ff"
+  },
+  "results": [
+    {
+      "side": "c",
+      "transport": "ccid",
+      "cases": 37,
+      "events": 255,
+      "passed": true
+    },
+    {
+      "side": "c",
+      "transport": "webusb",
+      "cases": 37,
+      "events": 3668,
+      "passed": true
+    },
+    {
+      "side": "c",
+      "transport": "msg",
+      "cases": 39,
+      "events": 261,
+      "passed": true
+    },
+    {
+      "side": "c",
+      "transport": "nfc",
+      "cases": 43,
+      "events": 1686,
+      "passed": true
+    },
+    {
+      "side": "rust",
+      "transport": "ccid",
+      "cases": 43,
+      "events": 328,
+      "passed": true
+    },
+    {
+      "side": "rust",
+      "transport": "webusb",
+      "cases": 43,
+      "events": 4871,
+      "passed": true
+    },
+    {
+      "side": "rust",
+      "transport": "msg",
+      "cases": 45,
+      "events": 332,
+      "passed": true
+    },
+    {
+      "side": "rust",
+      "transport": "nfc",
+      "cases": 49,
+      "events": 2192,
+      "passed": true
+    }
+  ],
+  "regressions": {
+    "core_unit": 142,
+    "host_ctest": 43,
+    "prior_wire_cases": 365,
+    "prior_wire_events": 11695,
+    "prior_equal_output": 348,
+    "prior_unresolved": 17,
+    "prior_results_unchanged": true
+  },
+  "products": {
+    "devkit": {
+      "flash": 179148,
+      "static_ram": 8272,
+      "linked": true
+    },
+    "nfcc": {
+      "flash": 187744,
+      "static_ram": 8432,
+      "overflow": 5984,
+      "linked": false
+    }
+  },
+  "rom_trials": {
+    "length_then_kind": [
+      179196,
+      187784
+    ],
+    "kind_first": [
+      179164,
+      187784
+    ],
+    "outlined_kind_first": [
+      179148,
+      187744
+    ],
+    "before": [
+      179012,
+      187608
+    ],
+    "retained_delta": [
+      136,
+      136
+    ]
+  },
+  "platform_checkpoint": "docs/evidence/c312-auth-response-checkpoint/report.json",
+  "remaining": [
+    "Negative/short response file reads and broad closure/cancellation/error schedules.",
+    "USB U2F polling/native-registration and full certificate-length matrix; E57 small-U2F/source replacement runs on NFC.",
+    "Other malformed/error order, paired executing cancellation and arbitrary IRQ/endpoint schedules.",
+    "Physical USB/RF/WTX, CIU stack/PKE, Linux ASan/LeakSanitizer, unresolved wire dispositions and full source audit."
+  ],
+  "preservation_rerun": "E58 adds only host fault seams. The E57 contract matrix was re-executed on both implementations after the fixture changes; the preceding sealed checkpoint preserves its original report and fingerprints.",
+  "session_yield_preservation": "Rerun after E59: the same contract cases pass; original checkpoint and product hashes are historical, preserved in the immutable platform archives.",
+  "u2f_progress_preservation": "Rerun after T18: the same contract checks pass. Original checkpoint/resource measurements remain historical in the immutable platform archives.",
+  "usb_u2f_polling_preservation": "Current paired report rerun after host-only Polling fixture support. Production measurements and initial acceptance are historical in the immutable platform archive; see usb-u2f-polling-checkpoint.json for current host coverage."
+}

@@ -1,0 +1,44 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Focused file-read/response-close observations; no additional source-unit approvals",
+  "functions": [
+    {
+      "path": "src/apdu.c",
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "line": 282,
+      "source": "int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {\n  if (response_source.view.read) {\n    uint32_t remaining = response_source.view.total_len - response_source.view.offset;\n    uint16_t to_send = (uint16_t)MIN(remaining, sh->len);\n\n    // The caller writes SW to sh->data + sh->len after we return, which\n    // overwrites bytes that the response source may still need (e.g. the\n    // tail of the auth_data in the first chunk of an MC streaming response).\n    // Restore any bytes saved on the previous call.\n    if (response_tail_len != 0 && response_source.view.offset == response_tail_offset) {\n      memcpy(sh->data + response_tail_offset, response_tail, response_tail_len);\n      response_tail_len = 0;\n    }\n\n    int read = response_source.view.read(response_source.view.ctx, response_source.view.offset, sh->data, to_send);\n    if (read < 0 || read > to_send || (read == 0 && remaining != 0)) {\n      ERR_MSG(\"source read failed sent=%lu read=%d\\n\", (unsigned long)response_source.view.offset, read);\n      apdu_response_source_clear();\n      sh->len = 0;\n      sh->sw = SW_UNABLE_TO_PROCESS;\n      return -1;\n    }\n\n    // Save the two bytes at the end of this chunk so that the SW byte\n    // write by the caller does not corrupt response source data.\n    if (sh->data == shared_io_buffer && remaining > (uint32_t)read) {\n      const uint16_t tail_len = 2;\n      memcpy(response_tail, sh->data + read, tail_len);\n      response_tail_offset = (uint16_t)read;\n      response_tail_len = tail_len;\n    }\n\n    sh->len = (uint16_t)read;\n    response_source.view.offset += (uint16_t)read;\n    remaining = response_source.view.total_len - response_source.view.offset;\n    if (remaining != 0) {\n      sh->sw = remaining > 0xFF ? 0x61FF : 0x6100 + remaining;\n    } else {\n      sh->sw = response_source.view.sw;\n      apdu_response_source_clear();\n    }\n    return 0;\n  }\n\n  uint16_t to_send = ex->rapdu.len - ex->sent;\n  if (to_send > sh->len) to_send = sh->len;\n  if (response_tail_len != 0 && ex->sent == response_tail_offset) {\n    // Restore the pending prefix before moving an aliased response chunk.\n    // The previous SW trailer or incoming GET RESPONSE may have overwritten it.\n    memcpy(ex->rapdu.data + response_tail_offset, response_tail, response_tail_len);\n    response_tail_len = 0;\n  }\n  memmove(sh->data, ex->rapdu.data + ex->sent, to_send);\n  sh->len = to_send;\n  ex->sent += to_send;\n  if (ex->sent < ex->rapdu.len) {\n    if (ex->rapdu.data == sh->data) {\n      response_tail_len = MIN(ex->rapdu.len - ex->sent, sizeof(response_tail));\n      memcpy(response_tail, ex->rapdu.data + ex->sent, response_tail_len);\n      response_tail_offset = ex->sent;\n    }\n    if (ex->rapdu.len - ex->sent > 0xFF)\n      sh->sw = 0x61FF;\n    else\n      sh->sw = 0x6100 + (ex->rapdu.len - ex->sent);\n  } else {\n    sh->sw = ex->rapdu.sw;\n    response_tail_reset();\n  }\n  return 0;\n}"
+    },
+    {
+      "path": "src/fs.c",
+      "file_sha256": "e776130e478311807b43878424362cd2b504a64624a60ad300b17784229f02a0",
+      "line": 93,
+      "source": "int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {\n  int err = cache_acquire(read_file);\n  if (err < 0) return err;\n  lfs_file_t f;\n  err = lfs_file_opencfg(&lfs, &f, path, LFS_O_RDONLY, &file_config);\n  if (err >= 0) {\n    err = seek_and_read(&f, off, buf, len);\n    err = close_file_result(&f, err);\n  }\n  cache_release(read_file);\n  return err;\n}"
+    },
+    {
+      "path": "applets/ctap/ctap.c",
+      "file_sha256": "d6c32d99aacebb0017def6ef232c6c1fc6674f766a201c3160a5bcd9ede21e0d",
+      "line": 953,
+      "source": "static int ctap_response_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {\n  CTAP_response_stream_state *state = (CTAP_response_stream_state *)ctx;\n  size_t copied = 0;\n\n  while (copied < max_len && state->current_segment < state->segment_count) {\n    CTAP_response_stream_segment *segment = &state->storage.segments[state->current_segment];\n    if (segment->off == segment->len) {\n      ++state->current_segment;\n      continue;\n    }\n\n    size_t n = MIN(segment->len - segment->off, max_len - copied);\n    size_t written_now = n;\n    switch (segment->kind) {\n    case CTAP_RESPONSE_STREAM_SEG_MEM:\n      memcpy(out + copied, segment->buf + segment->off, n);\n      break;\n    case CTAP_RESPONSE_STREAM_SEG_FILE:\n      if (read_file(segment->path, out + copied, segment->file_off + segment->off, n) != (int)n) return -1;\n      break;\n    case CTAP_RESPONSE_STREAM_SEG_MLDSA:\n      if (ctap_mldsa_stream_read_generated(segment->mldsa, out + copied, n, &written_now) < 0) return -1;\n      if (written_now == 0) return -1;\n      break;\n    }\n    segment->off += written_now;\n    copied += written_now;\n  }\n\n  *written = copied;\n  return 0;\n}"
+    },
+    {
+      "path": "applets/ctap/u2f.c",
+      "file_sha256": "4dd3aa6790855b0fccff54d8aa87e90c95809eb2504ca3bcba9b94c07f38d127",
+      "line": 33,
+      "source": "static int u2f_register_stream_read_at(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {\n  U2F_register_stream_state *state = (U2F_register_stream_state *)ctx;\n  const uint8_t *stream_buf = u2f_register_stream_buffer;\n  const size_t prefix_len = sizeof(U2F_register_prefix);\n  size_t copied = 0;\n\n  if (offset < prefix_len) {\n    size_t n = MIN((size_t)len, prefix_len - offset);\n    memcpy(buf, stream_buf + offset, n);\n    copied += n;\n    offset += (uint32_t)n;\n  }\n\n  if (copied < len && offset < prefix_len + state->cert_len) {\n    size_t cert_off = offset - prefix_len;\n    size_t to_read = MIN((size_t)len - copied, (size_t)state->cert_len - cert_off);\n    int ret = read_file(CTAP_CERT_FILE, buf + copied, (lfs_soff_t)cert_off, (lfs_size_t)to_read);\n    if (ret < 0) return ret;\n    copied += (size_t)ret;\n    offset += (uint32_t)ret;\n    if ((size_t)ret != to_read) return (int)copied;\n  }\n\n  if (copied < len) {\n    size_t sig_off = offset - prefix_len - state->cert_len;\n    if (sig_off < state->sig_len) {\n      size_t n = MIN((size_t)len - copied, (size_t)state->sig_len - sig_off);\n      memcpy(buf + copied, stream_buf + prefix_len + sig_off, n);\n      copied += n;\n    }\n  }\n\n  return (int)copied;\n}"
+    },
+    {
+      "path": "interfaces/USB/class/ctaphid/ctaphid.c",
+      "file_sha256": "51143d315423af4f620209d12275867cb10982a530033c404ebbdb095517d6a6",
+      "line": 79,
+      "source": "static int CTAPHID_APDUResponseRead(void *ctx, uint8_t *out, size_t max_len, size_t *written);\nstatic void CTAPHID_SendErrorResponse(uint32_t cid, uint8_t code);\nstatic uint8_t CTAPHID_SendCancelResponseIfNeeded(void);\nstatic void CTAPHID_Execute_Init(void);\nstatic void CTAPHID_Execute_Msg(void);\nstatic void CTAPHID_Execute_Cbor(void);\n\nstatic void CTAPHID_ReleasePKERequestStorage(void *ctx) {\n  UNUSED(ctx);\n  if (!channel.use_pke_buffer) return;\n  pke_buffer_clear();\n  pke_buffer_release(PKE_BUFFER_OWNER_CTAP);\n  channel.use_pke_buffer = 0;\n}"
+    }
+  ],
+  "observations": [
+    "Generic CTAP file segments demand exactly n bytes. apdu_output rejects negative reads, overreads and zero progress with remaining data, clears the source and emits zero bytes/6900.",
+    "U2F register returns the number of bytes copied, including any registration prefix; positive short progress can be retried by generic APDU output. This differs from generic CTAP exact-file segments.",
+    "Native HID APDU response reads require the exact requested count even for a U2F source. Native MSG/CBOR fault executions return HID ERROR7F and permit a subsequent source probe and full verified recovery.",
+    "Rust Storage::read_at is exact-or-error; crates/ffi/src/platform/storage.rs::read_at validates the native count through io_count(Some(out.len())). The test supplies a short prefix then reports an error; no physical/native storage failure is claimed.",
+    "The separate C fault build renames only fs.c read_file, then forwards normal operations to that original implementation. The compiled applets/transports are unmodified pinned C. No source/cleanup/authorization result is substituted."
+  ],
+  "unresolved": "T18/E58: three NFC U2F short-read schedules succeed with verified signatures in C and fail closed in Rust. Do not count as parity or an approved intentional production difference."
+}

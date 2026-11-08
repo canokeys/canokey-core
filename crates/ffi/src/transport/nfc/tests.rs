@@ -14,6 +14,117 @@ const FIDO_SELECT: [u8; 16] = [
 const FIDO_EXTENDED: [u8; 11] = [
     0x03, 0x80, 0x10, 0x00, 0x00, 0x00, 0x00, 0x01, 0x04, 0x00, 0x00,
 ];
+struct Stage {
+    bytes: [u8; canokey_protocol::ctaphid::CTAP_MAX_REQUEST],
+    held: bool,
+    writes: usize,
+    closes: usize,
+}
+static mut STAGE: Stage = Stage {
+    bytes: [0; canokey_protocol::ctaphid::CTAP_MAX_REQUEST],
+    held: false,
+    writes: 0,
+    closes: 0,
+};
+fn stage() -> &'static mut Stage {
+    unsafe { &mut *core::ptr::addr_of_mut!(STAGE) }
+}
+pub(super) fn prepare(prefix: &[u8; 7]) -> Result<(), Rejection> {
+    if prefix[..2] != [0x80, 0x10] {
+        return Err(Rejection::Status(Sw::WRONG_LENGTH));
+    }
+    if !controller().fido {
+        return Err(Rejection::Status(Sw::FILE_NOT_FOUND));
+    }
+    if prefix[2] & 0x7f != 0 || prefix[3] != 0 {
+        return Err(Rejection::Status(Sw::WRONG_P1P2));
+    }
+    if usize::from(u16::from_be_bytes([prefix[5], prefix[6]])) > stage().bytes.len() {
+        return Err(Rejection::TooLarge);
+    }
+    assert!(!stage().held);
+    stage().held = true;
+    Ok(())
+}
+pub(super) fn stage_write(offset: usize, bytes: &[u8]) -> bool {
+    assert!(stage().held);
+    stage().bytes[offset..offset + bytes.len()].copy_from_slice(bytes);
+    stage().writes += 1;
+    true
+}
+pub(super) fn stage_read(offset: usize, out: &mut [u8]) -> bool {
+    assert!(stage().held);
+    out.copy_from_slice(&stage().bytes[offset..offset + out.len()]);
+    true
+}
+pub(super) fn stage_close() {
+    assert!(stage().held);
+    stage().bytes.fill(0);
+    stage().held = false;
+    stage().closes += 1;
+}
+pub(super) unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outcome {
+    let mut backend = Stager::<P>(core::marker::PhantomData);
+    let result = request.finish(&mut backend);
+    let mut input = std::vec![0; request.len()];
+    if result.is_ok() {
+        assert!(request.read(
+            0,
+            &mut input,
+            unsafe { core::slice::from_raw_parts(buffer, apdu::SHORT_FRAME_BYTES) },
+            &mut backend
+        ));
+    }
+    let info = apdu::parse(&input).ok().map(|command| command.info);
+    request.reset(&mut backend);
+    match result {
+        Err(rejection) => {
+            let response: &[u8] = match rejection {
+                Rejection::TooLarge => &[0x39, 0x90, 0],
+                Rejection::Status(sw) => {
+                    let bytes = sw.bytes();
+                    unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, 2) };
+                    return Outcome {
+                        length: 2,
+                        info: None,
+                        fido: false,
+                    };
+                }
+            };
+            unsafe { core::ptr::copy_nonoverlapping(response.as_ptr(), buffer, response.len()) };
+            Outcome {
+                length: response.len() as i32,
+                info: None,
+                fido: false,
+            }
+        }
+        Ok(()) => {
+            assert!(
+                !stage().held,
+                "PKE must be released before command execution"
+            );
+            let pointer = if input.len() <= apdu::SHORT_FRAME_BYTES {
+                buffer as *const u8
+            } else {
+                input.as_ptr()
+            };
+            let length = unsafe {
+                ck_core_exchange(
+                    crate::transport::owners::OWNER_NFC,
+                    pointer,
+                    input.len(),
+                    buffer,
+                    apdu::SHORT_REPLY_BYTES,
+                )
+            };
+            Outcome {
+                length,
+                info,
+                fido: controller().fido,
+            }
+        }
+    }
+}
 struct Controller {
     masked: u32,
     now: u32,
@@ -30,26 +141,41 @@ struct Controller {
     waiting_in_core: bool,
     fido: bool,
     continuation: usize,
+    response_total: usize,
+    response_offset: usize,
+    response_chunk: usize,
+    executed_len: usize,
+    get_response_les: std::vec::Vec<u32>,
     timer: Option<unsafe extern "C" fn()>,
 }
-static mut CONTROLLER: Controller = Controller {
-    masked: 0,
-    now: 0,
-    flags: [0; wire::FM_IRQ_BYTES],
-    rx: [0; wire::FRAME_LIMIT],
-    rxlen: 0,
-    tx: [0; wire::FRAME_LIMIT],
-    txlen: 0,
-    calls: 0,
-    resets: 0,
-    sends: 0,
-    resets_in_core: 0,
-    reset_in_core: false,
-    waiting_in_core: false,
-    fido: false,
-    continuation: 0,
-    timer: None,
-};
+impl Controller {
+    const fn new() -> Self {
+        Self {
+            masked: 0,
+            now: 0,
+            flags: [0; wire::FM_IRQ_BYTES],
+            rx: [0; wire::FRAME_LIMIT],
+            rxlen: 0,
+            tx: [0; wire::FRAME_LIMIT],
+            txlen: 0,
+            calls: 0,
+            resets: 0,
+            sends: 0,
+            resets_in_core: 0,
+            reset_in_core: false,
+            waiting_in_core: false,
+            fido: false,
+            continuation: 0,
+            response_total: RESPONSE_PAYLOAD * 2,
+            response_offset: 0,
+            response_chunk: RESPONSE_PAYLOAD,
+            executed_len: 0,
+            get_response_les: std::vec::Vec::new(),
+            timer: None,
+        }
+    }
+}
+static mut CONTROLLER: Controller = Controller::new();
 fn controller() -> &'static mut Controller {
     unsafe { &mut *core::ptr::addr_of_mut!(CONTROLLER) }
 }
@@ -154,15 +280,35 @@ pub(crate) unsafe fn ck_core_exchange(
             }
             return 2;
         }
+        let command = apdu::parse(input).unwrap();
+        let le = command.info.le.unwrap_or(65536) as usize;
         if input[1] == 0x10 {
-            assert_eq!(length, FIDO_EXTENDED.len() - 3);
             assert_eq!(input[4], 0);
             controller().continuation = 0;
+            controller().response_offset = 0;
+            controller().executed_len = input.len();
         } else {
-            assert_eq!(input, &apdu::GET_RESPONSE);
+            assert_eq!(&input[..4], &apdu::GET_RESPONSE[..4]);
             controller().continuation += 1;
-            assert_eq!(controller().continuation, 1);
+            controller().get_response_les.push(le as u32);
         }
+        let c = controller();
+        let n = (c.response_total - c.response_offset)
+            .min(c.response_chunk)
+            .min(le);
+        for i in 0..n {
+            unsafe { out.add(i).write((c.response_offset + i) as u8) };
+        }
+        c.response_offset += n;
+        unsafe {
+            out.add(n).write(if c.response_offset < c.response_total {
+                0x61
+            } else {
+                0x90
+            });
+            out.add(n + 1).write(0);
+        }
+        return (n + 2) as i32;
     } else {
         assert_eq!(
             input,
@@ -186,23 +332,12 @@ pub(crate) unsafe fn ck_core_exchange(
             assert_eq!(controller().resets, controller().resets_in_core);
         }
     }
-    let continuation = controller().continuation;
     for i in 0..RESPONSE_PAYLOAD {
-        unsafe {
-            out.add(i).write(
-                (i + if controller().fido {
-                    RESPONSE_PAYLOAD * continuation
-                } else {
-                    0
-                }) as u8,
-            )
-        };
+        unsafe { out.add(i).write(i as u8) };
     }
-    let more = controller().fido && continuation == 0;
     unsafe {
-        out.add(RESPONSE_PAYLOAD)
-            .write(if more { apdu::MORE_DATA_SW1 } else { 0x90 });
-        out.add(RESPONSE_PAYLOAD + 1).write(0x00);
+        out.add(RESPONSE_PAYLOAD).write(0x90);
+        out.add(RESPONSE_PAYLOAD + 1).write(0);
     }
     (RESPONSE_PAYLOAD + 2) as i32
 }
@@ -212,6 +347,7 @@ fn poll() {
 #[test]
 fn nfc_link_chaining_wtx_reset_and_fido_aggregation() {
     let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
+    *controller() = Controller::new();
     unsafe { init::<crate::platform::Native>() };
     assert_ne!(unsafe { is_nfc() }, 0);
     assert_eq!(controller().resets, 1);
@@ -325,5 +461,116 @@ fn nfc_link_chaining_wtx_reset_and_fido_aggregation() {
     assert_eq!(unsafe { ck_nfc_progress() }, 0);
     assert_eq!(controller().masked, 0);
     // Release the mode latch so the serialized USB fixture can run afterwards.
+    unsafe { ck_nfc_set_mode(0) };
+}
+
+// Drive actual facade I-blocks and ACKs; no direct call to dispatch/execute.
+fn exchange_blocks(command: &[u8], mut number: u8, repeat: bool) -> (std::vec::Vec<u8>, u8) {
+    let parts = command.chunks(wire::INF_LIMIT);
+    let count = parts.len();
+    for (index, bytes) in parts.enumerate() {
+        let mut packet = std::vec![0x02 | number | if index + 1 < count { 0x10 } else { 0 }];
+        packet.extend_from_slice(bytes);
+        packet.extend_from_slice(&[0, 0]);
+        frame(&packet);
+        poll();
+        if index + 1 < count {
+            if repeat {
+                let writes = stage().writes;
+                frame(&packet);
+                poll();
+                assert_eq!(stage().writes, writes);
+            }
+            number ^= 1;
+        }
+    }
+    poll();
+    let mut result = std::vec::Vec::new();
+    for _ in 0..3000 {
+        let c = controller();
+        result.extend_from_slice(&c.tx[1..c.txlen]);
+        number = (c.tx[0] ^ 1) & 1;
+        if c.tx[0] & 0x10 == 0 {
+            return (result, number);
+        }
+        let sent = c.sends;
+        frame(&[0xa2 | number, 0, 0]);
+        poll();
+        if controller().sends == sent {
+            poll(); // Internal GET RESPONSE computed, then released to RF.
+        }
+        assert_eq!(controller().sends, sent + 1);
+    }
+    panic!("NFC response did not terminate");
+}
+
+#[test]
+fn large_requests_finite_le_remainder_and_staged_reset() {
+    let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
+    for le in [
+        None,
+        Some(1u32),
+        Some(255),
+        Some(256),
+        Some(257),
+        Some(65535),
+        Some(65536),
+    ] {
+        *controller() = Controller::new();
+        unsafe { init::<crate::platform::Native>() };
+        controller().fido = true;
+        controller().response_total = 700;
+        controller().response_chunk = 256;
+        let mut command = std::vec![0x80, 0x10, 0, 0, 0, 0x03, 0x00];
+        command.resize(7 + 768, 0x5a);
+        if let Some(limit) = le {
+            command.extend_from_slice(&(limit as u16).to_be_bytes());
+        }
+        let closed = stage().closes;
+        let (result, number) = exchange_blocks(&command, 0, true);
+        let emitted = le.unwrap_or(65536).min(700) as usize;
+        assert_eq!(controller().executed_len, command.len());
+        assert_eq!(stage().closes, closed + 1);
+        assert!(!stage().held);
+        assert!(stage().bytes.iter().all(|byte| *byte == 0));
+        assert_eq!(result.len(), emitted + 2);
+        assert_eq!(
+            &result[emitted..],
+            if emitted == 700 {
+                &[0x90, 0]
+            } else {
+                &[0x61, 0]
+            }
+        );
+        for (index, byte) in result[..emitted].iter().enumerate() {
+            assert_eq!(*byte, index as u8);
+        }
+        if le == Some(257) {
+            assert_eq!(controller().get_response_les, [1]);
+        }
+        if emitted < 700 {
+            // Finite Le must preserve pending bytes for a reader's continuation.
+            let (remainder, _) = exchange_blocks(&apdu::GET_RESPONSE, number, false);
+            let n = (700 - emitted).min(256);
+            assert_eq!(remainder.len(), n + 2);
+            assert_eq!(remainder[0], emitted as u8);
+        }
+        unsafe { ck_nfc_set_mode(0) };
+    }
+    *controller() = Controller::new();
+    unsafe { init::<crate::platform::Native>() };
+    controller().fido = true;
+    let mut packet = std::vec![0x12, 0x80, 0x10, 0, 0, 0, 0x03, 0x00];
+    packet.extend_from_slice(&[0x5a; 20]);
+    packet.extend_from_slice(&[0, 0]);
+    frame(&packet);
+    poll();
+    assert!(stage().held);
+    let closes = stage().closes;
+    activate();
+    poll();
+    assert!(!stage().held);
+    assert_eq!(stage().closes, closes + 1);
+    assert!(stage().bytes.iter().all(|byte| *byte == 0));
     unsafe { ck_nfc_set_mode(0) };
 }

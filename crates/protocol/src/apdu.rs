@@ -7,6 +7,22 @@ pub use decode::{FrameDecoder, FrameEvent, parse};
 pub use header::*;
 // FIDO Alliance AID: RID A000000647, PIX 2F0001 (FIDO/U2F applet).
 pub const FIDO_AID: [u8; 8] = [0xa0, 0x00, 0x00, 0x06, 0x47, 0x2f, 0x00, 0x01];
+// CanoKey USB-only private FIDO selector, separating USB probes from NFC FIDO.
+pub const FIDO_USB_AID: [u8; 8] = [0xf0, 0x43, 0x41, 0x4e, 0x4f, 0x46, 0x49, 0x44];
+/// Transport context is supplied by the caller, never inferred from AID bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Transport {
+    Usb,
+    Nfc,
+}
+impl Transport {
+    pub const fn fido_aid(self) -> &'static [u8; 8] {
+        match self {
+            Self::Usb => &FIDO_USB_AID,
+            Self::Nfc => &FIDO_AID,
+        }
+    }
+}
 // FIDO/U2F APDU dispatch assignments after explicit applet selection.
 pub const CLA_CHAINING: u8 = 0x10;
 pub const CLA_FIDO: u8 = 0x80;

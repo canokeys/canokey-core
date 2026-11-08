@@ -12,7 +12,7 @@ const MAX_FRAME_CHUNK: usize = 256;
 // Shared-session identities mirrored by ffi/transport and the ck_core_exchange
 // owner argument. WebUSB uses 3 and has no special retention/extended policy.
 pub(crate) const OWNER_APDU: u8 = 0;
-pub(crate) const OWNER_CCID: u8 = 1;
+pub(crate) const OWNER_WEBUSB: u8 = 3;
 pub(crate) const OWNER_NFC: u8 = 4;
 #[cfg(feature = "ctap")]
 pub(crate) const OWNER_CTAP: u8 = 2;
@@ -30,20 +30,47 @@ pub enum Reply {
 /// command-specific source/crypto schedule. Close ends the request lease.
 pub trait InputSource {
     fn read(&mut self, output: &mut [u8]) -> Result<usize, Sw>;
-    fn close(&mut self);
+    /// End the lease even after failure. A cancellation observed during cleanup
+    /// must fail here so a fully parsed request cannot enter applet execution.
+    fn close(&mut self) -> Result<(), Sw>;
 }
 
 /// Static routing contract. Applets own semantic consumers and response backing;
 /// this runtime owns transport/chain boundaries and the only response offset.
 pub trait Router {
+    fn native_pending(&self) -> bool {
+        false
+    }
+    #[cfg(feature = "ctap")]
+    fn yield_native(&mut self, _p: &mut Platform<'_, impl crate::ports::Backends>) {}
     fn install(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw>;
     fn reset(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>);
     fn selected(&self) -> bool;
     fn select(
         &mut self,
         aid: &[u8],
+        transport: apdu::Transport,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw>;
+    /// Rejected USB SELECT must revoke a previously selected FIDO context.
+    fn reject_select(
+        &mut self,
+        _transport: apdu::Transport,
+        _p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
+    }
+    fn fido_selected(&self, _p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
+        false
+    }
+    /// NFC rejects envelopes before applet dispatch. Independent applet input
+    /// cursors may survive that rejection; FIDO's transport chain does not.
+    fn retain_nfc_input(&self) -> bool {
+        false
+    }
+    /// Resolve omitted Le once for both applet validation and response allowance.
+    fn absent_le(&self, _info: apdu::CommandInfo) -> u32 {
+        DEFAULT_APDU_LE
+    }
     fn command_limit(&self, header: Header) -> Result<u32, Sw>;
     fn chain_header(&self, header: Header) -> Header {
         header
@@ -74,7 +101,7 @@ pub trait Router {
     fn finish(
         &mut self,
         header: Header,
-        le: Option<u32>,
+        le: u32,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(u32, Sw), Sw>;
     fn read_response(
@@ -84,11 +111,6 @@ pub trait Router {
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw>;
     fn close_response(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>);
-    /// Match applet response-source abandonment policy, not buffer ownership.
-    /// Transport admission must still wait for final endpoint completion.
-    fn response_preemptable(&self, _total: u32) -> bool {
-        false
-    }
     fn is_eject(
         &self,
         _header: Header,
@@ -98,6 +120,10 @@ pub trait Router {
     }
     fn eject(&mut self, _p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
         Err(Sw::INS_NOT_SUPPORTED)
+    }
+    /// Applet state retained between completed commands may own shared scratch.
+    fn can_yield(&self) -> bool {
+        true
     }
     fn output_busy(&self) -> bool {
         false
@@ -140,6 +166,8 @@ enum FrameRoute {
 pub struct Runtime<R> {
     // Nonzero transport identity holding the session until reset/release.
     owner: Option<u8>,
+    #[cfg(feature = "ctap")]
+    apdu_owner: Option<u8>,
     chain: apdu::CommandChain,
     response: Response,
     frame: Option<apdu::FrameDecoder>,
@@ -151,6 +179,8 @@ impl<R: Router> Runtime<R> {
     pub const fn with_router(router: R) -> Self {
         Self {
             owner: None,
+            #[cfg(feature = "ctap")]
+            apdu_owner: None,
             chain: apdu::CommandChain::new(),
             response: Response::new(),
             frame: None,
@@ -163,7 +193,10 @@ impl<R: Router> Runtime<R> {
     pub fn can_preempt(&self) -> bool {
         self.frame.is_none()
             && !self.chain.active()
-            && (!self.response.active() || self.router.response_preemptable(self.response.total()))
+            && !self.response.active()
+            && !self.router.output_busy()
+            && !self.router.native_pending()
+            && self.router.can_yield()
     }
     pub fn router(&self) -> &R {
         &self.router
@@ -201,6 +234,10 @@ impl<R: Router> Runtime<R> {
         self.close_and_abort(p);
         self.router.reset(p);
         self.owner = None;
+        #[cfg(feature = "ctap")]
+        {
+            self.apdu_owner = None;
+        }
     }
     pub fn slot_power(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.reset(p);
@@ -213,11 +250,12 @@ impl<R: Router> Runtime<R> {
         total: usize,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
-        // Platform admission excludes HID while it owns an active USB transfer.
-        // A subsequent APDU abandons the idle native session before selecting.
+        // Native HID execution yields the shared workspace, retaining the
+        // APDU selection and authorization held before it borrowed the Core.
         #[cfg(feature = "ctap")]
-        if owner == OWNER_CCID && self.owner == Some(OWNER_CTAP) {
-            self.reset(p);
+        if self.owner == Some(OWNER_CTAP) {
+            self.router.yield_native(p);
+            self.owner = self.apdu_owner.take();
         }
         if owner == OWNER_APDU || self.owner.is_some_and(|current| current != owner) {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
@@ -238,21 +276,31 @@ impl<R: Router> Runtime<R> {
             }
         }
     }
-    fn extended_allowed(&self, owner: u8, header: Header) -> bool {
-        (owner == OWNER_CCID || owner == OWNER_NFC)
-            && self.owner.is_none_or(|current| current == owner)
-            && !self.chain.active()
-            && !self.router.output_busy()
-            && self.router.allows_extended(header)
+    /// Reject an envelope without dispatching it. NFC clears FIDO input and
+    /// output, but leaves other applets' command cursors untouched.
+    pub fn abort_request(&mut self, owner: u8, p: &mut Platform<'_, impl crate::ports::Backends>) {
+        if self.owner.is_none_or(|current| current == owner) {
+            if owner == OWNER_NFC && self.router.retain_nfc_input() {
+                self.close_response(p);
+            } else {
+                self.close_and_abort(p);
+            }
+            self.owner = Some(owner);
+        }
     }
-    fn validate_extended(
-        &self,
-        owner: u8,
-        prefix: &[u8; canokey_protocol::apdu::EXTENDED_HEADER_BYTES],
-        total: usize,
-    ) -> Result<u16, Sw> {
-        if !self.router.selected() {
-            return Err(Sw::FILE_NOT_FOUND);
+    /// Authoritative applet/configuration state for transport response policy.
+    pub fn fido_selected(&self, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
+        self.router.fido_selected(p)
+    }
+    /// NFC does not know Case3E/4E's total until the final I-block. Validate the
+    /// large-body prefix before staging, returning the logical request budget.
+    pub fn prepare_nfc(
+        &mut self,
+        prefix: &[u8; apdu::EXTENDED_HEADER_BYTES],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<u32, Sw> {
+        if self.owner.is_some_and(|owner| owner != OWNER_NFC) {
+            return Err(Sw::CONDITIONS_NOT_SATISFIED);
         }
         let header = Header {
             cla: prefix[0],
@@ -260,37 +308,36 @@ impl<R: Router> Runtime<R> {
             p1: prefix[2],
             p2: prefix[3],
         };
-        let lc = u16::from_be_bytes([prefix[5], prefix[6]]);
-        if !self.extended_allowed(owner, header)
-            || prefix[4] != 0
-            || lc == 0
-            || ![
-                usize::from(lc) + canokey_protocol::apdu::EXTENDED_HEADER_BYTES,
-                usize::from(lc) + canokey_protocol::apdu::EXTENDED_OVERHEAD_BYTES,
-            ]
-            .contains(&total)
-            || u32::from(lc) > self.router.command_limit(header)?
-        {
+        if !header.is_get_response() {
+            self.close_response(p);
+        }
+        self.owner = Some(OWNER_NFC);
+        if prefix[..2] != [apdu::CLA_FIDO, apdu::FIDO_CBOR_INS] || prefix[4] != 0 {
             return Err(Sw::WRONG_LENGTH);
         }
-        Ok(lc)
-    }
-    /// End old response/input lifetimes BEFORE the caller borrows volatile
-    /// scratch. Failed admission may clean up this owner, never a foreign one.
-    pub fn prepare_extended(
-        &mut self,
-        owner: u8,
-        prefix: &[u8; canokey_protocol::apdu::EXTENDED_HEADER_BYTES],
-        total: usize,
-        p: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<u16, Sw> {
-        let result = self.validate_extended(owner, prefix, total);
-        if result.is_ok() || self.owner == Some(owner) {
-            self.close_and_abort(p);
+        if !self.router.fido_selected(p) {
+            return Err(Sw::FILE_NOT_FOUND);
         }
-        let lc = result?;
-        self.owner = Some(owner);
-        Ok(lc)
+        // Only an admitted FIDO MSG replaces input. A different large command
+        // is drained before applet dispatch and must preserve its old cursor.
+        self.abort_input(p);
+        if header.p1 & 0x7f != 0 || header.p2 != 0 {
+            return Err(Sw::WRONG_P1P2);
+        }
+        self.router.command_limit(header)
+    }
+    fn transport(&self) -> apdu::Transport {
+        if self.owner == Some(OWNER_NFC) {
+            apdu::Transport::Nfc
+        } else {
+            apdu::Transport::Usb
+        }
+    }
+    fn extended_allowed(&self, owner: u8, header: Header) -> bool {
+        (owner == OWNER_WEBUSB || owner == OWNER_NFC)
+            && self.owner.is_none_or(|current| current == owner)
+            && !self.router.output_busy()
+            && (header.is_select_by_name() || self.router.allows_extended(header))
     }
     #[inline(never)]
     fn start(
@@ -298,7 +345,20 @@ impl<R: Router> Runtime<R> {
         info: CommandInfo,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
-        if info.extended && !self.router.selected() {
+        if info.extended
+            && self.owner == Some(OWNER_NFC)
+            && info.header.unchained().cla == apdu::CLA_FIDO
+            && info.header.ins == apdu::FIDO_CBOR_INS
+        {
+            // NFC extended MSG restarts input even when CLA starts a new chain.
+            self.chain.reset();
+            self.router.abort_command(p);
+        }
+        if info.extended
+            && !info.header.is_select_by_name()
+            && !info.header.is_get_response()
+            && !self.router.selected()
+        {
             return Err(Sw::FILE_NOT_FOUND);
         }
         if info.extended && !self.extended_allowed(self.owner.unwrap_or(OWNER_APDU), info.header) {
@@ -306,7 +366,9 @@ impl<R: Router> Runtime<R> {
         }
         let h = info.header;
         if h.is_get_response() {
-            self.reroute(FrameRoute::GetResponse, p);
+            // A response poll does not replace an unfinished input command.
+            // With no pending response C returns6986 and retains that chain.
+            self.route = FrameRoute::GetResponse;
             return Ok(());
         }
         if self.router.is_eject(h, p) {
@@ -321,13 +383,18 @@ impl<R: Router> Runtime<R> {
         // the earlier branch so it can continue using the existing backing.
         self.close_response(p);
         if h.is_select_by_name() {
-            self.reroute(
-                FrameRoute::Select {
-                    aid: [0; 16],
-                    used: 0,
-                },
-                p,
-            );
+            let route = FrameRoute::Select {
+                aid: [0; 16],
+                used: 0,
+            };
+            if self.owner == Some(OWNER_NFC) && self.chain.active() && self.router.fido_selected(p)
+            {
+                // Unknown AID, invalid P2 and disabled NDEF preserve NFC's
+                // FIDO chain. Successful selection closes it in the router.
+                self.route = route;
+            } else {
+                self.reroute(route, p);
+            }
             return Ok(());
         }
         if !self.router.selected() {
@@ -362,10 +429,13 @@ impl<R: Router> Runtime<R> {
     ) -> Result<(), Sw> {
         match &mut self.route {
             FrameRoute::Select { aid, used, .. } => {
-                let end = used
-                    .checked_add(bytes.len())
-                    .filter(|n| *n <= aid.len())
-                    .ok_or(Sw::FILE_NOT_FOUND)?;
+                let Some(end) = used.checked_add(bytes.len()).filter(|n| *n <= aid.len()) else {
+                    // Drain an unmatchable AID before rejecting the complete
+                    // SELECT. P2 precedence and USB FIDO deselection belong
+                    // to finalization, including when input arrives in pieces.
+                    *used = aid.len() + 1;
+                    return Ok(());
+                };
                 aid[*used..end].copy_from_slice(bytes);
                 *used = end;
                 Ok(())
@@ -413,9 +483,16 @@ impl<R: Router> Runtime<R> {
             }
         };
         self.frame = None;
-        // Transport reads use a 256-byte default allowance. Keep optional Le
-        // intact for applet policy; the decoder normalized encoded Le=00 to 256.
-        let le = info.le.unwrap_or(DEFAULT_APDU_LE);
+        // C's shared response-chain epilogue gives Case1 no response allowance;
+        // direct applet handlers retain their own absent-Le policy. Encoded
+        // short Le00 is already256 and must remain distinct from absent Le.
+        let le = info.le.unwrap_or_else(|| {
+            if info.header.is_get_response() {
+                0
+            } else {
+                self.router.absent_le(info)
+            }
+        });
         let route = core::mem::replace(&mut self.route, FrameRoute::None);
         let result = match route {
             FrameRoute::Eject => self.router.eject(p).map(|()| (0, Sw::SUCCESS)),
@@ -427,16 +504,29 @@ impl<R: Router> Runtime<R> {
                 };
             }
             FrameRoute::Select { aid, used } => {
-                if info.header.p2 != 0x00 {
+                let transport = self.transport();
+                let selected = if info.header.p2 != 0x00 {
                     Err(Sw::WRONG_P1P2)
+                } else if used > aid.len() {
+                    Err(Sw::FILE_NOT_FOUND)
                 } else {
-                    self.router
-                        .select(&aid[..used], p)
-                        .map(|n| (n, Sw::SUCCESS))
+                    self.router.select(&aid[..used], transport, p)
+                };
+                if let Err(sw) = selected {
+                    self.router.reject_select(transport, p);
+                    if self.owner == Some(OWNER_NFC)
+                        && self.chain.active()
+                        && self.router.fido_selected(p)
+                    {
+                        return Reply::Status(sw);
+                    }
+                } else {
+                    self.chain.reset();
                 }
+                selected.map(|n| (n, Sw::SUCCESS))
             }
             FrameRoute::Command => {
-                let last = !info.header.chained();
+                let last = !self.router.chain_header(info.header).chained();
                 if let Err(sw) = self.router.end_frame(last, p) {
                     self.abort_input(p);
                     return Reply::Status(sw);
@@ -444,7 +534,7 @@ impl<R: Router> Runtime<R> {
                 if !last {
                     return Reply::Status(Sw::SUCCESS);
                 }
-                self.router.finish(info.header.unchained(), info.le, p)
+                self.router.finish(info.header.unchained(), le, p)
             }
             FrameRoute::None => Err(Sw::WRONG_LENGTH),
         };
@@ -498,6 +588,17 @@ impl<R: Router> Runtime<R> {
         source: &mut (impl InputSource + ?Sized),
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Reply {
+        self.receive_source_with_info(owner, total, source, p).0
+    }
+    /// Return decoded envelope metadata from the same parser used for routing.
+    /// NFC uses it for this command's Le budget, without another SELECT parser.
+    pub fn receive_source_with_info(
+        &mut self,
+        owner: u8,
+        total: usize,
+        source: &mut (impl InputSource + ?Sized),
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> (Reply, Option<CommandInfo>) {
         let result = (|| {
             self.begin_frame(owner, total, p)?;
             // Bounded streaming chunk; independent of APDU length and applet buffers.
@@ -523,8 +624,9 @@ impl<R: Router> Runtime<R> {
             }
             Ok(())
         })();
-        source.close();
-        match result {
+        let info = self.frame.as_ref().and_then(|frame| frame.finish().ok());
+        let result = source.close().and(result);
+        let reply = match result {
             Ok(()) => self.end_frame(p),
             Err(sw) => {
                 // A rejected foreign owner must not abort the current owner's work.
@@ -533,7 +635,8 @@ impl<R: Router> Runtime<R> {
                 }
                 Reply::Status(sw)
             }
-        }
+        };
+        (reply, info)
     }
     /// RX borrows must end before this call. Endpoint bytes remain transport-owned
     /// until transfer completion, independent of source close after its final read.
@@ -596,10 +699,10 @@ impl Core {
     }
     #[cfg(feature = "ctap")]
     pub fn begin_ctap(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
-        // Native HID holds owner 2 across commands; preserve its PIN agreement
-        // and authorization state. Preempting an idle APDU owner resets it.
+        // Admission has excluded pending APDU input/output and endpoint TX.
+        // Keep card context separate from the temporary execution owner.
         if self.owner != Some(OWNER_CTAP) {
-            self.reset(p);
+            self.apdu_owner = self.owner;
             self.owner = Some(OWNER_CTAP);
         }
         self.router.resume_ctap(p);
@@ -658,6 +761,11 @@ impl Core {
     #[cfg(feature = "ctap")]
     pub fn complete_ctap(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.router.complete_ctap(p);
+    }
+    /// Serialized transport query after acknowledging the final HID report.
+    #[cfg(feature = "ctap")]
+    pub fn ctap_continuation_pending(&self) -> bool {
+        self.owner == Some(OWNER_CTAP) && self.router.native_pending()
     }
     #[cfg(feature = "ctap")]
     pub fn continue_ctap_message(

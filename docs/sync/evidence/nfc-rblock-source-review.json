@@ -1,0 +1,170 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Exactly16 per-parent source units for duplicate I-block ACK and ISO-DEP Rules12/13. Last-Link cache observed separately; mixed WTX/TXEN hunk19 remains unapproved.",
+  "deltas": [
+    {
+      "commit": "836a50a50c2a77d03f4673e79a03213138023145",
+      "parent": "c07ad675546049fddd732b6bef1305eff8f799c5",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 37,
+          "sha256": "60a91434db2b574d0e210e88b909318bcd0493368abcd9250be7fbd06d9a8dc3",
+          "source": "@@ -284,0 +403,2 @@ void nfc_loop(void) {\n+    // A repeated chained I-block must not append its payload a second time.\n+    if ((rx_frame_buf[0] & 1) == block_number) goto acknowledge;\n"
+        },
+        {
+          "ordinal": 48,
+          "sha256": "eb4b943001ecbf8cb0687e4e04344519b6f9b78d3b2c0457f166bfa4ffbbcefd",
+          "source": "@@ -333,0 +467,6 @@ void nfc_loop(void) {\n+        // Rule 13: an ACK advances only an outgoing response chain. Ignore\n+        // unsolicited ACKs without resetting selection or an incoming APDU.\n+        if (!tx_state.sending) {\n+          next_state = TO_RECEIVE;\n+          return;\n+        }\n"
+        },
+        {
+          "ordinal": 49,
+          "sha256": "9ef96ca60fe4425540ba63a03420b294a85e85615a07ed15d1bca8979856e26f",
+          "source": "@@ -341,6 +480,3 @@ void nfc_loop(void) {\n-        if (inf_sending) { // continue chaining\n-          block_number ^= 1;\n-          if (send_apdu_buffer(0) == NFC_SEND_FAILED) nfc_error_handler(-15);\n-        } else { // card presence check reply\n-          if (nfc_send_frame(R_ACK | block_number, NULL, 0) == NFC_SEND_FAILED) nfc_error_handler(-16);\n-        }\n+        // Rule 12: a different-BN R(NAK) requests R(ACK), even while\n+        // sending a chained response. It never consumes response bytes.\n+        goto acknowledge;\n"
+        },
+        {
+          "ordinal": 50,
+          "sha256": "73503ce2ae602ada7ba3cd7fcd713f34fd644af90496d0f05b551a82dc1e8d07",
+          "source": "@@ -353,0 +490,4 @@ void nfc_loop(void) {\n+  return;\n+acknowledge:\n+  tx_state.retries = 0;\n+  if (nfc_send_frame(R_ACK | block_number, NULL, 0) == NFC_SEND_FAILED) nfc_error_handler(-11);\n"
+        }
+      ],
+      "mixed_unreviewed_hunk19": "@@ -155,0 +250,11 @@ static int do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {\n+  if (cleanup_pending) return NFC_SEND_ABORTED;\n+  // Rule 11 retries the last transmitted block, including R(ACK)/S(WTX),\n+  // not merely the last I-block from an earlier APDU. The local frame also\n+  // avoids aliasing when the retransmit cache itself is the input.\n+  retransmit_prologue = prologue;\n+  tx_state.cached_len = len;\n+  memcpy(retransmit_data, tx_frame_buf + 1, len);\n+  // Consume this turn just before TXEN: i2c_stop() can unmask a GPIO IRQ\n+  // carrying the reader's next frame before the register write returns.\n+  // Never overwrite that IRQ's newly published TO_SEND afterwards.\n+  next_state = TO_RECEIVE;\n"
+    },
+    {
+      "commit": "8fd934426f258ad4973c36eb336febacac50b8c4",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 37,
+          "sha256": "60a91434db2b574d0e210e88b909318bcd0493368abcd9250be7fbd06d9a8dc3",
+          "source": "@@ -284,0 +403,2 @@ void nfc_loop(void) {\n+    // A repeated chained I-block must not append its payload a second time.\n+    if ((rx_frame_buf[0] & 1) == block_number) goto acknowledge;\n"
+        },
+        {
+          "ordinal": 48,
+          "sha256": "eb4b943001ecbf8cb0687e4e04344519b6f9b78d3b2c0457f166bfa4ffbbcefd",
+          "source": "@@ -333,0 +467,6 @@ void nfc_loop(void) {\n+        // Rule 13: an ACK advances only an outgoing response chain. Ignore\n+        // unsolicited ACKs without resetting selection or an incoming APDU.\n+        if (!tx_state.sending) {\n+          next_state = TO_RECEIVE;\n+          return;\n+        }\n"
+        },
+        {
+          "ordinal": 49,
+          "sha256": "9ef96ca60fe4425540ba63a03420b294a85e85615a07ed15d1bca8979856e26f",
+          "source": "@@ -341,6 +480,3 @@ void nfc_loop(void) {\n-        if (inf_sending) { // continue chaining\n-          block_number ^= 1;\n-          if (send_apdu_buffer(0) == NFC_SEND_FAILED) nfc_error_handler(-15);\n-        } else { // card presence check reply\n-          if (nfc_send_frame(R_ACK | block_number, NULL, 0) == NFC_SEND_FAILED) nfc_error_handler(-16);\n-        }\n+        // Rule 12: a different-BN R(NAK) requests R(ACK), even while\n+        // sending a chained response. It never consumes response bytes.\n+        goto acknowledge;\n"
+        },
+        {
+          "ordinal": 50,
+          "sha256": "73503ce2ae602ada7ba3cd7fcd713f34fd644af90496d0f05b551a82dc1e8d07",
+          "source": "@@ -353,0 +490,4 @@ void nfc_loop(void) {\n+  return;\n+acknowledge:\n+  tx_state.retries = 0;\n+  if (nfc_send_frame(R_ACK | block_number, NULL, 0) == NFC_SEND_FAILED) nfc_error_handler(-11);\n"
+        }
+      ],
+      "mixed_unreviewed_hunk19": "@@ -155,0 +250,11 @@ static int do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {\n+  if (cleanup_pending) return NFC_SEND_ABORTED;\n+  // Rule 11 retries the last transmitted block, including R(ACK)/S(WTX),\n+  // not merely the last I-block from an earlier APDU. The local frame also\n+  // avoids aliasing when the retransmit cache itself is the input.\n+  retransmit_prologue = prologue;\n+  tx_state.cached_len = len;\n+  memcpy(retransmit_data, tx_frame_buf + 1, len);\n+  // Consume this turn just before TXEN: i2c_stop() can unmask a GPIO IRQ\n+  // carrying the reader's next frame before the register write returns.\n+  // Never overwrite that IRQ's newly published TO_SEND afterwards.\n+  next_state = TO_RECEIVE;\n"
+    },
+    {
+      "commit": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 37,
+          "sha256": "60a91434db2b574d0e210e88b909318bcd0493368abcd9250be7fbd06d9a8dc3",
+          "source": "@@ -284,0 +403,2 @@ void nfc_loop(void) {\n+    // A repeated chained I-block must not append its payload a second time.\n+    if ((rx_frame_buf[0] & 1) == block_number) goto acknowledge;\n"
+        },
+        {
+          "ordinal": 48,
+          "sha256": "eb4b943001ecbf8cb0687e4e04344519b6f9b78d3b2c0457f166bfa4ffbbcefd",
+          "source": "@@ -333,0 +467,6 @@ void nfc_loop(void) {\n+        // Rule 13: an ACK advances only an outgoing response chain. Ignore\n+        // unsolicited ACKs without resetting selection or an incoming APDU.\n+        if (!tx_state.sending) {\n+          next_state = TO_RECEIVE;\n+          return;\n+        }\n"
+        },
+        {
+          "ordinal": 49,
+          "sha256": "9ef96ca60fe4425540ba63a03420b294a85e85615a07ed15d1bca8979856e26f",
+          "source": "@@ -341,6 +480,3 @@ void nfc_loop(void) {\n-        if (inf_sending) { // continue chaining\n-          block_number ^= 1;\n-          if (send_apdu_buffer(0) == NFC_SEND_FAILED) nfc_error_handler(-15);\n-        } else { // card presence check reply\n-          if (nfc_send_frame(R_ACK | block_number, NULL, 0) == NFC_SEND_FAILED) nfc_error_handler(-16);\n-        }\n+        // Rule 12: a different-BN R(NAK) requests R(ACK), even while\n+        // sending a chained response. It never consumes response bytes.\n+        goto acknowledge;\n"
+        },
+        {
+          "ordinal": 50,
+          "sha256": "73503ce2ae602ada7ba3cd7fcd713f34fd644af90496d0f05b551a82dc1e8d07",
+          "source": "@@ -353,0 +490,4 @@ void nfc_loop(void) {\n+  return;\n+acknowledge:\n+  tx_state.retries = 0;\n+  if (nfc_send_frame(R_ACK | block_number, NULL, 0) == NFC_SEND_FAILED) nfc_error_handler(-11);\n"
+        }
+      ],
+      "mixed_unreviewed_hunk19": "@@ -155,0 +250,11 @@ static int do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {\n+  if (cleanup_pending) return NFC_SEND_ABORTED;\n+  // Rule 11 retries the last transmitted block, including R(ACK)/S(WTX),\n+  // not merely the last I-block from an earlier APDU. The local frame also\n+  // avoids aliasing when the retransmit cache itself is the input.\n+  retransmit_prologue = prologue;\n+  tx_state.cached_len = len;\n+  memcpy(retransmit_data, tx_frame_buf + 1, len);\n+  // Consume this turn just before TXEN: i2c_stop() can unmask a GPIO IRQ\n+  // carrying the reader's next frame before the register write returns.\n+  // Never overwrite that IRQ's newly published TO_SEND afterwards.\n+  next_state = TO_RECEIVE;\n"
+    },
+    {
+      "commit": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "parent": "99df44df4653051887ac6fdb9355508314a01efc",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 37,
+          "sha256": "60a91434db2b574d0e210e88b909318bcd0493368abcd9250be7fbd06d9a8dc3",
+          "source": "@@ -284,0 +403,2 @@ void nfc_loop(void) {\n+    // A repeated chained I-block must not append its payload a second time.\n+    if ((rx_frame_buf[0] & 1) == block_number) goto acknowledge;\n"
+        },
+        {
+          "ordinal": 48,
+          "sha256": "eb4b943001ecbf8cb0687e4e04344519b6f9b78d3b2c0457f166bfa4ffbbcefd",
+          "source": "@@ -333,0 +467,6 @@ void nfc_loop(void) {\n+        // Rule 13: an ACK advances only an outgoing response chain. Ignore\n+        // unsolicited ACKs without resetting selection or an incoming APDU.\n+        if (!tx_state.sending) {\n+          next_state = TO_RECEIVE;\n+          return;\n+        }\n"
+        },
+        {
+          "ordinal": 49,
+          "sha256": "9ef96ca60fe4425540ba63a03420b294a85e85615a07ed15d1bca8979856e26f",
+          "source": "@@ -341,6 +480,3 @@ void nfc_loop(void) {\n-        if (inf_sending) { // continue chaining\n-          block_number ^= 1;\n-          if (send_apdu_buffer(0) == NFC_SEND_FAILED) nfc_error_handler(-15);\n-        } else { // card presence check reply\n-          if (nfc_send_frame(R_ACK | block_number, NULL, 0) == NFC_SEND_FAILED) nfc_error_handler(-16);\n-        }\n+        // Rule 12: a different-BN R(NAK) requests R(ACK), even while\n+        // sending a chained response. It never consumes response bytes.\n+        goto acknowledge;\n"
+        },
+        {
+          "ordinal": 50,
+          "sha256": "73503ce2ae602ada7ba3cd7fcd713f34fd644af90496d0f05b551a82dc1e8d07",
+          "source": "@@ -353,0 +490,4 @@ void nfc_loop(void) {\n+  return;\n+acknowledge:\n+  tx_state.retries = 0;\n+  if (nfc_send_frame(R_ACK | block_number, NULL, 0) == NFC_SEND_FAILED) nfc_error_handler(-11);\n"
+        }
+      ],
+      "mixed_unreviewed_hunk19": "@@ -155,0 +250,11 @@ static int do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {\n+  if (cleanup_pending) return NFC_SEND_ABORTED;\n+  // Rule 11 retries the last transmitted block, including R(ACK)/S(WTX),\n+  // not merely the last I-block from an earlier APDU. The local frame also\n+  // avoids aliasing when the retransmit cache itself is the input.\n+  retransmit_prologue = prologue;\n+  tx_state.cached_len = len;\n+  memcpy(retransmit_data, tx_frame_buf + 1, len);\n+  // Consume this turn just before TXEN: i2c_stop() can unmask a GPIO IRQ\n+  // carrying the reader's next frame before the register write returns.\n+  // Never overwrite that IRQ's newly published TO_SEND afterwards.\n+  next_state = TO_RECEIVE;\n"
+    }
+  ],
+  "mapping": [
+    "Ordinal37 acknowledges a repeated incoming block without a duplicate append, including empty chained frames; Rust Link::receive_with uses Receiving phase, not byte count.",
+    "Ordinal48 ignores opposite-BN unsolicited ACK unless an outgoing response chain is active; Rust returns Event::Ignored without resetting selection/input.",
+    "Ordinal49 handles opposite-BN NAK with control ACK before response advancement; Rust advances only positive ACK in Responding phase.",
+    "Ordinal50 sends current-BN ACK and resets retries; Rust acknowledge caches that ACK without moving the source or number.",
+    "Final pinned C caches every successfully transmitted packet. Rust now caches Link ACKs as well as I-blocks. WTX uses a separate IRQ-local path; no WTX cache/IRQ equivalence is claimed."
+  ],
+  "remaining": [
+    "Mixed hunk19 combines caching, cleanup and TXEN ordering; it is not approved here. Physical RF/WTX, arbitrary IRQ/cancellation, file-fault breadth, runtime resources and broader source audit remain open."
+  ],
+  "final_c_excerpts": [
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 250,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "  if (data != NULL) memcpy(tx_frame_buf + 1, data, len);\n\n  if (fm_write_fifo(tx_frame_buf, len + 1) != FM_STATUS_OK) return -1;\n  if (cleanup_pending) return NFC_SEND_ABORTED;\n  // Rule 11 retries the last transmitted block, including R(ACK)/S(WTX),\n  // not merely the last I-block from an earlier APDU. The local frame also\n  // avoids aliasing when the retransmit cache itself is the input.\n  retransmit_prologue = prologue;\n  transfer_state.cached_len = len;\n  memcpy(retransmit_data, tx_frame_buf + 1, len);\n  // Consume this turn just before TXEN: i2c_stop() can unmask a GPIO IRQ"
+    },
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 399,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "      nfc_error_handler(-6);\n      return;\n    }\n    if (transfer_state.sending) {\n      nfc_error_handler(-22);\n      return;\n    }\n    // A repeated chained I-block must not append its payload a second time."
+    },
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 463,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "  } else if ((rx_frame_buf[0] & PCB_MASK) == PCB_R_BLOCK) {\n    if (rx_frame_size != 3 || (rx_frame_buf[0] & 0xEE) != R_ACK) {\n      nfc_error_handler(-6);\n      return;\n    }\n    if ((rx_frame_buf[0] & R_BLOCK_MASK) == R_ACK) {\n      if ((rx_frame_buf[0] & 1) != block_number) { // continue chaining\n        // Rule 13: an ACK advances only an outgoing response chain. Ignore\n        // unsolicited ACKs without resetting selection or an incoming APDU.\n        if (!transfer_state.sending) {\n          next_state = TO_RECEIVE;\n          return;\n        }\n        block_number ^= 1;\n        if (send_apdu_buffer(0) == NFC_SEND_FAILED) nfc_error_handler(-13);\n      } else { // re-send\n        if (send_apdu_buffer(1) == NFC_SEND_FAILED) nfc_error_handler(-14);\n      }\n    } else {\n      if ((rx_frame_buf[0] & 1) != block_number) {\n        // Rule 12: a different-BN R(NAK) requests R(ACK), even while\n        // sending a chained response. It never consumes response bytes.\n        goto acknowledge;\n      } else { // re-send\n        if (send_apdu_buffer(1) == NFC_SEND_FAILED) nfc_error_handler(-17);\n      }\n    }\n  } else {\n    // S-Block\n  }\n  return;\nacknowledge:"
+    }
+  ],
+  "targets": [
+    {
+      "path": "crates/core/src/runtime/nfc.rs",
+      "sha256": "7ad85a72afceb17b45d964ed5ecb226b613f88750a4da49d6c8f938f0597ce82"
+    },
+    {
+      "path": "crates/ffi/src/transport/nfc.rs",
+      "sha256": "2355bdbaa3156f31852ad40494d5f7d456900fe62120822a5a120b5adff544ea"
+    },
+    {
+      "path": "crates/core/tests/nfc.rs",
+      "sha256": "9b6f1668f7f678b17762a64208c2581cfb6d144d93f1da73e585a09eb7b4b644"
+    },
+    {
+      "path": "tests/support/c312_storage_faults.py",
+      "sha256": "3f4d71e01b8d2c02425ae288d2c01a81d2e17f10be427dfa1e862b6d8e944355"
+    }
+  ]
+}

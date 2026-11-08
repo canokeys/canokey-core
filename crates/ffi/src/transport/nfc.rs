@@ -17,10 +17,12 @@ use crate::sys::ck_nfc_io_unlock;
 use crate::sys::ck_nfc_io_write;
 #[cfg(not(test))]
 use crate::transport::usb::deinit;
+use canokey_protocol::response::StatusWord as Sw;
 use canokey_protocol::{
     apdu,
     nfc::{self as wire, Packet},
 };
+use canokey_rust_core::runtime::nfc::request::{Backend as ReceiveBackend, Rejection, Request};
 use canokey_rust_core::runtime::{
     nfc::{Event, Link},
     nfc_io::{Chip, Io},
@@ -80,7 +82,170 @@ static mut PENDING: bool = false;
 static mut LENGTH: usize = 0;
 static mut SENT: usize = 0;
 static mut MORE: bool = false;
-static mut FIDO: bool = false;
+static mut REQUEST: Request = Request::new();
+static mut BUDGET: u32 = 0;
+struct Stager<P>(core::marker::PhantomData<P>);
+impl<P: Provider> ReceiveBackend for Stager<P> {
+    fn prepare(&mut self, prefix: &[u8; apdu::EXTENDED_HEADER_BYTES]) -> Result<(), Rejection> {
+        #[cfg(test)]
+        {
+            tests::prepare(prefix)
+        }
+        #[cfg(not(test))]
+        {
+            let limit = unsafe {
+                crate::composition::core::with_core::<P, _>(|core, p| core.prepare_nfc(prefix, p))
+            }
+            .map_err(Rejection::Status)?;
+            let body = usize::from(u16::from_be_bytes([prefix[5], prefix[6]]));
+            if body > limit as usize {
+                return Err(Rejection::TooLarge);
+            }
+            #[cfg(feature = "ctap")]
+            if body <= crate::transport::pke_scratch::capacity::<P>()
+                && crate::transport::pke_scratch::acquire::<P>()
+            {
+                return Ok(());
+            }
+            Err(Rejection::Status(Sw::UNABLE_TO_PROCESS))
+        }
+    }
+    fn write(&mut self, offset: usize, bytes: &[u8]) -> bool {
+        #[cfg(test)]
+        {
+            tests::stage_write(offset, bytes)
+        }
+        #[cfg(all(not(test), feature = "ctap"))]
+        {
+            crate::transport::pke_scratch::write::<P>(offset, bytes)
+        }
+        #[cfg(all(not(test), not(feature = "ctap")))]
+        {
+            let _ = (offset, bytes);
+            false
+        }
+    }
+    fn read(&mut self, offset: usize, out: &mut [u8]) -> bool {
+        #[cfg(test)]
+        {
+            tests::stage_read(offset, out)
+        }
+        #[cfg(all(not(test), feature = "ctap"))]
+        {
+            crate::transport::pke_scratch::read::<P>(offset, out)
+        }
+        #[cfg(all(not(test), not(feature = "ctap")))]
+        {
+            let _ = (offset, out);
+            false
+        }
+    }
+    fn close(&mut self) {
+        #[cfg(test)]
+        tests::stage_close();
+        #[cfg(all(not(test), feature = "ctap"))]
+        crate::transport::pke_scratch::close_acquired::<P>();
+    }
+}
+struct Outcome {
+    length: i32,
+    info: Option<apdu::CommandInfo>,
+    fido: bool,
+}
+#[cfg(not(test))]
+unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outcome {
+    use canokey_rust_core::runtime::engine::{InputSource, Reply};
+    struct Source<'a, P: Provider> {
+        request: &'a mut Request,
+        inline: &'a [u8],
+        backend: Stager<P>,
+        offset: usize,
+    }
+    impl<P: Provider> InputSource for Source<'_, P> {
+        fn read(&mut self, out: &mut [u8]) -> Result<usize, Sw> {
+            if !execution_live() {
+                return Err(Sw::UNABLE_TO_PROCESS);
+            }
+            if !self
+                .request
+                .read(self.offset, out, self.inline, &mut self.backend)
+                || !execution_live()
+            {
+                return Err(Sw::UNABLE_TO_PROCESS);
+            }
+            self.offset += out.len();
+            Ok(out.len())
+        }
+        fn close(&mut self) -> Result<(), Sw> {
+            self.request.reset(&mut self.backend);
+            // IRQs can cancel while parsing or wiping/releasing PKE. Check
+            // after cleanup, including after the last successful source read.
+            if execution_live() {
+                Ok(())
+            } else {
+                Err(Sw::UNABLE_TO_PROCESS)
+            }
+        }
+    }
+    unsafe {
+        crate::composition::core::with_core::<P, _>(|core, p| {
+            let result = request.finish(&mut Stager::<P>(core::marker::PhantomData));
+            let (reply, info) = match result {
+                Ok(()) => {
+                    let total = request.len();
+                    core.receive_source_with_info(
+                        crate::transport::owners::OWNER_NFC,
+                        total,
+                        &mut Source::<P> {
+                            request,
+                            inline: core::slice::from_raw_parts(buffer, apdu::SHORT_FRAME_BYTES),
+                            backend: Stager(core::marker::PhantomData),
+                            offset: 0,
+                        },
+                        p,
+                    )
+                }
+                Err(rejection) => {
+                    let malformed = request.is_malformed();
+                    request.reset(&mut Stager::<P>(core::marker::PhantomData));
+                    if malformed {
+                        core.abort_request(crate::transport::owners::OWNER_NFC, p);
+                    }
+                    match rejection {
+                        Rejection::Status(sw) => (Reply::Status(sw), None),
+                        Rejection::TooLarge => {
+                            buffer.write(0x39); // CTAP2_ERR_REQUEST_TOO_LARGE.
+                            buffer.add(1).write(0x90);
+                            buffer.add(2).write(0);
+                            return Outcome {
+                                length: 3,
+                                info: None,
+                                fido: false,
+                            };
+                        }
+                    }
+                }
+            };
+            let fido = core.fido_selected(p);
+            let length = core
+                .transmit(
+                    reply,
+                    core::slice::from_raw_parts_mut(buffer, apdu::SHORT_REPLY_BYTES),
+                    p,
+                )
+                .map_or(-1, |n| n as i32);
+            Outcome { length, info, fido }
+        })
+    }
+}
+#[cfg(test)]
+unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outcome {
+    unsafe { tests::dispatch::<P>(request, buffer) }
+}
+#[cfg(not(test))]
+fn execution_live() -> bool {
+    unsafe { with_io(|io, _, _| io.generation() == GENERATION && io.live()) }
+}
 unsafe fn with_io<T>(f: impl FnOnce(&mut Io, &mut Hardware, u32) -> T) -> T {
     unsafe {
         let mask = ck_nfc_io_lock();
@@ -129,7 +294,8 @@ unsafe fn reset_link<P: Provider>() {
         LENGTH = 0;
         SENT = 0;
         MORE = false;
-        FIDO = false;
+        BUDGET = 0;
+        (&mut *core::ptr::addr_of_mut!(REQUEST)).reset(&mut Stager::<P>(core::marker::PhantomData));
         ck_core_reset::<P>();
     }
 }
@@ -165,7 +331,7 @@ unsafe fn fault() {
 unsafe fn send(packet: &Packet) -> bool {
     unsafe { with_io(|io, chip, _| io.generation() == GENERATION && io.send(packet, chip)) }
 }
-unsafe fn execute<P: Provider>(input: *const u8, length: usize, aggregate: bool) {
+unsafe fn execute<P: Provider>(continuation: Option<&[u8]>) {
     unsafe {
         let started = with_io(|io, _, now| {
             if io.generation() != GENERATION || !io.begin_execution(now) {
@@ -179,7 +345,22 @@ unsafe fn execute<P: Provider>(input: *const u8, length: usize, aggregate: bool)
         }
         let buffer = crate::transport::ccid::ck_ccid_response_buffer();
         use crate::transport::owners::OWNER_NFC;
-        let n = ck_core_exchange::<P>(OWNER_NFC, input, length, buffer, apdu::SHORT_REPLY_BYTES);
+        let n = if let Some(input) = continuation {
+            ck_core_exchange::<P>(
+                OWNER_NFC,
+                input.as_ptr(),
+                input.len(),
+                buffer,
+                apdu::SHORT_REPLY_BYTES,
+            )
+        } else {
+            let outcome = dispatch::<P>(&mut *core::ptr::addr_of_mut!(REQUEST), buffer);
+            BUDGET = outcome
+                .info
+                .filter(|info| outcome.fido && info.extended)
+                .map_or(0, |info| info.le.unwrap_or(65536));
+            outcome.length
+        };
         with_io(|io, _, now| {
             ck_nfc_io_schedule(None, 0);
             io.computed(now);
@@ -196,7 +377,8 @@ unsafe fn execute<P: Provider>(input: *const u8, length: usize, aggregate: bool)
             fault();
             return;
         }
-        MORE = aggregate && *buffer.add(n - 2) == apdu::MORE_DATA_SW1;
+        BUDGET -= BUDGET.min((n - 2) as u32);
+        MORE = BUDGET != 0 && *buffer.add(n - 2) == apdu::MORE_DATA_SW1;
         LENGTH = if MORE { n - 2 } else { n };
         SENT = 0;
         PENDING = true;
@@ -207,7 +389,9 @@ unsafe fn next_response<P: Provider>() {
         if SENT == LENGTH && MORE {
             // The existing engine owns response sources/offsets. This request
             // merely continues its stream; no NFC-specific APDU engine exists.
-            execute::<P>(apdu::GET_RESPONSE.as_ptr(), apdu::GET_RESPONSE.len(), true);
+            let mut command = apdu::GET_RESPONSE;
+            command[4] = BUDGET.min(256) as u8;
+            execute::<P>(Some(&command));
             return;
         }
         let buffer = crate::transport::ccid::ck_ccid_response_buffer();
@@ -229,7 +413,7 @@ unsafe fn next_response<P: Provider>() {
 }
 // Keep the packet window off the applet/crypto call path.
 #[inline(never)]
-unsafe fn receive() -> Option<Result<Event, canokey_rust_core::runtime::nfc::Error>> {
+unsafe fn receive<P: Provider>() -> Option<Result<Event, canokey_rust_core::runtime::nfc::Error>> {
     unsafe {
         let mut frame = [0; wire::FRAME_LIMIT];
         let n = with_io(|io, _, _| {
@@ -240,10 +424,20 @@ unsafe fn receive() -> Option<Result<Event, canokey_rust_core::runtime::nfc::Err
             }
         })?;
         let buffer = crate::transport::ccid::ck_ccid_response_buffer();
-        Some((&mut *core::ptr::addr_of_mut!(LINK)).receive(
-            &frame[..n],
-            core::slice::from_raw_parts_mut(buffer, apdu::SHORT_FRAME_BYTES),
-        ))
+        Some(
+            (&mut *core::ptr::addr_of_mut!(LINK)).receive_with(&frame[..n], |offset, bytes| {
+                let request = &mut *core::ptr::addr_of_mut!(REQUEST);
+                if request.len() != offset {
+                    return Err(canokey_rust_core::runtime::nfc::Error::Sequence);
+                }
+                request.append(
+                    bytes,
+                    core::slice::from_raw_parts_mut(buffer, apdu::SHORT_FRAME_BYTES),
+                    &mut Stager::<P>(core::marker::PhantomData),
+                );
+                Ok(())
+            }),
+        )
     }
 }
 pub unsafe fn poll<P: Provider>() {
@@ -275,31 +469,22 @@ pub unsafe fn poll<P: Provider>() {
                 }
             }
         }
-        let Some(event) = receive() else {
+        let Some(event) = receive::<P>() else {
             return;
         };
-        let buffer = crate::transport::ccid::ck_ccid_response_buffer();
         match event {
-            Ok(Event::Execute(length)) => {
-                let input = core::slice::from_raw_parts(buffer, length);
-                // Track SELECT-by-name so extended FIDO replies can aggregate 61xx.
-                if length >= apdu::SHORT_HEADER_BYTES
-                    && input[..4] == [0x00, apdu::INS_SELECT, apdu::SELECT_BY_NAME, 0x00]
-                {
-                    FIDO = length
-                        == apdu::SHORT_HEADER_BYTES + canokey_protocol::apdu::FIDO_AID.len()
-                        && usize::from(input[4]) == apdu::FIDO_AID.len()
-                        && input[apdu::SHORT_HEADER_BYTES..] == apdu::FIDO_AID;
-                }
-                let aggregate = FIDO && length >= apdu::EXTENDED_HEADER_BYTES && input[4] == 0;
-                execute::<P>(buffer, length, aggregate);
-            }
+            Ok(Event::Execute(_)) => execute::<P>(None),
             Ok(Event::Send(packet)) => {
                 if !send(&packet) {
                     fault();
                 }
             }
             Ok(Event::NextResponse) => next_response::<P>(),
+            Ok(Event::Ignored) => with_io(|io, _, _| {
+                if io.generation() == GENERATION {
+                    io.ignored();
+                }
+            }),
             Ok(Event::Deselect) => {
                 if !send(&Packet::deselect()) {
                     fault();

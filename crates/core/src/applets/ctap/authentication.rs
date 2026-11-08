@@ -355,7 +355,7 @@ fn respond(
     w.input[auth_data::COUNTER_OFFSET..auth_data::HEADER_BYTES].copy_from_slice(&counter);
     let mut auth_len = auth_data::HEADER_BYTES;
     if request.make {
-        if request.algorithm == alg::MLDSA65 {
+        if crate::ports::mldsa::parameters(request.algorithm).is_some() {
             return respond_mldsa_make(request, w, p, response, auth_len);
         }
         let n = p
@@ -379,14 +379,14 @@ fn respond(
             .copy_from_slice(request.id);
         auth_len = auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES;
         let tail = &mut w.input[auth_len..];
-        let capacity = tail.len();
         let mut e = Encoder::new(tail);
         super::encoding::public_key(&mut e, request.algorithm, request.sm2, &w.output[..n])
             .map_err(|_| Status::Other)?;
-        auth_len += capacity - e.writer().len();
+        // The encoder retains a suffix of the fixed input workspace.
+        auth_len = crate::runtime::workspace::INPUT_BYTES.wrapping_sub(e.writer().len());
     }
     auth_len = append_extensions(request, w, p, auth_len)?;
-    if !request.make && request.algorithm == alg::MLDSA65 {
+    if !request.make && crate::ports::mldsa::parameters(request.algorithm).is_some() {
         return respond_mldsa_assertion(request, w, p, response, auth_len);
     }
     let mut self_attest = false;
@@ -429,11 +429,14 @@ fn respond(
     } else {
         request.algorithm
     };
-    w.input[auth_len..auth_len + 32].copy_from_slice(request.client_hash);
+    // append_extensions returns a cursor within INPUT_BYTES (544), so the
+    // 32-byte client hash cannot overflow usize. Slice checks still bound it.
+    let message_end = auth_len.wrapping_add(32);
+    w.input[auth_len..message_end].copy_from_slice(request.client_hash);
     let mut digest = [0; 32];
     let message = if sign_algorithm == alg::P256 {
         p.crypto
-            .sha256(&w.input[..auth_len + 32], &mut digest)
+            .sha256(&w.input[..message_end], &mut digest)
             .unwrap_or_default();
         &digest[..]
     } else if sign_algorithm == alg::SM2 {
@@ -443,7 +446,7 @@ fn respond(
                 KeyOperation::Sm2MessageDigest,
                 alg::SM2,
                 &mut w.key,
-                &w.input[..auth_len + 32],
+                &w.input[..message_end],
                 w.output,
             )
             .unwrap_or_default();
@@ -453,7 +456,7 @@ fn respond(
         digest.copy_from_slice(&w.output[..32]);
         &digest[..]
     } else {
-        &w.input[..auth_len + 32]
+        &w.input[..message_end]
     };
     let n = p
         .crypto
@@ -546,8 +549,12 @@ fn respond(
     })();
     p.memory.wipe(&mut blob_key);
     encoded.map_err(|_| Status::Other)?;
-    let total = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len() + auth_len + cert_len;
+    // Each term is bounded by its workspace or the validated CERT_LIMIT.
+    let total = (crate::runtime::workspace::OUTPUT_BYTES - e.writer().len())
+        .wrapping_add(auth_len)
+        .wrapping_add(cert_len);
     *response = Some(super::Response::Authentication {
+        registration: false,
         prefix,
         auth: auth_len,
         certificate,
@@ -588,7 +595,6 @@ fn append_extensions(
         } else {
             0
         };
-        let capacity = w.input.len() - auth_len;
         let mut e = Encoder::new(&mut w.input[auth_len..]);
         {
             e.map(extensions);
@@ -618,7 +624,9 @@ fn append_extensions(
             }
         }
         e.finish().map_err(|_| Status::Other)?;
-        auth_len += capacity - e.writer().len();
+        // The encoder only consumes this suffix; its remainder cannot exceed
+        // INPUT_BYTES, and subtracting it gives the absolute cursor directly.
+        auth_len = crate::runtime::workspace::INPUT_BYTES.wrapping_sub(e.writer().len());
     }
     Ok(auth_len)
 }
@@ -630,6 +638,7 @@ fn respond_mldsa_assertion(
     response: &mut Option<super::Response>,
     auth_len: usize,
 ) -> Result<usize, Status> {
+    let params = crate::ports::mldsa::parameters(request.algorithm).ok_or(Status::Other)?;
     let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
     w.input[auth_len..auth_len + 32].copy_from_slice(request.client_hash);
     w.input[auth_len + 32..auth_len + 64].copy_from_slice(&w.key.bytes[..32]);
@@ -651,7 +660,7 @@ fn respond_mldsa_assertion(
     let prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     let mut tail = Encoder::new(&mut w.output[prefix..]);
     tail.u8(assertion_response::SIGNATURE)
-        .bytes_len(super::pq::SIGNATURE_BYTES as u64);
+        .bytes_len(params.signature_bytes as u64);
     let signature_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
     if let Some(user) = &user {
         tail.u8(assertion_response::USER);
@@ -670,6 +679,7 @@ fn respond_mldsa_assertion(
     tail.finish().map_err(|_| Status::Other)?;
     let output = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
     *response = Some(super::Response::Pending(super::pq::Pending {
+        algorithm: request.algorithm,
         mode: super::pq::Mode::Assert,
         prefix,
         auth: auth_len,
@@ -683,7 +693,7 @@ fn respond_mldsa_assertion(
         hash_prefix: (prefix, auth_len),
         hash_suffix: (prefix, auth_len),
     }));
-    Ok(output + auth_len + super::pq::SIGNATURE_BYTES)
+    Ok(output + auth_len + params.signature_bytes)
 }
 
 fn respond_mldsa_make(
@@ -693,6 +703,7 @@ fn respond_mldsa_make(
     response: &mut Option<super::Response>,
     auth_prefix: usize,
 ) -> Result<usize, Status> {
+    let params = crate::ports::mldsa::parameters(request.algorithm).ok_or(Status::Other)?;
     let cert_len = super::attestation::certificate(p)?;
     // Extensions are encoded once for classic and streamed keys. The large
     // public key is spliced between the COSE header and these extension bytes.
@@ -700,7 +711,7 @@ fn respond_mldsa_make(
     let extension_len = auth_end - auth_prefix;
     let mut cose = [0u8; 32];
     let mut ce = Encoder::new(&mut cose[..]);
-    super::encoding::mldsa_public_header(&mut ce).map_err(|_| Status::Other)?;
+    super::encoding::mldsa_public_header(&mut ce, request.algorithm).map_err(|_| Status::Other)?;
     let cose_prefix_len = 32 - ce.writer().len();
     let auth_prefix_len = auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES + cose_prefix_len;
     let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
@@ -708,7 +719,7 @@ fn respond_mldsa_make(
     let mut e = Encoder::new(&mut w.output[1..]);
     e.map(3 + u64::from(has_blob_key))
         .encoded(&super::encoding::MAKE_HEADER[1..])
-        .bytes_len((auth_prefix_len + super::pq::PUBLIC_BYTES + extension_len) as u64);
+        .bytes_len((auth_prefix_len + params.public_bytes + extension_len) as u64);
     e.finish().map_err(|_| Status::Other)?;
     let auth_start = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     w.output[auth_start..auth_start + auth_prefix].copy_from_slice(&w.input[..auth_prefix]);
@@ -744,6 +755,7 @@ fn respond_mldsa_make(
     w.input[..32].copy_from_slice(request.client_hash);
     w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
     *response = Some(super::Response::Pending(super::pq::Pending {
+        algorithm: request.algorithm,
         mode: super::pq::Mode::Make,
         prefix: auth_start,
         auth: 0,
@@ -754,5 +766,5 @@ fn respond_mldsa_make(
         hash_prefix: (auth_start, auth_prefix_len),
         hash_suffix: (public_at, extension_len),
     }));
-    Ok(output + super::pq::PUBLIC_BYTES + cert_len)
+    Ok(output + params.public_bytes + cert_len)
 }

@@ -24,6 +24,10 @@ jobs:
         -D warnings -A clippy::all -D clippy::correctness -D clippy::suspicious
         -A clippy::drop_non_drop
     - run: python3 tests/check_rust_profiles.py
+    - name: Test synchronization gate and validate draft records (not release acceptance)
+      run: |
+        python3 -m unittest discover -s tests -p test_c312_sync.py -v
+        python3 tests/check_c312_sync.py --structure-only
 
   fuzz:
     name: APDU corpus and bounded fuzzing

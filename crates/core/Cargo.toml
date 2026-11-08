@@ -10,9 +10,13 @@ build = "build.rs"
 canokey-ports = { path = "../ports", default-features = false }
 canokey-protocol = { path = "../protocol" }
 [build-dependencies]
+canokey-ports = { path = "../ports", default-features = false }
+canokey-protocol = { path = "../protocol" }
 cfg_aliases = "0.2.1"
 minicbor = { version = "=2.3.0", path = "../../third_party/minicbor/minicbor", features = ["std"] }
 [features]
+# Declares the product NFC capability without installing the CTAP applet.
+ctap-nfc = []
 ctap-restrict-algorithms = ["ctap"]
 ndef = ["canokey-ports/ndef"]
 dynamic-backend = ["canokey-ports/dynamic-backend"]

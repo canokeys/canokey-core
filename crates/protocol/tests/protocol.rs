@@ -2,6 +2,52 @@
 use canokey_protocol::{apdu, response::*, tlv};
 
 #[test]
+fn native_msg_has_explicit_lc_even_when_empty() {
+    for (bytes, body, le) in [
+        (vec![0, 3, 0, 0, 0, 0, 0], vec![], None),
+        (vec![0, 3, 0, 0, 0, 0, 0, 0, 1], vec![], Some(1)),
+        (vec![0, 3, 0, 0, 0xff, 0, 0, 0, 0], vec![], Some(65536)),
+        (vec![0x80, 0x10, 0, 0, 0, 0, 1, 4], vec![4], None),
+        (vec![0x80, 0x10, 0, 0, 0, 0, 1, 4, 1, 0], vec![4], Some(256)),
+    ] {
+        for split in 0..=bytes.len() {
+            let mut decoder = apdu::FrameDecoder::native_message(bytes.len()).unwrap();
+            let mut actual = Vec::new();
+            for fragment in [&bytes[..split], &bytes[split..]] {
+                decoder
+                    .feed(fragment, &mut |part| {
+                        actual.extend_from_slice(part);
+                        Ok(())
+                    })
+                    .unwrap();
+            }
+            let info = decoder.finish().unwrap();
+            assert_eq!(
+                (actual, info.lc, info.le, info.extended),
+                (body.clone(), body.len() as u16, le, true)
+            );
+        }
+    }
+    // Native MSG compatibility does not admit zero-Lc Case4E over ISO APDU.
+    let bytes = [0, 3, 0, 0, 0, 0, 0, 0, 1];
+    assert!(apdu::parse(&bytes).is_err());
+    let mut decoder = apdu::FrameDecoder::new(bytes.len()).unwrap();
+    assert!(decoder.feed(&bytes, &mut |_| Ok(())).is_err());
+    for bytes in [
+        vec![0; 4],
+        vec![0; 5],
+        vec![0; 8],
+        vec![0, 3, 0, 0, 0, 0, 1],
+    ] {
+        let result = apdu::FrameDecoder::native_message(bytes.len()).and_then(|mut decoder| {
+            decoder.feed(&bytes, &mut |_| Ok(()))?;
+            decoder.finish()
+        });
+        assert!(result.is_err());
+    }
+}
+
+#[test]
 fn select_frame_in_two_transport_fragments() {
     let bytes = [0x00, 0xa4, 0x04, 0x00, 0x05, 0xf0, 0x00, 0x00, 0x00, 0x00];
     let command = apdu::parse(&bytes).unwrap();

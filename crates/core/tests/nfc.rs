@@ -95,6 +95,14 @@ fn response_packet_commits_and_chaining_acknowledgements() {
     assert_eq!(l.sent(), Ok(29));
     assert_eq!(
         l.receive(&[0xb2, 0, 0], &mut input),
+        Ok(Event::Send(Packet::acknowledgement(1)))
+    );
+    assert_eq!(
+        l.receive(&[0xb3, 0, 0], &mut input),
+        Ok(Event::Send(Packet::acknowledgement(1)))
+    );
+    assert_eq!(
+        l.receive(&[0xa2, 0, 0], &mut input),
         Ok(Event::NextResponse)
     );
     assert_eq!(
@@ -108,6 +116,41 @@ fn response_packet_commits_and_chaining_acknowledgements() {
     );
     assert_eq!(l.receive(&[0xc2, 0, 0], &mut input), Ok(Event::Deselect));
     assert_eq!(l.receive(&[2, 7, 0, 0], &mut input), Ok(Event::Execute(1)));
+}
+#[test]
+fn control_ack_cache_and_unsolicited_ack_preserve_input() {
+    let mut link = Link::new();
+    let mut input = [0; 261];
+    assert_eq!(link.receive(&[0xa2, 0, 0], &mut input), Ok(Event::Ignored));
+    assert!(!link.dirty());
+    let initial_ack = Event::Send(Packet::acknowledgement(1));
+    assert_eq!(link.receive(&[0x13, 0, 0], &mut input), Ok(initial_ack));
+    for _ in 0..=canokey_rust_core::runtime::nfc::MAX_RETRANSMITS {
+        // Repeated input ACKs do not consume the response-retransmit budget,
+        // including a chained I-block whose accepted payload was empty.
+        assert_eq!(link.receive(&[0x13, 0, 0], &mut input), Ok(initial_ack));
+    }
+    let ack = Event::Send(Packet::acknowledgement(0));
+    assert_eq!(link.receive(&[0x12, 7, 0, 0], &mut input), Ok(ack));
+    assert_eq!(link.receive(&[0xb2, 0, 0], &mut input), Ok(ack));
+    assert_eq!(link.receive(&[0xb3, 0, 0], &mut input), Ok(ack));
+    assert_eq!(link.receive(&[0xa2, 0, 0], &mut input), Ok(ack));
+    assert_eq!(link.receive(&[0xa3, 0, 0], &mut input), Ok(Event::Ignored));
+    assert_eq!(
+        link.receive(&[0x03, 8, 0, 0], &mut input),
+        Ok(Event::Execute(2))
+    );
+    assert_eq!(&input[..2], &[7, 8]);
+    let reply = link.response(&[0x90, 0], false).unwrap();
+    link.sent().unwrap();
+    assert_eq!(link.receive(&[0xa2, 0, 0], &mut input), Ok(Event::Ignored));
+    assert_eq!(
+        link.receive(&[0xb3, 0, 0], &mut input),
+        Ok(Event::Send(reply))
+    );
+    let ack = Event::Send(Packet::acknowledgement(1));
+    assert_eq!(link.receive(&[0xb2, 0, 0], &mut input), Ok(ack));
+    assert_eq!(link.receive(&[0xa3, 0, 0], &mut input), Ok(ack));
 }
 #[test]
 fn input_bounds_reject_without_changing_accepted_prefix() {
@@ -223,6 +266,7 @@ mod registers {
     #[derive(Default)]
     struct Fake {
         flags: [u8; 3],
+        rf_status: u8,
         rx: Vec<u8>,
         writes: Vec<(u16, Vec<u8>)>,
         fail: Option<u16>,
@@ -238,6 +282,7 @@ mod registers {
                 0xfff7 => out.copy_from_slice(&self.flags),
                 0xfff2 => out[0] = self.rx.len() as u8,
                 0xfff0 => out.copy_from_slice(&self.rx),
+                nfc::FM_REG_RF_STATUS => out[0] = self.rf_status,
                 _ => panic!("unexpected read"),
             }
             true
@@ -283,7 +328,7 @@ mod registers {
         assert_eq!(io.generation(), generation);
     }
     #[test]
-    fn field_reset_and_mailbox_overrun_revoke_old_execution() {
+    fn field_reset_revokes_execution_and_queued_frames_survive_reader_retries() {
         let mut io = Io::new(0);
         let mut chip = Fake::default();
         let mut out = [0; 32];
@@ -298,8 +343,10 @@ mod registers {
         assert_eq!(io.complete_execution(), Some(false));
         frame(&mut io, &mut chip, 3, &[2, 7, 0, 0]);
         frame(&mut io, &mut chip, 4, &[3, 8, 0, 0]);
-        assert_eq!(io.generation(), 2);
-        assert_eq!(io.take(&mut out), None);
+        assert_eq!(io.generation(), 1);
+        assert_eq!(io.take(&mut out), Some(4));
+        assert_eq!(&out[..4], &[2, 7, 0, 0]);
+        io.fault();
         io.poll(4, false, &mut chip);
         assert!(chip.writes.contains(&(0xffe6, vec![0x33])));
         chip.reads.clear();
@@ -307,6 +354,239 @@ mod registers {
         io.interrupt(5, &mut chip);
         assert_eq!(chip.reads, vec![0xfff7]);
         assert_eq!(io.generation(), 2);
+    }
+    #[test]
+    fn pending_mailbox_drains_later_frames_without_decoding_or_replacing_input() {
+        for length in 1..=nfc::FRAME_LIMIT {
+            for pcb in 0..=u8::MAX {
+                let mut io = Io::new(0);
+                let mut chip = Fake::default();
+                let original = [nfc::PCB_I_CHAIN, 0x80, 0x10, 0, 0];
+                frame(&mut io, &mut chip, 0, &original);
+                chip.reads.clear();
+                let mut late = vec![0; length];
+                late[0] = pcb;
+                frame(&mut io, &mut chip, 1, &late);
+                assert_eq!(io.generation(), 0, "length={length}, pcb={pcb:#x}");
+                assert_eq!(
+                    chip.reads,
+                    [
+                        nfc::FM_REG_MAIN_IRQ,
+                        nfc::FM_REG_FIFO_WORDCNT,
+                        nfc::FM_REG_FIFO_ACCESS
+                    ]
+                );
+                let mut out = [0; nfc::FRAME_LIMIT];
+                assert_eq!(io.take(&mut out), Some(original.len()));
+                assert_eq!(&out[..original.len()], &original);
+                assert_eq!(io.take(&mut out), None);
+                assert!(io.send(&Packet::acknowledgement(0), &mut chip));
+            }
+        }
+        // Taking the mailbox transfers its bytes to main-loop/PKE parsing;
+        // it does not release the associated reply turn.
+        for pcb in [nfc::PCB_ACK, nfc::PCB_NAK, nfc::PCB_DESELECT, nfc::PCB_WTX] {
+            let mut io = Io::new(0);
+            let mut chip = Fake::default();
+            let mut out = [0; nfc::FRAME_LIMIT];
+            frame(&mut io, &mut chip, 0, &[nfc::PCB_I_CHAIN, 7, 0, 0]);
+            assert_eq!(io.take(&mut out), Some(4));
+            frame(&mut io, &mut chip, 1, &[pcb, 0, 0]);
+            assert_eq!(io.generation(), 0);
+            assert_eq!(io.take(&mut out), None);
+            assert!(io.begin_execution(1));
+            io.computed(2);
+            assert_eq!(io.complete_execution(), Some(true));
+            assert!(io.send(&Packet::acknowledgement(0), &mut chip));
+        }
+        // Hardware errors still revoke a queued command; only bounded FIFO
+        // traffic with clean IRQ flags may be discarded as a reader retry.
+        for length in [0, nfc::FRAME_LIMIT + 1] {
+            let mut io = Io::new(0);
+            let mut chip = Fake::default();
+            frame(&mut io, &mut chip, 0, &[nfc::PCB_I_CHAIN, 0, 0]);
+            chip.reads.clear();
+            frame(&mut io, &mut chip, 1, &vec![0; length]);
+            assert_eq!(io.generation(), 1);
+            assert_eq!(io.take(&mut [0; nfc::FRAME_LIMIT]), None);
+            assert_eq!(chip.reads, [nfc::FM_REG_MAIN_IRQ, nfc::FM_REG_FIFO_WORDCNT]);
+        }
+    }
+    #[test]
+    fn ignored_ack_releases_turn_without_revoking_selection_or_starting_recovery() {
+        let mut io = Io::new(0);
+        let mut chip = Fake::default();
+        let mut out = [0; nfc::FRAME_LIMIT];
+        io.poll(0, false, &mut chip);
+        frame(&mut io, &mut chip, 1, &[nfc::PCB_ACK, 0, 0]);
+        assert_eq!(io.take(&mut out), Some(3));
+        io.ignored();
+        io.poll(201, false, &mut chip);
+        assert_eq!(io.generation(), 0);
+        assert_eq!(
+            chip.writes,
+            [(nfc::FM_REG_MAIN_IRQ_MASK, vec![nfc::FM_MAIN_IRQ_MASK])]
+        );
+        frame(&mut io, &mut chip, 202, &[nfc::PCB_I, 7, 0, 0]);
+        assert_eq!(io.take(&mut out), Some(4));
+        assert_eq!(&out[..4], &[nfc::PCB_I, 7, 0, 0]);
+        assert!(io.begin_execution(202));
+    }
+    #[test]
+    fn execution_drains_early_frames_but_accepts_deselect_after_wtx_returns_the_turn() {
+        let mut io = Io::new(0);
+        let mut chip = Fake::default();
+        let mut out = [0; nfc::FRAME_LIMIT];
+        frame(&mut io, &mut chip, 0, &[nfc::PCB_I, 7, 0, 0]);
+        assert_eq!(io.take(&mut out), Some(4));
+        assert!(io.begin_execution(0));
+        for pcb in [
+            nfc::PCB_ACK,
+            nfc::PCB_NAK,
+            nfc::PCB_DESELECT,
+            nfc::PCB_WTX,
+            0xff,
+        ] {
+            frame(&mut io, &mut chip, 1, &[pcb, 0, 0]);
+            assert_eq!(io.generation(), 0);
+            assert!(io.live());
+            assert_eq!(io.take(&mut out), None);
+        }
+        io.tick(u32::from(nfc::WTX_INTERVAL_MS), &mut chip);
+        assert_eq!(
+            chip.writes,
+            [
+                (nfc::FM_REG_FIFO_ACCESS, vec![nfc::PCB_WTX, 1]),
+                (nfc::FM_REG_RF_TXEN, vec![nfc::FM_RF_TX_ENABLE])
+            ]
+        );
+        frame(&mut io, &mut chip, 151, &[nfc::PCB_DESELECT, 0, 0]);
+        assert!(!io.live());
+        io.computed(151);
+        assert_eq!(io.complete_execution(), Some(false));
+        assert_eq!(io.take(&mut out), Some(3));
+        assert_eq!(&out[..3], &[nfc::PCB_DESELECT, 0, 0]);
+        assert!(io.send(&Packet::deselect(), &mut chip));
+    }
+    #[test]
+    fn coalesced_halt_activation_uses_live_state_and_preserves_new_rx() {
+        for status in 0..=u8::MAX {
+            let mut io = Io::new(0);
+            let mut chip = Fake::default();
+            let mut out = [0; nfc::FRAME_LIMIT];
+            frame(&mut io, &mut chip, 0, &[nfc::PCB_I, 7, 0, 0]);
+            io.take(&mut out);
+            assert!(io.begin_execution(0));
+            chip.reads.clear();
+            chip.flags = [
+                nfc::FM_MAIN_ACTIVE | nfc::FM_MAIN_RX_DONE,
+                0,
+                nfc::FM_AUX_HALT,
+            ];
+            chip.rf_status = status;
+            chip.rx = vec![nfc::PCB_I, 8, 0, 0];
+            io.interrupt(1, &mut chip);
+            assert_eq!(io.generation(), 1);
+            assert!(!io.live());
+            io.computed(1);
+            assert_eq!(io.complete_execution(), Some(false));
+            if matches!(status >> 4, nfc::FM_STATE_RATS | nfc::FM_STATE_PPS) {
+                assert_eq!(io.take(&mut out), Some(4), "status={status:#x}");
+                assert_eq!(&out[..4], chip.rx);
+                assert!(io.begin_execution(1));
+                assert!(io.live());
+                assert_eq!(
+                    chip.reads,
+                    [
+                        nfc::FM_REG_MAIN_IRQ,
+                        nfc::FM_REG_RF_STATUS,
+                        nfc::FM_REG_FIFO_WORDCNT,
+                        nfc::FM_REG_FIFO_ACCESS
+                    ]
+                );
+            } else {
+                assert_eq!(io.take(&mut out), None);
+                assert_eq!(chip.reads, [nfc::FM_REG_MAIN_IRQ, nfc::FM_REG_RF_STATUS]);
+            }
+        }
+    }
+    #[test]
+    fn rf_status_failure_and_irq_errors_do_not_publish_coalesced_rx() {
+        let flags = [
+            nfc::FM_MAIN_ACTIVE | nfc::FM_MAIN_RX_DONE,
+            0,
+            nfc::FM_AUX_HALT,
+        ];
+        for error in [0, nfc::FM_FIFO_OVERFLOW, 8, 16, 32, 64] {
+            let mut io = Io::new(0);
+            let mut chip = Fake {
+                flags,
+                rf_status: nfc::FM_STATE_RATS << 4,
+                fail: Some(nfc::FM_REG_RF_STATUS),
+                ..Fake::default()
+            };
+            if error == nfc::FM_FIFO_OVERFLOW {
+                chip.flags[1] = error;
+            } else {
+                chip.flags[2] |= error;
+            }
+            io.interrupt(1, &mut chip);
+            assert_eq!(io.take(&mut [0; nfc::FRAME_LIMIT]), None);
+            assert_eq!(io.generation(), 1);
+            assert_eq!(
+                chip.reads,
+                if error == 0 {
+                    vec![nfc::FM_REG_MAIN_IRQ, nfc::FM_REG_RF_STATUS]
+                } else {
+                    vec![nfc::FM_REG_MAIN_IRQ]
+                }
+            );
+            io.poll(1, false, &mut chip);
+            assert!(
+                chip.writes
+                    .contains(&(nfc::FM_REG_RESET_SILENCE, vec![nfc::FM_SILENCE]))
+            );
+        }
+    }
+    #[test]
+    fn silence_masks_active_high_irqs_and_drains_latched_activation() {
+        for fail_mask in [false, true] {
+            let mut io = Io::new(0);
+            let mut chip = Fake::default();
+            if fail_mask {
+                chip.fail = Some(nfc::FM_REG_MAIN_IRQ_MASK);
+            }
+            io.fault();
+            io.poll(1, false, &mut chip);
+            assert_eq!(
+                chip.writes,
+                [
+                    (nfc::FM_REG_RESET_SILENCE, vec![nfc::FM_SILENCE]),
+                    (nfc::FM_REG_MAIN_IRQ_MASK, vec![nfc::FM_MAIN_IRQ_MASK_ALL]),
+                ]
+            );
+            chip.reads.clear();
+            chip.flags = [
+                nfc::FM_MAIN_ACTIVE | nfc::FM_MAIN_RX_DONE,
+                0,
+                nfc::FM_AUX_HALT,
+            ];
+            chip.rf_status = nfc::FM_STATE_RATS << 4;
+            io.interrupt(2, &mut chip);
+            assert_eq!(chip.reads, [nfc::FM_REG_MAIN_IRQ]);
+            assert_eq!(io.take(&mut [0; nfc::FRAME_LIMIT]), None);
+            assert_eq!(io.generation(), 1);
+            chip.fail = None;
+            io.poll(201, false, &mut chip);
+            io.poll(202, false, &mut chip);
+            assert_eq!(
+                &chip.writes[2..],
+                [
+                    (nfc::FM_REG_RESET_SILENCE, vec![nfc::FM_UNSILENCE]),
+                    (nfc::FM_REG_MAIN_IRQ_MASK, vec![nfc::FM_MAIN_IRQ_MASK]),
+                ]
+            );
+        }
     }
     #[test]
     fn missing_wtx_echo_and_bus_failures_enter_rf_recovery() {

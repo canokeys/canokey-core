@@ -1,0 +1,1320 @@
+{
+  "schema": 1,
+  "scope": "Literal USB HALT/GET_STATUS and descriptor-control events through pinned C and actual Rust facades. No endpoint-register, DATA-toggle waveform, physical USB or arbitrary IRQ acceptance. Explicit C/Rust differences retain separate raw expectations.",
+  "cases": [
+    {
+      "id": "halt-status-clear-direction-02",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8200000002000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0203000002000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000002000200",
+          "expected": "0100"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "8200000082000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0201000002000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0201000002000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000002000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "halt-status-clear-direction-82",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8200000082000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0203000082000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000082000200",
+          "expected": "0100"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "8200000002000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0201000082000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0201000082000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000082000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "halt-status-clear-direction-03",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8200000003000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0203000003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000003000200",
+          "expected": "0100"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0201000003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0201000003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000003000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "halt-status-clear-direction-83",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0203000083000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0100"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "8200000003000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0201000083000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0201000083000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-01-rejects-ep0-out-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0201000000000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-01-rejects-ep0-in-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0201000080000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-01-rejects-unknown-out-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0201000004000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-01-rejects-unknown-in-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0201000084000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-01-rejects-high-index-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0201000083010000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-01-rejects-reserved-index-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0201000093000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-01-rejects-wrong-value-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0201010083000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-01-rejects-nonzero-length-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0201000083000100",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-01-rejects-wrong-direction-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8201000083000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-03-rejects-ep0-out-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0203000000000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-03-rejects-ep0-in-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0203000080000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-03-rejects-unknown-out-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0203000004000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-03-rejects-unknown-in-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0203000084000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-03-rejects-high-index-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0203000083010000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-03-rejects-reserved-index-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0203000093000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-03-rejects-wrong-value-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0203010083000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-03-rejects-nonzero-length-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0203000083000100",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-03-rejects-wrong-direction-and-recovers",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8203000083000000",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "feature-01-rejects-addressed-state",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0009000000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0201000083000000",
+          "expected": "STALL"
+        }
+      ]
+    },
+    {
+      "id": "feature-03-rejects-addressed-state",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "0009000000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0203000083000000",
+          "expected": "STALL"
+        }
+      ]
+    },
+    {
+      "id": "get-status-high-index-C-accepts-Rust-rejects",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E47"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8200000083010200",
+          "expected": "STALL",
+          "expected_c": "0000"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ],
+      "difference": {
+        "id": "U3",
+        "disposition": "unresolved",
+        "reason": "Pinned C endpoint GET_STATUS ignores reserved fields/high index and sends two bytes regardless of wLength; Rust validates the exact request. Preserve Rust rejection."
+      }
+    },
+    {
+      "id": "get-status-wrong-value-C-accepts-Rust-rejects",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E47"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8200010083000200",
+          "expected": "STALL",
+          "expected_c": "0000"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ],
+      "difference": {
+        "id": "U3",
+        "disposition": "unresolved",
+        "reason": "Pinned C endpoint GET_STATUS ignores reserved fields/high index and sends two bytes regardless of wLength; Rust validates the exact request. Preserve Rust rejection."
+      }
+    },
+    {
+      "id": "get-status-short-length-C-accepts-Rust-rejects",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E47"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8200000083000100",
+          "expected": "STALL",
+          "expected_c": "0000"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ],
+      "difference": {
+        "id": "U3",
+        "disposition": "unresolved",
+        "reason": "Pinned C endpoint GET_STATUS ignores reserved fields/high index and sends two bytes regardless of wLength; Rust validates the exact request. Preserve Rust rejection."
+      }
+    },
+    {
+      "id": "get-status-zero-length-C-accepts-Rust-rejects",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E47"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8200000083000000",
+          "expected": "STALL",
+          "expected_c": "0000"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ],
+      "difference": {
+        "id": "U3",
+        "disposition": "unresolved",
+        "reason": "Pinned C endpoint GET_STATUS ignores reserved fields/high index and sends two bytes regardless of wLength; Rust validates the exact request. Preserve Rust rejection."
+      }
+    },
+    {
+      "id": "get-status-long-length-C-accepts-Rust-rejects",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E47"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8200000083000300",
+          "expected": "STALL",
+          "expected_c": "0000"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ],
+      "difference": {
+        "id": "U3",
+        "disposition": "unresolved",
+        "reason": "Pinned C endpoint GET_STATUS ignores reserved fields/high index and sends two bytes regardless of wLength; Rust validates the exact request. Preserve Rust rejection."
+      }
+    },
+    {
+      "id": "get-status-unknown-endpoint-04",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8200000004000200",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "get-status-unknown-endpoint-84",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "8200000084000200",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "get-status-unknown-endpoint-7f",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "820000007f000200",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "get-status-unknown-endpoint-ff",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E46"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "82000000ff000200",
+          "expected": "STALL"
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "idle-manufacturer-descriptor",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E48"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "800601030904ff00",
+          "expected": "1a03630061006e006f006b0065007900"
+        },
+        {
+          "in": true,
+          "expected": "73002e006f0072006700"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "pending-source-manufacturer-descriptor-does-not-advance-source",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E48"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000700",
+          "expected": ""
+        },
+        {
+          "out": "80100000010401",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "0061ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "8006010309041000",
+          "expected": "1a03630061006e006f006b0065007900",
+          "expected_c": "STALL"
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "00c0000001",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "b561ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ],
+      "difference": {
+        "id": "U4",
+        "disposition": "unresolved",
+        "reason": "Pinned C refuses dynamic descriptors while the FIDO response owns shared IO; Rust uses separate bounded control storage. Both must retain the exact next response byte."
+      }
+    },
+    {
+      "id": "pending-source-configuration-descriptor-does-not-advance-source",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E48"
+      ],
+      "preconditions": "Fresh full-product fixture; configured USB; each endpoint direction is observed independently. Only endpoint hardware is mocked.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000700",
+          "expected": ""
+        },
+        {
+          "out": "80100000010401",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "0061ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "8006000200000900",
+          "expected": "09029f000401008032",
+          "expected_c": "STALL"
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "00c0000001",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "b561ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ],
+      "difference": {
+        "id": "U4",
+        "disposition": "unresolved",
+        "reason": "Pinned C refuses dynamic descriptors while the FIDO response owns shared IO; Rust uses separate bounded control storage. Both must retain the exact next response byte."
+      }
+    }
+  ]
+}

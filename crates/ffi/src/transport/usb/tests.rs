@@ -21,10 +21,12 @@ struct Controller {
     ready: bool,
     opened: [bool; 8],
     halted: [bool; 8],
+    stall_writes: [usize; 8],
     pending: [bool; 4],
     packets: [[u8; 64]; 4],
     lengths: [usize; 4],
     submissions: [usize; 4],
+    receives: [usize; 4],
     timer: Option<unsafe extern "C" fn()>,
     interval: u16,
     fail: bool,
@@ -38,10 +40,12 @@ static mut CONTROLLER: Controller = Controller {
     ready: false,
     opened: [false; 8],
     halted: [false; 8],
+    stall_writes: [0; 8],
     pending: [false; 4],
     packets: [[0; 64]; 4],
     lengths: [0; 4],
     submissions: [0; 4],
+    receives: [0; 4],
     timer: None,
     interval: 0,
     fail: false,
@@ -101,6 +105,7 @@ pub(crate) unsafe fn ck_usb_dcd_stall(ep: u8, halt: u8) {
     let c = controller();
     assert_ne!(c.masked, 0);
     c.halted[direction(ep)] = halt != 0;
+    c.stall_writes[direction(ep)] += 1;
 }
 pub(crate) unsafe fn ck_usb_dcd_address(address: u8) {
     assert_ne!(controller().masked, 0);
@@ -114,6 +119,7 @@ pub(crate) unsafe fn ck_usb_dcd_receive(ep: u8) {
     let c = controller();
     assert_ne!(c.masked, 0);
     assert!(c.opened[direction(ep)]);
+    c.receives[endpoint(ep)] += 1;
 }
 pub(crate) unsafe fn ck_usb_dcd_write(ep: u8, bytes: *const u8, length: u16) -> u8 {
     let c = controller();
@@ -193,9 +199,15 @@ fn configure() {
     status();
     assert_eq!(controller().address, ADDRESS);
     setup(0, SET_CONFIGURATION, 1, 0, 0);
-    assert!(controller().ready);
+    assert!(!controller().ready);
     assert_ne!(unsafe { ck_usb_configured() }, 0);
     status();
+    #[cfg(feature = "usb-webusb")]
+    unsafe {
+        crate::transport::webusb::service_reset::<crate::platform::Native>();
+    }
+    assert!(service_complete(service_generation()));
+    assert!(controller().ready);
 }
 #[cfg(feature = "usb-hid")]
 pub(crate) unsafe fn ck_hid_executing() -> u8 {
@@ -219,7 +231,7 @@ mod web;
 #[cfg(all(feature = "usb-webusb", feature = "usb-hid"))]
 pub(crate) use web::ck_hid_busy;
 #[cfg(feature = "usb-webusb")]
-pub(crate) use web::{can_preempt, ck_ccid_idle, ck_core_exchange, ck_core_reset};
+pub(crate) use web::{can_preempt, ck_ccid_idle, ck_core_reset, web_begin, web_feed, web_finish};
 
 #[test]
 fn usb_controller_control_endpoints_mailboxes_and_reset() {
@@ -276,6 +288,15 @@ fn usb_controller_control_endpoints_mailboxes_and_reset() {
         setup(2, SET_FEATURE, 0, u16::from(EP_CCID_IN), 0);
         status();
         assert!(controller().halted[direction(EP_CCID_IN)]);
+        let generation = ck_ccid_io_generation();
+        #[cfg(feature = "usb-hid")]
+        let hid_epoch = crate::transport::hid::io::ck_hid_io_epoch();
+        setup(DEVICE_OUT, SET_CONFIGURATION, 1, 0, 0);
+        status();
+        assert_eq!(ck_ccid_io_generation(), generation);
+        #[cfg(feature = "usb-hid")]
+        assert_eq!(crate::transport::hid::io::ck_hid_io_epoch(), hid_epoch);
+        assert!(controller().halted[direction(EP_CCID_IN)]);
         setup(0x82, GET_STATUS, 0, u16::from(EP_CCID_IN), 2);
         assert_eq!(read_control(&mut bytes), 2);
         assert_eq!(bytes[0], 1);
@@ -283,6 +304,23 @@ fn usb_controller_control_endpoints_mailboxes_and_reset() {
         setup(2, CLEAR_FEATURE, 0, u16::from(EP_CCID_IN), 0);
         status();
         assert!(!controller().halted[direction(EP_CCID_IN)]);
+        // CLEAR_FEATURE must reach the controller even when already clear:
+        // the CIU's clear-stall command also resets the endpoint DATA toggle.
+        let writes = controller().stall_writes[direction(EP_CCID_IN)];
+        setup(ENDPOINT_OUT, CLEAR_FEATURE, 0, u16::from(EP_CCID_IN), 0);
+        status();
+        assert_eq!(controller().stall_writes[direction(EP_CCID_IN)], writes + 1);
+        setup(ENDPOINT_OUT, SET_FEATURE, 0, u16::from(EP_CCID), 0);
+        status();
+        assert!(controller().halted[direction(EP_CCID)]);
+        setup(ENDPOINT_IN, GET_STATUS, 0, u16::from(EP_CCID_IN), 2);
+        assert_eq!(read_control(&mut bytes), 2);
+        assert_eq!(&bytes[..2], &[0, 0]);
+        setup(ENDPOINT_IN, GET_STATUS, 0, u16::from(EP_CCID), 2);
+        assert_eq!(read_control(&mut bytes), 2);
+        assert_eq!(&bytes[..2], &[1, 0]);
+        setup(ENDPOINT_OUT, CLEAR_FEATURE, 0, u16::from(EP_CCID), 0);
+        status();
         ck_usb_suspend();
         assert_ne!(ck_usb_configured(), 0);
         assert_eq!(ck_usb_submit(EP_CCID_IN, packet.as_ptr(), 64, 0), 0);
@@ -292,6 +330,14 @@ fn usb_controller_control_endpoints_mailboxes_and_reset() {
         assert_eq!(ck_usb_submit(EP_CCID_IN, payload.as_ptr(), 128, 1), 1);
         assert_eq!(ck_usb_tx_idle(EP_CCID_IN), 0);
         assert_eq!(controller().lengths[3], 64);
+        assert_eq!(&controller().packets[3], &payload[..64]);
+        let generation = ck_ccid_io_generation();
+        let submitted = controller().submissions[3];
+        setup(DEVICE_OUT, SET_CONFIGURATION, 1, 0, 0);
+        status();
+        assert_eq!(ck_ccid_io_generation(), generation);
+        assert!(controller().pending[3]);
+        assert_eq!(controller().submissions[3], submitted);
         assert_eq!(&controller().packets[3], &payload[..64]);
         assert_eq!(ck_usb_submit(EP_CCID_IN, payload.as_ptr(), 1, 0), 0);
         complete(EP_CCID_IN);
@@ -319,6 +365,11 @@ fn usb_controller_control_endpoints_mailboxes_and_reset() {
         ck_ccid_io_arm(generation, packet.as_ptr(), 10, EXTENSION_INTERVAL);
         assert_eq!(controller().interval, EXTENSION_INTERVAL);
         assert!(controller().timer.is_some());
+        setup(DEVICE_OUT, SET_CONFIGURATION, 1, 0, 0);
+        status();
+        assert_eq!(ck_ccid_io_generation(), generation);
+        assert!(controller().timer.is_some());
+        assert_eq!(controller().interval, EXTENSION_INTERVAL);
         #[cfg(feature = "usb-hid")]
         let before = controller().foreign_progress;
         assert_eq!(ck_transport_progress(), 1);
@@ -399,6 +450,7 @@ fn usb_controller_control_endpoints_mailboxes_and_reset() {
         status();
         setup(0, SET_CONFIGURATION, 1, 0, 0);
         status();
+        assert!(service_complete(service_generation()));
         generation = ck_ccid_io_generation();
         assert_eq!(ck_ccid_io_submit(generation, payload.as_ptr(), 128, 1), 1);
         setup(0, SET_CONFIGURATION, 0, 0, 0);
@@ -420,6 +472,7 @@ fn usb_controller_control_endpoints_mailboxes_and_reset() {
         assert_eq!(controller().address, 27);
         setup(0, SET_CONFIGURATION, 1, 0, 0);
         status();
+        assert!(service_complete(service_generation()));
         assert!(controller().ready);
         ck_usb_reset();
         assert_eq!(controller().address, 0);
@@ -428,5 +481,63 @@ fn usb_controller_control_endpoints_mailboxes_and_reset() {
         controller().masked = 0;
         deinit();
         assert_eq!(controller().masked, 0);
+    }
+}
+
+#[test]
+fn lifecycle_cleanup_gates_class_input_and_rejects_stale_completion() {
+    let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
+    unsafe {
+        controller().masked = 1;
+        configure();
+        bus_reset();
+        setup(DEVICE_OUT, SET_ADDRESS, u16::from(ADDRESS), 0, 0);
+        status();
+        let receives = controller().receives;
+        setup(DEVICE_OUT, SET_CONFIGURATION, 1, 0, 0);
+        status();
+        let interrupted = service_generation();
+        let packet = [0xa5; DATA_PACKET_BYTES];
+        assert!(!controller().ready);
+        assert_eq!(controller().receives[1..], receives[1..]);
+        assert_eq!(ck_usb_out(EP_CCID, packet.as_ptr(), 64), 0);
+        assert_eq!(ck_ccid_io_pending(), 0);
+        #[cfg(feature = "usb-hid")]
+        {
+            use crate::transport::hid::io::*;
+            let mut output = [0; DATA_PACKET_BYTES];
+            let mut tick = 0;
+            let epoch = ck_hid_io_epoch();
+            ck_hid_io_ack_reset(epoch);
+            assert_eq!(ck_usb_out(EP_HID, packet.as_ptr(), 64), 0);
+            assert_eq!(ck_hid_io_peek(output.as_mut_ptr(), 64, &mut tick, epoch), 0);
+        }
+        assert_eq!(ck_usb_submit(EP_CCID_IN, packet.as_ptr(), 64, 0), 0);
+        ck_usb_receive(EP_CCID);
+        assert_eq!(controller().receives[1..], receives[1..]);
+        // Model a reset/configuration IRQ between cleanup and acknowledgement.
+        setup(DEVICE_OUT, SET_CONFIGURATION, 0, 0, 0);
+        status();
+        setup(DEVICE_OUT, SET_CONFIGURATION, 1, 0, 0);
+        status();
+        assert!(!service_complete(interrupted));
+        assert!(!controller().ready);
+        assert_eq!(controller().receives[1..], receives[1..]);
+        let current = service_generation();
+        assert!(service_complete(current));
+        assert!(controller().ready);
+        for ep in EP_KEYBOARD..=EP_CCID {
+            assert_eq!(
+                controller().receives[ep as usize],
+                receives[ep as usize] + usize::from(INTERFACES.endpoint(ep as u16))
+            );
+        }
+        let armed = controller().receives;
+        assert!(service_complete(current));
+        assert_eq!(controller().receives, armed);
+        assert_eq!(ck_usb_out(EP_CCID, packet.as_ptr(), 64), 0);
+        assert_ne!(ck_ccid_io_pending(), 0);
+        deinit();
+        controller().masked = 0;
     }
 }

@@ -6,6 +6,7 @@ use crate::composition::{Provider, core as core_ops};
 #[cfg(feature = "usb-ccid")]
 use crate::transport::ccid::ck_ccid_idle;
 use crate::transport::pke_scratch::{self as pke, PkeLease};
+use canokey_ports::Device;
 use canokey_protocol::ctaphid::Error;
 use canokey_rust_core::runtime::ctaphid::{Scratch, Transport};
 
@@ -45,17 +46,21 @@ impl<P: Provider> Scratch for RequestScratch<P> {
     fn capacity(&self) -> usize {
         pke::capacity::<P>()
     }
-    fn begin(&mut self, use_pke: bool) -> Result<(), Error> {
+    fn continuation_pending(&mut self) -> bool {
+        unsafe { core_ops::with_core::<P, _>(|core, _| core.ctap_continuation_pending()) }
+    }
+    fn begin(&mut self, use_pke: bool, preserve_context: bool) -> Result<(), Error> {
+        if preserve_context {
+            return Ok(());
+        }
         unsafe {
             if ck_ccid_idle() == 0 {
                 return Err(Error::Busy);
             }
-            // End the previous idle CCID session before staging any HID bytes.
+            // Borrow execution without revoking the retained APDU context.
             core_ops::with_core::<P, _>(|core, p| core.begin_ctap(p));
             if use_pke {
-                // A valid GET RESPONSE fits inline. Close a prior response
-                // before new staged input borrows the accelerator workspace.
-                core_ops::with_core::<P, _>(|core, p| core.close_ctap(p));
+                // Transport admission has excluded retained native output.
                 if !(&mut *core::ptr::addr_of_mut!(PKE_LEASE)).acquire::<P>() {
                     return Err(Error::Busy);
                 }
@@ -90,15 +95,10 @@ impl<P: Provider> Scratch for RequestScratch<P> {
         length
     }
     #[inline(never)]
-    fn wink(&mut self, cid: u32) -> usize {
+    fn wink(&mut self, cid: u32) {
         unsafe { ck_hid_execution_begin(cid) };
-        let length = unsafe {
-            core_ops::with_core::<P, _>(|core, p| {
-                core.execute_ctap(Ok(canokey_rust_core::applets::ctap::Command::Wink), p)
-            })
-        };
+        P::with_platform(|p| p.device.wink());
         unsafe { ck_hid_execution_end() };
-        length
     }
     fn read_response(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Error> {
         unsafe { core_ops::with_core::<P, _>(|core, p| core.read_ctap(offset, out, p)) }
@@ -132,7 +132,8 @@ pub unsafe fn reset<P: Provider>() {
 }
 /// input is null or one full report; output is a distinct writable report.
 /// Called only when the previous USB IN report has completed. Bit 0 indicates
-/// output, bit 1 holds the shared session through RX and final TX completion.
+/// output, bit 1 holds the shared session through RX and final TX completion,
+/// bit 2 retains a native MSG continuation after packet-level completion.
 #[inline(never)]
 pub unsafe fn poll<P: Provider>(
     input: *const [u8; 64],
@@ -152,6 +153,7 @@ pub unsafe fn poll<P: Provider>(
         };
         let produced =
             produced || hid.timeout(now, out, &mut scratch) || hid.transmit(out, &mut scratch);
-        u8::from(produced) | (u8::from(hid.active()) << 1)
+        let retained = core_ops::with_core::<P, _>(|core, _| core.ctap_continuation_pending());
+        u8::from(produced) | (u8::from(hid.active()) << 1) | (u8::from(retained) << 2)
     }
 }

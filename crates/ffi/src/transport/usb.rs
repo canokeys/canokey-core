@@ -32,7 +32,7 @@ use crate::sys::ck_usb_dcd_stall;
 use crate::sys::ck_usb_dcd_start;
 use crate::sys::ck_usb_dcd_stop;
 use crate::sys::ck_usb_dcd_write;
-use crate::transport::ccid::io::{ck_ccid_packet_out, ck_ccid_packet_reset};
+use crate::transport::ccid::io::{ck_ccid_io_generation, ck_ccid_packet_out, ck_ccid_packet_reset};
 #[cfg(feature = "usb-hid")]
 use crate::transport::hid::io::{ck_hid_packet_out, ck_hid_packet_reset};
 #[cfg(feature = "usb-keyboard")]
@@ -66,6 +66,9 @@ enum Phase {
 }
 const CONFIGURATION: Configuration = Configuration::new(INTERFACES);
 static mut DEVICE: Device = Device::new();
+// CCID's mailbox generation advances on every global USB lifecycle reset.
+// Class callbacks stay closed until the main loop has cleaned that generation.
+static mut SERVICED_GENERATION: u32 = 0;
 static mut TX: [Tx; 4] = [Tx::EMPTY; 4];
 static mut HALTED: u8 = 0;
 static mut SUSPENDED: bool = false;
@@ -139,7 +142,7 @@ unsafe fn mailbox_reset(ep: u8) {
         }
     }
 }
-unsafe fn reset_pipe(ep: u8, enabled: bool) {
+unsafe fn reset_pipe(ep: u8, enabled: bool, receive: bool) {
     unsafe {
         ck_usb_dcd_close(ep);
         ck_usb_dcd_close(ep | DIRECTION_IN);
@@ -147,21 +150,53 @@ unsafe fn reset_pipe(ep: u8, enabled: bool) {
         if enabled {
             ck_usb_dcd_open(ep);
             ck_usb_dcd_open(ep | DIRECTION_IN);
-            ck_usb_dcd_receive(ep);
+            if receive {
+                ck_usb_dcd_receive(ep);
+            }
         }
     }
 }
 unsafe fn endpoints(enabled: bool) {
     unsafe {
         #[cfg(feature = "usb-webusb")]
-        crate::transport::webusb::reset();
+        crate::transport::webusb::lifecycle_reset();
         DEVICE.configured = false;
         for ep in EP_KEYBOARD..=EP_CCID {
-            reset_pipe(ep, enabled && INTERFACES.endpoint(ep as u16));
+            reset_pipe(ep, enabled && INTERFACES.endpoint(ep as u16), false);
         }
         DEVICE.configured = enabled;
-        ck_usb_dcd_ready(enabled as u8);
+        ck_usb_dcd_ready(0);
     }
+}
+
+unsafe fn ready() -> bool {
+    unsafe { DEVICE.configured && SERVICED_GENERATION == ck_ccid_io_generation() }
+}
+
+pub(crate) fn service_generation() -> u32 {
+    usb_locked(|| unsafe { ck_ccid_io_generation() })
+}
+
+/// A reset IRQ during main-loop cleanup invalidates the captured generation.
+/// Reopen reception only after all cleanup completed without another reset.
+pub(crate) fn service_complete(generation: u32) -> bool {
+    usb_locked(|| unsafe {
+        if generation != ck_ccid_io_generation() {
+            return false;
+        }
+        if SERVICED_GENERATION != generation {
+            SERVICED_GENERATION = generation;
+            if DEVICE.configured {
+                for ep in EP_KEYBOARD..=EP_CCID {
+                    if INTERFACES.endpoint(ep as u16) {
+                        ck_usb_dcd_receive(ep);
+                    }
+                }
+                ck_usb_dcd_ready(1);
+            }
+        }
+        true
+    })
 }
 
 // Invalidate software mailboxes without touching hardware FIFOs on BUSRST.
@@ -243,7 +278,7 @@ pub unsafe fn ck_usb_bus_reset() {
     unsafe {
         #[cfg(feature = "usb-webusb")]
         {
-            crate::transport::webusb::reset();
+            crate::transport::webusb::lifecycle_reset();
             CONTROL_WEB = false;
         }
         ck_usb_dcd_ready(0);
@@ -292,7 +327,7 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
             && s.kind & !DIRECTION_IN == VENDOR_INTERFACE_OUT
         {
             use crate::transport::webusb::{self as web, Action};
-            match web::setup(s, INTERFACES.webusb()) {
+            match web::setup(s, INTERFACES.webusb(), ready()) {
                 Some(Action::Receive) => {
                     PHASE = Phase::WebReceive;
                     ck_usb_dcd_receive(0);
@@ -360,7 +395,7 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
                 } else {
                     EP_KEYBOARD
                 };
-                reset_pipe(ep, true);
+                reset_pipe(ep, true, ready());
                 status(Phase::StatusIn);
             }
             Reply::Halt(ep, halt) => {
@@ -422,7 +457,8 @@ pub unsafe fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zlp: u8) -> i
         {
             return -1;
         }
-        if SUSPENDED
+        if !ready()
+            || SUSPENDED
             || HALTED & halt_bit(ep | DIRECTION_IN) != 0
             || TX[(ep & ENDPOINT_NUMBER_MASK) as usize].active
         {
@@ -446,8 +482,7 @@ pub unsafe fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zlp: u8) -> i
 }
 pub unsafe fn ck_usb_receive(ep: u8) {
     unsafe {
-        if DEVICE.configured && ep & DIRECTION_IN == 0 && ep != 0 && INTERFACES.endpoint(ep as u16)
-        {
+        if ready() && ep & DIRECTION_IN == 0 && ep != 0 && INTERFACES.endpoint(ep as u16) {
             ck_usb_dcd_receive(ep);
         }
     }
@@ -468,7 +503,7 @@ pub unsafe fn ck_usb_in(ep: u8) {
                 _ => (),
             }
         } else if ep & !ENDPOINT_ADDRESS_MASK == 0
-            && DEVICE.configured
+            && ready()
             && TX[(ep & ENDPOINT_NUMBER_MASK) as usize].active
         {
             if TX[(ep & ENDPOINT_NUMBER_MASK) as usize].remaining != 0 {
@@ -520,7 +555,7 @@ pub unsafe fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8 {
             }
             return 1;
         }
-        if !DEVICE.configured {
+        if !ready() {
             return 0;
         }
         match ep {
@@ -548,6 +583,10 @@ pub(crate) unsafe fn web_admission(accepted: bool, complete: bool) {
             return;
         }
         if !accepted {
+            // Main-loop admission already released the input transfer. Refusal
+            // must not schedule a Core reset that revokes a retained APDU grant
+            // or interrupts the native HID operation borrowing that context.
+            PHASE = Phase::Idle;
             stall();
         } else if complete {
             status(Phase::StatusIn);

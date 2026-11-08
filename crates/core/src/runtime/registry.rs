@@ -125,14 +125,17 @@ impl Selected {
         };
         mask == 0 || config::enabled(p.storage, mask)
     }
-    fn from_aid(aid: &[u8]) -> Option<Self> {
+    fn from_aid(aid: &[u8], transport: canokey_protocol::apdu::Transport) -> Option<Self> {
         // Iterate borrowed AIDs so size-optimized targets share one comparison
         // instead of expanding constant slice patterns into bytewise branches.
+        #[cfg(feature = "ctap")]
+        if aid == transport.fido_aid() {
+            return Some(Self::Ctap);
+        }
+        let _ = transport;
         const AIDS: &[(&[u8], Selected)] = &[
             #[cfg(feature = "ndef")]
             (crate::applets::ndef::AID, Selected::Ndef),
-            #[cfg(feature = "ctap")]
-            (ctap::apdu::AID, Selected::Ctap),
             #[cfg(feature = "admin")]
             (admin::AID, Selected::Admin),
             #[cfg(feature = "oath")]
@@ -177,7 +180,11 @@ impl AppletState {
             }
             #[cfg(feature = "ctap")]
             Self::Ctap => (
-                h.unchained().cla & !canokey_protocol::apdu::CLA_FIDO,
+                if h.cla == 0 {
+                    0
+                } else {
+                    h.unchained().cla ^ canokey_protocol::apdu::CLA_FIDO
+                },
                 ctap::MAX_REQUEST as u32,
             ),
             #[cfg(feature = "oath")]
@@ -187,7 +194,12 @@ impl AppletState {
             ),
             #[cfg(feature = "openpgp")]
             Self::OpenPgp(_) => (
-                h.unchained().cla,
+                if h.chained() && !crate::applets::openpgp::protocol::OpenPgp::supports_chaining(h)
+                {
+                    h.cla
+                } else {
+                    h.unchained().cla
+                },
                 crate::applets::openpgp::protocol::OpenPgp::limit(h),
             ),
             #[cfg(feature = "piv")]
@@ -200,14 +212,8 @@ impl AppletState {
                 Piv::limit(h),
             ),
             #[cfg(feature = "ndef")]
-            Self::Ndef(_) => (
-                if h.ins == crate::applets::ndef::INS_UPDATE_BINARY {
-                    h.unchained().cla
-                } else {
-                    h.cla
-                },
-                crate::applets::ndef::FILE_LIMIT as u32,
-            ),
+            // C's NDEF handler dispatches by INS without restricting CLA.
+            Self::Ndef(_) => (0, crate::applets::ndef::FILE_LIMIT as u32),
             Self::None => (h.cla, 0),
         }
     }
@@ -232,7 +238,8 @@ pub struct Registry {
         feature = "admin",
         feature = "openpgp",
         feature = "piv",
-        feature = "ctap"
+        feature = "ctap",
+        feature = "ndef"
     ))]
     workspace: super::workspace::SessionWorkspace,
 }
@@ -254,7 +261,8 @@ impl Registry {
                 feature = "admin",
                 feature = "openpgp",
                 feature = "piv",
-                feature = "ctap"
+                feature = "ctap",
+                feature = "ndef"
             ))]
             workspace: super::workspace::SessionWorkspace::new(),
         }
@@ -375,6 +383,41 @@ impl Registry {
     }
 }
 impl Router for Registry {
+    fn can_yield(&self) -> bool {
+        match &self.applet {
+            #[cfg(feature = "piv")]
+            AppletState::Piv(piv) => piv.can_yield(),
+            _ => true,
+        }
+    }
+    fn absent_le(&self, info: canokey_protocol::apdu::CommandInfo) -> u32 {
+        if info.lc == 0 {
+            match self.applet.selected() {
+                #[cfg(feature = "ctap")]
+                Selected::Ctap => return 0,
+                #[cfg(feature = "openpgp")]
+                Selected::OpenPgp => return 0,
+                #[cfg(feature = "piv")]
+                Selected::Piv => return 0,
+                #[cfg(feature = "ndef")]
+                Selected::Ndef => return 0,
+                _ => {}
+            }
+        }
+        if info.extended {
+            65536
+        } else {
+            super::engine::DEFAULT_APDU_LE
+        }
+    }
+    #[cfg(feature = "ctap")]
+    fn native_pending(&self) -> bool {
+        self.ctap.pending_message()
+    }
+    #[cfg(feature = "ctap")]
+    fn yield_native(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
+        self.close_ctap(p);
+    }
     #[allow(unused_variables)]
     fn install(
         &mut self,
@@ -391,32 +434,59 @@ impl Router for Registry {
     fn select(
         &mut self,
         aid: &[u8],
+        transport: canokey_protocol::apdu::Transport,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
-        self.view().select(aid, p)
+        self.view().select(aid, transport, p)
+    }
+    fn reject_select(
+        &mut self,
+        transport: canokey_protocol::apdu::Transport,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
+        #[cfg(feature = "ctap")]
+        if transport == canokey_protocol::apdu::Transport::Usb
+            && matches!(self.applet, AppletState::Ctap)
+        {
+            self.view().reset(p);
+        }
+        let _ = (transport, p);
+    }
+    fn fido_selected(&self, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
+        #[cfg(feature = "ctap")]
+        {
+            matches!(self.applet, AppletState::Ctap) && Selected::Ctap.enabled(p)
+        }
+        #[cfg(not(feature = "ctap"))]
+        {
+            let _ = p;
+            false
+        }
+    }
+    fn retain_nfc_input(&self) -> bool {
+        // C's malformed-envelope cleanup resets only the FIDO transport chain;
+        // it never enters another applet's command/abort path, even if disabled.
+        match self.applet.selected() {
+            #[cfg(feature = "ctap")]
+            Selected::Ctap => false,
+            _ => true,
+        }
     }
     fn allows_extended(&self, header: Header) -> bool {
-        let _ = header;
-        #[cfg(feature = "openpgp")]
-        if matches!(self.applet, AppletState::OpenPgp(_)) {
-            return true;
+        // Transport admission is independent of command validity. PIV retains
+        // its blanket rejection; other applets apply ordinary command checks.
+        match self.applet.selected() {
+            Selected::None => header.is_get_response(),
+            #[cfg(feature = "piv")]
+            Selected::Piv => false,
+            #[allow(unreachable_patterns)]
+            _ => true,
         }
-        #[cfg(feature = "ndef")]
-        if matches!(self.applet, AppletState::Ndef(_))
-            && header.ins == crate::applets::ndef::INS_READ_BINARY
-        {
-            return true;
-        }
-        #[cfg(feature = "ctap")]
-        if matches!(self.applet, AppletState::Ctap) {
-            return ctap::apdu::allows_extended(header);
-        }
-        false
     }
     fn command_limit(&self, h: Header) -> Result<u32, Sw> {
-        // CTAP uses base CLA=80; other applets require CLA=00. Strip the chain bit only where
-        // chaining is supported; leaving it set deliberately makes the final
-        // CLA check reject chained ADMIN or unsupported chained PIV commands.
+        // Applets supply their accepted base CLA and logical command bound.
+        // Strip the chain bit only for supported commands. NDEF deliberately
+        // has no CLA filter, matching its INS-only dispatcher.
         let (cla, limit) = self.applet.command_limit(h);
         if !self.selected() {
             return Err(Sw::FILE_NOT_FOUND);
@@ -435,10 +505,13 @@ impl Router for Registry {
         // NDEF UPDATE continues at the first fragment's offset; subsequent
         // P1/P2 values do not restart that applet's write cursor.
         #[cfg(feature = "ndef")]
-        if matches!(self.applet, AppletState::Ndef(_))
-            && header.ins == crate::applets::ndef::INS_UPDATE_BINARY
-        {
+        if matches!(self.applet, AppletState::Ndef(_)) {
+            if header.ins != crate::applets::ndef::INS_UPDATE_BINARY {
+                // NDEF SELECT/READ are complete commands even with CLA bit4.
+                return header.unchained();
+            }
             return Header {
+                cla: header.cla & canokey_protocol::apdu::CLA_CHAINING,
                 p1: 0,
                 p2: 0,
                 ..header
@@ -475,10 +548,10 @@ impl Router for Registry {
     fn finish(
         &mut self,
         header: Header,
-        requested: Option<u32>,
+        le: u32,
         platform: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(u32, Sw), Sw> {
-        self.view().finish(header, requested, platform)
+        self.view().finish(header, le, platform)
     }
     #[allow(unused_variables)]
     // Keep applet workspace addressing out of the response cursor and its
@@ -490,23 +563,6 @@ impl Router for Registry {
         platform: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw> {
         self.view().read_response(offset, out, platform)
-    }
-    fn response_preemptable(&self, total: u32) -> bool {
-        // Legacy ordinary replies used 256 bytes plus 32 bytes of APDU
-        // overhead; larger results used explicitly closeable response sources.
-        // The limits describe compatibility, not new runtime allocations.
-        let _ = total;
-        match &self.applet {
-            #[cfg(feature = "ndef")]
-            AppletState::Ndef(_) => total > canokey_protocol::apdu::RESPONSE_PREEMPT_BYTES as u32,
-            #[cfg(feature = "openpgp")]
-            AppletState::OpenPgp(s) => s.response_preemptable(total),
-            #[cfg(feature = "piv")]
-            AppletState::Piv(s) => s.response_preemptable(total, &self.workspace),
-            #[cfg(feature = "ctap")]
-            AppletState::Ctap => self.ctap.response_preemptable(),
-            _ => false,
-        }
     }
     #[allow(unused_variables)]
     fn close_response(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
@@ -590,7 +646,8 @@ struct RegistryView<'a> {
         feature = "admin",
         feature = "openpgp",
         feature = "piv",
-        feature = "ctap"
+        feature = "ctap",
+        feature = "ndef"
     ))]
     workspace: &'a mut super::workspace::SessionWorkspace,
 }
@@ -615,7 +672,8 @@ impl Registry {
                 feature = "admin",
                 feature = "openpgp",
                 feature = "piv",
-                feature = "ctap"
+                feature = "ctap",
+                feature = "ndef"
             ))]
             workspace: &mut self.workspace,
         }
@@ -657,7 +715,8 @@ impl RegistryView<'_> {
             feature = "admin",
             feature = "openpgp",
             feature = "piv",
-            feature = "ctap"
+            feature = "ctap",
+            feature = "ndef"
         ))]
         self.workspace.wipe_active(platform.memory);
     }
@@ -771,10 +830,17 @@ impl RegistryView<'_> {
     fn select(
         &mut self,
         aid: &[u8],
+        transport: canokey_protocol::apdu::Transport,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
-        let next = Selected::from_aid(aid).ok_or(Sw::FILE_NOT_FOUND)?;
+        let next = Selected::from_aid(aid, transport).ok_or(Sw::FILE_NOT_FOUND)?;
         if !next.enabled(p) {
+            // Disabled NDEF follows unknown-AID rejection in C: the engine
+            // revokes USB FIDO only, preserving other selections and grants.
+            #[cfg(feature = "ndef")]
+            if next == Selected::Ndef {
+                return Err(Sw::FILE_NOT_FOUND);
+            }
             self.reset_sessions(p);
             *self.applet = AppletState::None;
             return Err(Sw::FILE_NOT_FOUND);
@@ -831,7 +897,10 @@ impl RegistryView<'_> {
     fn abort_command(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
         match &mut self.applet {
             #[cfg(feature = "ndef")]
-            AppletState::Ndef(s) => s.cancel(),
+            AppletState::Ndef(s) => s.cancel(
+                &mut self.workspace.classic_with(platform.memory),
+                platform.memory,
+            ),
             #[cfg(feature = "admin")]
             AppletState::Admin => self
                 .admin
@@ -864,7 +933,11 @@ impl RegistryView<'_> {
         }
         match &mut self.applet {
             #[cfg(feature = "ndef")]
-            AppletState::Ndef(s) => s.begin(header),
+            AppletState::Ndef(s) => s.begin(
+                header,
+                &mut self.workspace.classic_with(platform.memory),
+                platform.memory,
+            ),
             #[cfg(feature = "admin")]
             AppletState::Admin => self.admin.begin(header, &self.grants, platform),
             #[cfg(feature = "ctap")]
@@ -890,7 +963,9 @@ impl RegistryView<'_> {
     ) -> Result<(), Sw> {
         match &mut self.applet {
             #[cfg(feature = "ndef")]
-            AppletState::Ndef(s) => s.consume(bytes),
+            AppletState::Ndef(s) => {
+                s.consume(bytes, &mut self.workspace.classic_with(platform.memory))
+            }
             #[cfg(feature = "admin")]
             AppletState::Admin => self.admin.consume(
                 bytes,
@@ -922,7 +997,11 @@ impl RegistryView<'_> {
     ) -> Result<(), Sw> {
         #[cfg(feature = "ndef")]
         if let AppletState::Ndef(s) = &mut self.applet {
-            return s.end_frame(last, platform);
+            return s.end_frame(
+                last,
+                &mut self.workspace.classic_with(platform.memory),
+                platform,
+            );
         }
         Ok(())
     }
@@ -933,20 +1012,23 @@ impl RegistryView<'_> {
     fn finish(
         &mut self,
         header: Header,
-        requested: Option<u32>,
+        le: u32,
         platform: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(u32, Sw), Sw> {
-        let le = requested.unwrap_or(super::engine::DEFAULT_APDU_LE);
         match &mut self.applet {
             #[cfg(feature = "ndef")]
             // READ BINARY without Le is a zero-byte read; encoded 00 is 256.
-            AppletState::Ndef(s) => s.finish(requested.unwrap_or(0), platform),
+            AppletState::Ndef(s) => s.finish(
+                le,
+                &mut self.workspace.classic_with(platform.memory),
+                platform,
+            ),
             #[cfg(feature = "admin")]
             AppletState::Admin => self.finish_admin(header, le, platform),
             #[cfg(feature = "ctap")]
             AppletState::Ctap => self
                 .ctap
-                .finish(&mut self.workspace, platform)
+                .finish(header, &mut self.workspace, platform)
                 .map(|n| (n, Sw::SUCCESS)),
             #[cfg(feature = "oath")]
             AppletState::Oath(s) => {
@@ -989,10 +1071,10 @@ impl RegistryView<'_> {
                 )
                 .map(|()| out.len()),
             #[cfg(feature = "ctap")]
-            AppletState::Ctap => self
-                .ctap
-                .read(offset as usize, out, &mut self.workspace, platform)
-                .map(|()| out.len()),
+            AppletState::Ctap => {
+                self.ctap
+                    .read_apdu(offset as usize, out, &mut self.workspace, platform)
+            }
             #[cfg(feature = "oath")]
             AppletState::Oath(s) => s.read_response(offset as usize, out).map(|()| out.len()),
             #[cfg(feature = "openpgp")]

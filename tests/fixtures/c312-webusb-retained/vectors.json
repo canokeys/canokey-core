@@ -1,0 +1,2785 @@
+{
+  "schema": 1,
+  "scope": "Existing WebUSB waiting/partial-RX/response/sending/Hold/PIN/FIDO-source states across two global lifecycle transitions, with deferred status and refused requests, serialized cleanup, old-source rejection, PIN revocation and recovery. Event-level EP0 completions; no arbitrary executing IRQ or physical USB/CIU acceptance.",
+  "cases": [
+    {
+      "id": "reconfigure-waiting",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "service": false,
+          "setup": "4100000001001500"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "reconfigure-receiving",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "setup": "4100000001001500"
+        },
+        {
+          "expected": "",
+          "out": "00a40400100000000000000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "reconfigure-response",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "00",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "00",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "00",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "reconfigure-sending",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "reconfigure-hold",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "reconfigure-pin-hold",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000b00"
+        },
+        {
+          "expected": "",
+          "out": "0020000006313233343536"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "reconfigure-fido-hold",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000700",
+          "expected": ""
+        },
+        {
+          "out": "80100000010401",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "0061ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "bus-reset-waiting",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "service": false,
+          "setup": "4100000001001500"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "reset": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0005110000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "bus-reset-receiving",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "setup": "4100000001001500"
+        },
+        {
+          "expected": "",
+          "out": "00a40400100000000000000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "reset": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0005110000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "bus-reset-response",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "reset": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0005110000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "00",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "00",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "00",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "bus-reset-sending",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "reset": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0005110000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "bus-reset-hold",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "service": false,
+          "reset": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0005110000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "bus-reset-pin-hold",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000b00"
+        },
+        {
+          "expected": "",
+          "out": "0020000006313233343536"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "service": false,
+          "reset": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0005110000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    },
+    {
+      "id": "bus-reset-fido-hold",
+      "transport": "usb",
+      "oracle_rows": [
+        "E55"
+      ],
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000700",
+          "expected": ""
+        },
+        {
+          "out": "80100000010401",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "0061ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "expected": "",
+          "service": false,
+          "reset": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0005110000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "04",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "ff",
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000500"
+        },
+        {
+          "expected": "",
+          "out": "00c0000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "6986",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000400"
+        },
+        {
+          "expected": "",
+          "out": "00200000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "63c3",
+          "setup": "c101000001000001"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Configured product with the named existing WebUSB transaction. Main-loop cleanup withheld during reset/reconfiguration and status/refused request observations; all EP0 IN completions explicit. No OUT follows rejected SETUP. After cleanup old response and PIN are revoked."
+    }
+  ]
+}

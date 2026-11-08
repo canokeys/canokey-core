@@ -7,28 +7,45 @@ use canokey_rust_ffi::{
     ck_hid_executing,
     composition::{ccid, core, hid, usb, webusb},
 };
-use canokey_test_card::transport::{self, Fake, SCRATCH_BYTES};
+use canokey_test_card::transport::{self, SCRATCH_BYTES};
+use lifecycle_irq::Fake;
 use std::cell::RefCell;
+#[path = "usb_sessions/envelopes.rs"]
+mod envelopes;
+#[path = "usb_sessions/lifecycle_irq.rs"]
+mod lifecycle_irq;
+#[cfg(feature = "transport-nfc")]
+#[path = "usb_sessions/nfc_source.rs"]
+mod nfc_source;
+#[path = "usb_sessions/portable.rs"]
+mod portable;
+#[cfg(feature = "transport-nfc")]
+#[path = "usb_sessions/portable_nfc.rs"]
+mod portable_nfc;
+#[path = "usb_sessions/portable_webusb.rs"]
+mod portable_webusb;
 const PACKET_BYTES: usize = usb_wire::DATA_PACKET_BYTES;
 const CONTROL_BYTES: usize = usb_wire::EP0_PACKET_BYTES;
+const APDU_RESPONSE_BYTES: usize = 256 + 2;
 // CCID header plus a maximum short APDU response and its two-byte status word.
-const RESPONSE_BYTES: usize = ccid_wire::HEADER + 256 + 2;
+const RESPONSE_BYTES: usize = ccid_wire::HEADER + APDU_RESPONSE_BYTES;
 // Extended APDU header and Le surround the bounded standalone CTAP body.
 const EXTENDED_APDU_BYTES: usize = 7 + hid_wire::CTAP_MAX_REQUEST + 2;
-const LEASE_MS: u32 = 2000;
+// Delays exceed the removed session expiry and exercise wrapping ticks.
+const IDLE_GAP_MS: u32 = 3000;
 // SELECT ADMIN, verify factory PIN, query authorization and a one-byte config window.
 const SELECT_ADMIN: &[u8] = &[0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0];
 const VERIFY: &[u8] = b"\x00\x20\x00\x00\x06123456";
 const QUERY: &[u8] = &[0, 0x20, 0, 0];
 const PARTIAL_CONFIG: &[u8] = &[0, 0x43, 0, 0, 1];
 const NONCE: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8];
-// FIDO GetInfo with extended Le=1; GET RESPONSE with omitted/short Le.
+// Native MSG uses a fixed seven-byte header; Le=1 limits GetInfo.
 const LIMITED_MSG: &[u8] = &[0x80, 0x10, 0, 0, 0, 0, 1, 4, 0, 1];
 const MSG_MORE: &[u8] = &[0, 0xc0, 0, 0, 0, 0, 0];
 const GET_RESPONSE: &[u8] = &[0, 0xc0, 0, 0, 1];
 const REST: &[u8] = &[0, 0xc0, 0, 0, 0];
 // SELECT FIDO; short GetInfo with Le=1 leaves a file-backed response.
-const SELECT_FIDO: &[u8] = &[0, 0xa4, 4, 0, 8, 0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1];
+const SELECT_FIDO: &[u8] = b"\x00\xa4\x04\x00\x08\xf0CANOFID";
 const INFO_SHORT: &[u8] = &[0x80, 0x10, 0, 0, 1, 4, 1];
 struct Hardware {
     masked: u32,
@@ -41,6 +58,7 @@ struct Hardware {
     packets: [[u8; PACKET_BYTES]; 4],
     lengths: [usize; 4],
     submissions: [usize; 4],
+    receives: [usize; 4],
     inject_after_unlock: usize,
     injected: Vec<u8>,
     sequence: u8,
@@ -51,7 +69,7 @@ thread_local! {
     static HW: RefCell<Hardware> = const { RefCell::new(Hardware {
         masked: 1, now: 0, address: 0, ready: false, opened: [false; 8],
         halted: [false; 8], pending: [false; 4], packets: [[0; PACKET_BYTES]; 4],
-        lengths: [0; 4], submissions: [0; 4], inject_after_unlock: 0,
+        lengths: [0; 4], submissions: [0; 4], receives: [0; 4], inject_after_unlock: 0,
         injected: Vec::new(), sequence: 0, presence_stage: 0, presence_cid: 0,
     }) };
 }
@@ -93,6 +111,7 @@ extern "C" fn device_get_tick() -> u32 {
 extern "C" fn device_delay(ms: i32) {
     assert!(ms >= 0);
     advance(ms as u32);
+    portable_webusb::drain_during_delay();
 }
 #[unsafe(no_mangle)]
 extern "C" fn device_set_timeout(_: Option<unsafe extern "C" fn()>, _: u16) {}
@@ -173,7 +192,10 @@ extern "C" fn ck_usb_dcd_ready(ready: u8) {
 }
 #[unsafe(no_mangle)]
 extern "C" fn ck_usb_dcd_receive(ep: u8) {
-    hw(|h| assert!(h.masked != 0 && h.opened[ix(ep)]));
+    hw(|h| {
+        assert!(h.masked != 0 && h.opened[ix(ep)]);
+        h.receives[endpoint(ep)] += 1;
+    });
 }
 #[unsafe(no_mangle)]
 unsafe extern "C" fn ck_usb_dcd_write(ep: u8, bytes: *const u8, length: u16) -> u8 {
@@ -227,7 +249,7 @@ fn read_control() -> Vec<u8> {
     let mut result = Vec::new();
     while pending(0) {
         result.extend(packet(0));
-        assert!(result.len() <= 256);
+        assert!(result.len() <= APDU_RESPONSE_BYTES);
         complete(usb_wire::DIRECTION_IN);
     }
     assert_eq!(out(0, &[]), 1);
@@ -240,8 +262,10 @@ fn configure() {
     hw(|h| assert_eq!(h.address, 17));
     status();
     setup(0, usb_wire::SET_CONFIGURATION, 1, 0, 0);
-    assert!(hw(|h| h.ready) && unsafe { usb::configured() } != 0);
+    assert!(!hw(|h| h.ready) && unsafe { usb::configured() } != 0);
     status();
+    unsafe { usb::service::<Fake>() };
+    assert!(hw(|h| h.ready));
 }
 fn ccid_poll() {
     unsafe { ccid::poll::<Fake>() };
@@ -253,10 +277,12 @@ fn web_poll() {
     unsafe { webusb::poll::<Fake>() };
 }
 fn loops() {
+    unsafe { usb::service::<Fake>() };
     ccid_poll();
     hid_poll();
     web_poll();
 }
+#[track_caller]
 fn sw(bytes: &[u8], expected: u16) {
     assert!(bytes.len() >= 2);
     assert_eq!(
@@ -280,7 +306,7 @@ fn ccid_send(command: u8, apdu: &[u8]) {
         ccid_poll();
     }
 }
-fn ccid_read_state(state: u8) -> Vec<u8> {
+fn ccid_read_result(state: u8, error: u8) -> Vec<u8> {
     let mut bytes = Vec::new();
     for _ in 0..20 {
         ccid_poll();
@@ -293,29 +319,53 @@ fn ccid_read_state(state: u8) -> Vec<u8> {
     }
     ccid_poll();
     assert!(bytes.len() >= ccid_wire::HEADER);
-    assert_eq!((bytes[6], bytes[7], bytes[8]), (sequence(), state, 0));
+    assert_eq!((bytes[6], bytes[7], bytes[8]), (sequence(), state, error));
     assert_eq!(
         bytes.len(),
         ccid_wire::HEADER + u32::from_le_bytes(bytes[1..5].try_into().unwrap()) as usize
     );
     bytes
 }
+fn ccid_read_state(state: u8) -> Vec<u8> {
+    ccid_read_result(state, ccid_wire::SUCCESS_ERROR)
+}
 fn ccid_read() -> Vec<u8> {
     ccid_read_state(0)
 }
+#[track_caller]
 fn ccid_apdu(apdu: &[u8], expected: u16) {
     ccid_send(ccid_wire::TRANSFER, apdu);
     sw(&ccid_read()[ccid_wire::HEADER..], expected);
 }
+fn ccid_drain() {
+    for _ in 0..16 {
+        ccid_send(ccid_wire::TRANSFER, REST);
+        let bytes = ccid_read();
+        if bytes[bytes.len() - 2] != 0x61 {
+            sw(&bytes[ccid_wire::HEADER..], 0x9000);
+            return;
+        }
+    }
+    panic!("response did not terminate");
+}
 fn web_send(apdu: &[u8]) {
-    assert!(apdu.len() <= CONTROL_BYTES);
+    assert!(apdu.len() <= 288);
     setup(0x41, 0, 0, 1, apdu.len() as u16);
-    assert_eq!(out(0, apdu), 0);
-    web_poll();
+    if hw(|h| h.halted[1]) {
+        return;
+    }
+    for part in apdu.chunks(CONTROL_BYTES) {
+        assert_eq!(out(0, part), 0);
+        web_poll();
+        if hw(|h| h.halted[1]) {
+            return;
+        }
+    }
     if pending(0) {
         status();
     }
 }
+#[track_caller]
 fn web_apdu(apdu: &[u8], expected: u16) {
     web_send(apdu);
     assert!(!hw(|h| h.halted[1]));
@@ -410,7 +460,18 @@ fn presence_progress() {
         2 => {
             assert_eq!(
                 packet(usb_wire::EP_CCID),
-                [ccid_wire::STATUS, 0, 0, 0, 0, 0, 0x37, 0, 0, 0]
+                [
+                    ccid_wire::STATUS,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0x37,
+                    0,
+                    ccid_wire::SUCCESS_ERROR,
+                    0
+                ]
             );
             poll[6] = 0x38;
             assert_eq!(out(usb_wire::EP_CCID, &poll), 0);
@@ -423,7 +484,18 @@ fn presence_progress() {
         4 => {
             assert_eq!(
                 packet(usb_wire::EP_CCID),
-                [ccid_wire::STATUS, 0, 0, 0, 0, 0, 0x38, 0, 0, 0]
+                [
+                    ccid_wire::STATUS,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0x38,
+                    0,
+                    ccid_wire::SUCCESS_ERROR,
+                    0
+                ]
             );
             complete(usb_wire::EP_CCID_IN);
             poll[0] = ccid_wire::POWER_ON;
@@ -443,17 +515,90 @@ fn presence_progress() {
     hw(|h| h.presence_stage = if stage == 5 { 0 } else { stage + 1 });
 }
 fn main() {
+    #[cfg(feature = "transport-nfc")]
+    if std::env::args().nth(1).as_deref() == Some("--nfc-source-faults") {
+        nfc_source::run();
+        return;
+    }
     transport::device_hooks(now, progress);
     assert_eq!(unsafe { core::install::<Fake>() }, 0);
     configure();
     loops();
+    if std::env::args().nth(1).as_deref() == Some("--c312-wire") {
+        portable::run();
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("--c312-webusb-wire") {
+        portable_webusb::run(false);
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("--c312-usb-wire") {
+        portable_webusb::run(true);
+        return;
+    }
+    #[cfg(feature = "transport-nfc")]
+    if std::env::args().nth(1).as_deref() == Some("--c312-nfc-wire") {
+        portable_nfc::run();
+        return;
+    }
     explicit_selection();
     let cid = ownership_and_pending();
     preemption(cid);
     applet_streams();
     power_and_irq(cid);
     staging_and_presence(cid);
+    envelopes::run();
+    envelopes::capacity(cid);
+    startup_lifecycle(cid);
+    lifecycle_irq::run();
     println!("USB shared session correctness passed");
+}
+
+fn startup_lifecycle(cid: u32) {
+    fn reset_and_service() {
+        unsafe { usb::bus_reset() };
+        assert_eq!(unsafe { usb::configured() }, 0);
+        assert!(!hw(|h| h.ready));
+        unsafe { usb::service::<Fake>() };
+        clean_scratch();
+        assert_eq!(unsafe { hid::busy() }, 0);
+        let leases = transport::scratch(|s| s.leases);
+        unsafe { usb::service::<Fake>() };
+        assert_eq!(transport::scratch(|s| s.leases), leases);
+        assert!(!pending(usb_wire::EP_CCID) && !pending(usb_wire::EP_HID));
+        setup(0, usb_wire::SET_ADDRESS, 17, 0, 0);
+        status();
+        setup(0, usb_wire::SET_CONFIGURATION, 1, 0, 0);
+        status();
+        unsafe { usb::service::<Fake>() };
+    }
+
+    reset_and_service();
+    // Begin PKE-backed HID RX, then lose configuration before the remaining
+    // fragments arrive. The enumeration service must release it without poll.
+    let mut first = hid_packet(cid, hid_wire::CBOR, 300);
+    first[hid_wire::INITIAL_HEADER_BYTES] = 6;
+    assert_eq!(out(usb_wire::EP_HID, &first), 0);
+    hid_poll();
+    assert_ne!(transport::scratch(|s| s.owner), 0);
+    reset_and_service();
+
+    // The same service closes a retained WebUSB session and its PIN grant.
+    web_apdu(SELECT_ADMIN, 0x9000);
+    web_apdu(VERIFY, 0x9000);
+    reset_and_service();
+    web_apdu(SELECT_ADMIN, 0x9000);
+    web_apdu(QUERY, 0x63c3);
+    reset_and_service();
+
+    // Configuration can become ready between the boot loop's query and its
+    // service call. Queued application work must still await the normal poll.
+    let command = ccid_request(ccid_wire::POWER_ON, &[], next_sequence());
+    assert_eq!(out(usb_wire::EP_CCID, &command), 0);
+    unsafe { usb::service::<Fake>() };
+    assert!(!pending(usb_wire::EP_CCID));
+    assert!(!ccid_read().is_empty());
+    clean_scratch();
 }
 
 fn explicit_selection() {
@@ -495,20 +640,20 @@ fn explicit_selection() {
 fn ownership_and_pending() -> u32 {
     ccid_apdu(SELECT_ADMIN, 0x9000);
     ccid_apdu(VERIFY, 0x9000);
-    advance(LEASE_MS);
+    advance(IDLE_GAP_MS);
     loops();
     ccid_apdu(QUERY, 0x9000);
     ccid_apdu(PARTIAL_CONFIG, 0x6101);
-    advance(LEASE_MS - 1);
+    advance(IDLE_GAP_MS - 1);
     web_send(SELECT_ADMIN);
     assert!(hw(|h| h.halted[1]));
     ccid_apdu(QUERY, 0x9000); // Refused takeover cannot revoke the owner grant.
-    advance(LEASE_MS);
+    advance(IDLE_GAP_MS);
     web_apdu(SELECT_ADMIN, 0x9000);
     web_apdu(QUERY, 0x63c3);
     web_apdu(VERIFY, 0x9000);
     web_apdu(QUERY, 0x9000);
-    advance(LEASE_MS);
+    advance(IDLE_GAP_MS);
     loops();
     ccid_apdu(SELECT_ADMIN, 0x9000);
     ccid_apdu(QUERY, 0x63c3);
@@ -520,11 +665,12 @@ fn ownership_and_pending() -> u32 {
     let cid = u32::from_be_bytes(init[8..12].try_into().unwrap());
     assert!(!matches!(cid, 0 | hid_wire::BROADCAST));
     ccid_apdu(PARTIAL_CONFIG, 0x6101);
-    advance(LEASE_MS - 1);
+    advance(IDLE_GAP_MS - 1);
     hid_send(cid, hid_wire::PING, NONCE);
-    assert_eq!(hid_read(cid, hid_wire::ERROR), [6]);
+    assert_eq!(hid_read(cid, hid_wire::PING), NONCE);
+    ccid_apdu(GET_RESPONSE, 0x9000);
     ccid_apdu(QUERY, 0x9000);
-    advance(LEASE_MS);
+    advance(IDLE_GAP_MS);
     echo(cid);
     hid_send(cid, hid_wire::CBOR, &[4]);
     assert!(pending(usb_wire::EP_HID));
@@ -532,40 +678,50 @@ fn ownership_and_pending() -> u32 {
     web_send(SELECT_ADMIN);
     assert!(hw(|h| h.halted[1]));
     ccid_send(ccid_wire::TRANSFER, SELECT_ADMIN);
-    assert!(!pending(usb_wire::EP_CCID));
+    assert!(pending(usb_wire::EP_CCID));
     assert_eq!(packet(usb_wire::EP_HID), saved);
     let info = hid_read(cid, hid_wire::CBOR);
     assert!(info.len() > 256 && info[0] == 0);
-    advance(LEASE_MS - 1);
-    ccid_poll();
-    assert!(!pending(usb_wire::EP_CCID));
-    advance(1);
-    sw(&ccid_read()[ccid_wire::HEADER..], 0x9000);
-    ccid_apdu(QUERY, 0x63c3);
-    ccid_apdu(VERIFY, 0x9000);
-    // Continuation backing has the same two-second lease across competitors.
+    let completed_at = now();
+    sw(&ccid_read()[ccid_wire::HEADER..], 0x6400);
+    assert_eq!(now(), completed_at);
+    ccid_apdu(QUERY, 0x9000); // Native HID preserved the retained CCID grant.
+    // A pending native MSG source remains owned regardless of elapsed time.
     for via_web in [false, true] {
         hid_send(cid, hid_wire::MSG, LIMITED_MSG);
         let bytes = hid_read(cid, hid_wire::MSG);
         assert!(bytes.len() == 3 && bytes[0] == 0 && bytes[1] == 0x61);
+        let mut response = vec![bytes[0]];
+        advance(IDLE_GAP_MS);
         if via_web {
             web_send(SELECT_ADMIN);
             assert!(hw(|h| h.halted[1]));
-            advance(LEASE_MS);
-            web_apdu(SELECT_ADMIN, 0x9000);
         } else {
             ccid_send(ccid_wire::TRANSFER, SELECT_ADMIN);
-            advance(LEASE_MS - 1);
-            ccid_poll();
-            assert!(!pending(usb_wire::EP_CCID));
-            advance(1);
-            sw(&ccid_read()[ccid_wire::HEADER..], 0x9000);
+            assert!(pending(usb_wire::EP_CCID));
         }
-        hid_send(cid, hid_wire::MSG, MSG_MORE);
-        assert_eq!(hid_read(cid, hid_wire::MSG), [0x69, 0x86]);
-        advance(LEASE_MS);
-        ccid_apdu(SELECT_ADMIN, 0x9000);
-        ccid_apdu(VERIFY, 0x9000);
+        advance(IDLE_GAP_MS);
+        ccid_poll();
+        assert_eq!(pending(usb_wire::EP_CCID), !via_web);
+        loop {
+            hid_send(cid, hid_wire::MSG, MSG_MORE);
+            let bytes = hid_read(cid, hid_wire::MSG);
+            response.extend_from_slice(&bytes[..bytes.len() - 2]);
+            if bytes[bytes.len() - 2] != 0x61 {
+                sw(&bytes, 0x9000);
+                break;
+            }
+        }
+        assert_eq!(response, info);
+        if via_web {
+            web_apdu(SELECT_ADMIN, 0x9000);
+            web_apdu(QUERY, 0x63c3);
+            ccid_apdu(SELECT_ADMIN, 0x9000);
+            ccid_apdu(VERIFY, 0x9000);
+        } else {
+            sw(&ccid_read()[ccid_wire::HEADER..], 0x6400);
+            ccid_apdu(QUERY, 0x9000);
+        }
     }
     unsafe { usb::deinit() };
     configure();
@@ -577,13 +733,16 @@ fn ownership_and_pending() -> u32 {
     hw(|h| h.now = u32::MAX - 1000);
     ccid_apdu(VERIFY, 0x9000);
     ccid_apdu(PARTIAL_CONFIG, 0x6101);
-    advance(LEASE_MS - 1);
+    advance(IDLE_GAP_MS - 1);
     web_send(SELECT_ADMIN);
     assert!(hw(|h| h.halted[1]));
     advance(1);
+    web_send(SELECT_ADMIN);
+    assert!(hw(|h| h.halted[1]));
+    ccid_apdu(GET_RESPONSE, 0x9000);
     web_apdu(SELECT_ADMIN, 0x9000);
     web_apdu(QUERY, 0x63c3);
-    advance(LEASE_MS);
+    advance(IDLE_GAP_MS);
     loops();
     ccid_apdu(SELECT_ADMIN, 0x9000);
     ccid_apdu(VERIFY, 0x9000);
@@ -618,20 +777,29 @@ fn ownership_and_pending() -> u32 {
 fn preemption(cid: u32) {
     loops();
     ccid_apdu(QUERY, 0x9000);
+    // WebUSB can reserve the idle byte buffer, but an incomplete command must
+    // not switch/reset the authenticated CCID context when SETUP aborts RX.
+    setup(0x41, 0, 0, 1, 20);
+    assert_eq!(out(0, &[0; CONTROL_BYTES]), 0);
+    web_poll();
+    setup(0xc1, 2, 0, 1, 1);
+    assert_eq!(read_control(), [0xff]);
+    web_poll();
+    ccid_apdu(QUERY, 0x9000);
     let before = now();
     web_apdu(SELECT_ADMIN, 0x9000);
     web_apdu(QUERY, 0x63c3);
     assert_eq!(now(), before);
-    advance(LEASE_MS);
+    advance(IDLE_GAP_MS);
     loops();
     ccid_apdu(SELECT_ADMIN, 0x9000);
     ccid_apdu(VERIFY, 0x9000);
     let before = now();
     echo(cid);
     assert_eq!(now(), before);
-    advance(LEASE_MS);
+    advance(IDLE_GAP_MS);
     ccid_apdu(SELECT_ADMIN, 0x9000);
-    ccid_apdu(QUERY, 0x63c3);
+    ccid_apdu(QUERY, 0x9000);
     web_apdu(SELECT_ADMIN, 0x9000);
     web_apdu(VERIFY, 0x9000);
     let before = now();
@@ -641,15 +809,28 @@ fn preemption(cid: u32) {
     ccid_apdu(QUERY, 0x63c3);
     ccid_apdu(VERIFY, 0x9000);
     assert_eq!(now(), before);
-    advance(LEASE_MS);
+    advance(IDLE_GAP_MS);
     web_poll();
     ccid_apdu(QUERY, 0x9000);
     web_apdu(SELECT_ADMIN, 0x9000);
     web_apdu(VERIFY, 0x9000);
+    // Native execution borrows the WebUSB card context. Its pending HID IN
+    // still excludes a new WebUSB command, even though that context survives.
+    hid_send(cid, hid_wire::CBOR, &[4]);
+    assert!(pending(usb_wire::EP_HID));
+    let saved = packet(usb_wire::EP_HID);
+    setup(0x41, 0, 0, 1, QUERY.len() as u16);
+    web_poll();
+    assert!(hw(|h| h.halted[1]));
+    assert_eq!(packet(usb_wire::EP_HID), saved);
+    let info = hid_read(cid, hid_wire::CBOR);
+    assert!(info.len() > 256 && info[0] == 0);
+    assert_eq!(unsafe { hid::busy() }, 0);
+    web_apdu(QUERY, 0x9000);
     let before = now();
     echo(cid);
     assert_eq!(now(), before);
-    advance(LEASE_MS);
+    advance(IDLE_GAP_MS);
     loops();
     ccid_apdu(SELECT_ADMIN, 0x9000);
     ccid_apdu(QUERY, 0x63c3);
@@ -657,12 +838,18 @@ fn preemption(cid: u32) {
     web_apdu(VERIFY, 0x9000);
     web_apdu(PARTIAL_CONFIG, 0x6101);
     ccid_send(ccid_wire::TRANSFER, SELECT_ADMIN);
-    assert!(!pending(usb_wire::EP_CCID));
-    advance(LEASE_MS - 1);
+    assert!(pending(usb_wire::EP_CCID));
+    advance(IDLE_GAP_MS - 1);
+    web_poll(); // Hold has expired, but the pending APDU still owns its source.
+    setup(0xc1, 2, 0, 1, 1);
+    assert_eq!(read_control(), [0xff]);
     ccid_poll();
-    assert!(!pending(usb_wire::EP_CCID));
+    assert!(pending(usb_wire::EP_CCID));
     web_apdu(GET_RESPONSE, 0x9000);
-    sw(&ccid_read()[ccid_wire::HEADER..], 0x9000);
+    // Refusal is immediate and latched; it never becomes a queued SELECT
+    // after the foreign continuation completes (pinned C E32).
+    sw(&ccid_read()[ccid_wire::HEADER..], 0x6400);
+    ccid_apdu(SELECT_ADMIN, 0x9000);
     ccid_apdu(QUERY, 0x63c3);
     // EP0 retains exclusive ownership until its IN data and status complete.
     web_apdu(SELECT_ADMIN, 0x9000);
@@ -671,11 +858,12 @@ fn preemption(cid: u32) {
     assert!(pending(0));
     let saved = packet(0);
     ccid_send(ccid_wire::TRANSFER, SELECT_ADMIN);
-    assert!(!pending(usb_wire::EP_CCID));
+    assert!(pending(usb_wire::EP_CCID));
     assert!(pending(0));
     assert_eq!(packet(0), saved);
     sw(&read_control(), 0x9000);
-    sw(&ccid_read()[ccid_wire::HEADER..], 0x9000);
+    sw(&ccid_read()[ccid_wire::HEADER..], 0x6400);
+    ccid_apdu(SELECT_ADMIN, 0x9000);
     ccid_apdu(QUERY, 0x63c3);
     for command in [hid_wire::INIT, hid_wire::CANCEL] {
         web_apdu(SELECT_ADMIN, 0x9000);
@@ -693,24 +881,26 @@ fn preemption(cid: u32) {
                 &[]
             },
         );
-        assert!(!pending(usb_wire::EP_HID));
-        web_apdu(QUERY, 0x9000);
-        advance(LEASE_MS);
-        web_poll();
-        hid_poll();
         if command == hid_wire::INIT {
             assert_eq!(hid_read(hid_wire::BROADCAST, command).len(), 17);
         } else {
             assert!(!pending(usb_wire::EP_HID));
         }
+        web_apdu(QUERY, 0x9000);
+        advance(IDLE_GAP_MS);
+        loops();
+        web_apdu(QUERY, 0x9000);
     }
 }
 fn applet_streams() {
     ccid_apdu(SELECT_FIDO, 0x9000);
     ccid_apdu(INFO_SHORT, 0x61ff);
     let before = now();
-    web_apdu(GET_RESPONSE, 0x6986);
+    web_send(GET_RESPONSE);
+    assert!(hw(|h| h.halted[1]));
     assert_eq!(now(), before);
+    ccid_drain();
+    web_apdu(GET_RESPONSE, 0x6986);
     ccid_apdu(SELECT_FIDO, 0x9000);
     ccid_apdu(GET_RESPONSE, 0x6986);
     #[cfg(feature = "openpgp")]
@@ -727,17 +917,23 @@ fn applet_streams() {
         ccid_apdu(PUT_CERT, 0x9000);
         ccid_apdu(READ_CERT, 0x6102);
         let before = now();
+        web_send(GET_RESPONSE);
+        assert!(hw(|h| h.halted[1]));
+        advance(IDLE_GAP_MS);
+        web_send(GET_RESPONSE);
+        assert!(hw(|h| h.halted[1]));
+        assert_eq!(now(), before.wrapping_add(IDLE_GAP_MS));
+        ccid_drain();
         web_apdu(GET_RESPONSE, 0x6986);
-        assert_eq!(now(), before);
         ccid_apdu(SELECT, 0x9000);
         ccid_apdu(GET_RESPONSE, 0x6986);
         ccid_apdu(&[0, 0x20, 0, 0x83], 0x63c3);
         ccid_apdu(VERIFY_PW1, 0x9000);
-        advance(LEASE_MS + 1);
+        advance(IDLE_GAP_MS + 1);
         loops();
         ccid_apdu(SELECT, 0x9000);
         ccid_apdu(QUERY_PW1, 0x9000);
-        advance(LEASE_MS + 1);
+        advance(IDLE_GAP_MS + 1);
         web_apdu(SELECT_ADMIN, 0x9000);
         ccid_apdu(SELECT, 0x9000);
         ccid_apdu(QUERY_PW1, 0x63c3);
@@ -768,8 +964,14 @@ fn applet_streams() {
         ccid_apdu(REST, 0x9000);
         ccid_apdu(READ_OBJECT, 0x6102);
         let before = now();
+        web_send(GET_RESPONSE);
+        assert!(hw(|h| h.halted[1]));
+        advance(IDLE_GAP_MS);
+        web_send(GET_RESPONSE);
+        assert!(hw(|h| h.halted[1]));
+        assert_eq!(now(), before.wrapping_add(IDLE_GAP_MS));
+        ccid_drain();
         web_apdu(GET_RESPONSE, 0x6986);
-        assert_eq!(now(), before);
         ccid_apdu(SELECT, 0x9000);
         ccid_apdu(GET_RESPONSE, 0x6986);
     }
@@ -796,7 +998,7 @@ fn power_and_irq(cid: u32) {
         ccid_apdu(SELECT_ADMIN, 0x9000);
         ccid_apdu(QUERY, 0x63c3);
         ccid_apdu(VERIFY, 0x9000);
-        advance(LEASE_MS);
+        advance(IDLE_GAP_MS);
         web_poll();
         ccid_apdu(QUERY, 0x9000);
     }
@@ -804,13 +1006,21 @@ fn power_and_irq(cid: u32) {
     web_apdu(VERIFY, 0x9000);
     web_apdu(PARTIAL_CONFIG, 0x6101);
     ccid_send(ccid_wire::POWER_ON, &[]);
-    assert!(!pending(usb_wire::EP_CCID));
-    advance(LEASE_MS - 1);
+    assert!(pending(usb_wire::EP_CCID));
+    advance(IDLE_GAP_MS - 1);
+    web_poll(); // Hold has expired, but the pending APDU still owns its source.
+    setup(0xc1, 2, 0, 1, 1);
+    assert_eq!(read_control(), [0xff]);
     ccid_poll();
-    assert!(!pending(usb_wire::EP_CCID));
+    assert!(pending(usb_wire::EP_CCID));
     web_apdu(GET_RESPONSE, 0x9000);
-    let bytes = ccid_read();
-    assert_eq!((bytes[0], bytes[7]), (ccid_wire::DATA, 0));
+    let bytes = ccid_read_result(ccid_wire::COMMAND_FAILED, ccid_wire::SLOT_BUSY);
+    assert_eq!(
+        (bytes[0], bytes.len()),
+        (ccid_wire::DATA, ccid_wire::HEADER)
+    );
+    ccid_send(ccid_wire::POWER_ON, &[]);
+    ccid_read();
     ccid_apdu(SELECT_ADMIN, 0x9000);
     ccid_apdu(QUERY, 0x63c3);
     ccid_apdu(SELECT_FIDO, 0x9000);
@@ -818,14 +1028,17 @@ fn power_and_irq(cid: u32) {
     assert!(pending(usb_wire::EP_CCID));
     let saved = packet(usb_wire::EP_CCID);
     hid_send(cid, hid_wire::PING, NONCE);
-    assert_eq!(hid_read(cid, hid_wire::ERROR), [6]);
+    assert_eq!(hid_read(cid, hid_wire::PING), NONCE);
     assert!(pending(usb_wire::EP_CCID));
     assert_eq!(packet(usb_wire::EP_CCID), saved);
     sw(&ccid_read()[ccid_wire::HEADER..], 0x61ff);
     let before = now();
-    echo(cid);
+    hid_send(cid, hid_wire::PING, NONCE);
+    assert_eq!(hid_read(cid, hid_wire::PING), NONCE);
     assert_eq!(now(), before);
-    advance(LEASE_MS);
+    advance(IDLE_GAP_MS);
+    ccid_drain();
+    echo(cid);
     ccid_apdu(GET_RESPONSE, 0x6986);
     // Sweep IRQ publication over every unlocked boundary reached by CCID poll.
     let mut exercised = 0;
@@ -841,18 +1054,12 @@ fn power_and_irq(cid: u32) {
         hw(|h| h.masked = 1);
         if hw(|h| h.inject_after_unlock != 0) {
             hw(|h| h.inject_after_unlock = 0);
-            advance(LEASE_MS);
+            advance(IDLE_GAP_MS);
             break;
         }
         exercised += 1;
-        assert!(!pending(usb_wire::EP_CCID));
         transport::scratch(|s| assert_eq!(s.owner, 0));
-        ccid_poll();
-        assert!(!pending(usb_wire::EP_CCID));
-        advance(LEASE_MS - 1);
-        ccid_poll();
-        assert!(!pending(usb_wire::EP_CCID));
-        advance(1);
+        // No idle grace: admission may happen in this poll or the next one.
         sw(&ccid_read()[ccid_wire::HEADER..], 0x9000);
     }
     assert!(exercised > 0);
@@ -866,6 +1073,8 @@ fn staging_and_presence(cid: u32) {
         ccid_wire::POWER_ON,
         ccid_wire::SLOT_STATUS,
     ] {
+        ccid_apdu(SELECT_ADMIN, 0x9000);
+        ccid_apdu(VERIFY, 0x9000);
         assert_eq!(out(usb_wire::EP_HID, &fragmented), 0);
         hid_poll();
         let held = transport::scratch(|s| {
@@ -875,7 +1084,7 @@ fn staging_and_presence(cid: u32) {
         let mut staged = [0; SCRATCH_BYTES];
         assert!(Scratch::read(0, &mut staged));
         ccid_send(command, &[]);
-        assert!(!pending(usb_wire::EP_CCID));
+        assert!(pending(usb_wire::EP_CCID));
         assert_eq!(transport::scratch(|s| (s.owner, s.leases, s.clears)), held);
         let mut after = [0; SCRATCH_BYTES];
         assert!(Scratch::read(0, &mut after));
@@ -885,7 +1094,11 @@ fn staging_and_presence(cid: u32) {
         assert_eq!(init.len(), 17);
         assert_eq!(&init[..8], NONCE);
         clean_scratch();
-        let bytes = ccid_read_state(u8::from(command == ccid_wire::POWER_OFF));
+        let bytes = if command == ccid_wire::SLOT_STATUS {
+            ccid_read()
+        } else {
+            ccid_read_result(ccid_wire::COMMAND_FAILED, ccid_wire::SLOT_BUSY)
+        };
         assert_eq!(
             bytes[0],
             if command == ccid_wire::POWER_ON {
@@ -894,25 +1107,24 @@ fn staging_and_presence(cid: u32) {
                 ccid_wire::STATUS
             }
         );
-        assert_eq!(
-            bytes.len() > ccid_wire::HEADER,
-            command == ccid_wire::POWER_ON
-        );
-        advance(LEASE_MS);
+        assert_eq!(bytes.len(), ccid_wire::HEADER);
+        ccid_apdu(QUERY, 0x9000);
+        advance(IDLE_GAP_MS);
     }
     assert_eq!(out(usb_wire::EP_HID, &fragmented), 0);
     hid_poll();
     transport::scratch(|s| assert_ne!(s.owner, 0));
     ccid_send(ccid_wire::TRANSFER, SELECT_ADMIN);
-    assert!(!pending(usb_wire::EP_CCID));
+    assert!(pending(usb_wire::EP_CCID));
     transport::scratch(|s| assert_ne!(s.owner, 0));
     hid_send(cid, hid_wire::INIT, NONCE);
     let init = hid_read(cid, hid_wire::INIT);
     assert_eq!(init.len(), 17);
     assert_eq!(&init[..8], NONCE);
     clean_scratch();
-    advance(LEASE_MS);
-    sw(&ccid_read()[ccid_wire::HEADER..], 0x9000);
+    advance(IDLE_GAP_MS);
+    sw(&ccid_read()[ccid_wire::HEADER..], 0x6400);
+    ccid_apdu(QUERY, 0x9000);
     // clientPIN protocol 1 key-agreement request with a 700-byte unknown bstr.
     // Parsing staged bytes must finish before key-agreement crypto reuses PKE.
     let mut pin = vec![6, 0xa3, 1, 1, 2, 2, 0x18, 0x7f, 0x59, 2, 0xbc];
@@ -922,24 +1134,51 @@ fn staging_and_presence(cid: u32) {
     let bytes = hid_read(cid, hid_wire::CBOR);
     assert!(bytes.len() > 64 && bytes[0] == 0);
     clean_scratch();
-    advance(LEASE_MS);
+    advance(IDLE_GAP_MS);
     ccid_apdu(SELECT_ADMIN, 0x9000);
-    ccid_apdu(QUERY, 0x63c3);
-    // Extended FIDO input, P1=80 and Le=0000. CCID releases staged RX before IN.
+    ccid_apdu(QUERY, 0x9000);
+    // Oversized CCID envelopes drain without borrowing PKE or parsing the body.
     let mut extended = vec![0x80, 0x10, 0x80, 0, 0];
     extended.extend_from_slice(&(pin.len() as u16).to_be_bytes());
     extended.extend_from_slice(&pin);
     extended.extend_from_slice(&[0, 0]);
     ccid_apdu(SELECT_FIDO, 0x9000);
+    let leases = transport::scratch(|s| s.leases);
     ccid_send(ccid_wire::TRANSFER, &extended);
+    assert_eq!(
+        ccid_read_result(0x40, ccid_wire::BAD_LENGTH).len(),
+        ccid_wire::HEADER
+    );
+    assert_eq!(transport::scratch(|s| s.leases), leases);
     clean_scratch();
-    let bytes = ccid_read();
-    sw(&bytes[ccid_wire::HEADER..], 0x9000);
-    assert!(bytes.len() > 76 && bytes[10] == 0);
     let partial = ccid_request(ccid_wire::TRANSFER, &extended, next_sequence());
     assert_eq!(out(usb_wire::EP_CCID, &partial[..PACKET_BYTES]), 0);
     ccid_poll();
-    transport::scratch(|s| assert_ne!(s.owner, 0));
+    advance(IDLE_GAP_MS);
+    ccid_poll();
+    assert!(!pending(usb_wire::EP_CCID));
+    clean_scratch();
+    for part in partial[PACKET_BYTES..].chunks(PACKET_BYTES) {
+        assert_eq!(out(usb_wire::EP_CCID, part), 0);
+        ccid_poll();
+    }
+    assert_eq!(
+        ccid_read_result(0x40, ccid_wire::BAD_LENGTH).len(),
+        ccid_wire::HEADER
+    );
+    assert_eq!(transport::scratch(|s| s.leases), leases);
+    // Bounded extended rejection must not abandon an already accepted chain.
+    ccid_apdu(&[0x90, 0x10, 0, 0, 1, 4], 0x9000);
+    ccid_apdu(&[0x80, 0x10, 0, 0, 0, 0, 1, 4], 0x6700);
+    ccid_send(ccid_wire::TRANSFER, &[0x80, 0x10, 0, 0, 0]);
+    let response = ccid_read();
+    assert_eq!(response[ccid_wire::HEADER], 0);
+    assert_eq!(response[response.len() - 2], 0x61);
+    ccid_drain();
+    // Lifecycle reset can abort a refused partial RX without leaving scratch.
+    let partial = ccid_request(ccid_wire::TRANSFER, &extended, next_sequence());
+    assert_eq!(out(usb_wire::EP_CCID, &partial[..PACKET_BYTES]), 0);
+    ccid_poll();
     setup(0, usb_wire::SET_CONFIGURATION, 0, 0, 0);
     status();
     loops();
@@ -951,11 +1190,12 @@ fn staging_and_presence(cid: u32) {
     ccid_read();
     ccid_apdu(SELECT_FIDO, 0x9000);
     ccid_send(ccid_wire::TRANSFER, &extended);
-    let bytes = ccid_read();
-    sw(&bytes[ccid_wire::HEADER..], 0x9000);
-    assert!(bytes.len() > 76 && bytes[10] == 0);
+    assert_eq!(
+        ccid_read_result(0x40, ccid_wire::BAD_LENGTH).len(),
+        ccid_wire::HEADER
+    );
     clean_scratch();
-    advance(LEASE_MS);
+    advance(IDLE_GAP_MS);
     hw(|h| {
         h.presence_cid = cid;
         h.presence_stage = 1;

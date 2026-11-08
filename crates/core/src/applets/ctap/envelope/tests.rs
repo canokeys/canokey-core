@@ -95,15 +95,7 @@ fn failed_and_oversized_envelopes_keep_first_error_and_can_be_wiped() {
             let mut parser = Parser::new(command);
             parser.consume(&wire[..split]);
             parser.consume(&wire[split..]);
-            // Config preserves its legacy bare-command status when the first
-            // fragment is rejected before any bytes are accepted.
-            let expected = if command == super::super::CONFIG && (split == 0 || split == wire.len())
-            {
-                Status::UnhandledRequest
-            } else {
-                Status::InvalidCbor
-            };
-            assert!(matches!(parser.finish(), Err(error) if error == expected));
+            assert!(matches!(parser.finish(), Err(Status::InvalidCbor)));
         }
     }
 }

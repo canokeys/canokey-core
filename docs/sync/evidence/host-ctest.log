@@ -1,0 +1,89 @@
+Test project /Users/dangfan/.codex/worktrees/rust-resident-fixes/canokey-ciu/build/host-core
+      Start  1: native-sm3
+ 1/42 Test  #1: native-sm3 .......................   Passed    0.06 sec
+      Start  2: native-keccak-bytes
+ 2/42 Test  #2: native-keccak-bytes ..............   Passed    3.30 sec
+      Start  3: oath-normal
+ 3/42 Test  #3: oath-normal ......................   Passed    0.06 sec
+      Start  4: crypto-profile
+ 4/42 Test  #4: crypto-profile ...................   Passed    0.11 sec
+      Start  5: stream-crypto
+ 5/42 Test  #5: stream-crypto ....................   Passed    0.01 sec
+      Start  6: pq-stream
+ 6/42 Test  #6: pq-stream ........................   Passed    0.26 sec
+      Start  7: hid-core
+ 7/42 Test  #7: hid-core .........................   Passed    0.02 sec
+      Start  8: usb-sessions
+ 8/42 Test  #8: usb-sessions .....................   Passed    0.19 sec
+      Start  9: c312-ccid-wire
+ 9/42 Test  #9: c312-ccid-wire ...................   Passed    0.88 sec
+      Start 10: c312-webusb-wire
+10/42 Test #10: c312-webusb-wire .................   Passed    0.54 sec
+      Start 11: c312-usb-control-wire
+11/42 Test #11: c312-usb-control-wire ............   Passed    0.68 sec
+      Start 12: c312-usb-lifecycle-wire
+12/42 Test #12: c312-usb-lifecycle-wire ..........   Passed    0.63 sec
+      Start 13: c312-usb-readiness-wire
+13/42 Test #13: c312-usb-readiness-wire ..........   Passed    0.22 sec
+      Start 14: c312-webusb-readiness-wire
+14/42 Test #14: c312-webusb-readiness-wire .......   Passed    0.19 sec
+      Start 15: c312-webusb-retained-wire
+15/42 Test #15: c312-webusb-retained-wire ........   Passed    0.30 sec
+      Start 16: c312-usb-ownership-wire
+16/42 Test #16: c312-usb-ownership-wire ..........   Passed    0.37 sec
+      Start 17: c312-hid-ownership-wire
+17/42 Test #17: c312-hid-ownership-wire ..........   Passed    0.42 sec
+      Start 18: c312-hid-admission-wire
+18/42 Test #18: c312-hid-admission-wire ..........   Passed    0.54 sec
+      Start 19: c312-hid-channels-wire
+19/42 Test #19: c312-hid-channels-wire ...........   Passed    0.75 sec
+      Start 20: c312-large-blob-usb-wire
+20/42 Test #20: c312-large-blob-usb-wire .........   Passed    0.28 sec
+      Start 21: nfc-source-faults
+21/42 Test #21: nfc-source-faults ................   Passed    0.24 sec
+      Start 22: c312-nfc-wire
+22/42 Test #22: c312-nfc-wire ....................   Passed    1.12 sec
+      Start 23: c312-large-blob-nfc-wire
+23/42 Test #23: c312-large-blob-nfc-wire .........   Passed    0.26 sec
+      Start 24: ctap-normal
+24/42 Test #24: ctap-normal ......................   Passed    2.13 sec
+      Start 25: openpgp-normal
+25/42 Test #25: openpgp-normal ...................   Passed   14.66 sec
+      Start 26: piv-normal
+26/42 Test #26: piv-normal .......................   Passed   17.95 sec
+      Start 27: compact-storage
+27/42 Test #27: compact-storage ..................   Passed    8.47 sec
+      Start 28: combined-reset
+28/42 Test #28: combined-reset ...................   Passed    0.09 sec
+      Start 29: ctap-u2f
+29/42 Test #29: ctap-u2f .........................   Passed    0.10 sec
+      Start 30: ctap-config
+30/42 Test #30: ctap-config ......................   Passed    2.76 sec
+      Start 31: core-behavior
+31/42 Test #31: core-behavior ....................   Passed    0.02 sec
+      Start 32: runtime-composition
+32/42 Test #32: runtime-composition ..............   Passed    0.02 sec
+      Start 33: rust-normal
+33/42 Test #33: rust-normal ......................   Passed    2.33 sec
+      Start 34: rust-transports
+34/42 Test #34: rust-transports ..................   Passed    0.84 sec
+      Start 35: test_fs
+35/42 Test #35: test_fs ..........................   Passed    0.02 sec
+      Start 36: apdu-replay
+36/42 Test #36: apdu-replay ......................   Passed    0.06 sec
+      Start 37: fuzz-seed-baselines
+37/42 Test #37: fuzz-seed-baselines ..............   Passed    0.20 sec
+      Start 38: pcsc-abi
+38/42 Test #38: pcsc-abi .........................   Passed    1.29 sec
+      Start 39: virtual-hid-udp
+39/42 Test #39: virtual-hid-udp ..................   Passed    7.19 sec
+      Start 40: virtual-pcsc
+40/42 Test #40: virtual-pcsc .....................   Passed    2.99 sec
+      Start 41: virtual-oath-regressions
+41/42 Test #41: virtual-oath-regressions .........   Passed    6.48 sec
+      Start 42: virtual-storage
+42/42 Test #42: virtual-storage ..................   Passed    1.51 sec
+
+100% tests passed out of 42
+
+Total Test time (real) =  80.53 sec

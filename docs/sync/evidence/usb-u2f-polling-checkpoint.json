@@ -1,0 +1,71 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Host-only USB U2F sampling and response-file fault coverage; no production change or complete release claim.",
+  "report": {
+    "path": "tests/fixtures/c312-storage-response/report.json",
+    "sha256": "676b22e6e15786589f080b98336055ce142455bdb2d2bf879ea048d3d3f4ab39"
+  },
+  "proof": {
+    "path": "docs/sync/evidence/usb-u2f-polling-source-review.json",
+    "sha256": "c1f2ad14c4253c6409e58635cdde06ee3956a28a23befd0630e69049265a1b5e"
+  },
+  "checks": {
+    "c": 114,
+    "rust": 144
+  },
+  "regression": {
+    "runner_sha256": "af0b7e6efa2abad47de6a8a1643bfb2a2d4e87ed0742ea57adbf2bfc63865752",
+    "report_sha256": "95f8366061b6b047ed5f160678aae8cff792dc0bb08095f2cc64b956463d4f29",
+    "failure": "AssertionError('No completed CTAP1 gesture within 200 ms')"
+  },
+  "validation": {
+    "host_ctest": "45/45",
+    "clippy": "Both exact CI commands pass",
+    "sync_tests": 9,
+    "platform_tests": 79,
+    "format": "Pass",
+    "literal": "365 cases /11695 events;348 equal-output and17 prior unresolved; all fourteen result arrays unchanged",
+    "preserved_auth": {
+      "c": 156,
+      "rust": 180
+    },
+    "preserved_session": {
+      "c": 150,
+      "rust": 150
+    },
+    "final_targeted_ctest": "3/3 after correcting host input-trace field shadowing; tick/HID/CCID/SETUP trace lengths also checked"
+  },
+  "products": {
+    "devkit": {
+      "elf": "build/devkit/canokey-ciu.elf",
+      "elf_sha256": "bce017594bc822a94f6b004179d7eeef6c4725366e8770cc952b256df36125e4",
+      "map_sha256": "49f09d6cd97b55507dbf1c37e5b9b1d151b595842b71fd876158e747e1eb7cf7",
+      "flash": 179308,
+      "static_ram": 8272,
+      "udf": 142,
+      "unchanged": true,
+      "diagnostic_only": false,
+      "new_build": false
+    },
+    "nfcc": {
+      "elf": "build/c312-u2f-progress/nfcc/nfcc-diagnostic.elf",
+      "elf_sha256": "51b8191614b53fd566631977693c600a11743b379755a51048055c8d3dc1829e",
+      "map_sha256": "fb4a06edfabf4128a91e0851e6567b7acb3ff080c8d3e470167d68b0ae73fb4e",
+      "flash": 188024,
+      "static_ram": 8432,
+      "udf": 149,
+      "unchanged": true,
+      "diagnostic_only": true,
+      "new_build": false
+    }
+  },
+  "source_review": {
+    "new_units": 0,
+    "core": "601/2254",
+    "platform": "142/373"
+  },
+  "platform_archive": "docs/evidence/c312-usb-u2f-polling-checkpoint/report.json",
+  "remaining": [
+    "Actual native-backend file faults, extended NFC fault aggregation, broader offsets/certificate lengths, cancellation/IRQ/withheld endpoints, physical USB/RF/WTX, CIU stack/PKE, Linux sanitizer, prior five unresolved wire behaviors and full source audit."
+  ]
+}

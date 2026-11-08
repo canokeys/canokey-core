@@ -1,0 +1,68 @@
+{
+  "scope": "Source-level review of seven CTAPHID diffs including merge-parent deltas;32 newly mapped units. Implementation and host evidence are separate from physical acceptance.",
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "groups": [
+    {
+      "commit": "8a166672d63b2b19a71f8bfaf8e883d079c26d8a",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "interfaces/USB/class/ctaphid/ctaphid.c",
+      "reviewed_units": 7,
+      "assessment": "Retain finite-Le source; close at response completion/INIT; reject CBOR and staged RX before overwriting active source.20f8ed04 is formatting; cba7ea34 repeats the merge-parent delta."
+    },
+    {
+      "commit": "20f8ed046e99de738d63fc061b202c8b5bb53f27",
+      "parent": "8a166672d63b2b19a71f8bfaf8e883d079c26d8a",
+      "path": "interfaces/USB/class/ctaphid/ctaphid.c",
+      "reviewed_units": 2,
+      "assessment": "Retain finite-Le source; close at response completion/INIT; reject CBOR and staged RX before overwriting active source.20f8ed04 is formatting; cba7ea34 repeats the merge-parent delta."
+    },
+    {
+      "commit": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "interfaces/USB/class/ctaphid/ctaphid.c",
+      "reviewed_units": 7,
+      "assessment": "Retain finite-Le source; close at response completion/INIT; reject CBOR and staged RX before overwriting active source.20f8ed04 is formatting; cba7ea34 repeats the merge-parent delta."
+    },
+    {
+      "commit": "99df44df4653051887ac6fdb9355508314a01efc",
+      "parent": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "path": "interfaces/USB/class/ctaphid/ctaphid.c",
+      "reviewed_units": 4,
+      "assessment": "Ignore idle/late CANCEL; bounded competitor draining during execution; queue matching INIT until unwind; nonblocking endpoint idle observation. Rust uses one bounded mailbox item per progress callback; error-ordering/IRQ/flood acceptance stays open in L9."
+    },
+    {
+      "commit": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "parent": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "path": "interfaces/USB/class/ctaphid/ctaphid.c",
+      "reviewed_units": 4,
+      "assessment": "Ignore idle/late CANCEL; bounded competitor draining during execution; queue matching INIT until unwind; nonblocking endpoint idle observation. Rust uses one bounded mailbox item per progress callback; error-ordering/IRQ/flood acceptance stays open in L9."
+    },
+    {
+      "commit": "39bc20fa9ea0c39694b84d6ccb793ab1825d81d1",
+      "parent": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "path": "interfaces/USB/class/ctaphid/ctaphid.c",
+      "reviewed_units": 4,
+      "assessment": "Ignore idle/late CANCEL; bounded competitor draining during execution; queue matching INIT until unwind; nonblocking endpoint idle observation. Rust uses one bounded mailbox item per progress callback; error-ordering/IRQ/flood acceptance stays open in L9."
+    },
+    {
+      "commit": "5be9c893702de473effd94c14e3ae7cf0e926604",
+      "parent": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "path": "interfaces/USB/class/ctaphid/ctaphid.c",
+      "reviewed_units": 4,
+      "assessment": "Ignore idle/late CANCEL; bounded competitor draining during execution; queue matching INIT until unwind; nonblocking endpoint idle observation. Rust uses one bounded mailbox item per progress callback; error-ordering/IRQ/flood acceptance stays open in L9."
+    }
+  ],
+  "targets": [
+    "crates/core/src/runtime/ctaphid.rs",
+    "crates/ffi/src/transport/hid/link.rs"
+  ],
+  "evidence": [
+    "tests/fixtures/c312-hid-channels/report.json",
+    "docs/sync/evidence/host-ctest.log"
+  ],
+  "remaining": [
+    "L9 executing error-ordering and adversarial/IRQ schedules.",
+    "CID1, L8 and C1-RETRIES unresolved.",
+    "Physical USB/CIU stack/PKE/Linux LeakSanitizer."
+  ]
+}

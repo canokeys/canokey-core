@@ -109,17 +109,13 @@ impl Piv {
             return Err(Sw::REFERENCE_NOT_FOUND);
         }
         let a = m[repo::ALGORITHM];
-        if a >= alg::MLKEM768 {
+        if let Some(n) = repo::public_bytes(a) {
             self.pending_public = Some(PendingPublicKey {
                 slot_index: id,
                 include_metadata: metadata,
                 generated_algorithm: None,
             });
-            return Ok((if a == alg::MLKEM768 {
-                crate::ports::mlkem768::PUBLIC_BYTES
-            } else {
-                crate::ports::mldsa65::PUBLIC_BYTES
-            }) as u32);
+            return Ok(n as u32);
         }
         repo::load(id, m, &mut w.key.bytes, p)?;
         let n = p
@@ -180,7 +176,7 @@ impl Piv {
         m[repo::ORIGIN] = 1;
         m[repo::NAME_LENGTH..].fill(0);
         repo::policies(&mut m, b)?;
-        if a >= alg::MLKEM768 {
+        if repo::pq(a) {
             p.crypto
                 .random(&mut w.key.bytes[..repo::material(a)])
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
@@ -189,7 +185,7 @@ impl Piv {
                 .key_operation(KeyOperation::Generate, a, &mut w.key, &[], w.output)
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         }
-        if a >= alg::MLKEM768 {
+        if repo::pq(a) {
             // Keep the previous slot untouched until the final public chunk.
             // Only the compact metadata/seed record is staged, never the public key.
             self.pending_commit = Some(id as u8);

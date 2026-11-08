@@ -1,0 +1,69 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "12 newly reviewed units in four exact parent/file diffs. Class RX readiness is independently exercised through actual C DataOut; stale acknowledgement is a Rust unit boundary simulation, not arbitrary IRQ acceptance.",
+  "reviews": [
+    {
+      "commit": "8a166672d63b2b19a71f8bfaf8e883d079c26d8a",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "interfaces/USB/class/ccid/usbd_ccid.c",
+      "reviewed_units": 3,
+      "assessment": "Adds lifecycle header and readiness gate before CCID/HID send. Rust gates noncontrol submit against serviced mailbox generation; unit matrix verifies no TX before cleanup. Actual class RX is gated by previously reviewed composite callback. Merge-parent duplicate reviewed explicitly."
+    },
+    {
+      "commit": "8a166672d63b2b19a71f8bfaf8e883d079c26d8a",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "interfaces/USB/class/ctaphid/usbd_ctaphid.c",
+      "reviewed_units": 3,
+      "assessment": "Adds lifecycle header and readiness gate before CCID/HID send. Rust gates noncontrol submit against serviced mailbox generation; unit matrix verifies no TX before cleanup. Actual class RX is gated by previously reviewed composite callback. Merge-parent duplicate reviewed explicitly."
+    },
+    {
+      "commit": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "interfaces/USB/class/ccid/usbd_ccid.c",
+      "reviewed_units": 3,
+      "assessment": "Adds lifecycle header and readiness gate before CCID/HID send. Rust gates noncontrol submit against serviced mailbox generation; unit matrix verifies no TX before cleanup. Actual class RX is gated by previously reviewed composite callback. Merge-parent duplicate reviewed explicitly."
+    },
+    {
+      "commit": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "interfaces/USB/class/ctaphid/usbd_ctaphid.c",
+      "reviewed_units": 3,
+      "assessment": "Adds lifecycle header and readiness gate before CCID/HID send. Rust gates noncontrol submit against serviced mailbox generation; unit matrix verifies no TX before cleanup. Actual class RX is gated by previously reviewed composite callback. Merge-parent duplicate reviewed explicitly."
+    }
+  ],
+  "source_review": [
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/device/usbd_canokey.c",
+      "sha256": "673236df9e96765674ea6ae91e4974dc9ccbf72b83003efe843ac0d6aeeba8fe",
+      "observed": "Composite class DataOut/DataIn and EP0 completion callbacks reject until main-loop lifecycle service marks the unchanged epoch ready. E52 enters actual class DataOut; EP0-before-service/physical IRQ remains open."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/class/ccid/usbd_ccid.c",
+      "sha256": "81adce14917606a11719c121e6724df36309c8080e0705de81d2b56fc8fdf2f2",
+      "observed": "CCID response send returns BUSY before lifecycle readiness; USBD_CCID_Init arms the class OUT buffer during deferred ApplyInit."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/class/ctaphid/usbd_ctaphid.c",
+      "sha256": "0e763d6141ac453ff6084cf7319afb115f39aed58d8473ea5bd69377e7282557",
+      "observed": "HID send returns BUSY before lifecycle readiness; USBD_CTAPHID_Init arms the class OUT buffer during deferred ApplyInit."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/class/ctaphid/ctaphid.c",
+      "sha256": "51143d315423af4f620209d12275867cb10982a530033c404ebbdb095517d6a6",
+      "observed": "Pending native GetInfo overrides invalid C0 P1/P2/body/CLA errors and advances the old source (L8/E53). Malformed complete native envelope rejects before dispatch and preserves it."
+    }
+  ],
+  "regressions": [
+    "tests/fixtures/c312-usb-readiness/vectors.json",
+    "crates/ffi/src/transport/usb/tests.rs"
+  ],
+  "remaining": [
+    "WebUSB-before-service and actual IRQ interruption of Provider cleanup.",
+    "Withheld IN, endpoint failure and physical USB/CIU resources.",
+    "L8/E53 pending-native differences remain unresolved."
+  ]
+}

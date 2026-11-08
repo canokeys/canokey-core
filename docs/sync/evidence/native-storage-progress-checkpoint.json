@@ -1,0 +1,59 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Real LittleFS native prefix progress with exact whole-record loads, independently tested over Core APDUs; not full release acceptance.",
+  "report": {
+    "path": "tests/fixtures/c312-native-storage-response/report.json",
+    "sha256": "1c262e6642070a6d44ed10fa447b14dfd5886d1de048804a709063683fbc397a"
+  },
+  "proof": {
+    "path": "docs/sync/evidence/native-storage-progress-source-review.json",
+    "sha256": "46a2e0311fe1a3215d4a7ba5ce8117dfaee9d7ddf9a27c75b0fe0844c869eca7"
+  },
+  "checks": 30,
+  "validation": {
+    "host_ctest": "45/45",
+    "native_sanitized_ctest": "40/40 on macOS",
+    "storage_geometry_ctest": "4/4 including fixture build",
+    "transactions_unit": 9,
+    "transactions_clippy": "All targets/features pass",
+    "sync_tests": 9,
+    "platform_tests": 79,
+    "mocked_transport": "Prior mocked runner bytes unchanged; current45 host tests rerun.114 C/144 Rust and365 literal results remain historical paired evidence, not new native parity cases.",
+    "linux_sanitizer": "CI now enables native fixture, ASan/UBSan and leak detection; Linux execution is not available as local evidence."
+  },
+  "regression": {
+    "native_before_sha256": "a56da647ee9f5bed23539bd02cd73f295a6f963769d5149c1b5698d7c30d35c8",
+    "failure": "AssertionError(('u2f-register', 0, 0, 'success', {'outcome': 'iso-error', 'windows': [{'length': 0, 'sw': 26880, 'data': ''}], 'payload': '', 'sw': 26880, 'polling': [{'sw': 27013, 'fault_status': '1 0 0 0 0'}, {'sw': 27013, 'fault_status': '1 0 0 0 0'}, {'sw': 27013, 'fault_status': '1 0 0 0 0'}, {'sw': 27013, 'fault_status': '1 0 0 0 0'}, {'sw': 27013, 'fault_status': '1 0 0 0 0'}, {'sw': 27013, 'fault_status': '1 0 0 0 0'}, {'sw': 27013, 'fault_status': '1 0 0 0 0'}, {'sw': 27013, 'fault_status': '1 0 0 0 0'}, {'sw': 27013, 'fault_status': '1 0 0 0 0'}, {'sw': 27013, 'fault_status': '1 0 0 0 0'}]}))",
+    "engine_before": "Exact-load regression fails: returns0 for a four-byte record instead of ERROR."
+  },
+  "products": {
+    "devkit": {
+      "flash": 179332,
+      "static_ram": 8272,
+      "udf": 142,
+      "delta": 24,
+      "elf_sha256": "f2d9d6a4baebb88c57cd7dbbe7645ef97346c87586f699fa0a124ac4d2774b80",
+      "linked": true,
+      "diagnostic_only": false
+    },
+    "nfcc": {
+      "flash": 188056,
+      "static_ram": 8432,
+      "udf": 149,
+      "delta": 32,
+      "elf_sha256": "539e4218f5300e3cff3a5791503ee4c317b75eed49a800c723ed2aa4e33d3613",
+      "linked": false,
+      "diagnostic_only": true,
+      "overflow": 6296
+    }
+  },
+  "source_review": {
+    "new_units": 0,
+    "core": "601/2254",
+    "platform": "142/373"
+  },
+  "platform_archive": "docs/evidence/c312-native-storage-progress-checkpoint/report.json",
+  "remaining": [
+    "Open/seek/close and physical/block faults, MCU-specific adapter execution, extended NFC aggregation, arbitrary cancellation/IRQ/withheld endpoints, physical USB/RF/WTX, CIU stack/PKE, Linux sanitizer results, five prior unresolved wire behaviors and full source audit."
+  ]
+}

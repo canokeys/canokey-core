@@ -17,7 +17,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from fido2 import cbor
 from fido2.ctap2.base import AuthenticatorData
 from fido2.ctap2.pin import PinProtocolV1
-from ctap_fixture import mixed_management
+from ctap_fixture import mixed_management, verify_credential, padded_request
 
 REBOOT = bytes.fromhex('ac1052ca95e569de69e02ebff333485f13f9b2da34c5a8a340526697a9ab2e0b394d8d04973c134005be1a0140bff6045bb26eb77a73eaa47813f6b49a7250dc')
 INJECT = bytes.fromhex('991052ca95e569de69e02ebf')
@@ -112,12 +112,42 @@ def run(executable):
                 card.send(0x81, echo)
                 assert card.recv(0x81) == echo
                 info = card.ctap(4)
-                assert info[5] == 1024
+                assert info[5] == 1296
                 assert info[4]['credMgmt'] and info[4]['largeBlobs'] and info[11] == 4096
                 card.ctap(6, {1: 1, 2: 2, 127: bytes(700)})
                 def verify_attestation(result, challenge):
                     cert = x509.load_der_x509_certificate(result[3]['x5c'][0])
                     cert.public_key().verify(result[3]['sig'], result[2] + challenge, ec.ECDSA(hashes.SHA256()))
+                challenge = hashlib.sha256(b'UDP capacity').digest()
+                request = {1: challenge, 2: {'id': 'capacity.example'},
+                           3: {'id': b'capacity'}, 4: [{'type': 'public-key', 'alg': -7}],
+                           6: {'credBlob': b'b' * 32}}
+                for size in (1023, 1024, 1025, 1295, 1296):
+                    card.send(0x90, padded_request(1, request, size))
+                    response = card.recv(0x90)
+                    assert response[0] == 0
+                    result = cbor.decode(response[1:])
+                    verify_attestation(result, challenge)
+                    assert AuthenticatorData(result[2]).extensions == {'credBlob': False}
+                card.send(0x90, padded_request(1, request, 1297))
+                assert card.recv(0xbf) == b'\x03'
+                assert card.ctap(4) == info
+                # Both PQ parameter sets use the native HID CBOR path; the
+                # mixed scan below adds residents, GetNext and management.
+                pq_hash = hashlib.sha256(b'UDP nonresident PQ').digest()
+                pq_rp = 'pq-udp.example'
+                for algorithm in (-49, -48):
+                    made = card.ctap(1, {1: pq_hash, 2: {'id': pq_rp},
+                                        3: {'id': b'pq-user'},
+                                        4: [{'type': 'public-key', 'alg': algorithm}]})
+                    verify_attestation(made, pq_hash)
+                    credential = AuthenticatorData(made[2]).credential_data
+                    assert credential.public_key[3] == algorithm
+                    descriptor = {'type': 'public-key', 'id': credential.credential_id}
+                    for _ in range(2):
+                        answer = card.ctap(2, {1: pq_rp, 2: pq_hash, 3: [descriptor]})
+                        assert answer[1] == descriptor
+                        verify_credential(credential.public_key, answer[2] + pq_hash, answer[3])
                 mixed_management(card.ctap, verify_attestation)
                 # Atomic resident creation/deletion: fail before commit and
                 # after commit but before acknowledgement, then reopen storage.

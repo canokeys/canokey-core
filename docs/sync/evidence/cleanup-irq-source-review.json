@@ -1,0 +1,339 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "22 explicitly read device-session/context hunks in four parent/file diffs. Real Rust Core-erasure IRQ injection plus current dual boundary/ownership suites; no full CAS/sentinel or physical acceptance.",
+  "reviews": [
+    {
+      "commit": "8a166672d63b2b19a71f8bfaf8e883d079c26d8a",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "src/device.c",
+      "patch_sha256": "ba7b526f0fad603e4ea50dcf4c05e59e5dfcdd3b985060aad05ccffe5e0150b6",
+      "patch": "diff --git a/src/device.c b/src/device.c\nindex b67ee073..d6d059d9 100644\n--- a/src/device.c\n+++ b/src/device.c\n@@ -13,0 +14 @@\n+#include <usbd_canokey.h>\n@@ -25 +25,0 @@ static uint8_t has_rf;\n-#define APPLET_SESSION_TIMEOUT_MS 2000u\n@@ -31,2 +31,3 @@ applet_session_scratch_t applet_session_scratch;\n-static device_applet_session_owner_t session_owner;\n-static volatile uint32_t session_deadline;\n+/* Reservation is shared with USB IRQ callbacks. Cleanup is main-loop only. */\n+static volatile uint32_t session_owner;\n+static uint8_t apdu_context_owner;\n@@ -34,5 +35 @@ static volatile uint32_t session_deadline;\n-static void device_applet_session_expire(void) {\n-  if (session_owner == DEVICE_APPLET_SESSION_NONE) return;\n-#if ENABLE_IFACE_CCID\n-  CCID_AbortPendingCommand();\n-#endif\n+static void device_applet_context_reset(void) {\n@@ -41,4 +37,0 @@ static void device_applet_session_expire(void) {\n-  // applets_poweroff -> ctap_poweroff releases the PKE buffer, but the FIDO\n-  // chained-APDU reassembly state in apdu.c (in_chaining, uses_pke, pke_owner)\n-  // would remain set without this call. The next chained FIDO APDU would then\n-  // skip pke_buffer_acquire and write to an unowned PKE region.\n@@ -46,3 +38,0 @@ static void device_applet_session_expire(void) {\n-  // A pending RAPDU chain must not outlive its session: otherwise the next\n-  // GET RESPONSE (possibly on a new connection) would be served stale bytes\n-  // from whatever happens to sit in the shared I/O buffer.\n@@ -50,6 +40 @@ static void device_applet_session_expire(void) {\n-  session_owner = DEVICE_APPLET_SESSION_NONE;\n-  session_deadline = 0;\n-}\n-\n-static int device_applet_session_timed_out(void) {\n-  return session_owner != DEVICE_APPLET_SESSION_NONE && (int32_t)(device_get_tick() - session_deadline) > 0;\n+  apdu_selection_reset();\n@@ -65,0 +51,2 @@ void device_loop(void) {\n+  USBD_CANOKEY_Service();\n+  if (!USBD_CANOKEY_Ready()) return;\n@@ -123,0 +111,5 @@ uint8_t wait_for_user_presence(uint8_t entry) {\n+    if (!USBD_CANOKEY_Ready()) {\n+      stop_blinking();\n+      wait_status = WAIT_NONE;\n+      return USER_PRESENCE_CANCEL;\n+    }\n@@ -161,0 +154 @@ int send_keepalive_during_processing(uint8_t entry) {\n+  if (!USBD_CANOKEY_Ready()) return LOOP_CANCEL;\n@@ -267 +260,11 @@ void device_init(void) {\n-  session_deadline = 0;\n+  apdu_context_owner = DEVICE_APPLET_SESSION_NONE;\n+}\n+\n+/* Main-loop only, after USB has invalidated the old endpoint epoch. */\n+void device_applet_session_clear(void) {\n+  device_applet_context_reset();\n+  session_owner = DEVICE_APPLET_SESSION_NONE;\n+  apdu_context_owner = DEVICE_APPLET_SESSION_NONE;\n+  release_apdu_buffer(BUFFER_OWNER_CCID);\n+  release_apdu_buffer(BUFFER_OWNER_CTAPHID);\n+  release_apdu_buffer(BUFFER_OWNER_WEBUSB);\n@@ -271,5 +274,6 @@ int device_applet_session_acquire(device_applet_session_owner_t owner) {\n-  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner) {\n-    // The timeout is a cross-transport preemption deadline, not a card reset.\n-    // Reacquiring from the same transport must preserve PIN authorization.\n-    if (!device_applet_session_timed_out() && !device_applet_session_can_preempt()) return -1;\n-    device_applet_session_expire();\n+  const uint32_t previous = session_owner;\n+  if (owner == DEVICE_APPLET_SESSION_NONE || !USBD_CANOKEY_Ready()) return -1;\n+  if (previous == owner) return 0;\n+  /* No lease expiry: unfinished APDUs may retain scratch for arbitrary gaps. */\n+  if (previous != DEVICE_APPLET_SESSION_NONE || owner != apdu_context_owner) {\n+    if (!device_applet_session_can_preempt()) return -1;\n@@ -277,3 +281 @@ int device_applet_session_acquire(device_applet_session_owner_t owner) {\n-  session_owner = owner;\n-  session_deadline = device_get_tick() + APPLET_SESSION_TIMEOUT_MS;\n-  return 0;\n+  return device_atomic_compare_and_swap(&session_owner, previous, owner);\n@@ -282,3 +284,6 @@ int device_applet_session_acquire(device_applet_session_owner_t owner) {\n-void device_applet_session_touch(device_applet_session_owner_t owner) {\n-  if (owner == DEVICE_APPLET_SESSION_NONE || session_owner != owner) return;\n-  session_deadline = device_get_tick() + APPLET_SESSION_TIMEOUT_MS;\n+/* Called before APDU parsing, never from a USB callback. The reservation and\n+ * I/O buffer prevent competing IRQs from entering while cleanup runs. */\n+void device_applet_session_prepare(device_applet_session_owner_t owner) {\n+  if (owner == DEVICE_APPLET_SESSION_CTAPHID || owner == apdu_context_owner) return;\n+  if (apdu_context_owner != DEVICE_APPLET_SESSION_NONE) device_applet_context_reset();\n+  apdu_context_owner = owner;\n@@ -286,0 +292,6 @@ void device_applet_session_touch(device_applet_session_owner_t owner) {\n+int device_applet_session_context_matches(device_applet_session_owner_t owner) {\n+  return apdu_context_owner == DEVICE_APPLET_SESSION_NONE || apdu_context_owner == owner;\n+}\n+\n+void device_applet_session_touch(device_applet_session_owner_t owner) { UNUSED(owner); }\n+\n@@ -288,2 +299,3 @@ void device_applet_session_release(device_applet_session_owner_t owner) {\n-  if (session_owner != owner) return;\n-  device_applet_session_expire();\n+  /* MSG can retain an APDU source although the card context belongs to CCID. */\n+  if (owner == DEVICE_APPLET_SESSION_CTAPHID && apdu_response_source_active()) return;\n+  device_atomic_compare_and_swap(&session_owner, owner, DEVICE_APPLET_SESSION_NONE);\n@@ -293,3 +304,0 @@ int device_applet_session_reset(device_applet_session_owner_t owner) {\n-  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner && !device_applet_session_timed_out() &&\n-      !device_applet_session_can_preempt())\n-    return -1;\n@@ -297,13 +306,6 @@ int device_applet_session_reset(device_applet_session_owner_t owner) {\n-    applets_poweroff();\n-    apdu_response_source_clear();\n-    // No session is owned, but chain state may still exist (e.g. built over\n-    // NFC, which does not take a session). A slot reset is a cold reset for\n-    // the APDU context: drop any pending chain.\n-    apdu_fido_chain_reset();\n-    apdu_rapdu_chain_reset();\n-  } else {\n-    device_applet_session_expire();\n-  }\n-  // IccPowerOn/Off resets the card context, including SELECT. Ordinary session\n-  // release/preemption is not a slot reset and retains its routing behavior.\n-  apdu_selection_reset();\n+    if (device_atomic_compare_and_swap(&session_owner, DEVICE_APPLET_SESSION_NONE, owner) != 0) return -1;\n+  } else if (device_applet_session_acquire(owner) != 0)\n+    return -1;\n+  device_applet_context_reset();\n+  apdu_context_owner = owner;\n+  device_applet_session_release(owner);\n",
+      "hunks": [
+        {
+          "ordinal": 2,
+          "header": "@@ -25 +25,0 @@ static uint8_t has_rf;",
+          "sha256": "c9314dc79c93915ec1e9eb5101610a5c36a14e771f60a3e361612809f5bb7e8c",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Remove timed session/context expiry and split context ownership from execution reservation. Preserve chain/source/selection cleanup on actual reset or admitted takeover, not elapsed gaps. Deleted comments do not remove the underlying FIDO/RAPDU cleanup. Dual E30/E32/E34 and host sessions check delayed continuations, retained PIN and refused takeover."
+        },
+        {
+          "ordinal": 3,
+          "header": "@@ -31,2 +31,3 @@ applet_session_scratch_t applet_session_scratch;",
+          "sha256": "0bb7b0daeb17ab42da0a4839bd71c8bec2f77a165b73536369f69de34ac789ba",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Remove timed session/context expiry and split context ownership from execution reservation. Preserve chain/source/selection cleanup on actual reset or admitted takeover, not elapsed gaps. Deleted comments do not remove the underlying FIDO/RAPDU cleanup. Dual E30/E32/E34 and host sessions check delayed continuations, retained PIN and refused takeover."
+        },
+        {
+          "ordinal": 4,
+          "header": "@@ -34,5 +35 @@ static volatile uint32_t session_deadline;",
+          "sha256": "443b13b904d3d44718ac5c0259ef3d8bb3fa7502d21004b0e1e9d138b7290b9d",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Remove timed session/context expiry and split context ownership from execution reservation. Preserve chain/source/selection cleanup on actual reset or admitted takeover, not elapsed gaps. Deleted comments do not remove the underlying FIDO/RAPDU cleanup. Dual E30/E32/E34 and host sessions check delayed continuations, retained PIN and refused takeover."
+        },
+        {
+          "ordinal": 5,
+          "header": "@@ -41,4 +37,0 @@ static void device_applet_session_expire(void) {",
+          "sha256": "e2c31323af5b15b72dd5991986791d1e1a95bdaf2109dff39b15eceb5965dc4d",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Remove timed session/context expiry and split context ownership from execution reservation. Preserve chain/source/selection cleanup on actual reset or admitted takeover, not elapsed gaps. Deleted comments do not remove the underlying FIDO/RAPDU cleanup. Dual E30/E32/E34 and host sessions check delayed continuations, retained PIN and refused takeover."
+        },
+        {
+          "ordinal": 6,
+          "header": "@@ -46,3 +38,0 @@ static void device_applet_session_expire(void) {",
+          "sha256": "7e633141ca8875a2615bfbd605a6180049e23c5ae601fb95cc5ad8d1d314470c",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Remove timed session/context expiry and split context ownership from execution reservation. Preserve chain/source/selection cleanup on actual reset or admitted takeover, not elapsed gaps. Deleted comments do not remove the underlying FIDO/RAPDU cleanup. Dual E30/E32/E34 and host sessions check delayed continuations, retained PIN and refused takeover."
+        },
+        {
+          "ordinal": 7,
+          "header": "@@ -50,6 +40 @@ static void device_applet_session_expire(void) {",
+          "sha256": "7109c36687eaf4a9a33f140eaaba15d70725708140e5c83687c44cd585da74ec",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Remove timed session/context expiry and split context ownership from execution reservation. Preserve chain/source/selection cleanup on actual reset or admitted takeover, not elapsed gaps. Deleted comments do not remove the underlying FIDO/RAPDU cleanup. Dual E30/E32/E34 and host sessions check delayed continuations, retained PIN and refused takeover."
+        },
+        {
+          "ordinal": 8,
+          "header": "@@ -65,0 +51,2 @@ void device_loop(void) {",
+          "sha256": "c9f49f8d5a000116ed9a8079438d4b0fd7d6a929539d4ef87f85f17ce2248d6b",
+          "behaviors": [
+            "L3"
+          ],
+          "assessment": "Service USB lifecycle before class loops and stop application dispatch while unready. Actual Rust erasure IRQ sweep checks that interrupted generation completion cannot reopen RX; C service epoch/CAS is source evidence and existing dual E50/E52/E55 cover serialized boundary schedules."
+        },
+        {
+          "ordinal": 14,
+          "header": "@@ -282,3 +284,6 @@ int device_applet_session_acquire(device_applet_session_owner_t owner) {",
+          "sha256": "d41b215e81e6077209ea68c9285a8d2180b9fe57d6c929a6ced253d6cbe72b3e",
+          "behaviors": [
+            "L1"
+          ],
+          "assessment": "Prepare non-HID APDU context only on actual foreign command dispatch; same owner and native HID keep context. Rust WebUSB PREPARE and deferred complete-envelope dispatch preserve context on aborted reservation; completed takeover resets it in the serialized main loop."
+        },
+        {
+          "ordinal": 15,
+          "header": "@@ -286,0 +292,6 @@ void device_applet_session_touch(device_applet_session_owner_t owner) {",
+          "sha256": "69ddf952c2e1e0c0bc8dba07561226ed1719b837a0c5593132c5b24c664a7dcf",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Temporary context-matches helper and no-op session touch replace deadline refresh. Final C removes that helper; Rust retains explicit owner/pending-state checks and no card-context timer. Keep WebUSB completed Hold timer and HID framing timeout distinct."
+        },
+        {
+          "ordinal": 16,
+          "header": "@@ -288,2 +299,3 @@ void device_applet_session_release(device_applet_session_owner_t owner) {",
+          "sha256": "6360f44ce367165e3f6a92d61c58841d9e04a87cf8016c7dd83dc0b2cf855c52",
+          "behaviors": [
+            "L1",
+            "L6"
+          ],
+          "assessment": "Ordinary release retains applet context and a native MSG response keeps execution ownership. Runtime yield restores APDU owner; authoritative HID retained ownership blocks competitors until final source consumption. Dual ownership vectors cover delayed continuation and PIN preservation; L8/CID1 remain separate unresolved outcomes."
+        }
+      ]
+    },
+    {
+      "commit": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "src/device.c",
+      "patch_sha256": "3260fe518d8ddf3d9c36a9be054deb31d6044ad70297c834b5d12d8b2f6b0c9e",
+      "patch": "diff --git a/src/device.c b/src/device.c\nindex b67ee073..c6d951af 100644\n--- a/src/device.c\n+++ b/src/device.c\n@@ -25 +24,0 @@ static uint8_t has_rf;\n-#define APPLET_SESSION_TIMEOUT_MS 2000u\n@@ -31,2 +30,3 @@ applet_session_scratch_t applet_session_scratch;\n-static device_applet_session_owner_t session_owner;\n-static volatile uint32_t session_deadline;\n+/* Reservation is shared with USB IRQ callbacks. Cleanup is main-loop only. */\n+static volatile uint32_t session_owner;\n+static uint8_t apdu_context_owner;\n@@ -34,5 +34 @@ static volatile uint32_t session_deadline;\n-static void device_applet_session_expire(void) {\n-  if (session_owner == DEVICE_APPLET_SESSION_NONE) return;\n-#if ENABLE_IFACE_CCID\n-  CCID_AbortPendingCommand();\n-#endif\n+static void device_applet_context_reset(void) {\n@@ -41,4 +36,0 @@ static void device_applet_session_expire(void) {\n-  // applets_poweroff -> ctap_poweroff releases the PKE buffer, but the FIDO\n-  // chained-APDU reassembly state in apdu.c (in_chaining, uses_pke, pke_owner)\n-  // would remain set without this call. The next chained FIDO APDU would then\n-  // skip pke_buffer_acquire and write to an unowned PKE region.\n@@ -46,3 +37,0 @@ static void device_applet_session_expire(void) {\n-  // A pending RAPDU chain must not outlive its session: otherwise the next\n-  // GET RESPONSE (possibly on a new connection) would be served stale bytes\n-  // from whatever happens to sit in the shared I/O buffer.\n@@ -50,6 +39 @@ static void device_applet_session_expire(void) {\n-  session_owner = DEVICE_APPLET_SESSION_NONE;\n-  session_deadline = 0;\n-}\n-\n-static int device_applet_session_timed_out(void) {\n-  return session_owner != DEVICE_APPLET_SESSION_NONE && (int32_t)(device_get_tick() - session_deadline) > 0;\n+  apdu_selection_reset();\n@@ -62,0 +47,4 @@ static int device_applet_session_can_preempt(void) {\n+/* Optional lifecycle hooks for ports without the bundled USB stack. */\n+__weak void device_usb_service(void) {}\n+__weak uint8_t device_usb_ready(void) { return 1; }\n+\n@@ -65,0 +54,2 @@ void device_loop(void) {\n+  device_usb_service();\n+  if (!device_usb_ready()) return;\n@@ -123,0 +114,5 @@ uint8_t wait_for_user_presence(uint8_t entry) {\n+    if (!device_usb_ready()) {\n+      stop_blinking();\n+      wait_status = WAIT_NONE;\n+      return USER_PRESENCE_CANCEL;\n+    }\n@@ -161,0 +157 @@ int send_keepalive_during_processing(uint8_t entry) {\n+  if (!device_usb_ready()) return LOOP_CANCEL;\n@@ -267 +263,11 @@ void device_init(void) {\n-  session_deadline = 0;\n+  apdu_context_owner = DEVICE_APPLET_SESSION_NONE;\n+}\n+\n+/* Main-loop only, after USB has invalidated the old endpoint epoch. */\n+void device_applet_session_clear(void) {\n+  device_applet_context_reset();\n+  session_owner = DEVICE_APPLET_SESSION_NONE;\n+  apdu_context_owner = DEVICE_APPLET_SESSION_NONE;\n+  release_apdu_buffer(BUFFER_OWNER_CCID);\n+  release_apdu_buffer(BUFFER_OWNER_CTAPHID);\n+  release_apdu_buffer(BUFFER_OWNER_WEBUSB);\n@@ -271,5 +277,6 @@ int device_applet_session_acquire(device_applet_session_owner_t owner) {\n-  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner) {\n-    // The timeout is a cross-transport preemption deadline, not a card reset.\n-    // Reacquiring from the same transport must preserve PIN authorization.\n-    if (!device_applet_session_timed_out() && !device_applet_session_can_preempt()) return -1;\n-    device_applet_session_expire();\n+  const uint32_t previous = session_owner;\n+  if (owner == DEVICE_APPLET_SESSION_NONE || !device_usb_ready()) return -1;\n+  if (previous == owner) return 0;\n+  /* No lease expiry: unfinished APDUs may retain scratch for arbitrary gaps. */\n+  if (previous != DEVICE_APPLET_SESSION_NONE || owner != apdu_context_owner) {\n+    if (!device_applet_session_can_preempt()) return -1;\n@@ -277,3 +284 @@ int device_applet_session_acquire(device_applet_session_owner_t owner) {\n-  session_owner = owner;\n-  session_deadline = device_get_tick() + APPLET_SESSION_TIMEOUT_MS;\n-  return 0;\n+  return device_atomic_compare_and_swap(&session_owner, previous, owner);\n@@ -282,3 +287,6 @@ int device_applet_session_acquire(device_applet_session_owner_t owner) {\n-void device_applet_session_touch(device_applet_session_owner_t owner) {\n-  if (owner == DEVICE_APPLET_SESSION_NONE || session_owner != owner) return;\n-  session_deadline = device_get_tick() + APPLET_SESSION_TIMEOUT_MS;\n+/* Called before APDU parsing, never from a USB callback. The reservation and\n+ * I/O buffer prevent competing IRQs from entering while cleanup runs. */\n+void device_applet_session_prepare(device_applet_session_owner_t owner) {\n+  if (owner == DEVICE_APPLET_SESSION_CTAPHID || owner == apdu_context_owner) return;\n+  if (apdu_context_owner != DEVICE_APPLET_SESSION_NONE) device_applet_context_reset();\n+  apdu_context_owner = owner;\n@@ -286,0 +295,6 @@ void device_applet_session_touch(device_applet_session_owner_t owner) {\n+int device_applet_session_context_matches(device_applet_session_owner_t owner) {\n+  return apdu_context_owner == DEVICE_APPLET_SESSION_NONE || apdu_context_owner == owner;\n+}\n+\n+void device_applet_session_touch(device_applet_session_owner_t owner) { UNUSED(owner); }\n+\n@@ -288,2 +302,3 @@ void device_applet_session_release(device_applet_session_owner_t owner) {\n-  if (session_owner != owner) return;\n-  device_applet_session_expire();\n+  /* MSG can retain an APDU source although the card context belongs to CCID. */\n+  if (owner == DEVICE_APPLET_SESSION_CTAPHID && apdu_response_source_active()) return;\n+  device_atomic_compare_and_swap(&session_owner, owner, DEVICE_APPLET_SESSION_NONE);\n@@ -293,3 +307,0 @@ int device_applet_session_reset(device_applet_session_owner_t owner) {\n-  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner && !device_applet_session_timed_out() &&\n-      !device_applet_session_can_preempt())\n-    return -1;\n@@ -297,13 +309,6 @@ int device_applet_session_reset(device_applet_session_owner_t owner) {\n-    applets_poweroff();\n-    apdu_response_source_clear();\n-    // No session is owned, but chain state may still exist (e.g. built over\n-    // NFC, which does not take a session). A slot reset is a cold reset for\n-    // the APDU context: drop any pending chain.\n-    apdu_fido_chain_reset();\n-    apdu_rapdu_chain_reset();\n-  } else {\n-    device_applet_session_expire();\n-  }\n-  // IccPowerOn/Off resets the card context, including SELECT. Ordinary session\n-  // release/preemption is not a slot reset and retains its routing behavior.\n-  apdu_selection_reset();\n+    if (device_atomic_compare_and_swap(&session_owner, DEVICE_APPLET_SESSION_NONE, owner) != 0) return -1;\n+  } else if (device_applet_session_acquire(owner) != 0)\n+    return -1;\n+  device_applet_context_reset();\n+  apdu_context_owner = owner;\n+  device_applet_session_release(owner);\n",
+      "hunks": [
+        {
+          "ordinal": 1,
+          "header": "@@ -25 +24,0 @@ static uint8_t has_rf;",
+          "sha256": "55db16f036f89643924afc6949ce03b9b6ef6d0601959523d3c170de82cffbf9",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Remove timed session/context expiry and split context ownership from execution reservation. Preserve chain/source/selection cleanup on actual reset or admitted takeover, not elapsed gaps. Deleted comments do not remove the underlying FIDO/RAPDU cleanup. Dual E30/E32/E34 and host sessions check delayed continuations, retained PIN and refused takeover."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -31,2 +30,3 @@ applet_session_scratch_t applet_session_scratch;",
+          "sha256": "bf773ae71d5f3cd526fd2f508da1546adf9fc0215a9fa5fcd654b52e4cac1b7f",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Remove timed session/context expiry and split context ownership from execution reservation. Preserve chain/source/selection cleanup on actual reset or admitted takeover, not elapsed gaps. Deleted comments do not remove the underlying FIDO/RAPDU cleanup. Dual E30/E32/E34 and host sessions check delayed continuations, retained PIN and refused takeover."
+        },
+        {
+          "ordinal": 3,
+          "header": "@@ -34,5 +34 @@ static volatile uint32_t session_deadline;",
+          "sha256": "3c8fb4982f935b1178b9304b4bb04d7920e1c3626d7ef9e3a32464bfc60f58ef",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Remove timed session/context expiry and split context ownership from execution reservation. Preserve chain/source/selection cleanup on actual reset or admitted takeover, not elapsed gaps. Deleted comments do not remove the underlying FIDO/RAPDU cleanup. Dual E30/E32/E34 and host sessions check delayed continuations, retained PIN and refused takeover."
+        },
+        {
+          "ordinal": 4,
+          "header": "@@ -41,4 +36,0 @@ static void device_applet_session_expire(void) {",
+          "sha256": "82a583e5e4fdaf9fded6b1f90d3a43c1ac9015a19c875dfb8dd6b983f002ff63",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Remove timed session/context expiry and split context ownership from execution reservation. Preserve chain/source/selection cleanup on actual reset or admitted takeover, not elapsed gaps. Deleted comments do not remove the underlying FIDO/RAPDU cleanup. Dual E30/E32/E34 and host sessions check delayed continuations, retained PIN and refused takeover."
+        },
+        {
+          "ordinal": 5,
+          "header": "@@ -46,3 +37,0 @@ static void device_applet_session_expire(void) {",
+          "sha256": "1ede97be1ac4b863aabc8986a2f9923c10b6dab631583148417f7060a998615a",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Remove timed session/context expiry and split context ownership from execution reservation. Preserve chain/source/selection cleanup on actual reset or admitted takeover, not elapsed gaps. Deleted comments do not remove the underlying FIDO/RAPDU cleanup. Dual E30/E32/E34 and host sessions check delayed continuations, retained PIN and refused takeover."
+        },
+        {
+          "ordinal": 6,
+          "header": "@@ -50,6 +39 @@ static void device_applet_session_expire(void) {",
+          "sha256": "62c282b0b5fa83f290a817d7530101df7f08924c0a86bdc19fe12ad1714e61f2",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Remove timed session/context expiry and split context ownership from execution reservation. Preserve chain/source/selection cleanup on actual reset or admitted takeover, not elapsed gaps. Deleted comments do not remove the underlying FIDO/RAPDU cleanup. Dual E30/E32/E34 and host sessions check delayed continuations, retained PIN and refused takeover."
+        },
+        {
+          "ordinal": 8,
+          "header": "@@ -65,0 +54,2 @@ void device_loop(void) {",
+          "sha256": "d3d19d37397ca49d441f6dfbfab805985776adcb576c30d4a176b276fca6878f",
+          "behaviors": [
+            "L3"
+          ],
+          "assessment": "Service USB lifecycle before class loops and stop application dispatch while unready. Actual Rust erasure IRQ sweep checks that interrupted generation completion cannot reopen RX; C service epoch/CAS is source evidence and existing dual E50/E52/E55 cover serialized boundary schedules."
+        },
+        {
+          "ordinal": 14,
+          "header": "@@ -282,3 +287,6 @@ int device_applet_session_acquire(device_applet_session_owner_t owner) {",
+          "sha256": "43b8bf6d14fab305b76591047d91e860620a9fd218e3c6f8512f7adc7c28a636",
+          "behaviors": [
+            "L1"
+          ],
+          "assessment": "Prepare non-HID APDU context only on actual foreign command dispatch; same owner and native HID keep context. Rust WebUSB PREPARE and deferred complete-envelope dispatch preserve context on aborted reservation; completed takeover resets it in the serialized main loop."
+        },
+        {
+          "ordinal": 15,
+          "header": "@@ -286,0 +295,6 @@ void device_applet_session_touch(device_applet_session_owner_t owner) {",
+          "sha256": "633861f2337ad05bf267b217996760d57ea77f09939bf5137d7c697d89fd5c0e",
+          "behaviors": [
+            "L1",
+            "L2"
+          ],
+          "assessment": "Temporary context-matches helper and no-op session touch replace deadline refresh. Final C removes that helper; Rust retains explicit owner/pending-state checks and no card-context timer. Keep WebUSB completed Hold timer and HID framing timeout distinct."
+        },
+        {
+          "ordinal": 16,
+          "header": "@@ -288,2 +302,3 @@ void device_applet_session_release(device_applet_session_owner_t owner) {",
+          "sha256": "2adb6fc25e941092727316517764014a3e5cc22fa2a223530f9750b351eb66cf",
+          "behaviors": [
+            "L1",
+            "L6"
+          ],
+          "assessment": "Ordinary release retains applet context and a native MSG response keeps execution ownership. Runtime yield restores APDU owner; authoritative HID retained ownership blocks competitors until final source consumption. Dual ownership vectors cover delayed continuation and PIN preservation; L8/CID1 remain separate unresolved outcomes."
+        }
+      ]
+    },
+    {
+      "commit": "31e6788cb6880f9213a9f15b4ffc90d3dd4fdeed",
+      "parent": "5be9c893702de473effd94c14e3ae7cf0e926604",
+      "path": "src/device.c",
+      "patch_sha256": "ff7654d55439f608da8797d5c9f54a05933730b8d74e12d55bfa2208fd2387af",
+      "patch": "diff --git a/src/device.c b/src/device.c\nindex 37ce385f..1c8eb0de 100644\n--- a/src/device.c\n+++ b/src/device.c\n@@ -307,4 +306,0 @@ void device_applet_session_prepare(device_applet_session_owner_t owner) {\n-int device_applet_session_context_matches(device_applet_session_owner_t owner) {\n-  return apdu_context_owner == DEVICE_APPLET_SESSION_NONE || apdu_context_owner == owner;\n-}\n-\n",
+      "hunks": [
+        {
+          "ordinal": 1,
+          "header": "@@ -307,4 +306,0 @@ void device_applet_session_prepare(device_applet_session_owner_t owner) {",
+          "sha256": "1e2b9ca0b5d76037a4cc30c640b7971244a861de7a4f2c47ada9e14725b48508",
+          "behaviors": [
+            "L1"
+          ],
+          "assessment": "Remove the obsolete context-matches query; Rust routes actual owner/selection and preserves native HID yield through Runtime owner/apdu_owner, without a duplicate helper API."
+        }
+      ]
+    },
+    {
+      "commit": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "parent": "5be9c893702de473effd94c14e3ae7cf0e926604",
+      "path": "src/device.c",
+      "patch_sha256": "ff7654d55439f608da8797d5c9f54a05933730b8d74e12d55bfa2208fd2387af",
+      "patch": "diff --git a/src/device.c b/src/device.c\nindex 37ce385f..1c8eb0de 100644\n--- a/src/device.c\n+++ b/src/device.c\n@@ -307,4 +306,0 @@ void device_applet_session_prepare(device_applet_session_owner_t owner) {\n-int device_applet_session_context_matches(device_applet_session_owner_t owner) {\n-  return apdu_context_owner == DEVICE_APPLET_SESSION_NONE || apdu_context_owner == owner;\n-}\n-\n",
+      "hunks": [
+        {
+          "ordinal": 1,
+          "header": "@@ -307,4 +306,0 @@ void device_applet_session_prepare(device_applet_session_owner_t owner) {",
+          "sha256": "1e2b9ca0b5d76037a4cc30c640b7971244a861de7a4f2c47ada9e14725b48508",
+          "behaviors": [
+            "L1"
+          ],
+          "assessment": "Remove the obsolete context-matches query; Rust routes actual owner/selection and preserves native HID yield through Runtime owner/apdu_owner, without a duplicate helper API."
+        }
+      ]
+    }
+  ],
+  "source_review": [
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "src/device.c",
+      "sha256": "e375e3f61ef1c5559c462094dfe5231c5e37cefe3762b8a2cd74db51f3a9f8bb",
+      "observed": "Session/context separation, no timed expiry, native MSG continuation guard and main-loop cleanup. CAS/sentinel acquisition and presence changes are not mapped by this proof."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/device/usbd_canokey.c",
+      "sha256": "673236df9e96765674ea6ae91e4974dc9ccbf72b83003efe843ac0d6aeeba8fe",
+      "observed": "Service snapshots lifecycle epoch, clears context, initializes transports, then CAS acknowledges only the unchanged epoch. New tests exercise the Rust architectural counterpart; no new C in-cleanup IRQ execution is claimed."
+    }
+  ],
+  "rust_sources": [
+    {
+      "path": "crates/ffi/src/composition.rs",
+      "sha256": "c576579760ab71e7aa71407ece6383edbc80b428f034f4534a12e2f0a54c85da"
+    },
+    {
+      "path": "crates/ffi/src/composition/core.rs",
+      "sha256": "2104a20ad50db056e466b6310bfae0ea8c1b5abbf175e66b42e691aeda97fd0c"
+    },
+    {
+      "path": "crates/ffi/src/transport/usb.rs",
+      "sha256": "71ac8e3e8168b446254176647e1599b7c38f288bfc835611706ddea5be69232c"
+    },
+    {
+      "path": "crates/ffi/src/transport/webusb.rs",
+      "sha256": "24caa206c4a0875a3865dd9252bbbbaa0f1fd1bed8e477b6c6b35ebd5f47265c"
+    },
+    {
+      "path": "crates/ffi/src/transport/ccid/mod.rs",
+      "sha256": "58805b40cca3ff90d43f28a5081520d41f409bedd48330354006ddd3cbef726c"
+    },
+    {
+      "path": "crates/ffi/src/transport/hid/link.rs",
+      "sha256": "9b58055d57028af08940bf67719507d73889324e9fdceb2aecc7eb89b6442a22"
+    },
+    {
+      "path": "crates/core/src/runtime/engine.rs",
+      "sha256": "e5ee7484a82f7b1ed29195907c9cc3731a329ed80eff31be39e2083ced9f8fa2"
+    },
+    {
+      "path": "crates/core/src/runtime/registry.rs",
+      "sha256": "39e2af4eddb93a96430763a7ba304f61b8b960b00ee4e5056ed882c31f899b0d"
+    },
+    {
+      "path": "tests/card/src/bin/usb_sessions.rs",
+      "sha256": "b9c798fa0ae78ce584c50327dcb1598189f161323fea4d3a863a4527f5d7ffff"
+    },
+    {
+      "path": "tests/card/src/bin/usb_sessions/lifecycle_irq.rs",
+      "sha256": "b28396deea751bad3ce13d8e288db83d4e7183d1bed98e7f0eace7f6da09efb5"
+    }
+  ],
+  "rust_cleanup_irq": {
+    "command": "build/host-core/tests/cargo-usb-sessions/host-test/usb-sessions-rust",
+    "states": [
+      {
+        "state": "Pin",
+        "wipe_points": 34,
+        "lifecycle_forms": 2
+      },
+      {
+        "state": "Response",
+        "wipe_points": 33,
+        "lifecycle_forms": 2
+      },
+      {
+        "state": "Staged",
+        "wipe_points": 33,
+        "lifecycle_forms": 2
+      }
+    ],
+    "injections": 200,
+    "scope": "One-shot interrupt after every reached Memory::wipe in a real serialized USB service with a live Core/Provider borrow. Bus reset/address/configure or deconfigure/configure; reject valid class input, retain EP0 enumeration, refuse stale readiness, clean newer lifecycle, rearm once, deny old output, revoke PIN and release staging. Not C IRQ execution or every instruction-level/native-erasure interleaving."
+  },
+  "remaining": [
+    "CAS/sentinel and reset-acquisition source hunks remain unreviewed.",
+    "In-execution, native-abort, storage/crypto callbacks and other IRQ/endpoint-failure schedules.",
+    "Physical USB/RF/WTX, CIU stack/PKE and Linux LeakSanitizer."
+  ]
+}

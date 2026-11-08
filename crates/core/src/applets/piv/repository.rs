@@ -70,19 +70,20 @@ const P521_BYTES: usize = 66;
 const RSA2048_COMPONENT_BYTES: usize = 128;
 const RSA3072_COMPONENT_BYTES: usize = 192;
 const RSA4096_COMPONENT_BYTES: usize = 256;
-const MLKEM_SEED_BYTES: usize = crate::ports::mlkem768::SEED_BYTES;
+const MLKEM_SEED_BYTES: usize = crate::ports::mlkem::SEED_BYTES;
 pub const ALGORITHM: usize = 1;
 pub const ORIGIN: usize = 2;
 pub const PIN_POLICY: usize = 3;
 pub const TOUCH_POLICY: usize = 4;
 pub const NAME_LENGTH: usize = 5;
 pub const NAME: usize = 6;
-// Algorithm-mapping record: enable byte, then nine wire IDs in the order of
+// Algorithm-mapping record: enable byte, then eleven wire IDs in the order of
 // EXTENSION_ALGORITHMS below. These values are APDU IDs, not ports::alg IDs.
-pub const CONFIG_BYTES: usize = 1 + 9;
+pub const CONFIG_BYTES: usize = 1 + EXTENSION_ALGORITHMS.len();
 pub const NO_ALGORITHM: u8 = 0xff; // Empty key slot has no selected algorithm.
-pub const DEFAULT_CONFIG: [u8; CONFIG_BYTES] =
-    [0x01, 0xe0, 0x05, 0x16, 0xe1, 0x53, 0x15, 0x54, 0xe2, 0xe3];
+pub const DEFAULT_CONFIG: [u8; CONFIG_BYTES] = [
+    0x01, 0xe0, 0x05, 0x16, 0xe1, 0x53, 0x15, 0x54, 0xe2, 0xe3, 0xe4, 0xe5,
+];
 // Factory AES-192 management key: bytes 0x01..=0x08 repeated three times.
 pub const DEFAULT_MGMT: [u8; MANAGEMENT_KEY_BYTES] = [
     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
@@ -98,26 +99,38 @@ pub fn slot(id: u8) -> Result<usize, Sw> {
 // prime/CRT component (half the modulus width), or a persisted PQ seed.
 pub fn width(a: u8) -> usize {
     match a {
-        alg::P256 | alg::SECP256K1 | alg::ED25519 | alg::X25519 | alg::SM2 | alg::MLDSA65 => {
-            P256_BYTES
-        }
+        alg::P256
+        | alg::SECP256K1
+        | alg::ED25519
+        | alg::X25519
+        | alg::SM2
+        | alg::MLDSA65
+        | alg::MLDSA44 => P256_BYTES,
         alg::P384 => P384_BYTES,
         alg::RSA2048 => RSA2048_COMPONENT_BYTES,
         alg::RSA3072 => RSA3072_COMPONENT_BYTES,
         alg::RSA4096 => RSA4096_COMPONENT_BYTES,
         alg::P521 => P521_BYTES,
-        alg::MLKEM768 => MLKEM_SEED_BYTES,
+        alg::MLKEM768 | alg::MLKEM512 => MLKEM_SEED_BYTES,
         _ => 0,
     }
 }
 pub fn rsa(a: u8) -> bool {
-    (alg::RSA2048..=alg::RSA4096).contains(&a)
+    a >= alg::RSA2048 && a <= alg::RSA4096
 }
 pub fn material(a: u8) -> usize {
     key_storage::length(rsa(a), width(a))
 }
-// Configuration bytes 1..9 assign wire IDs in this stable order.
-const EXTENSION_ALGORITHMS: [u8; 9] = [
+pub fn pq(a: u8) -> bool {
+    crate::ports::mldsa::parameters(a).is_some() || crate::ports::mlkem::parameters(a).is_some()
+}
+pub fn public_bytes(a: u8) -> Option<usize> {
+    crate::ports::mldsa::parameters(a)
+        .map(|p| p.public_bytes)
+        .or_else(|| crate::ports::mlkem::parameters(a).map(|p| p.public_bytes))
+}
+// Configuration bytes 1..11 assign wire IDs in this stable order.
+const EXTENSION_ALGORITHMS: [u8; 11] = [
     alg::ED25519,
     alg::RSA3072,
     alg::RSA4096,
@@ -127,6 +140,8 @@ const EXTENSION_ALGORITHMS: [u8; 9] = [
     alg::SM2,
     alg::MLDSA65,
     alg::MLKEM768,
+    alg::MLDSA44,
+    alg::MLKEM512,
 ];
 pub fn algorithm(id: u8, c: &[u8; CONFIG_BYTES]) -> Result<u8, Sw> {
     match id {
@@ -157,24 +172,23 @@ pub fn algorithm_id(a: u8, c: &[u8; CONFIG_BYTES]) -> u8 {
             .map_or(0, |i| c[i + 1]),
     }
 }
-// Disabled mappings may retain inactive values. Enabled mappings must avoid
-// standard/reserved wire IDs and duplicate extension IDs; otherwise dispatch
+// Disabled mappings also reject standard/reserved and duplicate IDs; dispatch
 // could silently select a different algorithm from the one requested.
 pub fn config_valid(c: &[u8]) -> bool {
     c.len() == CONFIG_BYTES
         && c[0] <= 1
-        && (c[0] == 0
-            || c[1..].iter().enumerate().all(|(i, v)| {
-                !matches!(
-                    *v,
-                    wire_alg::DEFAULT
-                        | wire_alg::AES192
-                        | wire_alg::RSA2048
-                        | wire_alg::P256
-                        | wire_alg::P384
-                        | wire_alg::ED25519_STREAM
-                ) && !c[1..i + 1].contains(v)
-            }))
+        && c[1..].iter().enumerate().all(|(i, v)| {
+            !matches!(
+                *v,
+                wire_alg::DEFAULT
+                    | wire_alg::TDEA
+                    | wire_alg::AES192
+                    | wire_alg::RSA2048
+                    | wire_alg::P256
+                    | wire_alg::P384
+                    | wire_alg::ED25519_STREAM
+            ) && !c[1..i + 1].contains(v)
+        })
 }
 /// Fill a caller-owned metadata buffer; its contents are valid only on success.
 /// Keeping the output separate from the status avoids a second large return
@@ -203,9 +217,11 @@ pub fn read_meta(
     }
     let valid = key_storage::read_footer(p.storage, KEYS[id], n, KEY_FORMAT_VERSION, m, |m, n| {
         !(m[VERSION] != KEY_FORMAT_VERSION
-            || m[ALGORITHM] > alg::MLDSA65
-            || !(1..=2).contains(&m[ORIGIN])
-            || !(policy::PIN_NEVER..=policy::PIN_ALWAYS).contains(&m[PIN_POLICY])
+            || width(m[ALGORITHM]) == 0
+            || m[ORIGIN] < 1
+            || m[ORIGIN] > 2
+            || m[PIN_POLICY] < policy::PIN_NEVER
+            || m[PIN_POLICY] > policy::PIN_ALWAYS
             || m[TOUCH_POLICY] > policy::TOUCH_CACHED
             || m[NAME_LENGTH] > NAME_MAX as u8
             || n as usize != HEADER + material(m[ALGORITHM]) + META)

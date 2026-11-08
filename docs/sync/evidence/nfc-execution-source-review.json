@@ -1,0 +1,245 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Pending NFC reply turns protect actual Core execution before WTX; actual scheduled timers/reader IRQs verify normal WTX and expose four unresolved after-WTX response cases.",
+  "deltas": [
+    {
+      "commit": "836a50a50c2a77d03f4673e79a03213138023145",
+      "parent": "c07ad675546049fddd732b6bef1305eff8f799c5",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 57,
+          "sha256": "6c2ef6b993b03a2da5f5aad5a53c0810b537f8fcad9df898f86bb0e4d2defa0c",
+          "source": "@@ -415,3 +566,7 @@ void nfc_handler(void) {\n-      DBG_MSG(\"RX: \");\n-      PRINT_HEX(rx_frame_buf, rx_frame_size);\n-      if (next_state == TO_SEND) DBG_MSG(\"Wrong State!\\n\");\n+      // The main loop may still be appending this frame to PKE. Drain a\n+      // reader retry/presence check without changing its bytes or length.\n+      if (next_state == TO_SEND) {\n+        return;\n+      }\n+      memcpy(rx_frame_buf, frame, frame_size);\n+      rx_frame_size = frame_size;\n"
+        }
+      ]
+    },
+    {
+      "commit": "8fd934426f258ad4973c36eb336febacac50b8c4",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 57,
+          "sha256": "6c2ef6b993b03a2da5f5aad5a53c0810b537f8fcad9df898f86bb0e4d2defa0c",
+          "source": "@@ -415,3 +566,7 @@ void nfc_handler(void) {\n-      DBG_MSG(\"RX: \");\n-      PRINT_HEX(rx_frame_buf, rx_frame_size);\n-      if (next_state == TO_SEND) DBG_MSG(\"Wrong State!\\n\");\n+      // The main loop may still be appending this frame to PKE. Drain a\n+      // reader retry/presence check without changing its bytes or length.\n+      if (next_state == TO_SEND) {\n+        return;\n+      }\n+      memcpy(rx_frame_buf, frame, frame_size);\n+      rx_frame_size = frame_size;\n"
+        }
+      ]
+    },
+    {
+      "commit": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 57,
+          "sha256": "6c2ef6b993b03a2da5f5aad5a53c0810b537f8fcad9df898f86bb0e4d2defa0c",
+          "source": "@@ -415,3 +566,7 @@ void nfc_handler(void) {\n-      DBG_MSG(\"RX: \");\n-      PRINT_HEX(rx_frame_buf, rx_frame_size);\n-      if (next_state == TO_SEND) DBG_MSG(\"Wrong State!\\n\");\n+      // The main loop may still be appending this frame to PKE. Drain a\n+      // reader retry/presence check without changing its bytes or length.\n+      if (next_state == TO_SEND) {\n+        return;\n+      }\n+      memcpy(rx_frame_buf, frame, frame_size);\n+      rx_frame_size = frame_size;\n"
+        }
+      ]
+    },
+    {
+      "commit": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "parent": "99df44df4653051887ac6fdb9355508314a01efc",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 57,
+          "sha256": "6c2ef6b993b03a2da5f5aad5a53c0810b537f8fcad9df898f86bb0e4d2defa0c",
+          "source": "@@ -415,3 +566,7 @@ void nfc_handler(void) {\n-      DBG_MSG(\"RX: \");\n-      PRINT_HEX(rx_frame_buf, rx_frame_size);\n-      if (next_state == TO_SEND) DBG_MSG(\"Wrong State!\\n\");\n+      // The main loop may still be appending this frame to PKE. Drain a\n+      // reader retry/presence check without changing its bytes or length.\n+      if (next_state == TO_SEND) {\n+        return;\n+      }\n+      memcpy(rx_frame_buf, frame, frame_size);\n+      rx_frame_size = frame_size;\n"
+        }
+      ]
+    }
+  ],
+  "mapping": [
+    "Ordinal57 drains a bounded frame and returns while next_state is TO_SEND. Io::interrupt now applies self.turn regardless of live Core execution; only valid newly owned input is copied to the mailbox.",
+    "E62 already proves queued input and Io::take/Request::append/PKE protection. E63 adds actual GetInfo execution: the native storage-read hook leaves bytes/results intact and triggers actual production WTX timer callbacks.",
+    "C injects its reader IRQ through the pinned test TXEN callback. Rust injects after Io unlock with IRQs enabled; the early BEFORE frame must finish before the fixture arms the later WTX echo. It cannot recursively borrow Io/Core.",
+    "The source-cancellation fixture sends real WTX before deselect so the reader owns the turn. Existing41 source/cleanup cases remain passing; before-WTX deselect is drained instead.",
+    "Eleven normal RF contracts agree, including callback150/151/300ms, repeated WTX, tick wrap, early ACK/NAK/invalid/deselect/WTX, full response continuation and selected-context reuse. Five early-frame failures are reproduced on old production with the corrected current fixture.",
+    "Four after-WTX wrong-echo/ACK/NAK/deselect cases retain unresolved dispositions. C sends the APDU response; Rust faults/cancels, and deferred deselect yields C2 after main-loop service. Passing observation assertions is not parity approval."
+  ],
+  "remaining": [
+    "Unresolved E63: after-WTX wrong multiplier/ACK/NAK/deselect differ from pinned C permissive continuation; no parity or intentional-difference disposition is approved.",
+    "Mixed NFC source hunk19 includes WTX retransmission cache, cleanup and TXEN ordering. Normal echo evidence does not close it. Arbitrary IRQ/endpoint schedules remain open.",
+    "Physical RF/WTX, CIU IRQ/call-path stack/PKE, Linux sanitizer acceptance and full source audit remain open; NFCC remains oversized."
+  ],
+  "final_c_excerpts": [
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 250,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "  if (data != NULL) memcpy(tx_frame_buf + 1, data, len);\n\n  if (fm_write_fifo(tx_frame_buf, len + 1) != FM_STATUS_OK) return -1;\n  if (cleanup_pending) return NFC_SEND_ABORTED;\n  // Rule 11 retries the last transmitted block, including R(ACK)/S(WTX),\n  // not merely the last I-block from an earlier APDU. The local frame also\n  // avoids aliasing when the retransmit cache itself is the input.\n  retransmit_prologue = prologue;\n  transfer_state.cached_len = len;\n  memcpy(retransmit_data, tx_frame_buf + 1, len);\n  // Consume this turn just before TXEN: i2c_stop() can unmask a GPIO IRQ\n  // carrying the reader's next frame before the register write returns.\n  // Never overwrite that IRQ's newly published TO_SEND afterwards.\n  next_state = TO_RECEIVE;\n  const uint8_t val = 0x55;\n  if (fm_write_regs(FM_REG_RF_TXEN, &val, 1) != FM_STATUS_OK) return -1;\n  return 0;\n}"
+    },
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 309,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "static void send_wtx(void) {\n  if (!apdu_processing || cleanup_pending) return;\n\n  int send_failed = 0;\n  if (device_spinlock_lock(&state_spinlock, false) != 0) {\n    if (apdu_processing && !cleanup_pending) device_set_timeout(send_wtx, WTX_LOCK_RETRY_PERIOD);\n    return;\n  }\n  if (next_state == TO_SEND) {\n    uint8_t wtxm = 1;\n    transfer_state.retries = 0;\n    if (do_nfc_send_frame(S_WTX, &wtxm, 1) != 0 && !cleanup_pending)\n      send_failed = 1;\n  }\n  device_spinlock_unlock(&state_spinlock);\n\n  if (send_failed) {\n    nfc_error_handler(-19);\n    return;\n  }\n  if (apdu_processing) device_set_timeout(send_wtx, WTX_PERIOD);\n}"
+    },
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 550,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "  } else if ((irq[0] & 0x3F) && !apdu_processing) {\n    restart_idle_timeout();\n  }\n  if (irq[0] & MAIN_IRQ_RX_DONE) {\n    uint8_t frame_size, frame[sizeof(rx_frame_buf)];\n    if (fm_read_regs(FM_REG_FIFO_WORDCNT, &frame_size, 1) != FM_STATUS_OK) {\n      nfc_error_handler(-9);\n      return;\n    }\n    if (frame_size == 0) {\n      nfc_error_handler(-21);\n      return;\n    } else if (frame_size > sizeof(frame)) {\n      nfc_error_handler(-5);\n      return;\n    } else if (fm_read_fifo(frame, frame_size) != FM_STATUS_OK) {\n      nfc_error_handler(-10);\n      return;\n    } else {\n      // The main loop may still be appending this frame to PKE. Drain a\n      // reader retry/presence check without changing its bytes or length.\n      if (next_state == TO_SEND) {\n        return;\n      }\n      memcpy(rx_frame_buf, frame, frame_size);\n      rx_frame_size = frame_size;\n      next_state = TO_SEND;\n    }\n  }\n}\n"
+    },
+    {
+      "path": "test/nfc-transport.inc",
+      "line": 265,
+      "file_sha256": "b7ed1c0420de3f77103107d332ed93f0b1710eda09440d7f0e13d5bc346f68c3",
+      "source": "  // A retry/presence check must be drained without replacing that request.\n  nfc_test_fixture(true);\n  nfc_test_rx[0] = 0x02 | (block_number ^ 1);\n  memcpy(nfc_test_rx + 1, info, sizeof(info));\n  nfc_test_rx_len = sizeof(info) + 3;\n  nfc_test_irq[0] = MAIN_IRQ_RX_DONE;\n  nfc_test_handler();\n  uint8_t saved[32];\n  const uint8_t saved_len = rx_frame_size;\n  memcpy(saved, rx_frame_buf, saved_len);\n  nfc_test_rx[0] = R_NAK | block_number;\n  nfc_test_rx_len = 3;\n  nfc_test_irq[0] = MAIN_IRQ_RX_DONE;\n  nfc_test_handler();\n  assert_int_equal(rx_frame_size, saved_len);\n  assert_memory_equal(rx_frame_buf, saved, saved_len);\n  nfc_test_loop();\n  assert_true(transfer_state.sending);\n  assert_int_equal(nfc_test_tx[1], 0); // CTAP success, not a damaged request\n  set_nfc_state(0);\n  device_applet_session_clear();\n}"
+    }
+  ],
+  "targets": [
+    {
+      "path": "crates/core/src/runtime/nfc_io.rs",
+      "sha256": "c4bcbd4735dbf1d3f45036a94b78dd0ed4d3ed8faa1ce0023c492b21cc6ee9c7"
+    },
+    {
+      "path": "crates/ffi/src/transport/nfc.rs",
+      "sha256": "746dd52699de67b29f40aead64e1c29b2560911d8f24123ddf582ac46fc08142"
+    },
+    {
+      "path": "crates/core/tests/nfc.rs",
+      "sha256": "be25b340bd2e325d156e0ec63175be496306cf163405152a1e559b04fbc5f278"
+    },
+    {
+      "path": "tests/card/src/storage.rs",
+      "sha256": "bb982420ab94bfe4caceb4e861a243010b96178f79c586c1e97aa433e4e7fbe2"
+    },
+    {
+      "path": "tests/card/src/bin/usb_sessions/portable_nfc.rs",
+      "sha256": "d2a40b51f6f286712c97585effa149db161ce9597c76cf7847767a3512dfc1d2"
+    },
+    {
+      "path": "tests/card/src/bin/usb_sessions/nfc_execution.rs",
+      "sha256": "8ee40a03848077271b85baa8972e1d22eaca9576739b2c5e8abbbb1fc4dd4533"
+    },
+    {
+      "path": "tests/card/src/bin/usb_sessions/nfc_source.rs",
+      "sha256": "e01a8616a1f3bbac0967a78794ef8d77f78d0b1571f712a0b1f7fce47c2eb1ae"
+    },
+    {
+      "path": "tests/support/c312_nfc_execution.py",
+      "sha256": "e2e1b989a4f94f6dd9662d56094b0c852af6a7fb1d0b5fe8fd29d261d8fd2cf6"
+    },
+    {
+      "path": "tests/support/c312_nfc_execution.c",
+      "sha256": "abcf7500be450e5c4a80db0afb1adefdf37167fbbf3f476aeea8dc7c696156d3"
+    },
+    {
+      "path": "tests/CMakeLists.txt",
+      "sha256": "bef3b96210d5a387c3fb170a94c8afd8945bb3eb3489c04bc2223eed2d40dd82"
+    }
+  ],
+  "execution": {
+    "contracts": 15,
+    "normal_equal_rf": 11,
+    "unresolved": 4,
+    "old_early_frame_failures": 5,
+    "final_early_frame_equal_rf": 5,
+    "unresolved_are_parity_approvals": false,
+    "post_deselect_deferred_rf": "c2",
+    "timer_cleared_after_return": true,
+    "physical_timing_acceptance": false
+  },
+  "literal": {
+    "suites": 14,
+    "cases": 429,
+    "events": 11905,
+    "equal_output": 412,
+    "unresolved": 17,
+    "previous_results": [
+      {
+        "path": "tests/fixtures/c312-ccid/report.json",
+        "cases": 47,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-hid-admission/report.json",
+        "cases": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-hid-channels/report.json",
+        "cases": 40,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-hid-ownership/report.json",
+        "cases": 21,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-large-blob-nfc/report.json",
+        "cases": 11,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-large-blob-usb/report.json",
+        "cases": 12,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-nfc/report.json",
+        "cases": 124,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-control/report.json",
+        "cases": 36,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-lifecycle/report.json",
+        "cases": 33,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-ownership/report.json",
+        "cases": 18,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-readiness/report.json",
+        "cases": 9,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-webusb/report.json",
+        "cases": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-webusb-readiness/report.json",
+        "cases": 8,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-webusb-retained/report.json",
+        "cases": 14,
+        "previous_results_unchanged": true
+      }
+    ]
+  },
+  "products": {
+    "devkit": {
+      "flash": 178528,
+      "static_ram": 8272,
+      "udf": 140,
+      "correctness_delta": 0
+    },
+    "nfcc": {
+      "flash": 187600,
+      "static_ram": 8432,
+      "udf": 146,
+      "correctness_delta": 0,
+      "overflow": 5840,
+      "diagnostic_elf_only": true
+    }
+  }
+}

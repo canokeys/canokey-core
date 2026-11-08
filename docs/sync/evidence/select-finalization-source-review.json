@@ -1,0 +1,188 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Bounded AID overflow must drain complete SELECT input before P2/unknown-AID finalization and USB FIDO rejection cleanup. Malformed envelopes preserve prior context.",
+  "mapping": [
+    "Pinned C process_apdu_impl checks SELECT P2 before aid_matches, then reject_usb_fido_select on unknown AID. Only CCID/WebUSB FIDO selection is revoked; unrelated applets and NFC selection survive rejection.",
+    "Rust data retains its16-byte matching window and marks an unmatchable length with used=window+1. Further body events are drained without allocation or matching truncated data.",
+    "end_frame validates the complete envelope before route finalization. Wrong P2 precedes the bounded unknown-AID result; every completed rejection reaches the existing reject_select callback.",
+    "Malformed/truncated envelopes do not reach SELECT finalization. Explicit1/16/64-byte streaming proves selection is retained even after an oversized prefix was consumed.",
+    "285 literal transport cases reproduce56 old-Rust failures and agree with C after repair. Existing Core all-P2 checks add2304 combinations; fragmented complete/truncated checks add144."
+  ],
+  "targets": [
+    {
+      "path": "crates/core/src/runtime/engine.rs",
+      "sha256": "edb5c2ef3812e83133e6b9640f210e953566107b13525ed6d485d69eacdfdb02"
+    },
+    {
+      "path": "crates/core/src/runtime/registry.rs",
+      "sha256": "60bbbafd5eb6e75c77cea36a7d23f2f1bd3e2519a52426cdfcd36bd1cdd3e972"
+    },
+    {
+      "path": "crates/core/tests/streaming.rs",
+      "sha256": "5dfee45e73497a51b1151080b896f3bf299dc22a13cdde8d704f55797b402251"
+    },
+    {
+      "path": "tests/support/c312_select_vectors.py",
+      "sha256": "364049758587eacc0341d04fc389f2c7d404013af7c503dc796e1311cbd4029a"
+    },
+    {
+      "path": "tests/CMakeLists.txt",
+      "sha256": "f7e9bb1753eb7204f1aba9041067e37615d3098739d10c1a07a5710a1a16c98c"
+    }
+  ],
+  "regression": {
+    "cases": 285,
+    "events": 5043,
+    "before_c_passed": 285,
+    "before_rust_passed": 229,
+    "old_failures": 56,
+    "final_equal": 285,
+    "p2_combinations": 2304,
+    "fragmented_combinations": 144,
+    "matching_window_before": 16,
+    "matching_window_after": 16,
+    "additional_buffers": 0
+  },
+  "remaining": [
+    "Broader CLA/P1/config-disabled and extended Case4E SELECT mutation coverage and physical USB/RF acceptance remain open.",
+    "E63 after-WTX differences, mixed NFC cache/cleanup/TXEN source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open."
+  ],
+  "final_c_excerpts": [
+    {
+      "path": "src/apdu.c",
+      "line": 63,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "#endif\n};\n\nstatic uint8_t aid_matches(uint8_t applet, const uint8_t *candidate, uint16_t len, apdu_transport_t transport) {\n  if (applet == APPLET_FIDO && (transport == APDU_TRANSPORT_CCID || transport == APDU_TRANSPORT_WEBUSB)) {\n    return len == sizeof(FIDO_USB_AID) && memcmp(candidate, FIDO_USB_AID, len) == 0;\n  }\n  if (applet == APPLET_PIV) {\n    // Keep the widely deployed RID-only selector in addition to the two forms in SP 800-73.\n    if (len != PIV_AID_COMPAT_RID_SIZE && len != PIV_AID_RIGHT_TRUNCATED_SIZE && len != sizeof(PIV_AID)) return 0;\n  } else if (len != AID_Size[applet]) {\n    return 0;\n  }\n  return memcmp(candidate, AID[applet], len) == 0;\n}\n"
+    },
+    {
+      "path": "src/apdu.c",
+      "line": 452,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "// Rejected USB probes must not inherit a prior private FIDO selection.\nstatic void reject_usb_fido_select(apdu_transport_t transport) {\n  if ((transport == APDU_TRANSPORT_CCID || transport == APDU_TRANSPORT_WEBUSB) && current_applet == APPLET_FIDO) {\n    ctap_deselect();\n    fido_capdu_reset();\n    current_applet = APPLET_NULL;\n  }\n}"
+    },
+    {
+      "path": "src/apdu.c",
+      "line": 488,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "  const uint8_t is_select_by_aid = CLA == 0x00 && INS == 0xA4 && P1 == 0x04;\n  if (!is_select_by_aid) {"
+    },
+    {
+      "path": "src/apdu.c",
+      "line": 536,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "  if (is_select_by_aid) {\n    if (P2 != 0x00) {\n      reject_usb_fido_select(transport);\n      LL = 0;\n      SW = SW_WRONG_P1P2;\n      return;\n    }\n    uint8_t i, end = APPLET_ENUM_END;\n    for (i = APPLET_NULL + 1; i != end; ++i) {\n      if (aid_matches(i, DATA, LC, transport)) {\n        if (!applet_enabled_on_transport((enum APPLET)i, transport)) {\n          reject_usb_fido_select(transport);\n          disabled_applet_response(rapdu);\n          DBG_MSG(\"applet disabled: %d\\n\", i);\n          return;\n        }\n#if ENABLE_APPLET_NDEF\n        if (i == APPLET_NDEF && !device_config_is_ndef_enabled()) {\n          reject_usb_fido_select(transport);\n          LL = 0;\n          SW = SW_FILE_NOT_FOUND;\n          DBG_MSG(\"NDEF is disable\\n\");\n          return;\n        }\n#endif\n        if (i != current_applet) {\n          if (current_applet == APPLET_FIDO) {\n            ctap_deselect();\n          }\n          applets_poweroff();\n          fido_capdu_reset();\n        }\n        current_applet = i;\n        DBG_MSG(\"applet switched to: %d\\n\", current_applet);\n        break;\n      }\n    }\n    if (i == end) {\n      reject_usb_fido_select(transport);\n      LL = 0;\n      SW = SW_FILE_NOT_FOUND;\n      DBG_MSG(\"applet not found\\n\");\n      return;\n    }"
+    }
+  ],
+  "literal": {
+    "suites": 15,
+    "cases": 714,
+    "events": 16948,
+    "equal_output": 697,
+    "unresolved": 17,
+    "previous_results": [
+      {
+        "path": "tests/fixtures/c312-ccid/report.json",
+        "cases": 47,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-hid-admission/report.json",
+        "cases": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-hid-channels/report.json",
+        "cases": 40,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-hid-ownership/report.json",
+        "cases": 21,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-large-blob-nfc/report.json",
+        "cases": 11,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-large-blob-usb/report.json",
+        "cases": 12,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-nfc/report.json",
+        "cases": 124,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-control/report.json",
+        "cases": 36,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-lifecycle/report.json",
+        "cases": 33,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-ownership/report.json",
+        "cases": 18,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-readiness/report.json",
+        "cases": 9,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-webusb/report.json",
+        "cases": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-webusb-readiness/report.json",
+        "cases": 8,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-webusb-retained/report.json",
+        "cases": 14,
+        "previous_results_unchanged": true
+      }
+    ],
+    "new_suite": "tests/fixtures/c312-select/report.json"
+  },
+  "separate_execution": {
+    "equal_contract_cases": 11,
+    "unresolved_cases": 4,
+    "sides": [
+      "c",
+      "rust"
+    ],
+    "unresolved_are_parity_approvals": false
+  },
+  "products": {
+    "devkit": {
+      "flash": 178528,
+      "static_ram": 8272,
+      "udf": 139,
+      "correctness_delta": 0
+    },
+    "nfcc": {
+      "flash": 187600,
+      "static_ram": 8432,
+      "udf": 145,
+      "correctness_delta": 0,
+      "overflow": 5840,
+      "diagnostic_elf_only": true
+    }
+  },
+  "source_review": {
+    "core_reviewed": 645,
+    "core_total": 2254,
+    "platform_reviewed": 142,
+    "platform_total": 373,
+    "additional_approvals": 0
+  }
+}

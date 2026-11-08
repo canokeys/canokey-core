@@ -167,7 +167,8 @@ impl Memory for Wipe {
     }
 }
 #[test]
-fn successful_load_erases_its_read_buffer_before_returning_the_owned_record() {
+fn load_reads_in_place_and_erases_the_destination_on_failure() {
+    // Counts erasures of any record-sized buffer that still holds the key.
     struct Observe(Cell<usize>);
     impl Memory for Observe {
         fn wipe(&self, bytes: &mut [u8]) {
@@ -192,10 +193,27 @@ fn successful_load_erases_its_read_buffer_before_returning_the_owned_record() {
     };
     let memory = Observe(Cell::new(0));
     let mut store = Store::new(&mut files, &memory);
-    let mut loaded = store.load(id).unwrap();
-    assert_eq!(memory.0.get(), 1);
+    let mut loaded = Credential::empty();
+    store.load_into(id, &mut loaded).unwrap();
+    // The key is read directly into the caller's record: no intermediate
+    // key-bearing buffer exists, so nothing else needs erasing.
+    assert_eq!(memory.0.get(), 0);
     assert_eq!(loaded.key(), b"12345678901234567890");
     loaded.clear(&mut NoCrypto);
+    drop(store);
+    // A failed read must not leave partial or stale key bytes in `out`.
+    let key_start = FILE_HEADER_BYTES as usize + ID_BYTES + codec::KEY_OFFSET;
+    controls
+        .forbidden_read
+        .set(Some((key_start, key_start + 20)));
+    let mut store = Store::new(&mut files, &Wipe);
+    let mut failed = Credential::empty();
+    failed.bytes.fill(0xa5);
+    assert!(matches!(
+        store.load_into(id, &mut failed),
+        Err(Error::Storage)
+    ));
+    assert!(failed.bytes.iter().all(|&byte| byte == 0));
 }
 fn credential(name: &[u8]) -> Credential {
     Credential::new(

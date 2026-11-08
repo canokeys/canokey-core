@@ -1,25 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Main-loop CTAPHID transactions. Endpoint retries retain the C-owned report;
 //! they never repeat a source read or command execution.
-use crate::applets::ctap;
 use canokey_protocol::ctaphid::{self as wire, Error, REPORT_SIZE, Report};
 
 // Three HID packet windows stay inline; larger requests use PKE staging.
 // Semantic parsers reuse the core session workspace, not this transport buffer.
 const INLINE: usize = 192;
+
+/// These inline messages finish without parsing into the applet workspace.
+pub fn preserves_context(command: u8, length: usize) -> bool {
+    length <= INLINE
+        && (matches!(command, wire::PING | wire::WINK)
+            || (command == wire::CBOR && length == 0)
+            || (command == wire::MSG && length < canokey_protocol::apdu::EXTENDED_HEADER_BYTES))
+}
 const TIMEOUT_MS: u32 = 800;
 
 /// One exclusive applet session, acquired before touching request scratch.
-/// begin must reject other active transports and reset their idle core session.
+/// begin must reject other active transports and retain yielded card context.
 /// close releases request storage, not the transport transaction. The caller
 /// must exclude all other core/crypto entrypoints while Transport::active().
 pub trait Scratch {
     fn webauthn_enabled(&mut self) -> bool {
         true
     }
-    /// Available staging bytes; PING is bounded by storage, not CTAP CBOR policy.
+    /// Available staging bytes; the wire message limit applies independently.
     fn capacity(&self) -> usize;
-    fn begin(&mut self, use_pke: bool) -> Result<(), Error>;
+    /// Main-loop query only; a retained native response may still own PKE.
+    fn continuation_pending(&mut self) -> bool {
+        false
+    }
+    /// Inline controls and envelopes rejected before parsing preserve applet scratch.
+    fn begin(&mut self, use_pke: bool, preserve_context: bool) -> Result<(), Error>;
     fn write(&mut self, offset: usize, bytes: &[u8]) -> Result<(), Error>;
     fn read(&mut self, offset: usize, bytes: &mut [u8]) -> Result<(), Error>;
     fn close(&mut self);
@@ -28,7 +40,8 @@ pub trait Scratch {
     fn consume_request(&mut self, bytes: &[u8]);
     /// Source is closed before execution; response reads never reexecute crypto.
     fn finish_request(&mut self, cid: u32) -> usize;
-    fn wink(&mut self, cid: u32) -> usize;
+    /// Trigger the indication without parsing a command over retained output.
+    fn wink(&mut self, cid: u32);
     fn read_response(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Error>;
     fn close_response(&mut self);
     /// Successful packet completion may retain an APDU response continuation.
@@ -60,6 +73,7 @@ enum Storage {
 pub struct Transport {
     phase: Phase,
     cid: u32,
+    continuation_cid: u32,
     next_cid: u32,
     command: u8,
     total: usize,
@@ -80,6 +94,7 @@ impl Transport {
         Self {
             phase: Phase::Idle,
             cid: 0,
+            continuation_cid: 0,
             next_cid: 1,
             command: 0,
             total: 0,
@@ -94,6 +109,7 @@ impl Transport {
     pub fn active(&self) -> bool {
         self.phase != Phase::Idle
     }
+    #[inline(never)]
     fn close_request(&mut self, scratch: &mut impl Scratch) {
         if self.storage != Storage::Released {
             scratch.close();
@@ -108,6 +124,7 @@ impl Transport {
             self.response = false;
         }
         scratch.discard_continuation();
+        self.continuation_cid = 0;
         self.inline.fill(0);
     }
     fn error(out: &mut [u8; REPORT_SIZE], cid: u32, error: Error) -> bool {
@@ -120,7 +137,15 @@ impl Transport {
         error: Error,
         scratch: &mut impl Scratch,
     ) -> bool {
-        self.reset(scratch);
+        if self.phase == Phase::Receiving && !self.response {
+            // Framing failure has not entered the parser or replaced an older
+            // native source. Release only this incomplete request.
+            self.close_request(scratch);
+            self.phase = Phase::Idle;
+            self.inline.fill(0);
+        } else {
+            self.reset(scratch);
+        }
         Self::error(out, self.cid, error)
     }
     /// Called only after the preceding endpoint report has completed. Closing
@@ -131,6 +156,11 @@ impl Transport {
             self.phase = Phase::Idle;
             if self.response {
                 scratch.complete_response();
+                self.continuation_cid = if scratch.continuation_pending() {
+                    self.cid
+                } else {
+                    0
+                };
                 self.response = false;
             }
             self.inline.fill(0);
@@ -155,16 +185,16 @@ impl Transport {
         if frame.tag == wire::INIT {
             return self.initialize(frame, out, scratch);
         }
-        // Executing-command CANCEL is serviced by the transport-only callback.
-        // Outside execution it is silent and does not cancel aggregation.
-        if frame.tag == wire::CANCEL && frame.length == Some(0) {
+        // Executing CANCEL is serviced by the transport-only callback. During
+        // fragmented RX, a new initial report is a sequence error as in C.
+        if frame.tag == wire::CANCEL && frame.length == Some(0) && self.phase != Phase::Receiving {
             return false;
         }
         if self.phase == Phase::Sending || self.phase == Phase::Completing {
             return Self::error(out, frame.cid, Error::Busy);
         }
         if self.phase == Phase::Receiving {
-            if tick.wrapping_sub(self.last_received) >= TIMEOUT_MS {
+            if tick.wrapping_sub(self.last_received) > TIMEOUT_MS {
                 return self.fail(out, Error::Timeout, scratch);
             }
             if frame.length.is_some() || frame.tag != self.sequence {
@@ -175,32 +205,26 @@ impl Transport {
             let Some(length) = frame.length else {
                 return false;
             };
-            let limit = if frame.tag == wire::PING {
-                scratch.capacity().max(INLINE).min(wire::MAX_MESSAGE)
-            } else {
-                ctap::MAX_REQUEST
-                    + if frame.tag == wire::MSG {
-                        canokey_protocol::apdu::EXTENDED_OVERHEAD_BYTES
-                    } else {
-                        0
-                    }
-            };
-            if length > limit || (length > INLINE && length > scratch.capacity()) {
+            // C bounds the entire HID message, including native MSG's APDU
+            // header/trailer. Extra hardware scratch is not a wire capability.
+            if length > wire::CTAP_MAX_REQUEST || (length > INLINE && length > scratch.capacity()) {
                 return Self::error(out, frame.cid, Error::Length);
             }
             if frame.tag != wire::PING
                 && frame.tag != wire::CBOR
                 && frame.tag != wire::MSG
                 && frame.tag != wire::WINK
+                && frame.tag != wire::CANCEL
             {
                 return Self::error(out, frame.cid, Error::Command);
             }
             let pke = length > INLINE;
-            if let Err(error) = scratch.begin(pke) {
-                return Self::error(out, frame.cid, error);
+            if pke && scratch.continuation_pending() {
+                return Self::error(out, frame.cid, Error::Busy);
             }
-            if frame.cid != self.cid || frame.tag != wire::MSG {
-                scratch.discard_continuation();
+            let preserve_context = preserves_context(frame.tag, length);
+            if let Err(error) = scratch.begin(pke, preserve_context) {
+                return Self::error(out, frame.cid, error);
             }
             self.storage = if pke { Storage::Pke } else { Storage::Inline };
             self.cid = frame.cid;
@@ -222,6 +246,14 @@ impl Transport {
         self.offset += n;
         if self.offset == self.total {
             if let Err(error) = self.finish_request(scratch) {
+                if matches!(self.command, wire::MSG | wire::CBOR) && !self.response {
+                    // Rejection before parser entry cannot consume a retained
+                    // source, including empty/disabled CBOR and invalid MSG.
+                    self.close_request(scratch);
+                    self.phase = Phase::Idle;
+                    self.inline.fill(0);
+                    return Self::error(out, self.cid, error);
+                }
                 return self.fail(out, error, scratch);
             }
         }
@@ -260,19 +292,51 @@ impl Transport {
     /// PING keeps its source until the last response report completes.
     #[inline(never)]
     fn finish_request(&mut self, scratch: &mut impl Scratch) -> Result<(), Error> {
-        if self.command == wire::WINK {
-            if self.total != 0 {
-                self.close_request(scratch);
-                return Err(Error::Length);
-            }
+        if self.command == wire::CANCEL {
+            // Idle/late CANCEL payloads have no reply and never enter Core.
             self.close_request(scratch);
             self.inline.fill(0);
-            self.total = scratch.wink(self.cid);
-            self.response = true;
+            self.phase = Phase::Idle;
+            return Ok(());
+        }
+        if self.command == wire::WINK {
+            // The C release consumes and ignores a bounded WINK payload.
+            self.close_request(scratch);
+            self.inline.fill(0);
+            scratch.wink(self.cid);
+            self.total = 0;
         }
         if self.command == wire::CBOR || self.command == wire::MSG {
             if !scratch.webauthn_enabled() {
                 return Err(Error::Command);
+            }
+            if self.command == wire::CBOR {
+                if self.total == 0 {
+                    return Err(Error::Length);
+                }
+                if scratch.continuation_pending() {
+                    return Err(Error::Busy);
+                }
+            }
+            if self.command == wire::MSG {
+                if self.total < canokey_protocol::apdu::EXTENDED_HEADER_BYTES {
+                    return Err(Error::Length);
+                }
+                let mut header = [0; canokey_protocol::apdu::EXTENDED_HEADER_BYTES];
+                if self.storage == Storage::Pke {
+                    scratch.read(0, &mut header)?;
+                } else {
+                    header.copy_from_slice(
+                        &self.inline[..canokey_protocol::apdu::EXTENDED_HEADER_BYTES],
+                    );
+                }
+                wire::message_body_length(&header, self.total)?;
+                // Refused CBOR and control traffic may change the current RX
+                // CID. Only the CID that created the retained source may read
+                // or replace it; last-received CID is not response ownership.
+                if scratch.continuation_pending() && self.cid != self.continuation_cid {
+                    return Err(Error::Busy);
+                }
             }
             // The shared parser also needs cleanup when a staged read fails.
             self.response = true;
@@ -318,7 +382,7 @@ impl Transport {
         out: &mut [u8; REPORT_SIZE],
         scratch: &mut impl Scratch,
     ) -> bool {
-        if self.phase == Phase::Receiving && now.wrapping_sub(self.last_received) >= TIMEOUT_MS {
+        if self.phase == Phase::Receiving && now.wrapping_sub(self.last_received) > TIMEOUT_MS {
             self.fail(out, Error::Timeout, scratch)
         } else {
             false

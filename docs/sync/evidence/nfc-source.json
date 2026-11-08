@@ -1,0 +1,430 @@
+{
+  "scope": "Actual Rust NFC FIFO/IRQ facade, production dispatch, Core, native key operations; test-only fixed Provider staging/Memory injection. Not paired C transport or physical acceptance.",
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "reproduced": "Before the production fix, HALT during Stage::clear still entered two native key operations. The first22-schedule fixture stopped at that failing case.",
+  "before": {
+    "path": "docs/sync/evidence/nfc-source-before.log",
+    "sha256": "ca2b517d12cd87553bfa557709e2f5f6ac95ea01915a271bb21fb92debc8f767"
+  },
+  "after": {
+    "path": "docs/sync/evidence/nfc-source.log",
+    "sha256": "57e6754fca355dcfad33577a9937ba0b3c1625736939112abe2a597734401bd3"
+  },
+  "changes": [
+    "InputSource::close returns Result; Runtime closes exactly once before end_frame and a failed close prevents execution, overriding an earlier framing result.",
+    "NFC checks activation generation AND execution liveness before/after each source read and after clearing/releasing input.",
+    "HALT and same-generation deselect only touch IRQ state during the live Core borrow; the source closes on the main loop."
+  ],
+  "healthy": {
+    "pke_reads": 5,
+    "reached_64_byte_erasures_before_close": 6,
+    "native_key_operations": 2
+  },
+  "cases": [
+    {
+      "deselect": false,
+      "fault": "Clear",
+      "reads": 5,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Release",
+      "reads": 5,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Read(1)",
+      "reads": 1,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Before(1)",
+      "reads": 1,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "After(1)",
+      "reads": 1,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Read(2)",
+      "reads": 2,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Before(2)",
+      "reads": 2,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "After(2)",
+      "reads": 2,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Read(3)",
+      "reads": 3,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Before(3)",
+      "reads": 3,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "After(3)",
+      "reads": 3,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Read(4)",
+      "reads": 4,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Before(4)",
+      "reads": 4,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "After(4)",
+      "reads": 4,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Read(5)",
+      "reads": 5,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Before(5)",
+      "reads": 5,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "After(5)",
+      "reads": 5,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Wipe(1)",
+      "reads": 1,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Wipe(2)",
+      "reads": 1,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Wipe(3)",
+      "reads": 2,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Wipe(4)",
+      "reads": 3,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Wipe(5)",
+      "reads": 4,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": false,
+      "fault": "Wipe(6)",
+      "reads": 5,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Clear",
+      "reads": 5,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Release",
+      "reads": 5,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Before(1)",
+      "reads": 1,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "After(1)",
+      "reads": 1,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Before(2)",
+      "reads": 2,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "After(2)",
+      "reads": 2,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Before(3)",
+      "reads": 3,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "After(3)",
+      "reads": 3,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Before(4)",
+      "reads": 4,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "After(4)",
+      "reads": 4,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Before(5)",
+      "reads": 5,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "After(5)",
+      "reads": 5,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Wipe(1)",
+      "reads": 1,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Wipe(2)",
+      "reads": 1,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Wipe(3)",
+      "reads": 2,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Wipe(4)",
+      "reads": 3,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Wipe(5)",
+      "reads": 4,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    },
+    {
+      "deselect": true,
+      "fault": "Wipe(6)",
+      "reads": 5,
+      "clear": 1,
+      "release": 1,
+      "keys_before_dispatch": 0,
+      "recovery": "pass"
+    }
+  ],
+  "rust_sources": [
+    {
+      "path": "crates/core/src/runtime/engine.rs",
+      "sha256": "97d8fec823724b9180678c07c2b0e691dc3bb9f1ad7f993a24b7c30f0ce0427d"
+    },
+    {
+      "path": "crates/ffi/src/transport/nfc.rs",
+      "sha256": "90f0925fb18444756acbd932f4b50a7f180786d4034fd9922ac3bdfb600a966f"
+    },
+    {
+      "path": "crates/core/tests/streaming.rs",
+      "sha256": "b35e5a9b483bc731f7fc9cad065c1c574c25a698413a3727be3d38a2821b9306"
+    },
+    {
+      "path": "tests/card/src/bin/usb_sessions/nfc_source.rs",
+      "sha256": "e3f2c8554740f6999201590a5e6b85a77e9ddcc554c5ee752d4a6f81ca3ed810"
+    },
+    {
+      "path": "tests/card/src/bin/usb_sessions/portable_nfc.rs",
+      "sha256": "296b4f9c660ea8884e1851ce6f26f8e94bd1f061408aa7978303985099ce4a40"
+    },
+    {
+      "path": "tests/card/src/bin/usb_sessions.rs",
+      "sha256": "d06771670449b65080648f674cfeb8f5e4b226a20cdc5befdf9baaccf4bafe24"
+    },
+    {
+      "path": "tests/CMakeLists.txt",
+      "sha256": "2105476013411dcd62db47ed913e1bbffbadb12a7e9dede67e41a1a8870ed3a0"
+    }
+  ],
+  "runtime_regression": "Complete and malformed frames cannot call Router::finish or publish on failed source close.",
+  "remaining": [
+    "Other CTAP commands and source/write/cleanup-failure schedules; arbitrary executing IRQ interleavings.",
+    "Paired C transport cancellation/error-order execution; C parser callback injections remain separately scoped and their102 transient-fault successes remain unapproved.",
+    "Physical NFC/RF/WTX and CIU stack/PKE acceptance."
+  ]
+}

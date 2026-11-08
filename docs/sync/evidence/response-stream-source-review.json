@@ -1,0 +1,83 @@
+{
+  "scope": "Explicitly inspected C response-source aliases/cleanup and largeBlobs segmented-output changes, plus exact full-file generalization and identical final merge deltas. Not whole CTAP or response-fault/physical acceptance.",
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "patches": [
+    {
+      "path": "docs/sync/evidence/response-stream-836a50a5-ctap.c.patch",
+      "sha256": "7237c00b5ae1185037f74bb340ad6d3eed520340a4f6e334bd9dc252fc0c3ef9",
+      "commit": "836a50a50c2a77d03f4673e79a03213138023145",
+      "parent": "c07ad675546049fddd732b6bef1305eff8f799c5",
+      "source_path": "applets/ctap/ctap.c"
+    },
+    {
+      "path": "docs/sync/evidence/response-stream-836a50a5-ctap.h.patch",
+      "sha256": "b5a35b2375974a2bd8d37bb9d04432553e1518e80b957372071a74bd5e713b1c",
+      "commit": "836a50a50c2a77d03f4673e79a03213138023145",
+      "parent": "c07ad675546049fddd732b6bef1305eff8f799c5",
+      "source_path": "include/ctap.h"
+    },
+    {
+      "path": "docs/sync/evidence/response-stream-31e6788c-ctap.c.patch",
+      "sha256": "ccc1f2b3c0a6865ee29f671d7f15128c48bc428ce79fa87b1856ae273edeeb2c",
+      "commit": "31e6788cb6880f9213a9f15b4ffc90d3dd4fdeed",
+      "parent": "5be9c893702de473effd94c14e3ae7cf0e926604",
+      "source_path": "applets/ctap/ctap.c"
+    },
+    {
+      "path": "docs/sync/evidence/response-stream-31e6788c-ctap.h.patch",
+      "sha256": "c4d6a8911e6bff1f9ab55c0585c89bcfda94baab5f7ec8b9d628bae3f633a48a",
+      "commit": "31e6788cb6880f9213a9f15b4ffc90d3dd4fdeed",
+      "parent": "5be9c893702de473effd94c14e3ae7cf0e926604",
+      "source_path": "include/ctap.h"
+    },
+    {
+      "path": "docs/sync/evidence/response-stream-a349b268-ctap.c.patch",
+      "sha256": "ccc1f2b3c0a6865ee29f671d7f15128c48bc428ce79fa87b1856ae273edeeb2c",
+      "commit": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "parent": "5be9c893702de473effd94c14e3ae7cf0e926604",
+      "source_path": "applets/ctap/ctap.c"
+    },
+    {
+      "path": "docs/sync/evidence/response-stream-a349b268-ctap.h.patch",
+      "sha256": "c4d6a8911e6bff1f9ab55c0585c89bcfda94baab5f7ec8b9d628bae3f633a48a",
+      "commit": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "parent": "5be9c893702de473effd94c14e3ae7cf0e926604",
+      "source_path": "include/ctap.h"
+    }
+  ],
+  "transformation": {
+    "renames": [
+      [
+        "CTAP_MC_STREAM",
+        "CTAP_RESPONSE_STREAM"
+      ],
+      [
+        "CTAP_make_credential_stream",
+        "CTAP_response_stream"
+      ],
+      [
+        "ctap_make_credential_stream",
+        "ctap_response_stream"
+      ],
+      [
+        "mc_stream_",
+        "response_stream_"
+      ]
+    ],
+    "removed_wrapper": "int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src, ctap_req_close_t close,\n                                   void *close_ctx) {\n  if (!capdu || capdu->lc == 0 || capdu->lc > pke_buffer_size()) {\n    rapdu->len = 0;\n    rapdu->sw = SW_WRONG_LENGTH;\n    return 0;\n  }\n\n  ctap_req_src_t req_src = {\n      .read = apdu_request_read_pke,\n      .close = close,\n      .ctx = close_ctx,\n      .base_offset = 0,\n      .len = capdu->lc,\n  };\n  return ctap_process_apdu_source_with_src(capdu, &req_src, rapdu, src);\n}\n",
+    "normalization": "Only whitespace after four exact identifier replacements, the displayed wrapper removal, one MC->CTAP comment change and the two inserted comment lines.",
+    "result": "Full ctap.c equal; final merge file and both parent patches equal to31e6788c for both inspected paths."
+  },
+  "observations": [
+    "836a50a5 uses the generic APDU request-source contract, zeroes all source fields, uses the shared PKE reader and closes GetInfo input before token observation/encoding on both HID/APDU paths. Rust uses one InputSource and closes before end_frame; failed-close/cancellation tests remain separately scoped.",
+    "836a50a5 rejects file reads unless exactly n, and builds largeBlobs GET from a small prefix plus file segment; dispatch publishes the same response source for HID/APDU. Rust read_at is exact-or-error and Response::Blob reads the record directly. Physical storage failures and C short reads are not injected here.",
+    "31e6788c changes only the listed identifiers/comments and removes the redundant PKE wrapper in these two paths. MakeCredential/file/PQ streaming continues through shared machinery; no duplicate applet/generator is required in Rust.",
+    "Pinned C src/apdu.c APDU_RESPONSE_CHUNK_SIZE=250 applies to source-backed generic APDU output and GET RESPONSE. Native MSG uses the complete remaining source when it fits Le; otherwise uses that250-byte cap.",
+    "Pinned C largeBlobs calls KEEPALIVE after GET offset validation and SET validation/authentication. It runs CTAPHID_Loop then processing keepalive on HID; NFC skips it. Rust now services best-effort processing progress after validation with fully owned semantic input."
+  ],
+  "remaining": [
+    "Negative/short storage-read injection and response close/error schedules, including certificates and generated MakeCredential/PQ output.",
+    "Review classical MC/GA/U2F Authentication and Prepared response source classification; the current250-byte cap covers GetInfo, Blob and generated Stream only. Full response-class wire matrix remains open.",
+    "Paired executing cancellation, arbitrary IRQ/endpoint faults, physical USB/RF/WTX and CIU stack/PKE acceptance."
+  ]
+}

@@ -4,8 +4,6 @@
 use crate::composition::Provider;
 use canokey_protocol::ctaphid::{self as wire, Error};
 
-// Idle ownership grace prevents CCID preemption between HID requests.
-const SESSION_IDLE_MS: u32 = 2000;
 const KEEPALIVE_INTERVAL_MS: u32 = 100;
 const TX_TIMEOUT_MS: u32 = 1000;
 #[cfg(not(all(test, not(feature = "usb-device"))))]
@@ -25,10 +23,9 @@ static mut OUTGOING: [u8; 64] = [0; 64];
 static mut CONTROL: [u8; 64] = [0; 64];
 struct Link {
     sent_at: u32,
-    session_last_used: u32,
     active: bool,
+    retained: bool,
     transmitting: bool,
-    session_owned: bool,
     executing_cid: u32,
     execution_epoch: u32,
     keepalive_at: u32,
@@ -41,10 +38,9 @@ impl Link {
     const fn new() -> Self {
         Self {
             sent_at: 0,
-            session_last_used: 0,
             active: false,
+            retained: false,
             transmitting: false,
-            session_owned: false,
             executing_cid: 0,
             execution_epoch: 0,
             keepalive_at: 0,
@@ -90,13 +86,7 @@ pub unsafe extern "C" fn ck_hid_active() -> u8 {
     unsafe { u8::from(LINK.active) }
 }
 pub unsafe extern "C" fn ck_hid_busy() -> u8 {
-    unsafe {
-        u8::from(
-            LINK.active
-                || (LINK.session_owned
-                    && device_get_tick().wrapping_sub(LINK.session_last_used) < SESSION_IDLE_MS),
-        )
-    }
+    unsafe { u8::from(LINK.active || LINK.retained || LINK.transmitting) }
 }
 pub unsafe fn ck_hid_executing() -> u8 {
     unsafe { u8::from(LINK.executing) }
@@ -218,27 +208,9 @@ pub unsafe fn ck_hid_execution_end() {
         LINK.executing = false;
     }
 }
-#[inline(never)]
-pub unsafe fn poll<P: Provider>() -> u8 {
+/// Main-loop cleanup only; never dispatch a queued report during enumeration.
+pub(crate) unsafe fn service_reset<P: Provider>() {
     unsafe {
-        #[cfg(feature = "nfc")]
-        if crate::transport::nfc::is_nfc() != 0 {
-            return 0;
-        }
-        #[cfg(feature = "usb-webusb")]
-        if crate::transport::webusb::block_competitor() {
-            let requested = ck_hid_io_reset_pending() == 0
-                && ck_hid_io_configured() != 0
-                && ck_hid_io_idle() != 0
-                && peek_header(ck_hid_io_epoch()).is_some_and(|(cid, command, _)| {
-                    !matches!(cid, 0 | wire::BROADCAST)
-                        && matches!(command, wire::PING | wire::MSG | wire::CBOR | wire::WINK)
-                });
-            // INIT, CANCEL and continuations cannot revoke a foreign grant.
-            if !crate::transport::webusb::try_preempt::<P>(requested) {
-                return 0;
-            }
-        }
         if ck_hid_io_reset_pending() != 0 {
             let generation = ck_hid_io_epoch();
             ck_hid_reset::<P>();
@@ -247,6 +219,43 @@ pub unsafe fn poll<P: Provider>() -> u8 {
             core::ptr::addr_of_mut!(OUTGOING).write([0; 64]);
             ck_hid_io_ack_reset(generation);
         }
+    }
+}
+#[inline(never)]
+pub unsafe fn poll<P: Provider>() -> u8 {
+    unsafe {
+        #[cfg(feature = "nfc")]
+        if crate::transport::nfc::is_nfc() != 0 {
+            return 0;
+        }
+        service_reset::<P>();
+        #[cfg(feature = "usb-webusb")]
+        if !LINK.active && crate::transport::webusb::block_competitor() {
+            let header = (ck_hid_io_reset_pending() == 0
+                && ck_hid_io_configured() != 0
+                && ck_hid_io_idle() != 0)
+                .then(|| peek_header(ck_hid_io_epoch()))
+                .flatten();
+            let requested = header.is_some_and(|(cid, command, _)| {
+                !matches!(cid, 0 | wire::BROADCAST)
+                    && matches!(command, wire::PING | wire::MSG | wire::CBOR | wire::WINK)
+            });
+            // Idle INIT/CANCEL touch only HID state. Process them without
+            // revoking the foreign context or leaving the mailbox blocked.
+            let control = header.is_some_and(|(_, command, length)| {
+                matches!(command, wire::INIT | wire::CANCEL)
+                    || canokey_rust_core::runtime::ctaphid::preserves_context(
+                        command,
+                        usize::from(length),
+                    )
+            });
+            if header.is_some()
+                && !control
+                && !crate::transport::webusb::try_preempt::<P>(requested, true)
+            {
+                return 0;
+            }
+        }
         if ck_hid_io_reset_pending() != 0 || ck_hid_io_configured() == 0 {
             return 0;
         }
@@ -254,8 +263,8 @@ pub unsafe fn poll<P: Provider>() -> u8 {
             if LINK.transmitting && device_get_tick().wrapping_sub(LINK.sent_at) >= TX_TIMEOUT_MS {
                 ck_hid_reset::<P>();
                 LINK.active = false;
+                LINK.retained = false;
                 LINK.transmitting = false;
-                LINK.session_owned = false;
             }
             return 0;
         }
@@ -289,17 +298,14 @@ pub unsafe fn poll<P: Provider>() -> u8 {
         if LINK.abandon {
             LINK.abandon = false;
             LINK.active = false;
+            LINK.retained = false;
             LINK.transmitting = false;
-            LINK.session_owned = false;
             // Drop the suppressed response before processing the queued INIT.
             ck_hid_reset::<P>();
             return 0;
         }
-        if LINK.active || result & 2 != 0 {
-            LINK.session_owned = true;
-            LINK.session_last_used = device_get_tick();
-        }
         LINK.active = result & 2 != 0;
+        LINK.retained = result & 4 != 0;
         if result & 1 != 0 {
             if ck_hid_io_send(core::ptr::addr_of_mut!(OUTGOING).cast(), generation) == 0 {
                 ck_hid_reset::<P>();

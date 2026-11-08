@@ -1,0 +1,196 @@
+{
+  "date": "2026-11-08",
+  "scope": "Safe inclusive integer-range comparisons only; no checks or unsafe accesses removed. Measured on both unchanged products.",
+  "source_changes": [
+    {
+      "path": "crates/core/src/applets/ctap/pin.rs",
+      "before_sha256": "b78ffa3833d18f5e2849d85f7e1008585f625109bac21545afeb3df257e7582e",
+      "after_sha256": "3e3f98b70cbd93329eaaa3c18ceb6316397904be20b949127d3f8cf7843a8492"
+    },
+    {
+      "path": "crates/core/src/applets/oath/codec.rs",
+      "before_sha256": "30e3eb11ef081c688350ad7e08d30dc1bd1c9da6b7fb8dd42450cbef1346f8e5",
+      "after_sha256": "a49ad6206fa3349f69d5dcbf65c3cdf58a3b4bb522f74466f8df9e7cd01f7230"
+    },
+    {
+      "path": "crates/core/src/applets/oath/credential.rs",
+      "before_sha256": "98fae935be818648cfc8fc210ff4127fec225d70ffac33b8d7dd17a9344ce7b7",
+      "after_sha256": "a31e84bf9dc6a4c922d6839886b2916eb15780866d48fa9088d76dff6757ccb5"
+    },
+    {
+      "path": "crates/core/src/applets/oath/protocol.rs",
+      "before_sha256": "e0619b793d3ccd0ed81a85bd83234352c19bc847f6279e05a84793bf51ef65b2",
+      "after_sha256": "5d18c9050a944fc2c6d3c9d473f2f5bcdbcc589c398ada3673a256aca8b3a1d8"
+    },
+    {
+      "path": "crates/core/src/applets/openpgp/data.rs",
+      "before_sha256": "e7e5bbf8ef8de87677009d6497cf4faa5896534485b7addfa5c9963a3ef2732b",
+      "after_sha256": "7f4b22d95cb136e75975e8356ea15e7da492134a0360a204a044b95e81122a94"
+    },
+    {
+      "path": "crates/core/src/applets/openpgp/domain.rs",
+      "before_sha256": "950afa3546756d79f6b0e4e63906a301791ba5437dd4c6b78a484ad2c08536f0",
+      "after_sha256": "54e10cc8d1691442acc2358fef646914c9bc937a5016368d79a7e1fbcad0360a"
+    },
+    {
+      "path": "crates/core/src/applets/piv/pin.rs",
+      "before_sha256": "bad3e015403da6339f97ad2da63a1ac668e899e692f9ccec6f15131b7ab35c95",
+      "after_sha256": "56c7b044997eb75636c23cd68ae1567b46f960ed2453c083673844fa3587adce"
+    },
+    {
+      "path": "crates/core/src/applets/piv/protocol/metadata.rs",
+      "before_sha256": "47b97609d8453fdac5e2dcf3b9af48de9e424f14c18ff35568bafc65b44bd9c7",
+      "after_sha256": "5d1d5a275b0f93be0564fdf26e602e55d6e1e5a9642d7dc6741d7b4d79161398"
+    },
+    {
+      "path": "crates/core/src/applets/piv/protocol.rs",
+      "before_sha256": "ff1786f8f07049cff9b67247e5a669fe90d0529233da59fabd1827e25ac7f418",
+      "after_sha256": "317030b087d2daf6a3b2ae9b397e6438f64cb397c199c2a830adeb9337f197bc"
+    },
+    {
+      "path": "crates/core/src/applets/piv/repository.rs",
+      "before_sha256": "da8b7eba569540eac714f22d870da4c753fd9e82d7bbb45a306323d837fe33d3",
+      "after_sha256": "4053f03645f8abfa66c5a09626bd02526515bffca61dbe77bbc5274b4a2132b5"
+    },
+    {
+      "path": "crates/core/src/mechanisms/pin/record.rs",
+      "before_sha256": "dccbe75185a836a062f5d597438221369c4f5e086c189575eec2d7815c5ed950",
+      "after_sha256": "98c7ad96947cd9a1c91f7cfd3f3f541df4ad96f23f96d9304de90fa4fdeee4fa"
+    },
+    {
+      "path": "crates/protocol/src/nfc.rs",
+      "before_sha256": "ccee7c4ed935b4607d1ff6ac740a2b45e65a99f160e0f35b3bf4478eeaa8e7e4",
+      "after_sha256": "3c2dec6a95d85e33dc80466e2df8ffed294b44edf39181a2facd7ba2b2bad498"
+    }
+  ],
+  "wire_reports": [
+    {
+      "path": "tests/fixtures/c312-ccid/report.json",
+      "before_sha256": "a49865a15ced93befd41b7c6803f4be0d97eee7d3ee2ff1dcab4b87fab83a0a3",
+      "after_sha256": "e5e691553ef639fa9ea057d3f7739403d6ab5281c3f1c9f3610d51bb986394f9",
+      "results_unchanged": true,
+      "cases": 47
+    },
+    {
+      "path": "tests/fixtures/c312-hid-admission/report.json",
+      "before_sha256": "6c1d97d91b3955cc5d35ae868cb20672bb8043e20dbce2369b60e26990e45834",
+      "after_sha256": "07c761ec1a8d6d7d112a712635dc600b9acf1dde5fd4e757a3fb01015b2ec303",
+      "results_unchanged": true,
+      "cases": 28
+    },
+    {
+      "path": "tests/fixtures/c312-hid-channels/report.json",
+      "before_sha256": "b9824d325264adb9d9ca0f851a52fe2474fd74a02ab05347b226a42c1c3a0e81",
+      "after_sha256": "1309ad7d17ab302fc5bea1abd10aad10a71f078c02b1d542da98b98e275ba470",
+      "results_unchanged": true,
+      "cases": 40
+    },
+    {
+      "path": "tests/fixtures/c312-hid-ownership/report.json",
+      "before_sha256": "22cc0d2d681490a2165e93b487458054cb27fd10f9f4523345946f8e2e52b016",
+      "after_sha256": "438cb3514af372b2f81038616efe2689a7313dc55f8a17660ddcca5700bf117f",
+      "results_unchanged": true,
+      "cases": 21
+    },
+    {
+      "path": "tests/fixtures/c312-large-blob-nfc/report.json",
+      "before_sha256": "21eff01aa49020d4076a222a0c4d4169e5db15f985939c2e9807c5c4db286fe9",
+      "after_sha256": "feb946e4f053a8ee0c11592a2741a45db9dc9a205860c9f763ad56a77fc8b34c",
+      "results_unchanged": true,
+      "cases": 11
+    },
+    {
+      "path": "tests/fixtures/c312-large-blob-usb/report.json",
+      "before_sha256": "02c4bb06457ec2817f5a575e62eccf81769021cfabe1a491ee869120ebec2145",
+      "after_sha256": "c95459c0a6814018b554a4ca960011dfce5fa9d946be31078857f8757ef137e5",
+      "results_unchanged": true,
+      "cases": 12
+    },
+    {
+      "path": "tests/fixtures/c312-nfc/report.json",
+      "before_sha256": "f2bd95f9ab311ae189f0c316682155e7726589ec53045c6ce81b7f316ef306c1",
+      "after_sha256": "d3a1ada5e989c9369a76caaf4dd7892b0233d150cd43bac6b2238285077887d3",
+      "results_unchanged": true,
+      "cases": 65
+    },
+    {
+      "path": "tests/fixtures/c312-usb-control/report.json",
+      "before_sha256": "10d277dbdcb250816add5c0a51d705b4c225a77f5dcb961fd335a2da5f25aeea",
+      "after_sha256": "911ad80583596194a5ec48263bfb09245f38db11647ec540cadc67bb57bed740",
+      "results_unchanged": true,
+      "cases": 36
+    },
+    {
+      "path": "tests/fixtures/c312-usb-lifecycle/report.json",
+      "before_sha256": "46082485cefa515eb858a173ee4d4fe6deb27a51116a5afa4e76784be1eb583a",
+      "after_sha256": "fcce5843dfab54da1f251ee95909843a2d7bd897e7018ac0accdad6755a0d196",
+      "results_unchanged": true,
+      "cases": 33
+    },
+    {
+      "path": "tests/fixtures/c312-usb-ownership/report.json",
+      "before_sha256": "6bc227586397e9ad123abda693d4954a4986dbe8a0af1a14d3be16f3142eb967",
+      "after_sha256": "f4e25499aaab986025994ea01b62db014498939996d9f3bf944b8d0bd1875a91",
+      "results_unchanged": true,
+      "cases": 18
+    },
+    {
+      "path": "tests/fixtures/c312-usb-readiness/report.json",
+      "before_sha256": "4aa5a0f2f432a63e7f1e1471a520ad928abe33b0db079e07b70241dc4acc5590",
+      "after_sha256": "1379877c34218441b41d571685691eeafaf07c48467ea97a5efba8dcc96dfd35",
+      "results_unchanged": true,
+      "cases": 9
+    },
+    {
+      "path": "tests/fixtures/c312-webusb/report.json",
+      "before_sha256": "48e56717686ffe5b4de84667bdb47a33d6810bd0e1003f6f51cd47937897f291",
+      "after_sha256": "6591043ddb4993051b2487e8ebe3cfff2556f15661b7a51f90f82546871ca31a",
+      "results_unchanged": true,
+      "cases": 28
+    },
+    {
+      "path": "tests/fixtures/c312-webusb-readiness/report.json",
+      "before_sha256": "e5dd8d13b45a0474643f114be6066f1a05ffe13b1051a4186e44811edbfec4c4",
+      "after_sha256": "55bbf206510ee0d6a3192b0d93e9462309e12f6fec6db3a0d6bda3c545abfa19",
+      "results_unchanged": true,
+      "cases": 8
+    },
+    {
+      "path": "tests/fixtures/c312-webusb-retained/report.json",
+      "before_sha256": "43e38bc31e31bd0fd0f1970d0e0e63f2039fce2f427b0861ff44c622dcd0c28b",
+      "after_sha256": "31e6aa44b8e2cdbe818d71a6bcdfc9bd4d377a35fd551014f58040957cade800",
+      "results_unchanged": true,
+      "cases": 14
+    }
+  ],
+  "products": {
+    "devkit": {
+      "before": 179032,
+      "after": 178528,
+      "saved": 504,
+      "static_ram": 8272,
+      "udf_before": 142,
+      "udf_after": 140
+    },
+    "nfcc": {
+      "before": 187932,
+      "after": 187444,
+      "saved": 488,
+      "static_ram": 8432,
+      "udf_before": 149,
+      "udf_after": 147,
+      "overflow": 5684,
+      "diagnostic_elf_only": true
+    }
+  },
+  "validation": {
+    "core": "Full-feature Core tests pass",
+    "protocol": "All protocol suites pass",
+    "host_ctest": "46/46",
+    "clippy": "Both exact CI commands pass",
+    "literal": "14 suites;370 cases/11719 events;353 equal-output and17 existing unresolved cases; complete result arrays unchanged",
+    "independent_contracts": "Short114 C/144 Rust and extended72 C/90 Rust pass"
+  },
+  "source_review": "No additional source-unit approvals or closed hardware/acceptance blockers.",
+  "remaining": "Full C synchronization and CIU physical stack/PKE/RF/WTX and Linux sanitizer acceptance remain open. NFCC still does not fit."
+}

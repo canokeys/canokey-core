@@ -1,0 +1,46 @@
+-- No release version configuration: using development-only zero versions
+CMake Warning (deprecated) at canokey-crypto/tf-psa-crypto/CMakeLists.txt:21 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+to suppress it.
+
+-- Checking for one of the modules 'libpcsclite'
+-- Configuring done (0.2s)
+-- Generating done (0.1s)
+-- Build files have been written to: /private/var/folders/9m/d9_4xrn52kq7zl7phn1ctm5m0000gn/T/canokey-c312-reference-ktsz4f58/build-wire
+[  1%] Built target libtfpsacrypto_generated_files_target
+[  3%] Built target platform
+[  9%] Built target utilities
+[ 15%] Built target extras
+[ 15%] Generating canokey-core-git-rev.h
+[ 16%] Built target generate_ctap_get_info_cbor
+[ 16%] Generating virt-card git revision
+[ 18%] Built target everest
+[ 18%] Built target generate_canokey_core_git_rev
+[ 19%] Built target p256-m
+[ 20%] Built target pqcp
+[ 42%] Built target generate_virt_card_git_rev
+[ 49%] Built target builtin
+[ 57%] Built target tfpsacrypto
+[ 68%] Built target canokey-crypto
+[ 70%] Building C object CMakeFiles/canokey-core.dir/applets/ctap/ctap.c.o
+[ 70%] Building C object CMakeFiles/canokey-core.dir/applets/ctap/ctap-parser.c.o
+[ 70%] Building C object CMakeFiles/canokey-core.dir/applets/ctap/secret.c.o
+[ 71%] Building C object CMakeFiles/canokey-core.dir/applets/ctap/u2f.c.o
+[ 72%] Building C object CMakeFiles/canokey-core.dir/applets/openpgp/openpgp.c.o
+[ 74%] Building C object CMakeFiles/canokey-core.dir/applets/piv/piv-attestation.c.o
+[ 74%] Building C object CMakeFiles/canokey-core.dir/applets/piv/piv.c.o
+[ 75%] Building C object CMakeFiles/canokey-core.dir/src/device.c.o
+[ 76%] Building C object CMakeFiles/canokey-core.dir/tinycbor/src/cborencoder.c.o
+[ 76%] Building C object CMakeFiles/canokey-core.dir/tinycbor/src/cborparser.c.o
+[ 77%] Linking C static library libcanokey-core.a
+[ 96%] Built target canokey-core
+[ 98%] Building C object test/CMakeFiles/test_apdu.dir/test_apdu.c.o
+[ 98%] Building C object test/CMakeFiles/test_apdu.dir/__/tinycbor/src/cborvalidation.c.o
+[ 98%] Linking C executable test_apdu
+[100%] Built target test_apdu

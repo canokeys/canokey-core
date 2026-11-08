@@ -325,7 +325,7 @@ mod apdu {
         p: &mut Platform<'_, impl canokey_ports::Backends>,
         bytes: &[u8],
     ) -> Vec<u8> {
-        let reply = core.receive(1, bytes, p);
+        let reply = core.receive(4, bytes, p);
         let mut out = [0; 258];
         let n = core.transmit(reply, &mut out, p).unwrap();
         out[..n].to_vec()
@@ -391,7 +391,7 @@ mod apdu {
             [0x69, 0x86]
         );
         let mut chunk = exchange(&mut core, &mut p, &[0, 0xb0, 0, 0, 0, 4, 0]);
-        assert!(core.can_preempt()); // Large NDEF reads used an abandonable source.
+        assert!(!core.can_preempt()); // A pending response retains its owner.
         let mut total = 0;
         loop {
             total += chunk.len() - 2;
@@ -439,7 +439,7 @@ mod apdu {
             &[0, 0xa4, 4, 0, 7, 0xd2, 0x76, 0, 0, 0x85, 1, 1],
         );
         exchange(&mut core, &mut p, &[0, 0xa4, 0, 12, 2, 0, 1]);
-        core.begin_frame(1, 8, &mut p).unwrap();
+        core.begin_frame(4, 8, &mut p).unwrap();
         core.feed_frame(&[0, 0xd6, 0, 0, 3, 0xff, 0xff], &mut p)
             .unwrap();
         let reply = core.end_frame(&mut p);
@@ -450,5 +450,51 @@ mod apdu {
             exchange(&mut core, &mut p, &[0, 0xb0, 0, 0, 2]),
             [0, 17, 0x90, 0]
         );
+
+        // A legal inline extended UPDATE exceeds the old private 255-byte
+        // buffer. Neither a truncated frame nor a reset may publish its data.
+        const INLINE_BODY: usize = 279;
+        const EXTENDED_HEADER: usize = 7;
+        let mut extended = vec![0, 0xd6, 0, 0, 0, 1, 0x17];
+        extended.resize(EXTENDED_HEADER + INLINE_BODY, 0xa5);
+        core.begin_frame(4, extended.len(), &mut p).unwrap();
+        for bytes in extended[..extended.len() - 1].chunks(17) {
+            core.feed_frame(bytes, &mut p).unwrap();
+        }
+        let reply = core.end_frame(&mut p);
+        assert_eq!(core.transmit(reply, &mut out, &mut p).unwrap(), 2);
+        assert_eq!(out, [0x67, 0]);
+        assert_eq!(
+            exchange(&mut core, &mut p, &[0, 0xb0, 0, 0, 2]),
+            [0, 17, 0x90, 0]
+        );
+
+        core.begin_frame(4, extended.len(), &mut p).unwrap();
+        core.feed_frame(&extended[..extended.len() - 1], &mut p)
+            .unwrap();
+        core.reset(&mut p);
+        assert_eq!(
+            exchange(
+                &mut core,
+                &mut p,
+                &[0, 0xa4, 4, 0, 7, 0xd2, 0x76, 0, 0, 0x85, 1, 1],
+            ),
+            [0x90, 0]
+        );
+        assert_eq!(
+            exchange(&mut core, &mut p, &[0, 0xa4, 0, 12, 2, 0, 1]),
+            [0x90, 0]
+        );
+        assert_eq!(
+            exchange(&mut core, &mut p, &[0, 0xb0, 0, 0, 2]),
+            [0, 17, 0x90, 0]
+        );
+        extended[EXTENDED_HEADER..].fill(0x5a);
+        assert_eq!(exchange(&mut core, &mut p, &extended), [0x90, 0]);
+        let mut stored = [0; INLINE_BODY];
+        p.storage
+            .read_at(Record::NdefMessage, 0, &mut stored)
+            .unwrap();
+        assert_eq!(stored, [0x5a; INLINE_BODY]);
     }
 }

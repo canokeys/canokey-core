@@ -1,0 +1,9 @@
+{
+  "revision": "31e6788cb6880f9213a9f15b4ffc90d3dd4fdeed",
+  "path": "interfaces/NFC/nfc.c",
+  "scope": "Exact mechanical source transformation for this follow-up and identical merge-parent delta only. Not acceptance of the earlier58-hunk NFC implementation or physical transport.",
+  "before_sha256": "c12402e32b1556eda4f7b028a6776189aa22085d7ce14a8ae6608822f7772548",
+  "after_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+  "normalization": "Rename every tx_state substring to transfer_state, including reset_tx_state; add only the RX_INLINE comment and two-line admission-order comment.",
+  "result": "exact byte equality after the declared transformation"
+}

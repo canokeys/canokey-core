@@ -6,12 +6,17 @@ const RECORD_BYTES: usize = 32768;
 const STAGE_BYTES: usize = 8192;
 const CAPACITY: u32 = 128 * 1024;
 const METADATA_BYTES: u32 = 4096;
+// Marks bytes a short backend read did not initialize.
+const READ_FAULT_POISON: u8 = 0xa5;
 pub struct Records {
     files: [Option<Vec<u8>>; Record::COUNT],
     stage: Vec<u8>,
     config: [u8; 512],
     pub fail_read: Option<Record>,
     pub fail_write: Option<Record>,
+    response_fault: Option<(Record, usize, i32)>,
+    response_fault_result: (usize, u32, usize, i32),
+    read_hook: Option<fn()>,
 }
 impl Records {
     pub fn new() -> Self {
@@ -21,6 +26,9 @@ impl Records {
             config: [0xff; 512],
             fail_read: None,
             fail_write: None,
+            response_fault: None,
+            response_fault_result: (0, 0, 0, 0),
+            read_hook: None,
         }
     }
     fn bytes(&self, record: Record) -> Result<&[u8], StorageError> {
@@ -44,6 +52,84 @@ impl Records {
             Ok(())
         }
     }
+    /// Host-only commands schedule one real file read, without replacing the
+    /// applet's response, source cursor or transport cleanup.
+    pub fn response_fault_control(&mut self, line: &str) -> bool {
+        let Some(command) = line.strip_prefix("FAULT ") else {
+            return false;
+        };
+        if command == "STATUS" {
+            let (hits, offset, requested, returned) = self.response_fault_result;
+            println!(
+                "FAULT {} {hits} {offset} {requested} {returned}",
+                usize::from(self.response_fault.is_some())
+            );
+        } else {
+            let mut fields = command.split_whitespace();
+            assert_eq!(fields.next(), Some("ARM"));
+            let record = Record::from_id(fields.next().unwrap().parse().unwrap()).unwrap();
+            assert!(matches!(
+                record,
+                Record::CtapCertificate | Record::CtapLargeBlob
+            ));
+            let skip = fields.next().unwrap().parse().unwrap();
+            let returned: i32 = fields.next().unwrap().parse().unwrap();
+            assert!((-1..=1).contains(&returned));
+            assert!(fields.next().is_none());
+            self.response_fault = Some((record, skip, returned));
+            self.response_fault_result = (0, 0, 0, 0);
+            println!("FAULT ARMED");
+        }
+        true
+    }
+    fn read_window(
+        &mut self,
+        record: Record,
+        offset: u32,
+        out: &mut [u8],
+    ) -> Result<usize, StorageError> {
+        if let Some(hook) = self.read_hook {
+            hook();
+        }
+        let start = offset as usize;
+        if let Some((target, skip, returned)) = &mut self.response_fault
+            && record == *target
+        {
+            if *skip != 0 {
+                *skip -= 1;
+            } else {
+                let returned = *returned;
+                self.response_fault = None;
+                let n = if returned < 0 {
+                    out.len()
+                } else {
+                    returned as usize
+                };
+                assert!(returned < 0 || n < out.len());
+                // Poison the unused suffix and supply actual bytes before an
+                // error, as a native backend may. Only the reported prefix is valid.
+                out.fill(READ_FAULT_POISON);
+                out[..n].copy_from_slice(
+                    self.bytes(record)?
+                        .get(start..start + n)
+                        .ok_or(StorageError::Unavailable)?,
+                );
+                self.response_fault_result = (1, offset, out.len(), returned);
+                return if returned < 0 {
+                    Err(StorageError::Unavailable)
+                } else {
+                    Ok(n)
+                };
+            }
+        }
+        out.copy_from_slice(
+            self.bytes(record)?
+                .get(start..start + out.len())
+                .ok_or(StorageError::Unavailable)?,
+        );
+        self.read_fault(record)?;
+        Ok(out.len())
+    }
     pub fn corrupt(&mut self, record: Record, offset: usize, mask: u8) {
         self.files[record.id() as usize].as_mut().unwrap()[offset] ^= mask;
     }
@@ -51,6 +137,10 @@ impl Records {
         if let Some(mut bytes) = self.files[record.id() as usize].take() {
             bytes.fill(0);
         }
+    }
+    /// Host hardware scheduling seam; the callback cannot replace file bytes.
+    pub fn set_read_hook(&mut self, hook: fn()) {
+        self.read_hook = Some(hook);
     }
 }
 impl Drop for Records {
@@ -93,6 +183,9 @@ impl Storage for Records {
         Ok(self.bytes(record)?.len() as u32)
     }
     fn load(&mut self, record: Record, out: &mut [u8]) -> Result<usize, StorageError> {
+        if let Some(hook) = self.read_hook {
+            hook();
+        }
         let bytes = self.bytes(record)?;
         let n = bytes.len();
         out.get_mut(..n)
@@ -103,13 +196,20 @@ impl Storage for Records {
         Ok(n)
     }
     fn read_at(&mut self, record: Record, offset: u32, out: &mut [u8]) -> Result<(), StorageError> {
-        let start = offset as usize;
-        out.copy_from_slice(
-            self.bytes(record)?
-                .get(start..start + out.len())
-                .ok_or(StorageError::Unavailable)?,
-        );
-        self.read_fault(record)
+        if self.read_window(record, offset, out)? == out.len() {
+            Ok(())
+        } else {
+            Err(StorageError::Unavailable)
+        }
+    }
+    #[cfg(feature = "ctap")]
+    fn read_some_at(
+        &mut self,
+        record: Record,
+        offset: u32,
+        out: &mut [u8],
+    ) -> Result<usize, StorageError> {
+        self.read_window(record, offset, out)
     }
     fn replace(&mut self, record: Record, input: &[u8]) -> Result<(), StorageError> {
         self.write_fault(record)?;

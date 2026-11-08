@@ -9,6 +9,15 @@ struct Layout {
 }
 
 impl Layout {
+    fn native_message(frame: &[u8; 7], total: usize) -> Result<Self, Error> {
+        let lc = crate::ctaphid::message_body_length(frame, total).map_err(|_| Error::Length)?;
+        Ok(Self {
+            start: 7,
+            lc,
+            le_width: total - 7 - usize::from(lc),
+            extended: true,
+        })
+    }
     fn decode(frame: &[u8], total: usize) -> Result<Self, Error> {
         let mut result = Self {
             start: 4,
@@ -124,11 +133,12 @@ pub struct FrameDecoder {
     tail: [u8; 2],
     layout: Option<Layout>,
     failed: bool,
+    native_message: bool,
 }
 
 impl FrameDecoder {
     pub fn new(total: usize) -> Result<Self, Error> {
-        if !(4..=super::MAX_FRAME).contains(&total) {
+        if total < 4 || total > super::MAX_FRAME {
             return Err(Error::Length);
         }
         Ok(Self {
@@ -138,7 +148,18 @@ impl FrameDecoder {
             tail: [0; 2],
             layout: None,
             failed: false,
+            native_message: false,
         })
+    }
+
+    /// Native CTAPHID MSG has an explicit Lc16 even for an empty body.
+    pub fn native_message(total: usize) -> Result<Self, Error> {
+        if total < super::EXTENDED_HEADER_BYTES {
+            return Err(Error::Length);
+        }
+        let mut decoder = Self::new(total)?;
+        decoder.native_message = true;
+        Ok(decoder)
     }
 
     pub fn feed_events(
@@ -175,15 +196,23 @@ impl FrameDecoder {
                 self.received += 1;
                 bytes = &bytes[1..];
                 let ready = self.received == self.total
-                    || (self.received >= 5 && self.head[4] != 0)
+                    || (!self.native_message && self.received >= 5 && self.head[4] != 0)
                     || self.received == 7;
                 if !ready {
                     continue;
                 }
-                match Layout::decode(&self.head, self.total) {
+                let layout = if self.native_message {
+                    Layout::native_message(&self.head, self.total)
+                } else {
+                    Layout::decode(&self.head, self.total)
+                };
+                match layout {
                     Ok(layout) => {
                         // Case 2 Le is itself part of the buffered envelope.
-                        if layout.lc == 0 && layout.le_width != 0 {
+                        if layout.lc == 0
+                            && layout.le_width != 0
+                            && layout.start + layout.le_width <= self.received
+                        {
                             self.tail[..layout.le_width].copy_from_slice(
                                 &self.head[layout.start..layout.start + layout.le_width],
                             );

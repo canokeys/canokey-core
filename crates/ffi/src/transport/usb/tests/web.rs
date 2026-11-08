@@ -2,7 +2,7 @@
 use super::*;
 use crate::transport::webusb::{block_competitor, try_preempt};
 use canokey_rust_core::runtime::webusb::{
-    RESPONSE_LIMIT, STATUS_HOLD, STATUS_IDLE, STATUS_PROCESSING,
+    RESPONSE_LIMIT, STATUS_HOLD, STATUS_IDLE, STATUS_PROCESSING, STATUS_RESPONSE,
 };
 
 struct Policy {
@@ -13,6 +13,7 @@ struct Policy {
     resets: usize,
     exchanges: usize,
     preemptable: bool,
+    input: std::vec::Vec<u8>,
 }
 static mut POLICY: Policy = Policy {
     ccid_idle: true,
@@ -22,6 +23,7 @@ static mut POLICY: Policy = Policy {
     resets: 0,
     exchanges: 0,
     preemptable: false,
+    input: std::vec::Vec::new(),
 };
 fn policy() -> &'static mut Policy {
     unsafe { &mut *core::ptr::addr_of_mut!(POLICY) }
@@ -39,23 +41,34 @@ pub(crate) unsafe fn can_preempt() -> bool {
 pub(crate) unsafe fn ck_core_reset() {
     policy().resets += 1;
 }
-pub(crate) unsafe fn ck_core_exchange(
-    owner: u8,
-    input: *const u8,
-    length: usize,
-    out: *mut u8,
-    capacity: usize,
-) -> i32 {
+pub(crate) fn web_begin(_length: usize) {
+    policy().input.clear();
+}
+pub(crate) fn web_feed(bytes: &[u8]) {
+    policy().input.extend_from_slice(bytes);
+}
+pub(crate) unsafe fn web_finish(owner: u8, out: *mut u8, capacity: usize) -> i32 {
+    let input = policy().input.clone();
+    let length = input.len();
     assert_eq!(owner, crate::transport::owners::OWNER_WEBUSB);
-    assert_eq!(input, out.cast_const());
     assert_eq!(capacity, RESPONSE_LIMIT);
-    assert!(matches!(length, 5 | 261));
-    let input = unsafe { core::slice::from_raw_parts(input, length) };
+    assert!(matches!(length, 5 | 261 | 288));
+    let input = input.as_slice();
     if length == SELECT.len() {
         assert_eq!(input, &SELECT);
     } else {
+        // The261-byte transport case is a valid short Case4S APDU, not
+        // arbitrary bytes that bypass production envelope validation.
+        let header = [0x80, 0x10, 0, 0, 255];
         for (i, byte) in input.iter().enumerate() {
-            assert_eq!(*byte, i as u8);
+            assert_eq!(
+                *byte,
+                if length == 261 && i < header.len() {
+                    header[i]
+                } else {
+                    i as u8
+                }
+            );
         }
     }
     policy().exchanges += 1;
@@ -88,6 +101,35 @@ pub(super) fn scenario() {
     unsafe {
         let mut bytes = [0; 256];
         let interface = u16::from(INTERFACES.hid);
+        for reset in [false, true] {
+            if reset {
+                bus_reset();
+                setup(DEVICE_OUT, SET_ADDRESS, u16::from(ADDRESS), 0, 0);
+                status();
+            } else {
+                setup(DEVICE_OUT, SET_CONFIGURATION, 0, 0, 0);
+                status();
+            }
+            setup(DEVICE_OUT, SET_CONFIGURATION, 1, 0, 0);
+            status();
+            assert!(!controller().ready);
+            let exchanges = policy().exchanges;
+            let blocked = block_competitor();
+            setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
+            assert!(controller().halted[0] && controller().halted[1]);
+            assert_eq!(block_competitor(), blocked);
+            setup(VENDOR_INTERFACE_IN, 2, 0, interface, 1);
+            assert_eq!(read_control(&mut bytes), 1);
+            assert_eq!(bytes[0], STATUS_IDLE);
+            setup(DEVICE_IN, GET_CONFIGURATION, 0, 0, 1);
+            assert_eq!(read_control(&mut bytes), 1);
+            assert_eq!(bytes[0], 1);
+            crate::transport::webusb::poll::<crate::platform::Native>();
+            assert_eq!(policy().exchanges, exchanges);
+            assert!(!block_competitor());
+            assert!(service_complete(service_generation()));
+            assert!(controller().ready);
+        }
         // BOS, WebUSB URL index 1 and Microsoft OS 2.0 descriptor set.
         setup(DEVICE_IN, GET_DESCRIPTOR, 0x0f00, 0, 255);
         assert_eq!(read_control(&mut bytes), 57);
@@ -137,11 +179,11 @@ pub(super) fn scenario() {
         assert_eq!(read_control(&mut bytes), 1);
         assert_eq!(bytes[0], STATUS_HOLD);
         let before = policy().resets;
-        assert!(!try_preempt::<crate::platform::Native>(true));
+        assert!(!try_preempt::<crate::platform::Native>(true, false));
         policy().preemptable = true;
-        assert!(!try_preempt::<crate::platform::Native>(false));
+        assert!(!try_preempt::<crate::platform::Native>(false, false));
         assert_eq!(policy().resets, before);
-        assert!(try_preempt::<crate::platform::Native>(true));
+        assert!(try_preempt::<crate::platform::Native>(true, false));
         assert_eq!(policy().resets, before + 1);
         assert!(!block_competitor());
         controller().now += 2000;
@@ -153,6 +195,7 @@ pub(super) fn scenario() {
         assert_eq!(bytes[0], STATUS_IDLE);
         setup(VENDOR_INTERFACE_OUT, 0, 0, interface, 261);
         let mut fragment: [u8; EP0_PACKET_BYTES] = core::array::from_fn(|i| i as u8);
+        fragment[..5].copy_from_slice(&[0x80, 0x10, 0, 0, 255]);
         assert_eq!(ck_usb_out(0, fragment.as_ptr(), fragment.len() as u16), 0);
         crate::transport::webusb::poll::<crate::platform::Native>();
         for offset in (EP0_PACKET_BYTES..261).step_by(EP0_PACKET_BYTES) {
@@ -160,9 +203,10 @@ pub(super) fn scenario() {
             for (i, byte) in fragment.iter_mut().enumerate() {
                 *byte = (offset + i) as u8;
             }
-            assert_eq!(ck_usb_out(0, fragment.as_ptr(), count as u16), 1);
+            assert_eq!(ck_usb_out(0, fragment.as_ptr(), count as u16), 0);
+            crate::transport::webusb::poll::<crate::platform::Native>();
         }
-        status();
+        // The mock execution issues a new SETUP after the final packet.
         crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().exchanges, 2);
         setup(VENDOR_INTERFACE_IN, 1, 0, interface, 2);
@@ -170,6 +214,9 @@ pub(super) fn scenario() {
         assert_eq!(&bytes[..2], &[0, 1]);
         controller().now += 2000;
         crate::transport::webusb::poll::<crate::platform::Native>();
+        let resets = policy().resets;
+        assert!(block_competitor());
+        assert_eq!(policy().resets, resets);
         setup(VENDOR_INTERFACE_OUT, 0, 0, interface, 0);
         setup(VENDOR_INTERFACE_IN, 2, 0, interface, 1);
         assert_eq!(read_control(&mut bytes), 1);
@@ -209,8 +256,90 @@ pub(super) fn scenario() {
         status();
         setup(DEVICE_OUT, SET_CONFIGURATION, 1, 0, 0);
         status();
+        crate::transport::webusb::service_reset::<crate::platform::Native>();
+        assert!(service_complete(service_generation()));
         setup(VENDOR_INTERFACE_IN, 2, 0, interface, 1);
         assert_eq!(read_control(&mut bytes), 1);
         assert_eq!(bytes[0], STATUS_IDLE);
+        retained_lifecycle();
+        // Whole-envelope rejection must produce a pollable APDU status
+        // without beginning a Core frame or cancelling its selected context.
+        setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
+        assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
+        crate::transport::webusb::poll::<crate::platform::Native>();
+        setup(VENDOR_INTERFACE_IN, 1, 0, interface, 2);
+        assert_eq!(read_control(&mut bytes), 2);
+        let exchanges = policy().exchanges;
+        let resets = policy().resets;
+        let malformed = [0, 0xc0, 0, 0, 2, 0xaa];
+        setup(
+            VENDOR_INTERFACE_OUT,
+            0,
+            0,
+            interface,
+            malformed.len() as u16,
+        );
+        assert_eq!(ck_usb_out(0, malformed.as_ptr(), malformed.len() as u16), 0);
+        crate::transport::webusb::poll::<crate::platform::Native>();
+        assert_eq!(policy().exchanges, exchanges);
+        assert_eq!(policy().resets, resets);
+        setup(VENDOR_INTERFACE_IN, 1, 0, interface, 2);
+        assert_eq!(read_control(&mut bytes), 2);
+        assert_eq!(&bytes[..2], &[0x67, 0]);
+    }
+}
+
+fn retained_lifecycle() {
+    unsafe {
+        let interface = u16::from(INTERFACES.hid);
+        let mut bytes = [0; 2];
+        for reset in [false, true] {
+            for hold in [false, true] {
+                setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
+                assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
+                crate::transport::webusb::poll::<crate::platform::Native>();
+                if hold {
+                    setup(VENDOR_INTERFACE_IN, 1, 0, interface, 2);
+                    assert_eq!(read_control(&mut bytes), 2);
+                }
+                let exchanges = policy().exchanges;
+                if reset {
+                    bus_reset();
+                    setup(DEVICE_OUT, SET_ADDRESS, u16::from(ADDRESS), 0, 0);
+                    status();
+                } else {
+                    setup(DEVICE_OUT, SET_CONFIGURATION, 0, 0, 0);
+                    status();
+                }
+                setup(DEVICE_OUT, SET_CONFIGURATION, 1, 0, 0);
+                status();
+                assert!(!controller().ready);
+                for request in [1, 0] {
+                    setup(VENDOR_INTERFACE_IN, 2, 0, interface, 1);
+                    assert_eq!(read_control(&mut bytes), 1);
+                    assert_eq!(bytes[0], if hold { STATUS_HOLD } else { STATUS_RESPONSE });
+                    setup(
+                        if request == 0 {
+                            VENDOR_INTERFACE_OUT
+                        } else {
+                            VENDOR_INTERFACE_IN
+                        },
+                        request,
+                        0,
+                        interface,
+                        SELECT.len() as u16,
+                    );
+                    assert!(controller().halted[0] && controller().halted[1]);
+                }
+                crate::transport::webusb::poll::<crate::platform::Native>();
+                assert_eq!(policy().exchanges, exchanges);
+                assert!(service_complete(service_generation()));
+                setup(VENDOR_INTERFACE_IN, 2, 0, interface, 1);
+                assert_eq!(read_control(&mut bytes), 1);
+                assert_eq!(bytes[0], STATUS_IDLE);
+                setup(VENDOR_INTERFACE_IN, 1, 0, interface, 2);
+                assert!(controller().halted[0] && controller().halted[1]);
+            }
+        }
     }
 }

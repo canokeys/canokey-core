@@ -2,6 +2,7 @@
 //! Type-4 NDEF file policy. Payloads are read/written through bounded caller
 //! slices, never buffered as a second maximum-size NDEF object.
 #![forbid(unsafe_code)]
+use crate::ports::Memory as _;
 use canokey_protocol::response::StatusWord as Sw;
 pub const AID: &[u8] = &[0xd2, 0x76, 0, 0, 0x85, 1, 1];
 pub const FILE_LIMIT: usize = 1024;
@@ -304,11 +305,10 @@ impl<T: crate::ports::Storage + ?Sized> Store for T {
     }
 }
 
-/// Stored in the registry's mutually exclusive applet enum. This short frame
-/// window overlaps other classic applet state, never CTAP/crypto scratch.
+/// Retains file/response controls only. Inline command bytes borrow the shared
+/// classic workspace until the complete APDU frame has been validated.
 pub struct Applet {
     file: Ndef,
-    input: [u8; 255],
     used: usize,
     header: canokey_protocol::apdu::Header,
     response_offset: usize,
@@ -323,7 +323,6 @@ impl Applet {
     pub const fn new() -> Self {
         Self {
             file: Ndef::new(),
-            input: [0; 255],
             used: 0,
             header: canokey_protocol::apdu::Header {
                 cla: 0,
@@ -341,36 +340,50 @@ impl Applet {
     ) -> Result<(), Sw> {
         Ndef::new().install(reset, p.storage)
     }
-    pub fn cancel(&mut self) {
-        self.input.fill(0);
+    pub fn cancel(
+        &mut self,
+        w: &mut crate::runtime::workspace::Workspace<'_>,
+        memory: &(impl crate::ports::Memory + ?Sized),
+    ) {
+        memory.wipe(w.input);
         self.used = 0;
         self.file.abort_write();
     }
-    pub fn begin(&mut self, h: canokey_protocol::apdu::Header) -> Result<(), Sw> {
-        self.cancel();
+    pub fn begin(
+        &mut self,
+        h: canokey_protocol::apdu::Header,
+        w: &mut crate::runtime::workspace::Workspace<'_>,
+        memory: &(impl crate::ports::Memory + ?Sized),
+    ) -> Result<(), Sw> {
+        self.cancel(w, memory);
         self.header = h;
         if !matches!(h.ins, INS_SELECT | INS_READ_BINARY | INS_UPDATE_BINARY) {
             return Err(Sw::INS_NOT_SUPPORTED);
         }
         Ok(())
     }
-    pub fn consume(&mut self, bytes: &[u8]) -> Result<(), Sw> {
-        let cap = self.input.len();
-        crate::applets::append_bounded(&mut self.used, &mut self.input, cap, bytes)
+    pub fn consume(
+        &mut self,
+        bytes: &[u8],
+        w: &mut crate::runtime::workspace::Workspace<'_>,
+    ) -> Result<(), Sw> {
+        let cap = w.input.len();
+        crate::applets::append_bounded(&mut self.used, w.input, cap, bytes)
             .ok_or(Sw::WRONG_LENGTH)?;
         Ok(())
     }
     pub fn end_frame(
         &mut self,
         last: bool,
+        w: &mut crate::runtime::workspace::Workspace<'_>,
         p: &mut crate::Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         if self.header.ins == INS_UPDATE_BINARY {
             let offset = u16::from_be_bytes([self.header.p1, self.header.p2]) as usize;
             let result = self
                 .file
-                .update(offset, &self.input[..self.used], !last, p.storage);
-            self.input.fill(0);
+                .update(offset, &w.input[..self.used], !last, p.storage);
+            p.memory.wipe(w.input);
             self.used = 0;
             result
         } else {
@@ -380,12 +393,13 @@ impl Applet {
     pub fn finish(
         &mut self,
         le: u32,
+        w: &mut crate::runtime::workspace::Workspace<'_>,
         p: &mut crate::Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(u32, Sw), Sw> {
         match self.header.ins {
             INS_SELECT => {
                 self.file
-                    .select(self.header.p1, self.header.p2, &self.input[..self.used])?;
+                    .select(self.header.p1, self.header.p2, &w.input[..self.used])?;
                 Ok((0, Sw::SUCCESS))
             }
             INS_READ_BINARY => {

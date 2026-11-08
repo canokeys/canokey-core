@@ -202,6 +202,7 @@ impl<'a> Encoder<&'a mut [u8]> {
         &self.output
     }
 
+    #[inline(never)]
     fn raw(&mut self, bytes: &[u8]) -> &mut Self {
         if self.failed || self.output.len() < bytes.len() {
             self.failed = true;

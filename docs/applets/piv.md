@@ -28,7 +28,7 @@ dispatcher. NFCC support remains deferred for all independent Rust profiles.
 | Retry limits | `FA <PIN limit> <PUK limit>`, empty body; both management and PIN authorization, limits 1..15, resets credentials and revokes grants. |
 | Factory reset | `FB 00 00`, empty body; requires both PIN and PUK blocked. Preserves F9 key/certificate and algorithm mapping. |
 | ADMIN PIV reset | In ADMIN, `04 00 00`, empty body, verified ADMIN PIN; revokes PIV session grants and resets PIV credentials/ordinary keys/objects. Preserves F9 and algorithm mapping. |
-| Algorithm mapping | `EE 01/02 00` reads/writes the C ten-byte configuration; writes require management authorization. |
+| Algorithm mapping | `EE 01/02 00` reads/writes the twelve-byte configuration; writes require management authorization. |
 | Attestation | `F9 <slot> 00`, empty body; generated keys only, no authentication, P-256 F9 signer and provisioned F9 certificate required. |
 
 Ordinary asymmetric slots are 9A/9C/9D/9E and 82..95; F9 accepts P-256 and
@@ -75,14 +75,35 @@ agreement roles, custom identity binding and 125..128-byte BER transitions.
 Plain ECDH is rejected for SM2. Initiator ephemeral material lives in the shared
 workspace, is checked against its public key and current slot key before use,
 and is cleared on failure, signing GA, non-GA commands, selection and reset.
+While an initiator exchange retains shared scratch, native HID MSG/CBOR and
+staged requests return channel-busy. Inline PING/WINK preserve that state.
+Management challenges live in applet-owned fields, so native execution may
+borrow the workspace between their two steps without revoking authorization.
+The same borrowing rule applies when the card context belongs to WebUSB.
+
 A truncated nested agreement TLV returns 6700; complete but invalid peer
 templates return 6A80. Both errors return no key bytes.
 
-ML-DSA-65 persists a 32-byte seed (import tag 09), streams its 1952-byte public
-key and 3309-byte signature, and hashes messages incrementally. ML-KEM-768
-persists only 64-byte d||z (import tag 0A), derives its 1184-byte public key,
-and decapsulates 1088-byte ciphertexts into 32-byte shared secrets with implicit
-rejection. Neither expanded private keys nor complete long messages are stored.
+Both ML-DSA parameter sets persist a32-byte seed (import tag09), hash messages
+incrementally, and share the public/signature streaming adapter. Both ML-KEM
+sets persist64-byte d||z (import tag0A), derive their public keys and decapsulate
+with implicit rejection into32-byte shared secrets.
+
+| Algorithm | Default APDU ID | Native ID | Public bytes | Signature / ciphertext bytes |
+| --- | --- | --- | ---: | ---: |
+| ML-DSA-65 | E2 | 11 | 1952 | 3309 |
+| ML-KEM-768 | E3 | 10 | 1184 | 1088 |
+| ML-DSA-44 | E4 | 13 | 1312 | 2420 |
+| ML-KEM-512 | E5 | 12 | 800 | 768 |
+
+The default mapping is `01 E0 05 16 E1 53 15 54 E2 E3 E4 E5`.
+All extension IDs must be unique and avoid reserved values, including TDEA03;
+validation also applies with extensions disabled. TDEA keys are unsupported.
+Neither expanded private keys nor complete long messages are stored.
+The native1312-byte DSA stage is inside CryptoScratch2400. On CIU, DSA44
+emits32 challenge bytes, four576-byte z chunks and84 hint bytes; hints persist
+in the sign state outside the stage. Host primitives can coalesce chunks.
+Bounded reads drain each chunk before refill and return exactly2420 bytes.
 PQ GENERATE stages only the compact metadata/seed record. The previous slot and
 name remain intact until the final public-response chunk has been generated;
 that chunk commits the replacement before returning success. Selection, reset,
@@ -97,10 +118,12 @@ Attestation generates DER X.509 with the F9 certificate's subject as issuer and
 its validity period, random serial, CanoKey subject, device serial and policy
 extensions. Serial numbers use minimal positive DER INTEGER encoding, including
 leading-zero removal and sign padding; the unit suite covers these boundaries.
-It covers RSA, all supported EC/Ed/X curves and ML-DSA. Like C,
-ML-KEM attestation is rejected. The response is an 18-segment plan with at most
-256 encoded bytes; issuer/validity are read from storage, and the ML-DSA public
-key is regenerated for the hashing and response passes.
+It covers RSA, all supported EC/Ed/X curves, both ML-DSA sets and both ML-KEM
+sets. KEM subject attestation extends the C3.1.2 command contract; F9 remains
+a P-256 issuer. The response is an 18-segment plan with at most
+256 encoded bytes; issuer/validity are read from storage, and the PQ public
+key is regenerated for the hashing and response passes, restarting its stream
+after issuer signing can overwrite PKE.
 
 ## Storage and lifecycle design
 
@@ -113,7 +136,7 @@ alone cannot make an uncertain cache authoritative.
 Verification patches only the selected PIN/PUK retry byte. Full credential
 changes still publish both credentials and their metadata atomically.
 Algorithm mapping updates validate the input and atomically patch the fixed
-10-byte record before updating the session cache. Repeated identical mappings
+12-byte record before updating the session cache. Repeated identical mappings
 still write: this infrequent command omits readback/deduplication to reduce ROM.
 
 PIV records use hexadecimal filenames `0e`..`4c`, with no directory prefix.
@@ -185,8 +208,9 @@ cmake --preset devkit
 cmake --build --preset build-devkit
 ```
 
-The Python PIV suite requires `cryptography >= 50` for independent ML-DSA/ML-KEM
-verification. It tests classical/PQ key generation and imports, signatures,
+The Python PIV suite uses `cryptography >= 50` for independent ML-DSA/ML-KEM
+verification and pinned `kyber-py==1.2.0` for ML-KEM-512, which cryptography
+does not expose. Install `tests/integration/requirements.txt`. It tests classical/PQ key generation and imports, signatures,
 ECDH and SM2 agreement, implicit rejection, X.509 attestation, management auth,
 objects, policies, retry/reset, all retired slots, interrupted input and
 abandoned output. SM2 arithmetic is independently checked by `tests/piv_sm2.py`.

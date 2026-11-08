@@ -229,22 +229,21 @@ impl<S: Storage + ?Sized, M: Memory + ?Sized> Repository for Store<'_, S, M> {
             .map_err(io)?;
         Ok(bytes == name)
     }
-    fn load(&mut self, id: CredentialId) -> Result<Credential, Error> {
-        let entry = self.locate(id)?;
-        let mut bytes = [0; codec::LENGTH];
-        let result = self
-            .storage
-            .read_at(
-                Record::OathRecords,
-                entry.offset + ID_BYTES as u32,
-                &mut bytes,
-            )
-            .map_err(io)
-            .and_then(|()| codec::validate(&bytes));
-        let result = result.map(|()| Credential { bytes });
-        // A Rust move may lower to a stack copy. Erase the read buffer on both
-        // paths, even when the returned credential uses the same encoding.
-        self.memory.wipe(&mut bytes);
+    fn load_into(&mut self, id: CredentialId, out: &mut Credential) -> Result<(), Error> {
+        // Read in place: no intermediate stack copy of the key exists.
+        let result = self.locate(id).and_then(|entry| {
+            self.storage
+                .read_at(
+                    Record::OathRecords,
+                    entry.offset + ID_BYTES as u32,
+                    &mut out.bytes,
+                )
+                .map_err(io)
+                .and_then(|()| codec::validate(&out.bytes))
+        });
+        if result.is_err() {
+            self.memory.wipe(&mut out.bytes);
+        }
         result
     }
     fn insert(&mut self, value: &Credential) -> Result<CredentialId, Error> {
@@ -295,11 +294,11 @@ impl<S: Storage + ?Sized, M: Memory + ?Sized> Repository for Store<'_, S, M> {
     }
 }
 impl<S: Storage + ?Sized, M: Memory + ?Sized> auth::Repository for Store<'_, S, M> {
-    fn load(&mut self) -> Result<Option<auth::Metadata>, Error> {
+    fn load_into(&mut self, out: &mut auth::Metadata) -> Result<bool, Error> {
         let mut bytes = [0; auth::METADATA_LENGTH];
         let result = match self.storage.load(Record::OathMetadata, &mut bytes) {
-            Err(StorageError::Missing) => Ok(None),
-            Ok(n) => auth::Metadata::decode(&bytes[..n]).map(Some),
+            Err(StorageError::Missing) => Ok(false),
+            Ok(n) => out.decode_into(&bytes[..n]).map(|()| true),
             Err(_) => Err(Error::Storage),
         };
         self.memory.wipe(&mut bytes);

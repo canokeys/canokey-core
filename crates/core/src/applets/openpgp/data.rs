@@ -81,7 +81,7 @@ impl OpenPgp {
                     | tag::TOUCH_CACHE
                     | tag::CA_FINGERPRINTS
             )
-            || (tag::CA_FINGERPRINT_1..=tag::CA_FINGERPRINT_3).contains(&tag)
+            || (tag >= tag::CA_FINGERPRINT_1 && tag <= tag::CA_FINGERPRINT_3)
     }
     #[inline(never)]
     pub(super) fn get(
@@ -269,7 +269,7 @@ impl OpenPgp {
         b: &[u8],
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
-        if (tag::ALGORITHM_SIG..=tag::ALGORITHM_AUT).contains(&tag) {
+        if tag >= tag::ALGORITHM_SIG && tag <= tag::ALGORITHM_AUT {
             let r = role_of(tag, tag::ALGORITHM_SIG);
             let a = Algorithm::parse(b, r).ok_or(Sw::WRONG_DATA)?;
             let mut m = repo::meta(p, r)?;
@@ -280,9 +280,9 @@ impl OpenPgp {
             }
             return Ok(());
         }
-        if (tag::FINGERPRINT_SIG..=tag::FINGERPRINT_AUT).contains(&tag)
-            || (tag::CREATED_SIG..=tag::CREATED_AUT).contains(&tag)
-            || (tag::UIF_SIG..=tag::UIF_AUT).contains(&tag)
+        if (tag >= tag::FINGERPRINT_SIG && tag <= tag::FINGERPRINT_AUT)
+            || (tag >= tag::CREATED_SIG && tag <= tag::CREATED_AUT)
+            || (tag >= tag::UIF_SIG && tag <= tag::UIF_AUT)
         {
             let (r, off, n) = if tag <= tag::FINGERPRINT_AUT {
                 (

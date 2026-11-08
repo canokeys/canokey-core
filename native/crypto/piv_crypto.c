@@ -2,7 +2,9 @@
 // Primitive streaming adapters only. Rust owns APDU parsing, authorization and storage.
 #include "crypto_ops.h"
 #include <ml-dsa-65.h>
+#include <ml-dsa-44.h>
 #include <ml-kem-768.h>
+#include <ml-kem-512.h>
 #include <sha3.h>
 #include <ecc.h>
 #include <sm3.h>
@@ -35,7 +37,7 @@ typedef struct {
     struct {
       union {
         mldsa_keygen_state_t keygen;
-        mldsa_sign_state_t sign;
+        mldsa44_sign_state_t sign;
       } state;
       uint8_t stage[MLDSA_STAGE_BYTES];
       SHA3_CTX_T hash;
@@ -53,20 +55,51 @@ typedef struct {
   } data;
 } stream_t;
 _Static_assert(sizeof(stream_t) <= CK_CRYPTO_SCRATCH_BYTES, "Shared Rust crypto scratch size");
+_Static_assert(_Alignof(stream_t) <= 8, "Rust CryptoScratch alignment");
+static int is_dsa(uint32_t alg) { return alg == MLDSA65 || alg == MLDSA44; }
+static uint32_t dsa_public_bytes(uint32_t alg) {
+  return alg == MLDSA44 ? MLDSA44_PUBLIC_KEY_BYTES : MLDSA_PK_BYTES;
+}
+static uint32_t dsa_signature_bytes(uint32_t alg) {
+  return alg == MLDSA44 ? MLDSA44_SIGNATURE_BYTES : MLDSA_SIG_BYTES;
+}
+#ifdef RUST_CORE_PIV
+static int is_kem(uint32_t alg) { return alg == MLKEM768 || alg == MLKEM512; }
+static uint32_t kem_public_bytes(uint32_t alg) {
+  return alg == MLKEM512 ? MLKEM512_PUBLIC_KEY_BYTES : MLKEM768_PUBLIC_KEY_BYTES;
+}
+static uint32_t kem_ciphertext_bytes(uint32_t alg) {
+  return alg == MLKEM512 ? MLKEM512_CIPHERTEXT_BYTES : MLKEM768_CIPHERTEXT_BYTES;
+}
+#endif
 // Advance the ML-DSA generator only after its previous stage bytes were read.
 // This preserves one-pass output without retaining a full public key/signature.
 static int refill(stream_t *s) {
-  uint8_t phase = s->data.dsa.state.keygen.phase;
-  int n = s->kind == STREAM_PUBLIC ? ml_dsa_65_keygen_streaming(s->data.dsa.stage, sizeof(s->data.dsa.stage),
-                                                                &s->data.dsa.state.keygen, NULL)
-                                   : ml_dsa_65_sign_seed_mu_streaming(s->data.dsa.stage, sizeof(s->data.dsa.stage),
-                                                                      &s->data.dsa.state.sign, s->data.dsa.mu);
+  const int public = s->kind == STREAM_PUBLIC;
+  const uint8_t phase = public ? s->data.dsa.state.keygen.phase : s->data.dsa.state.sign.core.phase;
+  const uint32_t total = public ? dsa_public_bytes(s->alg) : dsa_signature_bytes(s->alg);
+  if (!is_dsa(s->alg) || s->emitted >= total || (s->emitted != 0 && phase == 0)) return -1;
+  int n;
+  if (public) {
+    n = s->alg == MLDSA44
+            ? ml_dsa_44_keygen_streaming(s->data.dsa.stage, sizeof(s->data.dsa.stage), &s->data.dsa.state.keygen, NULL)
+            : ml_dsa_65_keygen_streaming(s->data.dsa.stage, sizeof(s->data.dsa.stage), &s->data.dsa.state.keygen, NULL);
+  } else {
+    n = s->alg == MLDSA44
+            ? ml_dsa_44_sign_seed_mu_streaming(s->data.dsa.stage, sizeof(s->data.dsa.stage),
+                                               &s->data.dsa.state.sign, s->data.dsa.mu)
+            : ml_dsa_65_sign_seed_mu_streaming(s->data.dsa.stage, sizeof(s->data.dsa.stage),
+                                               &s->data.dsa.state.sign.core, s->data.dsa.mu);
+  }
   if (n <= 0 || (size_t)n > sizeof(s->data.dsa.stage)) return -1;
-  // Keygen is exactly two chunks. Reject a short/oversized chunk or a backend
-  // which fails to terminate; Rust owns aborting and releasing the stream.
-  if (s->kind == STREAM_PUBLIC &&
-      (phase > 1 || n != (phase == 0 ? MLDSA_STAGE_BYTES : MLDSA_PK_BYTES - MLDSA_STAGE_BYTES) ||
-       s->data.dsa.state.keygen.phase != (phase == 0 ? 1 : 0)))
+  if ((uint32_t)n > total - s->emitted) return -1;
+  const int last = s->emitted + (uint32_t)n == total;
+  const uint8_t next = public ? s->data.dsa.state.keygen.phase : s->data.dsa.state.sign.core.phase;
+  if (last != (next == 0)) return -1;
+  // Public44 is one1312-byte chunk; public65 is1312+640. Signing may
+  // coalesce differently on the host, but must terminate at the selected size.
+  if (public && (phase > 1 || (uint32_t)n != (phase == 0 ? MLDSA_STAGE_BYTES : total - MLDSA_STAGE_BYTES) ||
+                 (!last && next != 1)))
     return -1;
   s->position = 0;
   s->length = (uint32_t)n;
@@ -101,11 +134,15 @@ static __attribute__((noinline)) int sm2_finish(stream_t *s) {
 }
 void ck_stream_abort(void *scratch) {
   stream_t *s = scratch;
-  if (s->alg == MLDSA65) {
+  if (is_dsa(s->alg)) {
     if (s->kind == STREAM_PUBLIC)
       ml_dsa_65_keygen_streaming_abort(&s->data.dsa.state.keygen);
-    else if (s->kind == STREAM_SIGNING || s->kind == STREAM_SIGNATURE)
-      ml_dsa_65_sign_streaming_abort(&s->data.dsa.state.sign);
+    else if (s->kind == STREAM_SIGNING || s->kind == STREAM_SIGNATURE) {
+      if (s->alg == MLDSA44)
+        ml_dsa_44_sign_streaming_abort(&s->data.dsa.state.sign);
+      else
+        ml_dsa_65_sign_streaming_abort(&s->data.dsa.state.sign.core);
+    }
   }
   if (s->alg == ED25519) ed25519_randomized_sign_clear(&s->data.ed.state);
   memzero(s, sizeof(*s));
@@ -114,16 +151,21 @@ int32_t ck_stream_read(void *scratch, uint8_t *out, size_t capacity) {
   stream_t *s = scratch;
   if (s->kind != STREAM_PUBLIC && s->kind != STREAM_SIGNATURE) return -1;
   size_t written = 0;
-  uint32_t total = s->kind == STREAM_PUBLIC
-                       ? MLDSA_PK_BYTES
-                       : (s->alg == ED25519 || s->alg == SM2 ? EC_SIGNATURE_BYTES : MLDSA_SIG_BYTES);
+  uint32_t total;
+  if (is_dsa(s->alg))
+    total = s->kind == STREAM_PUBLIC ? dsa_public_bytes(s->alg) : dsa_signature_bytes(s->alg);
+  else if (s->kind == STREAM_SIGNATURE && (s->alg == ED25519 || s->alg == SM2))
+    total = EC_SIGNATURE_BYTES;
 #ifdef RUST_CORE_PIV
-  if (s->alg == MLKEM768) total = MLKEM768_PUBLIC_KEY_BYTES;
+  else if (s->kind == STREAM_PUBLIC && is_kem(s->alg))
+    total = kem_public_bytes(s->alg);
 #endif
-  if (capacity > total - s->emitted) return -1;
+  else
+    return -1;
+  if (s->emitted > total || capacity > total - s->emitted) return -1;
   while (written < capacity) {
     if (s->position == s->length) {
-      if (s->alg != MLDSA65 || refill(s) < 0) return -1;
+      if (!is_dsa(s->alg) || refill(s) < 0) return -1;
     }
     size_t count = s->length - s->position;
     if (count > capacity - written) count = capacity - written;
@@ -131,7 +173,7 @@ int32_t ck_stream_read(void *scratch, uint8_t *out, size_t capacity) {
                             : s->alg == SM2     ? s->data.sm2.signature
                                                 : s->data.dsa.stage;
 #ifdef RUST_CORE_PIV
-    if (s->alg == MLKEM768) source = s->data.kem.public_key;
+    if (is_kem(s->alg)) source = s->data.kem.public_key;
 #endif
     memcpy(out + written, source + s->position, count);
     s->position += count;
@@ -147,17 +189,19 @@ int32_t ck_stream_public_init(uint8_t alg, void *scratch, const uint8_t *input, 
   s->kind = STREAM_PUBLIC;
   // Only PIV exposes ML-KEM public keys and decapsulation.
 #ifdef RUST_CORE_PIV
-  if (alg == MLKEM768 && n == MLKEM768_KEYGEN_SEED_BYTES) {
+  if (is_kem(alg) && n == MLKEM768_KEYGEN_SEED_BYTES) {
     memcpy(s->data.kem.seed, input, sizeof(s->data.kem.seed));
-    if (ml_kem_768_seed_to_public(s->data.kem.public_key, s->data.kem.seed) < 0) return -1;
-    s->length = MLKEM768_PUBLIC_KEY_BYTES;
-    return MLKEM768_PUBLIC_KEY_BYTES;
+    int r = alg == MLKEM512 ? ml_kem_512_seed_to_public(s->data.kem.public_key, s->data.kem.seed)
+                            : ml_kem_768_seed_to_public(s->data.kem.public_key, s->data.kem.seed);
+    if (r < 0) return -1;
+    s->length = kem_public_bytes(alg);
+    return (int32_t)s->length;
   }
 #endif
-  if (alg == MLDSA65 && n == MLDSA_SEEDBYTES) {
+  if (is_dsa(alg) && n == MLDSA_SEEDBYTES) {
     memcpy(s->data.dsa.state.keygen.seed, input, MLDSA_SEEDBYTES);
     if (refill(s) < 0) return -1;
-    return MLDSA_PK_BYTES;
+    return (int32_t)dsa_public_bytes(alg);
   }
   return -1;
 }
@@ -172,9 +216,11 @@ int32_t ck_stream_sign_init(uint8_t alg, void *scratch, const uint8_t *input, si
     sm3_init(&s->data.sm2.hash);
     return 0;
   }
-  if (alg == MLDSA65 && n == MLDSA_SEEDBYTES) {
-    memcpy(s->data.dsa.state.sign.seed, input, MLDSA_SEEDBYTES);
-    if (ml_dsa_65_seed_to_tr(s->data.dsa.mu, input) < 0) return -1;
+  if (is_dsa(alg) && n == MLDSA_SEEDBYTES) {
+    memcpy(s->data.dsa.state.sign.core.seed, input, MLDSA_SEEDBYTES);
+    int r = alg == MLDSA44 ? ml_dsa_44_seed_to_tr(s->data.dsa.mu, input)
+                           : ml_dsa_65_seed_to_tr(s->data.dsa.mu, input);
+    if (r < 0) return -1;
     shake256_init(&s->data.dsa.hash);
     shake_update(&s->data.dsa.hash, s->data.dsa.mu, MLDSA_CRHBYTES);
     const uint8_t prefix[2] = {0, 0};
@@ -198,7 +244,7 @@ int32_t ck_stream_sign_update(void *scratch, const uint8_t *input, size_t n) {
     sm3_update(&s->data.sm2.hash, input, n);
     return 0;
   }
-  if (s->alg == MLDSA65) {
+  if (is_dsa(s->alg)) {
     shake_update(&s->data.dsa.hash, input, n);
     return 0;
   }
@@ -212,11 +258,11 @@ int32_t ck_stream_sign_final(void *scratch) {
   if (s->alg == SM2) {
     return sm2_finish(s);
   }
-  if (s->alg == MLDSA65) {
+  if (is_dsa(s->alg)) {
     shake_finalize(&s->data.dsa.hash);
     shake_squeeze(&s->data.dsa.hash, s->data.dsa.mu, MLDSA_CRHBYTES);
     if (refill(s) < 0) return -1;
-    return MLDSA_SIG_BYTES;
+    return (int32_t)dsa_signature_bytes(s->alg);
   }
   if (s->alg == ED25519) {
     if (ed25519_randomized_sign_final(&s->data.ed.state, s->data.ed.signature) < 0) return -1;
@@ -230,7 +276,7 @@ int32_t ck_stream_decapsulate_init(uint8_t alg, void *scratch, const uint8_t *in
   memzero(s, sizeof(*s));
   s->alg = alg;
 #ifdef RUST_CORE_PIV
-  if (alg != MLKEM768 || n != MLKEM768_KEYGEN_SEED_BYTES) return -1;
+  if (!is_kem(alg) || n != MLKEM768_KEYGEN_SEED_BYTES) return -1;
   s->kind = STREAM_DECAPSULATING;
   memcpy(s->data.kem.seed, input, sizeof(s->data.kem.seed));
   return 0;
@@ -242,7 +288,9 @@ int32_t ck_stream_decapsulate_init(uint8_t alg, void *scratch, const uint8_t *in
 int32_t ck_stream_decapsulate_update(void *scratch, const uint8_t *input, size_t n) {
   stream_t *s = scratch;
 #ifdef RUST_CORE_PIV
-  if (s->kind != STREAM_DECAPSULATING || n > MLKEM768_CIPHERTEXT_BYTES - s->position) return -1;
+  if (s->kind != STREAM_DECAPSULATING || !is_kem(s->alg) ||
+      s->position > kem_ciphertext_bytes(s->alg) || n > kem_ciphertext_bytes(s->alg) - s->position)
+    return -1;
   memcpy(s->data.kem.ciphertext + s->position, input, n);
   s->position += n;
   return 0;
@@ -254,12 +302,13 @@ int32_t ck_stream_decapsulate_update(void *scratch, const uint8_t *input, size_t
 int32_t ck_stream_decapsulate_final(void *scratch, uint8_t *out, size_t capacity) {
   stream_t *s = scratch;
 #ifdef RUST_CORE_PIV
-  if (s->kind != STREAM_DECAPSULATING || s->position != MLKEM768_CIPHERTEXT_BYTES ||
+  if (s->kind != STREAM_DECAPSULATING || !is_kem(s->alg) || s->position != kem_ciphertext_bytes(s->alg) ||
       capacity < MLKEM768_SHARED_KEY_BYTES)
     return -1;
-  return ml_kem_768_decaps_seed(out, s->data.kem.ciphertext, s->data.kem.seed, s->data.kem.public_key) < 0
-             ? -1
-             : MLKEM768_SHARED_KEY_BYTES;
+  int r = s->alg == MLKEM512
+              ? ml_kem_512_decaps_seed(out, s->data.kem.ciphertext, s->data.kem.seed, s->data.kem.public_key)
+              : ml_kem_768_decaps_seed(out, s->data.kem.ciphertext, s->data.kem.seed, s->data.kem.public_key);
+  return r < 0 ? -1 : MLKEM768_SHARED_KEY_BYTES;
 #else
   (void)s; (void)out; (void)capacity;
   return -1;

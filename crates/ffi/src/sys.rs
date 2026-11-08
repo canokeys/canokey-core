@@ -16,6 +16,8 @@ unsafe extern "C" {
     pub(crate) fn ck_board_prepare();
     #[cfg(all(feature = "device-runtime", feature = "nfc", not(test)))]
     pub(crate) fn ck_board_mode_pin() -> u8;
+    #[cfg(all(feature = "device-runtime", feature = "nfc", not(test)))]
+    pub(crate) fn ck_board_nfc_prepare();
     #[cfg(all(feature = "device-runtime", not(test)))]
     pub(crate) fn ck_board_clock(mode: u8);
     #[cfg(all(feature = "device-runtime", feature = "nfc", not(test)))]

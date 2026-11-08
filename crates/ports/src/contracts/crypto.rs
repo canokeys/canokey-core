@@ -220,6 +220,8 @@ pub mod alg {
     pub const SM2: u8 = 9;
     pub const MLKEM768: u8 = 10;
     pub const MLDSA65: u8 = 11;
+    pub const MLKEM512: u8 = 12;
+    pub const MLDSA44: u8 = 13;
 }
 
 /// Offsets within KeyMaterial.bytes (after the native bits/reserved words).
@@ -252,14 +254,87 @@ pub const EC_POINT_UNCOMPRESSED: u8 = 4;
 pub const CRYPTO_SCRATCH_BYTES: usize = 2400;
 pub const HASH_STATE_BYTES: usize = 256;
 pub const RSA_OUTPUT_BYTES: usize = 512;
-pub mod mlkem768 {
-    pub const PUBLIC_BYTES: usize = 1184;
-    pub const CIPHERTEXT_BYTES: usize = 1088;
-    pub const SHARED_KEY_BYTES: usize = 32;
+/// Parameter metadata shared by applet selection, encoding and stream bounds.
+pub mod mldsa {
+    pub const SEED_BYTES: usize = 32;
+    #[derive(Clone, Copy)]
+    pub struct Parameters {
+        pub algorithm: u8,
+        pub cose: i32,
+        pub public_bytes: usize,
+        pub signature_bytes: usize,
+    }
+    pub const DSA65: Parameters = Parameters {
+        algorithm: super::alg::MLDSA65,
+        cose: -49,
+        public_bytes: 1952,
+        signature_bytes: 3309,
+    };
+    pub const DSA44: Parameters = Parameters {
+        algorithm: super::alg::MLDSA44,
+        cose: -48,
+        public_bytes: 1312,
+        signature_bytes: 2420,
+    };
+    pub const PARAMETER_SETS: [Parameters; 2] = [DSA65, DSA44];
+    pub fn from_cose(cose: i32) -> Option<Parameters> {
+        if cose == DSA65.cose {
+            Some(DSA65)
+        } else if cose == DSA44.cose {
+            Some(DSA44)
+        } else {
+            None
+        }
+    }
+    pub const fn parameters(algorithm: u8) -> Option<Parameters> {
+        match algorithm {
+            super::alg::MLDSA65 => Some(DSA65),
+            super::alg::MLDSA44 => Some(DSA44),
+            _ => None,
+        }
+    }
+}
+pub mod mlkem {
     pub const SEED_BYTES: usize = 64;
+    pub const SHARED_KEY_BYTES: usize = 32;
+    #[derive(Clone, Copy)]
+    pub struct Parameters {
+        pub public_bytes: usize,
+        pub ciphertext_bytes: usize,
+    }
+    pub const KEM768: Parameters = Parameters {
+        public_bytes: 1184,
+        ciphertext_bytes: 1088,
+    };
+    pub const KEM512: Parameters = Parameters {
+        public_bytes: 800,
+        ciphertext_bytes: 768,
+    };
+    pub const fn parameters(algorithm: u8) -> Option<Parameters> {
+        match algorithm {
+            super::alg::MLKEM768 => Some(KEM768),
+            super::alg::MLKEM512 => Some(KEM512),
+            _ => None,
+        }
+    }
+}
+pub mod mlkem768 {
+    pub const PUBLIC_BYTES: usize = super::mlkem::KEM768.public_bytes;
+    pub const CIPHERTEXT_BYTES: usize = super::mlkem::KEM768.ciphertext_bytes;
+    pub use super::mlkem::{SEED_BYTES, SHARED_KEY_BYTES};
+}
+pub mod mlkem512 {
+    pub const PUBLIC_BYTES: usize = super::mlkem::KEM512.public_bytes;
+    pub const CIPHERTEXT_BYTES: usize = super::mlkem::KEM512.ciphertext_bytes;
+    pub use super::mlkem::{SEED_BYTES, SHARED_KEY_BYTES};
 }
 pub mod mldsa65 {
-    pub const PUBLIC_BYTES: usize = 1952;
-    pub const SIGNATURE_BYTES: usize = 3309;
-    pub const SEED_BYTES: usize = 32;
+    pub const PUBLIC_BYTES: usize = super::mldsa::DSA65.public_bytes;
+    pub const SIGNATURE_BYTES: usize = super::mldsa::DSA65.signature_bytes;
+    pub use super::mldsa::SEED_BYTES;
+}
+pub mod mldsa44 {
+    pub const PUBLIC_BYTES: usize = super::mldsa::DSA44.public_bytes;
+    pub const SIGNATURE_BYTES: usize = super::mldsa::DSA44.signature_bytes;
+    pub use super::mldsa::SEED_BYTES;
 }

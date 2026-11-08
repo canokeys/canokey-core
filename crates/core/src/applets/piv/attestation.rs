@@ -40,6 +40,18 @@ const P256_SIGNATURE_CAPACITY: usize = P256_SIGNATURE_BYTES + 9;
 const HASH_CHUNK_BYTES: usize = 64;
 // DER AlgorithmIdentifier for ecdsa-with-SHA256 (OID 1.2.840.10045.4.3.2).
 const SIGNATURE_ALGORITHM: &[u8] = b"\x30\x0a\x06\x08\x2a\x86\x48\xce\x3d\x04\x03\x02";
+// NIST AlgorithmIdentifier OIDs, ordered by the consecutive ports::alg IDs.
+const PQ_OIDS: [[u8; 9]; 4] = [
+    *b"\x60\x86\x48\x01\x65\x03\x04\x04\x02", // ML-KEM-768
+    *b"\x60\x86\x48\x01\x65\x03\x04\x03\x12", // ML-DSA-65
+    *b"\x60\x86\x48\x01\x65\x03\x04\x04\x01", // ML-KEM-512
+    *b"\x60\x86\x48\x01\x65\x03\x04\x03\x11", // ML-DSA-44
+];
+const _: () = {
+    assert!(alg::MLDSA65 == alg::MLKEM768 + 1);
+    assert!(alg::MLKEM512 == alg::MLKEM768 + 2);
+    assert!(alg::MLDSA44 == alg::MLKEM768 + 3);
+};
 // Keep the small plan fields before the large public-key workspace so Thumb-1
 // can address them relative to one base without deep field offsets.
 #[repr(C)]
@@ -236,17 +248,21 @@ impl Attestation {
             self.wrap(ri, rs, DER_SEQUENCE)?;
             self.wrap(bi, bs, DER_BIT_STRING)?;
         } else {
-            let oid: &[u8] = match a {
-                alg::P256 => b"\x2a\x86\x48\xce\x3d\x03\x01\x07",
-                alg::SECP256K1 => b"\x2b\x81\x04\x00\x0a",
-                alg::P384 => b"\x2b\x81\x04\x00\x22",
-                alg::P521 => b"\x2b\x81\x04\x00\x23",
-                alg::SM2 => b"\x2a\x81\x1c\xcf\x55\x01\x82\x2d",
-                alg::ED25519 => b"\x2b\x65\x70",
-                alg::X25519 => b"\x2b\x65\x6e",
-                alg::MLDSA65 => b"\x60\x86\x48\x01\x65\x03\x04\x03\x12",
-                _ => return Err(Sw::WRONG_DATA),
-            };
+            let oid: &[u8] =
+                if let Some(oid) = PQ_OIDS.get(usize::from(a.wrapping_sub(alg::MLKEM768))) {
+                    oid
+                } else {
+                    match a {
+                        alg::P256 => b"\x2a\x86\x48\xce\x3d\x03\x01\x07",
+                        alg::SECP256K1 => b"\x2b\x81\x04\x00\x0a",
+                        alg::P384 => b"\x2b\x81\x04\x00\x22",
+                        alg::P521 => b"\x2b\x81\x04\x00\x23",
+                        alg::SM2 => b"\x2a\x81\x1c\xcf\x55\x01\x82\x2d",
+                        alg::ED25519 => b"\x2b\x65\x70",
+                        alg::X25519 => b"\x2b\x65\x6e",
+                        _ => return Err(Sw::WRONG_DATA),
+                    }
+                };
             let ec = matches!(
                 a,
                 alg::P256 | alg::SECP256K1 | alg::P384 | alg::P521 | alg::SM2
@@ -282,16 +298,13 @@ impl Attestation {
         if m[repo::ORIGIN] != 1 {
             return Err(Sw::REFERENCE_NOT_FOUND);
         }
-        if m[repo::ALGORITHM] == alg::MLKEM768 {
-            return Err(Sw::WRONG_DATA);
-        }
         let mut signer = [0; repo::META];
         repo::read_meta(repo::ATTESTATION_KEY, p, &mut signer)?;
         if signer[repo::ORIGIN] == 0 || signer[repo::ALGORITHM] != alg::P256 {
             return Err(Sw::REFERENCE_NOT_FOUND);
         }
         self.algorithm = m[repo::ALGORITHM] as usize;
-        let n = if m[repo::ALGORITHM] == alg::MLDSA65 {
+        let n = if repo::pq(m[repo::ALGORITHM]) {
             self.pq_public(id, p)?
         } else {
             self.classic_public(id, &m, p)?
@@ -329,7 +342,7 @@ impl Attestation {
             let mut digest = [0; SHA256_BYTES];
             self.hash(&mut digest, p)?;
             let mut sig = [0; P256_SIGNATURE_CAPACITY];
-            if m[repo::ALGORITHM] == alg::MLDSA65 {
+            if repo::pq(m[repo::ALGORITHM]) {
                 self.abort_pq(p);
             }
             let key = self.public.classic(p.memory);
@@ -337,7 +350,7 @@ impl Attestation {
             p.memory.wipe(&mut digest);
             let n = signed?;
             // Complete the F9 primitive before starting the response source.
-            if m[repo::ALGORITHM] == alg::MLDSA65 {
+            if repo::pq(m[repo::ALGORITHM]) {
                 self.pq_public(id, p)?;
             }
             self.bytes(SIGNATURE_ALGORITHM)?;
@@ -360,13 +373,17 @@ impl Attestation {
         let Public::Pq(s) = &mut self.public else {
             unreachable!()
         };
-        super::protocol::init_public_stream(id, alg::MLDSA65, s, p)
+        super::protocol::init_public_stream(id, self.algorithm as u8, s, p)
     }
     fn abort_pq(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         if let Public::Pq(s) = &mut self.public {
-            let _ = p
-                .crypto
-                .stream(StreamOperation::Abort, alg::MLDSA65, s, &[], &mut []);
+            let _ = p.crypto.stream(
+                StreamOperation::Abort,
+                self.algorithm as u8,
+                s,
+                &[],
+                &mut [],
+            );
         }
     }
     #[inline(never)]
@@ -455,13 +472,19 @@ impl Attestation {
                             .map_err(repo::io)?;
                     }
                     _ => {
-                        if self.algorithm == alg::MLDSA65 as usize {
+                        if repo::pq(self.algorithm as u8) {
                             let Public::Pq(scratch) = &mut self.public else {
                                 return Err(Sw::UNABLE_TO_PROCESS);
                             };
                             let n = p
                                 .crypto
-                                .stream(StreamOperation::Read, alg::MLDSA65, scratch, &[], dst)
+                                .stream(
+                                    StreamOperation::Read,
+                                    self.algorithm as u8,
+                                    scratch,
+                                    &[],
+                                    dst,
+                                )
                                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
                             if n != dst.len() {
                                 return Err(Sw::UNABLE_TO_PROCESS);
@@ -476,7 +499,7 @@ impl Attestation {
         Ok(count)
     }
     pub fn close(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
-        if self.algorithm == alg::MLDSA65 as usize {
+        if repo::pq(self.algorithm as u8) {
             self.abort_pq(p);
         }
         self.public.clear(p.memory);

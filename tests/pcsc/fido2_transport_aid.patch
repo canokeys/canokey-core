@@ -1,0 +1,27 @@
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -175,6 +175,24 @@
+             if self._capabilities == 0:
+                 raise ValueError("Unsupported device")
+     
++    def _select(self):
++        # Match the virtual reader transport; never infer it by probing AIDs.
++        import os
++        from pathlib import Path
++        mode = os.environ.get("CANOKEY_TEST_NFC", os.environ.get("CANOKEY_VIRT_NFC"))
++        if mode is None:
++            try:
++                mode = Path("/tmp/canokey-test-nfc").read_text().strip()
++            except FileNotFoundError:
++                mode = "0"
++        nfc = mode.lower() not in ("", "0", "false", "no", "off")
++        aid = bytes.fromhex("A0000006472F0001" if nfc else "F043414E4F464944")
++        response, sw1, sw2 = self.apdu_exchange(bytes.fromhex("00A4040008") + aid)
++        if (sw1, sw2) != (0x90, 0):
++            raise ValueError("FIDO applet selection failure")
++        if bytes(response) == b"U2F_V2":
++            self._capabilities |= CAPABILITY.NMSG
++
+     def apdu_exchange(self, apdu, protocol = None):
+         try:
+             return super().apdu_exchange(apdu,protocol)

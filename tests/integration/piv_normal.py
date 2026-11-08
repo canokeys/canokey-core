@@ -23,6 +23,7 @@ from cryptography.hazmat.primitives.asymmetric import (
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.x509.oid import NameOID
 from key_test import CURVES, pubkey, encoding_vectors, chained_import, ALICE_PRIVATE_LE, ALICE_PUBLIC
+from pq_reference import MLKEM512PrivateKey, MLKEM512PublicKey
 
 AID = bytes.fromhex("a000000308000010000100")
 PIN = b"123456\xff\xff"
@@ -170,7 +171,8 @@ def unauthenticated_queries(c):
     c.cmd("queries_without_pin", 0x20, 0, 0x80, le=None, status=0x63C3)
     version = c.raw("version_full", 0xFD, le=256)
     assert len(version) == 3
-    assert c.raw("version_without_le", 0xFD) == version
+    assert c.raw("version_without_le", 0xFD, status=0x6103) == b""
+    assert c.raw("version_after_absent_le", 0xC0, le=256) == version
     first = c.raw("version_first_byte", 0xFD, le=1, status=0x6102)
     last = c.raw("version_remaining", 0xC0, le=256)
     assert len(first) == 1 and first + last == version
@@ -179,7 +181,7 @@ def unauthenticated_queries(c):
         assert len(c.raw("unauthenticated_random", 0x84, le=length)) == length
     c.raw("random_invalid_p1", 0x84, 1, le=32, status=0x6A86)
     c.raw("random_with_data", 0x84, data=b"x", le=32, status=0x6700)
-    assert len(c.raw("random_without_le", 0x84)) == 256
+    assert c.raw("random_without_le", 0x84, status=0x6700) == b""
     answer, a, b = c.wire.transmit(bytes.fromhex("00840000000101"))
     assert not answer and (a, b) == (0x67, 0)
     c.cmd("queries_do_not_grant_pin", 0x20, 0, 0x80, le=None, status=0x63C3)
@@ -335,17 +337,28 @@ def management_rotation(c):
 def algorithm_configuration(c):
     c.wire.command("RESET")
     c.select()
-    expected = bytes.fromhex("01e00516e1531554e2e3")
+    expected = bytes.fromhex("01e00516e1531554e2e3e4e5")
     assert c.cmd("public_algorithm_configuration", 0xEE, 1, 0) == expected
     c.cmd("unauthorized_algorithm_write", 0xEE, 2, 0, expected, le=None, status=0x6982)
     c.auth()
     c.cmd("write_default_algorithms", 0xEE, 2, 0, expected, le=None)
-    for index, value in ((9, 0xE2), (1, 0xFF), (1, 0x11)):
+    for index, value in ((9, 0xE2), (10, 0xE5), (11, 0xE4), (1, 0xFF), (1, 0x11), (1, 0x03)):
         invalid = bytearray(expected)
         invalid[index] = value
         c.cmd("reject_conflicting_algorithm", 0xEE, 2, 0, bytes(invalid),
               le=None, status=0x6A80)
         assert c.cmd("failed_write_preserves_algorithms", 0xEE, 1, 0) == expected
+    disabled = bytes([0]) + expected[1:]
+    c.cmd("disable_algorithm_extensions", 0xEE, 2, 0, disabled, le=None)
+    for index, value in ((11, 0xE4), (10, 0x03), (1, 0xFF), (1, 0x11)):
+        invalid = bytearray(disabled)
+        invalid[index] = value
+        c.cmd("disabled_mapping_still_validated", 0xEE, 2, 0, bytes(invalid),
+              le=None, status=0x6A80)
+        assert c.cmd("invalid_disabled_mapping_preserved", 0xEE, 1, 0) == disabled
+    c.cmd("disabled_small_pq_generate", 0x47, 0, 0x9A,
+          tlv(0xAC, tlv(0x80, b"\xe4")), status=0x6A80)
+    c.cmd("restore_enabled_algorithms", 0xEE, 2, 0, expected, le=None)
     c.wire.command("RESET")
     c.select()
     assert c.cmd("public_algorithms_after_write", 0xEE, 1, 0) == expected
@@ -646,9 +659,11 @@ def encoding_regressions(c):
 
 
 def pq_keys(c):
-    for alg, cls, size, seed_tag in [
-        (0xE2, mldsa.MLDSA65PublicKey, 32, 9),
-        (0xE3, mlkem.MLKEM768PublicKey, 64, 10),
+    for alg, cls, private_cls, size, seed_tag, public_size, signature_size in [
+        (0xE2, mldsa.MLDSA65PublicKey, mldsa.MLDSA65PrivateKey, 32, 9, 1952, 3309),
+        (0xE3, mlkem.MLKEM768PublicKey, mlkem.MLKEM768PrivateKey, 64, 10, 1184, 0),
+        (0xE4, mldsa.MLDSA44PublicKey, mldsa.MLDSA44PrivateKey, 32, 9, 1312, 2420),
+        (0xE5, MLKEM512PublicKey, MLKEM512PrivateKey, 64, 10, 800, 0),
     ]:
         for imported in [False, True]:
             if imported:
@@ -666,19 +681,19 @@ def pq_keys(c):
             if c.host_only("internal record sizes"):
                 assert c.wire.command("SIZE 17") == (85 + size).to_bytes(4, "big")
             public = cls.from_public_bytes(fields(encoded)[0x86])
-            assert len(fields(encoded)[0x86]) == (1952 if alg == 0xE2 else 1184)
+            assert len(fields(encoded)[0x86]) == public_size
             c.verify()
             if imported:
-                private = (
-                    mldsa.MLDSA65PrivateKey if alg == 0xE2 else mlkem.MLKEM768PrivateKey
-                ).from_seed_bytes(bytes(range(size)))
+                private = private_cls.from_seed_bytes(bytes(range(size)))
                 assert private.public_key().public_bytes_raw() == public.public_bytes_raw()
-            if alg == 0xE2:
+            if seed_tag == 9:
                 for message in [b"", bytes(range(256)) * 20]:
                     answer = c.cmd(
                         "pq_sign", 0x87, alg, 0x9A, tlv(0x7C, tlv(0x82, b"") + tlv(0x81, message))
                     )
-                    public.verify(fields(fields(answer)[0x7C])[0x82], message)
+                    signature = fields(fields(answer)[0x7C])[0x82]
+                    assert len(signature) == signature_size
+                    public.verify(signature, message)
             else:
                 shared, ciphertext = public.encapsulate()
                 answer = c.cmd(
@@ -708,11 +723,13 @@ def pq_keys(c):
 def pq_seed_lifecycle(c):
     config = c.cmd("read_before_custom_pq", 0xEE, 1, 0)
     custom = bytearray(config)
-    custom[8:] = bytes([0x56, 0x57])
+    custom[8:] = bytes([0x56, 0x57, 0x58, 0x59])
     c.cmd("custom_pq_mapping", 0xEE, 2, 0, bytes(custom))
     for algorithm, tag, size, base, cls in (
         (0x56, 9, 32, 0x80, mldsa.MLDSA65PrivateKey),
         (0x57, 10, 64, 0x40, mlkem.MLKEM768PrivateKey),
+        (0x58, 9, 32, 0x60, mldsa.MLDSA44PrivateKey),
+        (0x59, 10, 64, 0x20, MLKEM512PrivateKey),
     ):
         seed = bytes(range(base, base + size))
         body = tlv(tag, seed)
@@ -760,7 +777,7 @@ def pq_seed_lifecycle(c):
 
 
 def pq_replacement(c):
-    for algorithm in (0xE2, 0xE3):
+    for algorithm in (0xE2, 0xE3, 0xE4, 0xE5):
         body = tlv(0xAC, tlv(0x80, bytes([algorithm])))
         c.raw("pending_new_pq_key", 0x47, 0, 0x95, body, le=256, status=0x61FF)
         c.wire.command("RESET")
@@ -772,7 +789,7 @@ def pq_replacement(c):
         before = c.cmd("key_before_pq_replacement", 0xF7, 0, 0x95)
         for interruption in ("select", "reset", "rejected"):
             c.raw("pending_pq_replacement", 0x47, 0, 0x95, body, le=256, status=0x61FF)
-            for _ in range(5 if algorithm == 0xE2 else 2):
+            for _ in range({0xE2: 5, 0xE3: 2, 0xE4: 3, 0xE5: 1}[algorithm]):
                 c.raw("partial_pq_public", 0xC0, le=256, status=0x61FF)
             if interruption == "reset":
                 c.wire.command("RESET")
@@ -811,7 +828,7 @@ def randomized_ed25519(c):
         signatures.append(sig)
     assert signatures[0] != signatures[1]
     config = c.cmd("read_before_disabling_stream_extension", 0xEE, 1, 0)
-    c.cmd("disable_stream_extension", 0xEE, 2, 0, bytes(10), le=None)
+    c.cmd("disable_stream_extension", 0xEE, 2, 0, bytes([0]) + config[1:], le=None)
     c.cmd("disabled_stream_rejected", 0x87, 0xFF, 0x9A,
           bytes.fromhex("7c0482008100"), status=0x6A86)
     c.cmd("restore_stream_extension", 0xEE, 2, 0, config, le=None)
@@ -884,7 +901,7 @@ def sm2_operations(c):
         assert verify_sm2(fields(fields(reply)[0x7C])[0x82],
                           sm2.sm3(sm2.sm2_z(sm2.ID_DEFAULT, public) + message))
     config = c.cmd("sm2_extension_config", 0xEE, 1, 0)
-    c.cmd("sm2_disable_extension", 0xEE, 2, 0, bytes(10), le=None)
+    c.cmd("sm2_disable_extension", 0xEE, 2, 0, bytes([0]) + config[1:], le=None)
     assert not c.raw("sm2_disabled_stream", 0x87, 0x54, 0x9A,
                      tlv(0x7C, empty)[:2], cla=0x10, status=0x6A86)
     c.cmd("sm2_restore_extension", 0xEE, 2, 0, config, le=None)
@@ -1095,12 +1112,19 @@ def attestation(c):
     c.cmd("restore_issuer_name", 0xF5, 1, 0xF9, b"F\0")
     serial = c.cmd("attestation_device_serial", 0xF8)
     assert len(serial) == 4
-    for alg in list(range(9)) + [10, 11]:
-        if alg == 11:
+    pq_subjects = {
+        11: (0xE2, mldsa.MLDSA65PublicKey),
+        12: (0xE3, mlkem.MLKEM768PublicKey),
+        13: (0xE4, mldsa.MLDSA44PublicKey),
+        14: (0xE5, MLKEM512PublicKey),
+    }
+    for alg in list(range(9)) + [10, *pq_subjects]:
+        if alg in pq_subjects:
+            wire_id, public_cls = pq_subjects[alg]
             encoded = fields(
-                c.cmd("attest_pq_generate", 0x47, 0, 0x9A, tlv(0xAC, tlv(0x80, b"\xe2")))
+                c.cmd("attest_pq_generate", 0x47, 0, 0x9A, tlv(0xAC, tlv(0x80, bytes([wire_id]))))
             )[0x7F49]
-            public = mldsa.MLDSA65PublicKey.from_public_bytes(fields(encoded)[0x86])
+            public = public_cls.from_public_bytes(fields(encoded)[0x86])
         elif alg == 10:
             encoded = fields(c.cmd("attest_sm2_generate", 0x47, 0, 0x9A,
                                    tlv(0xAC, tlv(0x80, b"\x54"))))[0x7F49]
@@ -1128,6 +1152,12 @@ def attestation(c):
             # OpenSSL does not expose SM2 through cryptography's public_key API.
             # Require the complete expected SPKI (algorithm OIDs and exact point).
             assert sm2_spki in certificate.tbs_certificate_bytes
+        elif alg == 14:
+            # cryptography cannot expose ML-KEM-512 keys. Check the complete
+            # SPKI, including absent parameters and the independently derived key.
+            spki = tlv(0x30, tlv(0x30, bytes.fromhex("0609608648016503040401"))
+                       + tlv(0x03, b"\0" + public.public_bytes_raw()))
+            assert spki in certificate.tbs_certificate_bytes
         else:
             assert certificate.public_key().public_bytes(
                 serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
@@ -1295,7 +1325,7 @@ def reset_and_persistence(c, issuer_key, issuer):
     c.cmd("rotate_management", 0xFF, 0xFF, 0xFF, bytes([0x0A, 0x9B, 24]) + new, le=None)
     c.auth(new)
     original_config = c.cmd("read_algorithms", 0xEE, 1, 0)
-    config = bytes.fromhex("0122055152531554e2e3")
+    config = bytes.fromhex("0122055152531554e2e3e4e5")
     c.cmd("write_algorithms", 0xEE, 2, 0, bytes(config), le=None)
     c.wire.command("RESET")
     c.select()

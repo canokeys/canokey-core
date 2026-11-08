@@ -31,7 +31,7 @@ pub fn close_acquired<P: Provider>() {
     assert!(P::Staging::clear());
     assert!(P::Staging::release(PKE_OWNER_CTAP));
 }
-#[cfg(feature = "usb-ccid")]
+#[cfg(all(feature = "nfc", not(test)))]
 #[inline(always)]
 pub fn acquire<P: Provider>() -> bool {
     P::Staging::acquire(PKE_OWNER_CTAP)

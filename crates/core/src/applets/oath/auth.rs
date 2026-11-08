@@ -18,6 +18,13 @@ pub struct Metadata {
     key: Option<[u8; ACCESS_KEY_BYTES]>,
 }
 impl Metadata {
+    /// Placeholder for `Repository::load_into`; never persisted as loaded.
+    pub const fn empty() -> Self {
+        Self {
+            handle: [0; HANDLE_BYTES],
+            key: None,
+        }
+    }
     pub fn new(crypto: &mut (impl Crypto + ?Sized)) -> Result<Self, Error> {
         let mut handle = [0; HANDLE_BYTES];
         crypto.random(&mut handle)?;
@@ -36,6 +43,12 @@ impl Metadata {
         }
     }
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        let mut value = Self::empty();
+        value.decode_into(bytes)?;
+        Ok(value)
+    }
+    /// Validate first; `self` is written only for a valid encoding.
+    pub fn decode_into(&mut self, bytes: &[u8]) -> Result<(), Error> {
         if bytes.len() < KEY
             || bytes[VERSION] != FORMAT_VERSION
             || bytes[KEY_PRESENT] > 1
@@ -48,15 +61,17 @@ impl Metadata {
         {
             return Err(Error::Invalid);
         }
-        Ok(Self {
-            handle: bytes[HANDLE..KEY].try_into().map_err(|_| Error::Invalid)?,
-            key: if bytes[KEY_PRESENT] == 1 {
-                Some(bytes[KEY..].try_into().map_err(|_| Error::Invalid)?)
-            } else {
-                None
-            },
-        })
+        self.handle.copy_from_slice(&bytes[HANDLE..KEY]);
+        self.key = None;
+        if bytes[KEY_PRESENT] == 1 {
+            self.key = Some([0; ACCESS_KEY_BYTES]);
+            if let Some(key) = &mut self.key {
+                key.copy_from_slice(&bytes[KEY..]);
+            }
+        }
+        Ok(())
     }
+    #[inline(never)]
     fn clear(&mut self, crypto: &mut (impl Crypto + ?Sized)) {
         if let Some(key) = &mut self.key {
             crypto.wipe(key);
@@ -66,14 +81,20 @@ impl Metadata {
 }
 pub trait Repository {
     /// Missing metadata is explicit; I/O/corrupt metadata is never treated as first install.
-    fn load(&mut self) -> Result<Option<Metadata>, Error>;
+    /// Ok(false) is missing metadata; `out` is written only when Ok(true).
+    fn load_into(&mut self, out: &mut Metadata) -> Result<bool, Error>;
+    fn load(&mut self) -> Result<Option<Metadata>, Error> {
+        let mut value = Metadata::empty();
+        Ok(self.load_into(&mut value)?.then_some(value))
+    }
     fn replace(&mut self, value: &Metadata) -> Result<(), Error>;
 }
 pub fn install(
     repository: &mut (impl Repository + ?Sized),
     crypto: &mut (impl Crypto + ?Sized),
 ) -> Result<(), Error> {
-    if let Some(mut value) = repository.load()? {
+    let mut value = Metadata::empty();
+    if repository.load_into(&mut value)? {
         value.clear(crypto);
         return Ok(());
     }
@@ -113,7 +134,10 @@ impl Session {
         crypto: &mut (impl Crypto + ?Sized),
     ) -> Result<Selection, Error> {
         self.reset(crypto);
-        let mut metadata = repository.load()?.ok_or(Error::Storage)?;
+        let mut metadata = Metadata::empty();
+        if !repository.load_into(&mut metadata)? {
+            return Err(Error::Storage);
+        }
         let result = (|| {
             let challenge = if metadata.key.is_some() {
                 crypto.random(&mut self.challenge)?;
@@ -144,7 +168,10 @@ impl Session {
         if !self.authorized {
             return Err(Error::Unauthorized);
         }
-        let mut metadata = repository.load()?.ok_or(Error::Storage)?;
+        let mut metadata = Metadata::empty();
+        if !repository.load_into(&mut metadata)? {
+            return Err(Error::Storage);
+        }
         let mut digest = [0; 64];
         let result = (|| {
             crypto.hmac(Algorithm::Sha1, key, challenge, &mut digest)?;
@@ -168,7 +195,10 @@ impl Session {
         if !self.authorized {
             return Err(Error::Unauthorized);
         }
-        let mut metadata = repository.load()?.ok_or(Error::Storage)?;
+        let mut metadata = Metadata::empty();
+        if !repository.load_into(&mut metadata)? {
+            return Err(Error::Storage);
+        }
         metadata.clear(crypto);
         self.authorized = false;
         repository.replace(&metadata)?;
@@ -189,7 +219,10 @@ impl Session {
             return Err(Error::Unauthorized);
         }
         self.authorized = false;
-        let mut metadata = repository.load()?.ok_or(Error::Storage)?;
+        let mut metadata = Metadata::empty();
+        if !repository.load_into(&mut metadata)? {
+            return Err(Error::Storage);
+        }
         let mut digest = [0; 64];
         let result = (|| {
             let key = metadata.key.as_ref().ok_or(Error::AccessCodeMissing)?;

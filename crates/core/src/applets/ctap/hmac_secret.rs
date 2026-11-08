@@ -81,7 +81,7 @@ impl Parser {
             }
             return Ok(false);
         }
-        if super::skip_cbor_event(&mut self.skip, event) {
+        if super::skip_cbor_event(&mut self.skip, event)? {
             return Ok(false);
         }
         if let Some((key, _)) = self.body {

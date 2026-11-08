@@ -1,0 +1,2598 @@
+{
+  "schema": 1,
+  "scope": "Literal EP0 event replay through pinned C USB/WebUSB and Rust production USB/WebUSB facade, with real applets. No physical USB, cross-transport concurrency or CIU resource acceptance inferred.",
+  "cases": [
+    {
+      "id": "initial-status",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E06",
+        "E21"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "private-AID-and-response-stages",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E06",
+        "E21"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "standard-AID-rejected-and-revokes-selection",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E21",
+        "E23"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008a0000006472f0001",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6a82"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6a82"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "rejected-P2-revokes-selection",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E21",
+        "E23"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040108f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6a86"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6a82"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "completed-hold-idle-after2001ms",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "tick": 2000,
+          "expected": ""
+        },
+        {
+          "tick": 1,
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "status-aborts-partial-RX-preserves-selection",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "80100000100000000000000000000000",
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "extended-GA-279-3e",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E06",
+        "E21"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001e01",
+          "expected": ""
+        },
+        {
+          "out": "8010000000011702a3016b6578616d70",
+          "expected": ""
+        },
+        {
+          "out": "6c652e6f726702582000000000000000",
+          "expected": ""
+        },
+        {
+          "out": "00000000000000000000000000000000",
+          "expected": ""
+        },
+        {
+          "out": "000000000000000000186358e15a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "2e9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "extended-GA-279-4e",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E06",
+        "E21"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001002001",
+          "expected": ""
+        },
+        {
+          "out": "8010000000011702a3016b6578616d70",
+          "expected": ""
+        },
+        {
+          "out": "6c652e6f726702582000000000000000",
+          "expected": ""
+        },
+        {
+          "out": "00000000000000000000000000000000",
+          "expected": ""
+        },
+        {
+          "out": "000000000000000000186358e15a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a0000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "2e9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "extended-GA-280-3e",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E06",
+        "E21"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001f01",
+          "expected": ""
+        },
+        {
+          "out": "8010000000011802a3016b6578616d70",
+          "expected": ""
+        },
+        {
+          "out": "6c652e6f726702582000000000000000",
+          "expected": ""
+        },
+        {
+          "out": "00000000000000000000000000000000",
+          "expected": ""
+        },
+        {
+          "out": "000000000000000000186358e25a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "2e9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "over288-289",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E07"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001002101",
+          "expected": "STALL"
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "extended-GA-281-3e",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E06",
+        "E21"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001002001",
+          "expected": ""
+        },
+        {
+          "out": "8010000000011902a3016b6578616d70",
+          "expected": ""
+        },
+        {
+          "out": "6c652e6f726702582000000000000000",
+          "expected": ""
+        },
+        {
+          "out": "00000000000000000000000000000000",
+          "expected": ""
+        },
+        {
+          "out": "000000000000000000186358e35a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "out": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "2e9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "over288-290",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E07"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001002201",
+          "expected": "STALL"
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "289-setup-stall-and-recovery",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E07"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001002101",
+          "expected": "STALL"
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "PIV-extended-reject-and-absent-Le",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E17"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000e00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040009a00000030800001000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "61114f0600001000010079074f05a000"
+        },
+        {
+          "in": true,
+          "expected": "0003089000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000700",
+          "expected": ""
+        },
+        {
+          "out": "00840000000001",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6700"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00840000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6700"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00fd0000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6103"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00c00000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6103"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "hold-boundary2000-and-status-refresh",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "tick": 2000,
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "04"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "tick": 2000,
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "04"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "tick": 2001,
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "hold-timer-wraparound",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "tick": 4294966295,
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "tick": 2000,
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "04"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "tick": 2001,
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "delayed-IN-completion-does-not-refresh-hold",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "tick": 2001,
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "unfinished-response-does-not-expire",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "tick": 5000,
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "00"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "unfinished-RX-does-not-expire",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "tick": 5000,
+          "expected": ""
+        },
+        {
+          "out": "aaaaaaaa",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6700"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "descriptor-aborts-partial-RX-preserves-selection",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "setup": "8006000100000200",
+          "expected": "1201"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "partial-RX-abort-preserves-Admin-PIN",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "hold-expiry-preserves-Admin-PIN",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "tick": 2001,
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "superseded-response-fetch-preserves-selection",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "partial-RX-abort-preserves-pending-response",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00030000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6106"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "00c0000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "hold-expiry-preserves-pending-response",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00030000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6106"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "tick": 2001,
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "00c0000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "aborted-response-fetch-preserves-pending-remainder",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000001",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "556105"
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "00c0000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "32465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "partial-RX-abort-preserves-FIDO-command-chain",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls. Chained CTAP command0x7f is unsupported and returns vendor UNHANDLED_REQUEST0xf1 on completion.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000600",
+          "expected": ""
+        },
+        {
+          "out": "90100000017f",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "8010000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "f19000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "hold-expiry-preserves-FIDO-command-chain",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30"
+      ],
+      "preconditions": "Fresh authenticator storage; configured USB; real EP0 setup/data/status stages,16-byte control packets and serialized main-loop polls. Chained CTAP command0x7f is unsupported and returns vendor UNHANDLED_REQUEST0xf1 on completion.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000600",
+          "expected": ""
+        },
+        {
+          "out": "90100000017f",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "tick": 2001,
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "8010000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "f19000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    }
+  ]
+}

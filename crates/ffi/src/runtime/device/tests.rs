@@ -25,6 +25,7 @@ struct Board {
     configured: usize,
     silenced: usize,
     usb: usize,
+    usb_services: usize,
     clock: u8,
     checks: usize,
     irq: usize,
@@ -39,6 +40,10 @@ struct Board {
     landing: u8,
     painted: usize,
     reports: usize,
+    tick: u32,
+    low_at: Option<u32>,
+    pin_reads: usize,
+    bus_prepared: bool,
 }
 static BOARD: std::sync::Mutex<Board> = std::sync::Mutex::new(Board {
     scenario: 0,
@@ -53,6 +58,7 @@ static BOARD: std::sync::Mutex<Board> = std::sync::Mutex::new(Board {
     configured: 0,
     silenced: 0,
     usb: 0,
+    usb_services: 0,
     clock: 0,
     checks: 0,
     irq: 0,
@@ -67,6 +73,10 @@ static BOARD: std::sync::Mutex<Board> = std::sync::Mutex::new(Board {
     landing: 0,
     painted: 0,
     reports: 0,
+    tick: 0,
+    low_at: None,
+    pin_reads: 0,
+    bus_prepared: false,
 });
 fn board() -> std::sync::MutexGuard<'static, Board> {
     BOARD.lock().unwrap()
@@ -87,13 +97,34 @@ pub(crate) mod hal {
         u32::from(b.scenario == 8 && which == 1)
     }
     #[cfg(feature = "nfc")]
+    pub(crate) unsafe fn device_get_tick() -> u32 {
+        let mut b = board();
+        let tick = b.tick;
+        b.tick = b.tick.wrapping_add(1);
+        tick
+    }
+    #[cfg(feature = "nfc")]
     pub(crate) unsafe fn ck_board_mode_pin() -> u8 {
-        let b = board();
+        let mut b = board();
+        b.pin_reads += 1;
+        if b.low_at.is_some_and(|tick| b.tick >= tick) {
+            return 0;
+        }
         u8::from(if b.scenario == 1 {
             b.nfc_loop == 0
         } else {
             b.scenario == 7
         })
+    }
+    #[cfg(feature = "nfc")]
+    pub(crate) unsafe fn ck_board_nfc_prepare() {
+        let mut b = board();
+        assert!(!b.bus_prepared);
+        assert_eq!(b.installed, 1);
+        if b.flags & config::NFC != 0 {
+            assert!(b.pin_reads > 0, "bus activity preceded mode observation");
+        }
+        b.bus_prepared = true;
     }
     #[cfg(feature = "nfc")]
     pub(crate) unsafe fn ck_board_nfc_irq_enable() {
@@ -113,7 +144,7 @@ pub(crate) mod hal {
         board().reports += 1;
     }
     pub(crate) unsafe fn ck_board_usb_ready() -> u8 {
-        u8::from(board().ccid != 0)
+        u8::from(board().usb_services != 0)
     }
     pub(crate) unsafe fn ck_platform_led(on: u8) {
         board().led = on;
@@ -200,6 +231,7 @@ pub(crate) mod transport {
         }
         pub(crate) unsafe fn ck_nfc_configure() -> i32 {
             let mut b = board();
+            assert!(b.bus_prepared);
             b.configured += 1;
             if b.scenario == 6 { -1 } else { 0 }
         }
@@ -222,6 +254,15 @@ pub(crate) mod transport {
     }
     pub(crate) mod usb {
         use super::super::*;
+        pub(crate) unsafe fn service<P>() {
+            let mut b = board();
+            assert_eq!(b.installed, 1);
+            assert_eq!(b.usb, 1);
+            assert_eq!(b.clock, CLOCK_USB_STARTUP);
+            assert_eq!(b.checks, 0);
+            assert_eq!(b.hid + b.ccid + b.webusb, 0);
+            b.usb_services += 1;
+        }
         pub(crate) unsafe fn ck_usb_set_landing(enabled: u8) {
             board().landing = enabled;
         }
@@ -350,7 +391,8 @@ fn device_boot_modes_failures_settings_and_loop() {
                 assert_eq!(b.usb, 1);
                 assert_eq!(b.checks, 3);
                 assert_eq!(b.irq, 0);
-                assert_eq!(b.ccid, 2);
+                assert_eq!(b.usb_services, 1);
+                assert_eq!(b.ccid, 1);
                 assert_eq!(b.hid, 1);
                 assert_eq!(b.keyboard, 1);
                 assert_eq!(b.webusb, 1);
@@ -411,4 +453,25 @@ fn device_boot_modes_failures_settings_and_loop() {
             _ => unreachable!(),
         }
     }
+}
+
+#[cfg(feature = "nfc")]
+#[test]
+fn mode_pin_requires_full_high_window_and_handles_wrap() {
+    let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
+    for low_at in [Some(0), Some(5), Some(10), None] {
+        *board() = Board {
+            scenario: 7,
+            low_at,
+            ..Board::default()
+        };
+        assert_eq!(unsafe { detect_nfc() }, low_at.is_none());
+    }
+    *board() = Board {
+        scenario: 7,
+        tick: u32::MAX - 5,
+        ..Board::default()
+    };
+    assert!(unsafe { detect_nfc() });
+    assert!(board().pin_reads >= 10);
 }

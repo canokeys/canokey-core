@@ -80,8 +80,8 @@ fn vendor_requests_validate_direction_recipient_and_index() {
     }
     for interface in 0..4 {
         assert_eq!(
-            Request::decode(setup(0x41, 0, 0, interface, 261), interface as u8),
-            Some(Request::Command(261))
+            Request::decode(setup(0x41, 0, 0, interface, 288), interface as u8),
+            Some(Request::Command(288))
         );
         assert_eq!(
             Request::decode(setup(0xc1, 1, 0, interface, 65535), interface as u8),
@@ -93,7 +93,7 @@ fn vendor_requests_validate_direction_recipient_and_index() {
         );
         for s in [
             setup(0xc1, 0, 0, interface, 10),
-            setup(0x41, 0, 0, interface, 262),
+            setup(0x41, 0, 0, interface, 289),
             setup(0x41, 0, 1, interface, 10),
             setup(0x41, 0, 0, interface + 1, 10),
             setup(0xc1, 2, 0, interface, 2),
@@ -104,7 +104,7 @@ fn vendor_requests_validate_direction_recipient_and_index() {
 }
 #[test]
 fn all_short_apdu_lengths_and_response_completion_hold_session() {
-    for length in 0..=261 {
+    for length in 0..=288 {
         let mut t = Transport::new();
         assert_eq!(t.status(), 255);
         assert!(!t.command(length, 0, false));
@@ -124,16 +124,11 @@ fn all_short_apdu_lengths_and_response_completion_hold_session() {
         assert_eq!(t.response(17, 4), Some(17));
         assert_eq!(t.status(), 2);
         assert!(!t.completed_transaction());
-        assert!(!t.expired(10000));
         assert_eq!(t.response(17, 5), None);
         t.completed(u32::MAX - 1000);
         assert_eq!(t.status(), 4);
         assert!(t.completed_transaction());
-        assert!(!t.expired(998));
-        assert!(t.expired(999));
         t.keepalive(1000);
-        assert!(!t.expired(2999));
-        assert!(t.expired(3000));
         assert!(t.command(5, 3000, true));
     }
 }
@@ -160,7 +155,6 @@ fn incomplete_and_malformed_packets_never_queue_execution() {
         assert!(t.command(32, 0, true));
         assert_eq!(t.receive(n, 1), None);
         assert_eq!(t.execute(), None);
-        assert!(!t.expired(3000));
         t.reset();
         assert!(!t.busy());
     }
@@ -280,4 +274,64 @@ fn landing_setting_changes_only_bos_index_and_survives_usb_reset() {
         ),
         Reply::Descriptor(Descriptor::Url)
     );
+}
+
+#[test]
+fn completed_hold_expiry_uses_last_setup_and_wrapping_strict_boundary() {
+    use canokey_rust_core::runtime::webusb::{STATUS_HOLD, STATUS_IDLE};
+    for start in [0, u32::MAX - 1000] {
+        let mut t = Transport::new();
+        assert!(t.command(5, start, true));
+        assert_eq!(t.receive(5, start.wrapping_add(50)), Some(0));
+        assert_eq!(t.execute(), Some(5));
+        assert!(t.finish(8, start.wrapping_add(100)));
+        assert_eq!(t.response(8, start.wrapping_add(200)), Some(8));
+        // Completing a delayed IN does not restart the reservation's timer.
+        t.completed(start.wrapping_add(2100));
+        t.expire(start.wrapping_add(2200));
+        assert_eq!(t.status(), STATUS_HOLD);
+        t.expire(start.wrapping_add(2201));
+        assert_eq!(t.status(), STATUS_IDLE);
+        assert!(t.completed_transaction());
+        assert!(t.command(5, start.wrapping_add(2300), true));
+    }
+}
+
+#[test]
+fn status_keepalive_extends_only_completed_hold() {
+    use canokey_rust_core::runtime::webusb::{STATUS_HOLD, STATUS_IDLE};
+    let mut t = Transport::new();
+    assert!(t.command(0, 0, true));
+    assert_eq!(t.execute(), Some(0));
+    assert!(t.finish(2, 0));
+    assert_eq!(t.response(2, 0), Some(2));
+    t.completed(0);
+    t.expire(2000);
+    assert_eq!(t.status(), STATUS_HOLD);
+    t.keepalive(2000);
+    t.expire(4000);
+    assert_eq!(t.status(), STATUS_HOLD);
+    t.expire(4001);
+    assert_eq!(t.status(), STATUS_IDLE);
+}
+
+#[test]
+fn incomplete_transactions_do_not_expire() {
+    let mut t = Transport::new();
+    assert!(t.command(17, 0, true));
+    assert_eq!(t.receive(16, 0), Some(0));
+    t.expire(3000);
+    assert_eq!(t.status(), 3);
+    assert_eq!(t.receive(1, 3000), Some(16));
+    t.expire(6000);
+    assert_eq!(t.execute(), Some(17));
+    t.expire(9000);
+    assert!(t.finish(2, 9000));
+    t.expire(12000);
+    assert_eq!(t.response(2, 12000), Some(2));
+    t.expire(15000);
+    assert_eq!(t.status(), 2);
+    t.completed(15000);
+    t.expire(15000);
+    assert_eq!(t.status(), 255);
 }

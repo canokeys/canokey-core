@@ -13,15 +13,17 @@ from ctap_fixture import provision
 def run(wire):
     card = Card(wire)
     provision(card)
-    assert card.cmd("fido", 0xa4, 4, data=bytes.fromhex("a0000006472f0001")) == b"U2F_V2"
+    assert card.cmd("fido", 0xa4, 4, data=bytes.fromhex("f043414e4f464944")) == b"U2F_V2"
     # U2F is P-256-only: unrelated SM2 provisioning must not gate its commands.
     sm2_record = wire.command("RECORD 181")
     assert sm2_record[-2:] == b"\x90\x00"
     wire.command("RECORD 181 00")
-    # Unknown U2F commands must report INS, including case-2 extended APDUs.
+    # CCID rejects extended encoding before dispatch; short unknown commands
+    # still report INS. NFC success/error precedence lives in the Link fixture.
     for ins in (0, 4, 0xff):
         for suffix in (b"\x00", b"\x00\x00\x00", b"\x00\x00\x01x\x00\x00"):
-            assert wire.transmit(bytes([0, ins, 0, 0]) + suffix) == (b"", 0x6d, 0)
+            assert wire.transmit(bytes([0, ins, 0, 0]) + suffix) == (b"",
+                0x6d if len(suffix) == 1 else 0x67, 0)
     assert card.cmd("version", 3) == b"U2F_V2"
     card.cmd("version length", 3, data=b"x", status=0x6700)
     challenge = hashlib.sha256(b"challenge").digest()
@@ -70,7 +72,7 @@ def run(wire):
             # Reinstall must preserve the credential and monotonic signing counter,
             # while volatile presence is cleared by a real session reset.
             wire.command("RESET")
-            card.cmd("fido after reset", 0xa4, 4, data=bytes.fromhex("a0000006472f0001"))
+            card.cmd("fido after reset", 0xa4, 4, data=bytes.fromhex("f043414e4f464944"))
             card.cmd("p1=8 still polls", 2, p1, data=request, status=0x6985)
             wire.command("POLL 100")
         response = card.cmd("authenticate", 2, p1, data=request)
@@ -83,19 +85,19 @@ def run(wire):
     card.cmd("admin", 0xa4, 4, data=bytes.fromhex("f000000000"))
     card.cmd("verify", 0x20, data=b"123456")
     card.cmd("reset ctap", 9)
-    assert card.cmd("fido", 0xa4, 4, data=bytes.fromhex("a0000006472f0001")) == b"U2F_V2"
+    assert card.cmd("fido", 0xa4, 4, data=bytes.fromhex("f043414e4f464944")) == b"U2F_V2"
     card.cmd("erased handle", 2, 7, data=request, status=0x6a80)
     wire.command("POLL 100")
     assert card.cmd("reprovision unnecessary", 1, data=challenge + app)[0] == 5
     card.cmd("admin", 0xa4, 4, data=bytes.fromhex("f000000000"))
     card.cmd("verify", 0x20, data=b"123456")
     card.cmd("empty certificate", 2, data=b"")
-    assert card.cmd("fido", 0xa4, 4, data=bytes.fromhex("a0000006472f0001")) == b"U2F_V2"
+    assert card.cmd("fido", 0xa4, 4, data=bytes.fromhex("f043414e4f464944")) == b"U2F_V2"
     wire.command("POLL 100")
     assert card.cmd("empty certificate rejects registration", 1, data=challenge+app, status=0x6900) == b""
     card.cmd("no partial empty-certificate registration", 0xc0, status=0x6986)
     provision(card)
-    assert card.cmd("fido", 0xa4, 4, data=bytes.fromhex("a0000006472f0001")) == b"U2F_V2"
+    assert card.cmd("fido", 0xa4, 4, data=bytes.fromhex("f043414e4f464944")) == b"U2F_V2"
     wire.command("REMOVE 182") # CtapAttestationKey; certificate remains provisioned.
     wire.command("POLL 100")
     assert card.cmd("missing attestation key", 1, data=challenge+app, status=0x6900) == b""

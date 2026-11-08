@@ -179,6 +179,7 @@ impl Session {
         let n = der_signature(&mut w.output[prefix..], 64).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         Ok(if let Some(length) = certificate {
             Response::Authentication {
+                registration: true,
                 prefix,
                 auth: 0,
                 certificate: Some((prefix, length)),

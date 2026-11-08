@@ -278,7 +278,7 @@ fn exchange(command: &[u8]) -> Vec<u8> {
     let mut out = [0; apdu_wire::SHORT_REPLY_BYTES];
     let n = unsafe {
         core::exchange::<HostProvider>(
-            1,
+            if host(|h| h.nfc) { 4 } else { 1 },
             command.as_ptr(),
             command.len(),
             out.as_mut_ptr(),

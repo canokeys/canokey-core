@@ -1,0 +1,267 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Large NFC prefix refusal preserves old input; malformed final envelopes clear FIDO input/output while retaining non-FIDO applet cursors.",
+  "mapping": [
+    "Pinned C NFC receives Lc>279 through prefix admission before applet entry. A non-CLA80/INS10 large prefix returns6700 and retains input. Response cleanup excludes recognized CLA00/80 GET RESPONSE. Exact FIDO header requires selected/enabled FIDO before resetting its old input; wrong parameters return6A86, oversize1297 returns39/9000 and admitted unknown commands returnf1/9000.",
+    "Valid prefix refusal has already applied its selective cleanup. Request.finish exposes malformed framing separately, so FFI does not unconditionally abort a rejected command. A malformed final envelope overrides recorded prefix status with6700 and clears output/FIDO input, without calling abort on the selected NDEF/OpenPGP cursor.",
+    "The registry retention predicate is pure selected-applet classification, independent of persistent enabled configuration. Foreign owners still cannot be aborted by NFC. No additional buffer, crypto kernel, layout or compiler policy changes.",
+    "The independent980-case generator exercises five genuine prior contexts: partial and complete FIDO input, finite-Le GetInfo output, NDEF UPDATE and authorized OpenPGP certificate PUT DATA. Ten headers, Lc280/1296/1297, six final envelope forms and80 RF fragmentation schedules use literal continuation/readback/recovery oracles.550 preceding Rust failures are repaired.",
+    "CTest registration is guarded by NDEF and OpenPGP plus the existing Admin/PIV composition; the parent USB composition supplies CTAP. All applets used by this matrix are included."
+  ],
+  "targets": [
+    {
+      "path": "crates/core/src/runtime/engine.rs",
+      "sha256": "ef13c2a34c70ddaf2b5e01b2040238ee0d37f8345e13a435427c342e72ce6182"
+    },
+    {
+      "path": "crates/core/src/runtime/registry.rs",
+      "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+    },
+    {
+      "path": "crates/core/src/runtime/nfc/request.rs",
+      "sha256": "e1e17addab179b3859a7c2b97bad2e0b07052b23c6b04f3caa502ce0459c27f0"
+    },
+    {
+      "path": "crates/ffi/src/transport/nfc.rs",
+      "sha256": "9f6631f076580981192f9f9a4ff060b35dda934fd0cf28c640db90146b0777b6"
+    },
+    {
+      "path": "crates/core/tests/nfc_request.rs",
+      "sha256": "296225e464b598fbede42e67a407e018cba67feafd424f60909041b3a64b433b"
+    },
+    {
+      "path": "tests/card/src/bin/usb_sessions/envelopes.rs",
+      "sha256": "6da45d5c69d99d9b6d994f8dba5c4d5e476e304c5e422982e85badde5f0232cf"
+    },
+    {
+      "path": "tests/support/c312_nfc_rejection_vectors.py",
+      "sha256": "5674e6bf3813bf0af3e508a265e3e8542f2dd67b2fce2e890ec4cd6a64cb7899"
+    },
+    {
+      "path": "tests/CMakeLists.txt",
+      "sha256": "aaf2598486eec75fd84c9d1102ddd4cdc6ef7ecff07cf8ea29d574f6edff3509"
+    }
+  ],
+  "regression": {
+    "cases": 980,
+    "events": 39712,
+    "before_c_passed": 980,
+    "before_rust_passed": 430,
+    "old_failures": 550,
+    "final_equal": 980,
+    "additional_buffers": 0
+  },
+  "literal": {
+    "suites": 20,
+    "cases": 3832,
+    "events": 137178,
+    "equal_output": 3815,
+    "unresolved": 17,
+    "previous_results_unchanged": 2852,
+    "summary": [
+      {
+        "name": "ccid",
+        "cases": 47,
+        "events": 454,
+        "equal": 47,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb",
+        "cases": 28,
+        "events": 576,
+        "equal": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "nfc",
+        "cases": 124,
+        "events": 2776,
+        "equal": 124,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-ownership",
+        "cases": 18,
+        "events": 408,
+        "equal": 18,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-ownership",
+        "cases": 21,
+        "events": 221,
+        "equal": 20,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-admission",
+        "cases": 28,
+        "events": 364,
+        "equal": 27,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-channels",
+        "cases": 40,
+        "events": 433,
+        "equal": 36,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-control",
+        "cases": 36,
+        "events": 228,
+        "equal": 29,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-lifecycle",
+        "cases": 33,
+        "events": 302,
+        "equal": 33,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-readiness",
+        "cases": 9,
+        "events": 75,
+        "equal": 5,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb-readiness",
+        "cases": 8,
+        "events": 126,
+        "equal": 8,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb-retained",
+        "cases": 14,
+        "events": 605,
+        "equal": 14,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "large-blob-usb",
+        "cases": 12,
+        "events": 2859,
+        "equal": 12,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "large-blob-nfc",
+        "cases": 11,
+        "events": 2478,
+        "equal": 11,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select",
+        "cases": 285,
+        "events": 5043,
+        "equal": 285,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select-config",
+        "cases": 340,
+        "events": 17256,
+        "equal": 340,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select-header",
+        "cases": 618,
+        "events": 27932,
+        "equal": 618,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "chain-control",
+        "cases": 719,
+        "events": 21927,
+        "equal": 719,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "chain-encoding",
+        "cases": 461,
+        "events": 13403,
+        "equal": 461,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "nfc-rejection",
+        "cases": 980,
+        "events": 39712,
+        "equal": 980,
+        "previous_results_unchanged": false
+      }
+    ]
+  },
+  "source_review": {
+    "core_reviewed": 645,
+    "core_total": 2254,
+    "platform_reviewed": 142,
+    "platform_total": 373,
+    "additional_approvals": 0
+  },
+  "remaining": [
+    "Inline malformed NFC envelopes still reach FrameDecoder cleanup and require a separate probe/review. This checkpoint covers large Request discard/malformed paths only; no claim of complete malformed-NFC alignment.",
+    "Other response-source classes, full parameter/header/body mutations, pending configuration and volatile native-HID transitions still require review.",
+    "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 and17 previous unequal literal cases remain unresolved.",
+    "Physical USB/RF/WTX, CIU total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open."
+  ],
+  "final_c_excerpts": [
+    {
+      "path": "src/apdu.c",
+      "line": 607,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "          }\n        }\n        break;\n      }\n      // Large staged commands mirror these checks in NFC append_rx before\n      // acquiring PKE. Boundary tests exercise both inline and staged input.\n      if ((CLA & 0xEF) == 0x80 && INS == CTAP_INS_MSG) {\n        if ((P1 & 0x7F) || P2) {\n          fido_capdu_reset();\n          LL = 0;\n          SW = SW_WRONG_P1P2;\n          break;\n        }\n        // Standalone extended encoding starts a new logical request, even\n        // when its body is small enough for the inline buffer.\n        if (capdu->extended) fido_capdu_reset();\n      }\n    }\n#endif\n#ifdef TESTMODE_INS_HOOKS\n    if (CLA == 0x00 && INS == 0xEE && LC == 0x04 && memcmp(DATA, \"\\x12\\x56\\xAB\\xF0\", 4) == 0) {\n      DBG_MSG(\"MAGIC REBOOT command received!\\r\\n\");\n      testmode_set_initial_ticks(0);\n      testmode_set_initial_ticks(device_get_tick());\n      ctap_schedule_runtime_reset();\n      ctap_install(0);\n      SW = 0x9000;\n      LL = 0;\n      break;\n    }\n    if (CLA == 0x00 && INS == 0xEF) {\n      testmode_inject_error(P1, P2, LC, DATA);\n      SW = 0x9000;\n      LL = 0;\n      break;\n    }\n#endif\n    if (((CLA & 0xEF) == 0x80) && ((CLA & 0x10) != 0 || fido_capdu_chaining.in_chaining)) {\n      const int chaining = fido_apdu_input(capdu);\n      if (chaining == APDU_CHAINING_OVERFLOW) {\n        fido_capdu_reset();\n        LL = 0;\n        SW = SW_WRONG_LENGTH;\n#if ENABLE_NFC\n        if (transport == APDU_TRANSPORT_NFC) {\n          rapdu->data[0] = 0x39; // CTAP2_ERR_REQUEST_TOO_LARGE\n          LL = 1;\n          SW = SW_NO_ERROR;\n        }\n#endif\n        break;\n      }\n      if (chaining == APDU_CHAINING_ERROR) {\n        fido_capdu_reset();\n        LL = 0;\n        SW = SW_UNABLE_TO_PROCESS;\n        break;\n      }\n      if (chaining == APDU_CHAINING_NOT_LAST_BLOCK) {\n        LL = 0;\n        SW = SW_NO_ERROR;\n        break;\n      }\n      capdu = &fido_capdu_chaining.capdu;\n    }\n    const apdu_request_source_t chained_source = {\n        .read = apdu_request_read_pke, .close = fido_capdu_release_request, .len = LC};\n    if (!source && fido_capdu_pke_owner) source = &chained_source;\n    if (source)"
+    },
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 65,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "  apdu_buffer_rx_size = 0;\n  reset_transfer_state();\n  next_state = TO_RECEIVE;\n}\n\nstatic void stop_apdu_wtx(void) {\n  apdu_processing = 0;\n  device_set_timeout(NULL, 0);\n}\n\nstatic void reset_nfc_session(void) {\n  cleanup_pending = 1; // latch cancellation until synchronous command work has unwound\n  device_set_timeout(NULL, 0);\n  reset_nfc_state();\n  // Only the main loop may close PKE/response sources.\n}\n\nstatic void close_rx_request(void *ctx) {\n  UNUSED(ctx);\n  if (apdu_cmd.pke_backed != 1) return;\n  apdu_cmd.pke_backed = 0; // idempotent, and never clear a later crypto owner's registers\n  pke_buffer_clear();\n  pke_buffer_release(PKE_BUFFER_OWNER_CTAP);\n}\n\n// Cancellation stays latched until main-loop cleanup; repeated RF events\n// cannot wrap a generation counter and accidentally revive an old command.\nstatic int rx_cancelled(void *ctx) { UNUSED(ctx); return cleanup_pending; }\n\nstatic int process_nfc_apdu(CAPDU *cmd, RAPDU *rapdu) {\n  if (cleanup_pending) return -1;\n  const apdu_request_source_t source = {\n      .read = apdu_request_read_pke, .cancelled = rx_cancelled, .close = close_rx_request,\n      .len = cmd->lc};\n  apdu_processing = 1;\n  device_set_timeout(send_wtx, WTX_PERIOD);\n  process_apdu_source_from(cmd, rapdu, APDU_TRANSPORT_NFC, cmd->pke_backed == 1 ? &source : NULL);\n  stop_apdu_wtx();\n  if (cleanup_pending) return -1;\n  restart_idle_timeout();\n  return 0;\n}\n\n// Keep only the envelope in shared memory; CTAP consumes PKE before crypto.\n// Rejections still drain legal I-blocks through the final block. A malformed\n// APDU is an ISO status, not a reason to tear down the RF activation.\nstatic int append_rx(const uint8_t *data, size_t len) {\n  if (len > UINT32_MAX - apdu_buffer_rx_size) return -1;\n  while (len) {\n    const uint32_t pos = apdu_buffer_rx_size;\n    // Seven bytes alone are Case 2E (Le, not Lc). Do not start staging until\n    // a body byte arrives, even when the header spans multiple I-blocks.\n    if (pos == 7 && transfer_state.rx_mode == RX_INLINE) {\n      if (!((shared_io_buffer[0] == 0 || shared_io_buffer[0] == 0x80) && shared_io_buffer[1] == 0xC0)) {\n        // Close an abandoned generator before new RX staging can touch PKE.\n        apdu_response_source_clear();\n        apdu_rapdu_chain_reset();\n      }\n      if (shared_io_buffer[4] == 0) {\n        const uint16_t lc = ((uint16_t)shared_io_buffer[5] << 8) | shared_io_buffer[6];\n        if (lc > APDU_COMMAND_BUFFER_SIZE - 9) {\n          memcpy(&apdu_cmd.cla, shared_io_buffer, 4);\n          apdu_cmd.lc = lc;\n          apdu_cmd.extended = 1;\n          transfer_state.rx_mode = RX_DISCARD;\n          apdu_resp.sw = SW_WRONG_LENGTH;\n          if (apdu_cmd.cla == 0x80 && apdu_cmd.ins == CTAP_INS_MSG) {\n            apdu_resp.sw = SW_FILE_NOT_FOUND;\n            // Mirror process_apdu_impl's NFC FIDO admission/error order before\n            // staging: selection, P1/P2, then CTAP size. Keep both paths aligned.\n            if (apdu_fido_selected()) {\n              // Abandon old command chaining before acquiring the new RX staging.\n              apdu_fido_chain_reset();\n              apdu_resp.sw = SW_WRONG_P1P2;\n              if (!(apdu_cmd.p1 & 0x7F) && !apdu_cmd.p2) {\n                apdu_resp.sw = SW_NO_ERROR;\n                if (lc <= CTAP_MAX_REQUEST_SIZE) {\n                  apdu_resp.sw = SW_UNABLE_TO_PROCESS;\n                  if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) == 0) {\n                    apdu_cmd.pke_backed = 1;\n                    transfer_state.rx_mode = RX_PKE;\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n    size_t n;\n    if (transfer_state.rx_mode == RX_MALFORMED) {\n      n = len;\n    } else if (transfer_state.rx_mode != RX_INLINE) {\n      const uint32_t end = 7u + apdu_cmd.lc;\n      if (pos < end) {\n        n = MIN(len, end - pos);\n        if (transfer_state.rx_mode == RX_PKE && pke_buffer_write(pos - 7, data, n) < 0) {\n          close_rx_request(NULL);\n          transfer_state.rx_mode = RX_DISCARD;\n          apdu_resp.sw = SW_UNABLE_TO_PROCESS;\n        }\n      } else {\n        if (pos >= end + 2) {\n          transfer_state.rx_mode = RX_MALFORMED;\n          continue;\n        }\n        n = MIN(len, end + 2 - pos);\n        memcpy(shared_io_buffer + pos - end, data, n);\n      }\n    } else {\n      const uint32_t end = pos < 7 ? 7 : APDU_COMMAND_BUFFER_SIZE;\n      if (pos >= end) {\n        transfer_state.rx_mode = RX_MALFORMED;\n        continue;\n      }\n      n = MIN(len, end - pos);\n      memcpy(shared_io_buffer + pos, data, n);\n    }\n    apdu_buffer_rx_size += n;\n    data += n;\n    len -= n;"
+    },
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 310,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "  if (!apdu_processing || cleanup_pending) return;\n\n  int send_failed = 0;\n  if (device_spinlock_lock(&state_spinlock, false) != 0) {\n    if (apdu_processing && !cleanup_pending) device_set_timeout(send_wtx, WTX_LOCK_RETRY_PERIOD);\n    return;\n  }\n  if (next_state == TO_SEND) {\n    uint8_t wtxm = 1;\n    transfer_state.retries = 0;\n    if (do_nfc_send_frame(S_WTX, &wtxm, 1) != 0 && !cleanup_pending)\n      send_failed = 1;\n  }\n  device_spinlock_unlock(&state_spinlock);\n\n  if (send_failed) {\n    nfc_error_handler(-19);\n    return;\n  }\n  if (apdu_processing) device_set_timeout(send_wtx, WTX_PERIOD);\n}\n\nvoid nfc_loop(void) {\n  if (apdu_processing) return; // never reclaim sources underneath a reentrant command\n  if (cleanup_pending) {\n    cleanup_pending = 0;\n    close_rx_request(NULL);\n    apdu_cmd.pke_backed = 0;\n    apdu_buffer_rx_size = 0;\n    transfer_state.rx_mode = RX_INLINE;\n    // An IRQ can interrupt FIFO writes; discard any TX bookkeeping written\n    // by that old call after the IRQ reset, while retaining a new RX frame.\n    reset_transfer_state();\n    device_applet_context_reset();\n    if (cleanup_pending) return; // another RF reset interrupted cleanup\n  }\n  if (idle_recovery_state != NFC_RECOVERY_NONE) {\n    if (idle_recovery_state == NFC_RECOVERY_REQUESTED) {\n      // A transport error or a stale in-flight session counts as dirty; a session that completed\n      // cleanly must keep its block-number/retransmit state, because the reader may still hold\n      // the same ISO-DEP activation and neither a reset nor an RF silence would be RF-invisible.\n      const uint8_t dirty = idle_recovery_forced || next_state == TO_SEND || apdu_buffer_rx_size != 0 || transfer_state.sending;\n      if (!dirty) {\n        idle_recovery_state = NFC_RECOVERY_NONE;\n        restart_idle_timeout();\n        return;\n      }\n      // Latch the recovery as forced before touching session state: an IRQ landing anywhere\n      // inside this sequence is then drained in nfc_handler() instead of being handled as\n      // normal activity and leaving a stale frame behind. The latch also makes an I2C NACK\n      // retry the full silence sequence instead of falling into the clean path once\n      // reset_nfc_session() has cleared the dirty flags.\n      idle_recovery_forced = 1;\n      reset_nfc_session();\n      const uint8_t silence = 0x33;\n      if (fm_write_regs(FM_REG_RESET_SILENCE, &silence, 1) != FM_STATUS_OK) return; // stay REQUESTED, keep forced\n      // Enter SILENCED before releasing the latch so no IRQ can observe the not-forced\n      // REQUESTED state and cancel the recovery.\n      idle_recovery_state = NFC_RECOVERY_SILENCED;\n      idle_recovery_forced = 0; // one-shot: cleared only once the silence actually took effect\n      // Mask FM11NT interrupts at the chip for the silent period: the level GPIO IRQ then\n      // cannot storm the CPU, and no IRQ flag needs in-ISR draining. The mask is restored\n      // via irq_config_pending after the unsilence. Best-effort: if this write fails, the\n      // drain fallback in nfc_handler() still covers the interrupt source.\n      const uint8_t irq_off = 0xFF; // FM11NT masks are active-high.\n      fm_write_regs(FM_REG_MAIN_IRQ_MASK, &irq_off, 1);\n      // Keep the RF interface silent long enough for the reader to observe card removal.\n      // TIM1 is free here: reset_nfc_session() stopped the APDU processing and its WTX timer.\n      device_set_timeout(request_unsilence, NFC_RECOVERY_PERIOD);\n      return;\n    }\n    if (idle_recovery_state == NFC_RECOVERY_UNSILENCE) {\n      const uint8_t unsilence = 0xCC;\n      if (fm_write_regs(FM_REG_RESET_SILENCE, &unsilence, 1) != FM_STATUS_OK) return; // stay UNSILENCE, retry\n      irq_config_pending = 1;\n      restart_idle_timeout();\n      return;\n    }\n    return; // NFC_RECOVERY_SILENCED: wait for the unsilence timer\n  }\n  if (irq_config_pending) {\n    const uint8_t irq_mask = NFC_RUNTIME_IRQ_MASK;\n    if (fm_write_regs(FM_REG_MAIN_IRQ_MASK, &irq_mask, 1) == FM_STATUS_OK) irq_config_pending = 0;\n    if (irq_config_pending) return;\n  }\n  if (next_state == TO_RECEIVE) return;\n\n  if ((rx_frame_buf[0] & PCB_MASK) == PCB_I_BLOCK) {\n    if (rx_frame_size < 3 || (rx_frame_buf[0] & 0xEE) != 0x02) { // no CID/NAD/RFU bits\n      nfc_error_handler(-6);\n      return;\n    }\n    if (transfer_state.sending) {\n      nfc_error_handler(-22);\n      return;\n    }\n    // A repeated chained I-block must not append its payload a second time.\n    if ((rx_frame_buf[0] & 1) == block_number) goto acknowledge;\n    block_number ^= 1;\n\n    const int received = append_rx(rx_frame_buf + 1, rx_frame_size - 3);"
+    },
+    {
+      "path": "applets/ndef/ndef.c",
+      "line": 148,
+      "file_sha256": "bfb73d67485702d6d5b83941d30aa8c088c525a07b27c430a347ae106ae8ef8e",
+      "source": "\nstatic int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {\n  const uint16_t offset = (uint16_t)(P1 << 8) | P2;\n  if (offset > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);\n  if (LC > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);\n\n  switch (selected) {\n  case CC:\n    // do not allow change CC, only modified via admin\n    ndef_write_reset();\n    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);\n  case NDEF:\n    if (ndef_cc_ensure() < 0) return -1;\n    if (CC_W != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);\n    const uint16_t write_offset = ndef_write_offset == UINT16_MAX ? offset : ndef_write_offset;\n    if (LC > NDEF_FILE_MAX_LENGTH - write_offset) {\n      ndef_write_reset();\n      EXCEPT(SW_WRONG_LENGTH);\n    }\n    if (write_file(NDEF_FILE, DATA, write_offset, LC, 0) < 0) return -1;\n    ndef_write_offset = (CLA & 0x10) != 0 ? write_offset + LC : UINT16_MAX;\n    break;\n  case NONE:\n    ndef_write_reset();\n    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);\n  }\n  return 0;\n}"
+    },
+    {
+      "path": "applets/openpgp/openpgp.c",
+      "line": 150,
+      "file_sha256": "357e94281c9b2418f4760ce32ecd3d15431e3a9da3c0b6470bb953c6b112069b",
+      "source": "  openpgp_pke_owned = 0;\n}\n\nstatic void openpgp_pke_source_close(void *ctx) {\n  (void)ctx;\n  openpgp_pke_release();\n}\n\nstatic void openpgp_crypto_source_close(void *ctx) {\n  (void)ctx;\n  openpgp_crypto_release();\n}\n\n#define PW1_MODE81_ON() pw1_mode |= 1u\n#define PW1_MODE81_OFF() pw1_mode &= 0XFEu\n#define PW1_MODE81() (pw1_mode & 1u)\n#define PW1_MODE82_ON() pw1_mode |= 2u\n#define PW1_MODE82_OFF() pw1_mode &= 0XFDu\n#define PW1_MODE82() (pw1_mode & 2u)\n#define PW_RETRY_COUNTER_DEFAULT 3\n\n#define ASSERT_ADMIN()                                                                                                 \\\n  do {                                                                                                                 \\\n    if (pw3.is_validated == 0) {                                                                                       \\\n      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);                                                                        \\\n    }                                                                                                                  \\\n  } while (0)\n\n#define UIF_DISABLED 0\n#define UIF_ENABLED 1\n#define UIF_PERMANENTLY 2\n\n#define OPENPGP_TOUCH()                                                                                                \\\n  do {                                                                                                                 \\\n    if (is_nfc()) break;                                                                                               \\\n    uint32_t current_tick = device_get_tick();                                                                         \\"
+    }
+  ],
+  "products": {
+    "devkit": {
+      "flash": 178760,
+      "static_ram": 8272,
+      "udf": 140,
+      "change_from_previous": 0,
+      "elf_sha256": "068125aa19463d6e34d6387d2d91b8267f27a2844b22a593d815c7ad5aaf17a1"
+    },
+    "nfcc": {
+      "flash": 188000,
+      "static_ram": 8432,
+      "udf": 146,
+      "change_from_previous": 136,
+      "elf_sha256": "6b7bbc81e02e70bb1165ebabbb9167cd8f562551d54d2ab91fb9bbfc257c9103",
+      "overflow": 6240,
+      "diagnostic_elf_only": true
+    }
+  }
+}

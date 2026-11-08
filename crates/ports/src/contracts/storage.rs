@@ -203,6 +203,19 @@ pub trait Storage {
     ) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
+    /// Read a prefix of the requested window. Only the returned byte count is
+    /// initialized; it must not exceed output.len(). Zero means no progress.
+    /// Exact-only backends keep their existing failure semantics by default.
+    #[cfg(feature = "ctap")]
+    fn read_some_at(
+        &mut self,
+        record: Record,
+        offset: u32,
+        output: &mut [u8],
+    ) -> Result<usize, StorageError> {
+        self.read_at(record, offset, output)?;
+        Ok(output.len())
+    }
     /// Atomically patch one existing record, optionally extending it from an
     /// offset at or before EOF. A failed mutation has uncertain outcome and
     /// requires cache invalidation. The backend may use its filesystem's own

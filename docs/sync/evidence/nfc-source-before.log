@@ -1,0 +1,6 @@
+
+thread 'main' (38315308) panicked at tests/card/src/bin/usb_sessions/nfc_source.rs:225:9:
+assertion `left == right` failed: cancelled source dispatched: Clear
+  left: 2
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

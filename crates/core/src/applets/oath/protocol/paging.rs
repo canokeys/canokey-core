@@ -20,7 +20,8 @@ impl State {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
         }
         while let Some((id, next)) = store.at(self.cursor).map_err(status)? {
-            let mut record = store.load(id).map_err(status)?;
+            let mut record = Credential::empty();
+            store.load_into(id, &mut record).map_err(status)?;
             // List entries are NAME_LIST + one-byte length + kind/algorithm;
             // calculate entries are NAME + name plus either a 4-byte truncated
             // result or a 64-byte full result, matching the encoders below.
@@ -75,21 +76,19 @@ impl State {
                     } else {
                         // CALCULATE ALL shares the single-credential policy.
                         let input = &self.challenge[..self.challenge_len];
-                        let result = service::calculate_loaded(
+                        let mut result = service::Digest::new();
+                        if let Err(error) = service::calculate_loaded(
                             &mut store,
                             &mut mac,
                             id,
                             &record,
                             input,
                             Presence::NotConfirmed,
-                        );
-                        let mut result = match result {
-                            Ok(result) => result,
-                            Err(error) => {
-                                record.clear(&mut mac);
-                                return Err(status(error));
-                            }
-                        };
+                            &mut result,
+                        ) {
+                            record.clear(&mut mac);
+                            return Err(status(error));
+                        }
                         self.emit_digest(&result, truncated);
                         result.clear(&mut mac);
                     }

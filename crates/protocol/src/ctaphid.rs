@@ -6,7 +6,9 @@ pub const CONTINUATION_HEADER_BYTES: usize = 5;
 pub const CONTINUATION_COUNT: usize = 128; // SEQ 0x00..=0x7F.
 pub const MAX_MESSAGE: usize = REPORT_SIZE - INITIAL_HEADER_BYTES
     + CONTINUATION_COUNT * (REPORT_SIZE - CONTINUATION_HEADER_BYTES);
-pub const CTAP_MAX_REQUEST: usize = 1024;
+/// Logical CTAP request bytes, including the command byte. APDU envelope
+/// limits are transport-specific and do not include this logical budget.
+pub const CTAP_MAX_REQUEST: usize = 1296;
 pub const INIT_NONCE_BYTES: usize = 8;
 pub const INIT_RESPONSE_BYTES: usize = INIT_NONCE_BYTES + 4 + 1 + 3 + 1;
 pub const CMD_INIT_BIT: u8 = 0x80;
@@ -21,6 +23,22 @@ pub const CBOR: u8 = 0x90;
 pub const CANCEL: u8 = 0x91;
 pub const ERROR: u8 = 0xbf;
 pub const KEEPALIVE: u8 = 0xbb;
+pub const MSG_HEADER_BYTES: usize = crate::apdu::EXTENDED_HEADER_BYTES;
+
+/// Native MSG always carries a seven-byte header and Lc16, including empty
+/// bodies. Its fifth byte is ignored by the C wire contract; this is distinct
+/// from ISO Case2E and must not relax standalone APDU decoding.
+pub fn message_body_length(header: &[u8; MSG_HEADER_BYTES], total: usize) -> Result<u16, Error> {
+    let lc = u16::from_be_bytes([header[5], header[6]]);
+    let trailer = total
+        .checked_sub(MSG_HEADER_BYTES + usize::from(lc))
+        .ok_or(Error::Length)?;
+    if matches!(trailer, 0 | 2) {
+        Ok(lc)
+    } else {
+        Err(Error::Length)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -53,6 +71,7 @@ impl<'a> Report<'a> {
 }
 
 /// The caller retains the finished report until the endpoint completes it.
+#[inline(never)]
 pub fn header(out: &mut [u8; REPORT_SIZE], cid: u32, tag: u8, length: usize) -> &mut [u8] {
     out.fill(0);
     out[..4].copy_from_slice(&cid.to_be_bytes());

@@ -38,7 +38,7 @@ pub(crate) fn init_stream(
     scratch: &mut CryptoScratch,
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<usize, Sw> {
-    let mut seed = [0; crate::ports::mlkem768::SEED_BYTES];
+    let mut seed = [0; crate::ports::mlkem::SEED_BYTES];
     let result = (|| {
         p.storage
             .read_at(
@@ -145,6 +145,11 @@ pub struct Piv {
     sm2_id_used: usize,
 }
 impl Piv {
+    pub(crate) fn can_yield(&self) -> bool {
+        // Management challenges live in Piv; only SM2 retains shared scratch
+        // after the response is consumed. Other streams hold engine leases.
+        self.agreement.is_none()
+    }
     #[cfg(feature = "pass")]
     pub fn take_presence_attempt(&mut self) -> bool {
         self.presence.take_attempt()
@@ -203,6 +208,7 @@ impl Piv {
         self.cancel_classic(w, p);
         self.close_classic(w, p);
     }
+    #[inline(never)]
     fn auth_clear(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.auth_mode = AuthMode::None;
         p.memory.wipe(&mut self.challenge);
@@ -375,7 +381,7 @@ impl Piv {
             Request::Buffered => core::hint::black_box(&mut *self).command(h, le, w, p),
             Request::Import => (|| {
                 self.import.finish(&mut w.key.bytes)?;
-                if self.import.meta[repo::ALGORITHM] < alg::MLKEM768 {
+                if !repo::pq(self.import.meta[repo::ALGORITHM]) {
                     p.crypto
                         .key_operation(
                             KeyOperation::Validate,
@@ -420,6 +426,7 @@ impl Piv {
         ) || matches!(w, SessionWorkspace::Attestation(_))
             || total > canokey_protocol::apdu::RESPONSE_PREEMPT_BYTES as u32
     }
+    #[inline(never)]
     fn memory(&mut self, n: usize) {
         self.response = ResponseBacking::Memory;
         self.header_len = 0;
@@ -433,6 +440,7 @@ impl Piv {
             Err(Sw::SECURITY_STATUS_NOT_SATISFIED)
         }
     }
+    #[inline(never)]
     fn check_private(&self, pin_policy: u8) -> Result<(), Sw> {
         if pin_policy != policy::PIN_NEVER
             && (!self.pins.state.pin_ok
@@ -479,6 +487,8 @@ impl Piv {
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         match h.ins {
+            // Exact SELECT-by-name belongs to the global AID router.
+            canokey_protocol::apdu::INS_SELECT => Err(Sw::WRONG_P1P2),
             INS_VERIFY => {
                 let r = self.pins.verify(h, &w.input[..self.used], p);
                 if r.is_ok() && (self.used == super::pin::VALUE_BYTES || h.p1 == 0xff) {
@@ -560,8 +570,10 @@ impl Piv {
                 if self.used != 0 {
                     return Err(Sw::WRONG_LENGTH);
                 }
-                if !(0x01..=super::pin::MAX_RETRIES).contains(&h.p1)
-                    || !(0x01..=super::pin::MAX_RETRIES).contains(&h.p2)
+                if h.p1 < 0x01
+                    || h.p1 > super::pin::MAX_RETRIES
+                    || h.p2 < 0x01
+                    || h.p2 > super::pin::MAX_RETRIES
                 {
                     return Err(Sw::WRONG_P1P2);
                 }

@@ -17,7 +17,7 @@ def run(wire):
     def admin():
         card.cmd("admin", 0xa4, 4, data=bytes.fromhex("f000000000"))
     def fido():
-        card.cmd("fido", 0xa4, 4, data=bytes.fromhex("a0000006472f0001"))
+        card.cmd("fido", 0xa4, 4, data=bytes.fromhex("f043414e4f464944"))
     def call(command, params=None, status=0):
         data = bytes([command]) + (cbor.encode(params) if params is not None else b"")
         out = card.cmd("ctap", 0x10, cla=0x80, data=data)
@@ -36,7 +36,7 @@ def run(wire):
         invalid = curve.to_bytes(4, "big", signed=True) + default[4:]
         card.cmd("reserved curve", 0x12, data=invalid, status=0x6a80)
         assert card.cmd("unchanged after invalid curve", 0x11) == default
-    for algorithm in [-7, -8, -49]:
+    for algorithm in [-7, -8, -49, -48]:
         invalid = default[:4] + algorithm.to_bytes(4, "big", signed=True)
         card.cmd("reserved algorithm", 0x12, data=invalid, status=0x6a80)
         assert card.cmd("unchanged after invalid algorithm", 0x11) == default
@@ -61,7 +61,7 @@ def run(wire):
             card.cmd("invalid config size", 0x12, data=bytes(size), status=0x6700)
             assert card.cmd("unchanged after invalid size", 0x11) == config
         fido()
-        assert [a["alg"] for a in call(4)[10]] == [-7, -8, algorithm, -49]
+        assert [a["alg"] for a in call(4)[10]] == [-7, -8, -49, -48, algorithm]
         mixed_management(call, verify_attestation, int.from_bytes(config[:4], "big", signed=True), algorithm)
         admin()
         card.cmd("verify", 0x20, data=b"123456")
@@ -75,7 +75,7 @@ def run(wire):
     wire.command("RESET")
     fido()
     info = call(4)
-    assert [a["alg"] for a in info[10]] == [-7, -8, -65537, -49]
+    assert [a["alg"] for a in info[10]] == [-7, -8, -49, -48, -65537]
     request = {1: hashlib.sha256(b"test").digest(), 2: {"id": "example.com"}, 3: {"id": b"user"},
                4: [{"type": "public-key", "alg": -54}]}
     call(1, request, 0x26)
@@ -89,7 +89,7 @@ def run(wire):
     call(7) # Credential reset preserves provisioned SM2 identifiers.
     retired = dict(handle)
     call(2, {1: "example.com", 2: request[1], 3: [retired]}, 0x2e)
-    assert [a["alg"] for a in call(4)[10]] == [-7, -8, -65537, -49]
+    assert [a["alg"] for a in call(4)[10]] == [-7, -8, -49, -48, -65537]
     # Factory recovery also revokes CTAP credentials, but retains manufacturing material.
     result = call(1, request)
     verify_attestation(result, request[1])
@@ -101,7 +101,7 @@ def run(wire):
     card.cmd("factory reset", 0x50, data=b"RESET")
     fido()
     call(2, {1: "example.com", 2: request[1], 3: [handle]}, 0x2e)
-    assert [a["alg"] for a in call(4)[10]] == [-7, -8, -65537, -49]
+    assert [a["alg"] for a in call(4)[10]] == [-7, -8, -49, -48, -65537]
     verify_attestation(call(1, request), request[1])
     wire.command("FAIL_READ 182")
     call(1, request, 0x7f)
@@ -112,12 +112,12 @@ def run(wire):
     card.cmd("restore", 0x12, data=default)
     card.cmd("empty attestation certificate", 2, data=b"")
     fido()
-    for algorithm in [-7, -49]:
+    for algorithm in [-7, -49, -48]:
         call(1, request | {4: [{"type": "public-key", "alg": algorithm}]}, 0x7f)
         card.cmd("no partial attestation", 0xc0, status=0x6986)
     verify_attestation = provision(card)
     fido()
-    for algorithm in [-7, -49]:
+    for algorithm in [-7, -49, -48]:
         verify_attestation(call(1, request | {4: [{"type": "public-key", "alg": algorithm}]}), request[1])
     print(f"CTAP configuration: {len(card.checks)} checks passed")
 
@@ -130,7 +130,7 @@ def boot_rebuild(wire, damage):
     def admin():
         card.cmd("admin", 0xa4, 4, data=bytes.fromhex("f000000000"))
     def fido():
-        card.cmd("fido", 0xa4, 4, data=bytes.fromhex("a0000006472f0001"))
+        card.cmd("fido", 0xa4, 4, data=bytes.fromhex("f043414e4f464944"))
     def call(command, params=None, status=0):
         out = card.cmd("ctap", 0x10, cla=0x80,
                        data=bytes([command]) + (cbor.encode(params) if params is not None else b""))

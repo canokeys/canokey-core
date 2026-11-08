@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Serialized CCID entrypoint. IRQs operate only the platform packet mailbox.
 #[cfg(all(feature = "ctap", feature = "usb-hid"))]
-use crate::transport::hid::link::{ck_hid_active, ck_hid_busy};
-use canokey_protocol::{apdu::EXTENDED_HEADER_BYTES, ccid::HEADER};
-use canokey_rust_core::runtime::ccid::{Backend, Request, Scratch, Transport};
+use crate::transport::hid::link::ck_hid_busy;
+use canokey_protocol::ccid::HEADER;
+use canokey_rust_core::runtime::ccid::{Backend, Request, Transport};
 
 use crate::composition::{Provider, core as core_ops};
 use crate::transport::owners::OWNER_CCID;
-#[cfg(feature = "ctap")]
-use crate::transport::pke_scratch as pke;
 
 crate::lazy_state!(
     CCID,
@@ -21,16 +19,34 @@ crate::lazy_state!(
 static mut GENERATION: u32 = u32::MAX;
 // Endpoint-owned bytes are outside Transport. Polling/timeout may mutably
 // borrow Transport while the USB IRQ reads this buffer through its TX lease.
-static mut RESPONSE: [u8; HEADER + canokey_rust_core::runtime::ccid::REPLY] =
-    [0; HEADER + canokey_rust_core::runtime::ccid::REPLY];
+const RESPONSE_BYTES: usize = HEADER + canokey_rust_core::runtime::ccid::REPLY;
+// WebUSB receives its bounded envelope here before entering Core, so a new
+// SETUP can abort partial RX without modifying the previous APDU context.
+#[cfg(feature = "usb-webusb")]
+pub(crate) const SHARED_IO_BYTES: usize = canokey_rust_core::runtime::webusb::COMMAND_LIMIT;
+#[cfg(not(feature = "usb-webusb"))]
+pub(crate) const SHARED_IO_BYTES: usize = RESPONSE_BYTES;
+const _: () = assert!(SHARED_IO_BYTES >= RESPONSE_BYTES);
+#[repr(C)]
+struct SharedIo {
+    response: [u8; RESPONSE_BYTES],
+    envelope_tail: [u8; SHARED_IO_BYTES - RESPONSE_BYTES],
+}
+static mut RESPONSE: SharedIo = SharedIo {
+    response: [0; RESPONSE_BYTES],
+    envelope_tail: [0; SHARED_IO_BYTES - RESPONSE_BYTES],
+};
+// Passive status/parameter replies and refused commands remain live while
+// WebUSB owns SharedIo. Endpoint completion protects this small TX lease too.
+static mut CONTROL_RESPONSE: [u8; canokey_rust_core::runtime::ccid::CONTROL_REPLY] =
+    [0; canokey_rust_core::runtime::ccid::CONTROL_REPLY];
 use self::io::{
-    ck_ccid_io_arm, ck_ccid_io_disarm, ck_ccid_io_generation, ck_ccid_io_idle, ck_ccid_io_now,
-    ck_ccid_io_peek, ck_ccid_io_pending, ck_ccid_io_submit, ck_ccid_io_take,
+    ck_ccid_io_arm, ck_ccid_io_disarm, ck_ccid_io_generation, ck_ccid_io_idle, ck_ccid_io_peek,
+    ck_ccid_io_pending, ck_ccid_io_submit, ck_ccid_io_take,
 };
 #[cfg(all(feature = "ctap", not(feature = "usb-hid")))]
 unsafe extern "C" {
     fn ck_hid_busy() -> u8;
-    fn ck_hid_active() -> u8;
 }
 // Constructed only by serialized main-loop poll/progress. Backend execution
 // never overlaps a live Core borrow; progress only services transport mailboxes.
@@ -38,115 +54,25 @@ struct Platform<P> {
     generation: u32,
     provider: core::marker::PhantomData<P>,
 }
-impl<P: Provider> Scratch for Platform<P> {
-    fn acquire(&mut self, length: usize) -> bool {
-        #[cfg(feature = "ctap")]
-        {
-            length <= pke::capacity::<P>() && pke::acquire::<P>()
-        }
-        #[cfg(not(feature = "ctap"))]
-        {
-            let _ = length;
-            false
-        }
-    }
-    fn read(&mut self, offset: usize, out: &mut [u8]) -> bool {
-        #[cfg(feature = "ctap")]
-        {
-            pke::read::<P>(offset, out)
-        }
-        #[cfg(not(feature = "ctap"))]
-        {
-            let _ = (offset, out);
-            false
-        }
-    }
-    fn write(&mut self, offset: usize, bytes: &[u8]) -> bool {
-        #[cfg(feature = "ctap")]
-        {
-            pke::write::<P>(offset, bytes)
-        }
-        #[cfg(not(feature = "ctap"))]
-        {
-            let _ = (offset, bytes);
-            false
-        }
-    }
-    fn close(&mut self) {
-        #[cfg(feature = "ctap")]
-        pke::close_acquired::<P>();
-    }
-}
 impl<P: Provider> Backend for Platform<P> {
-    fn now(&mut self) -> u32 {
-        unsafe { ck_ccid_io_now() }
-    }
     fn reset(&mut self) {
         unsafe { core_ops::reset::<P>() }
     }
-    fn slot_power(&mut self) {
-        unsafe { core_ops::slot_power::<P>() }
-    }
-    fn prepare_extended(
-        &mut self,
-        prefix: &[u8; EXTENDED_HEADER_BYTES],
-        total: usize,
-    ) -> Result<u16, u16> {
-        #[cfg(feature = "ctap")]
+    fn slot_power(&mut self) -> bool {
         unsafe {
-            core_ops::with_core::<P, _>(|core, p| {
-                core.prepare_extended(OWNER_CCID, prefix, total, p)
-                    .map_err(|sw| sw.value())
-            })
-        }
-        #[cfg(not(feature = "ctap"))]
-        {
-            let _ = (prefix, total);
-            Err(canokey_protocol::response::StatusWord::WRONG_LENGTH.value())
+            // Power commands validate their complete envelope before reset.
+            // A refused reset preserves foreign selection and continuations.
+            #[cfg(feature = "usb-webusb")]
+            if crate::transport::webusb::block_competitor()
+                && !crate::transport::webusb::try_preempt::<P>(true, false)
+            {
+                return false;
+            }
+            core_ops::slot_power::<P>();
+            true
         }
     }
-    // Keep the streamed decoder window and APDU dispatch out of the CCID
-    // command switch; short and staged requests retain their existing paths.
-    #[inline(never)]
-    fn exchange(&mut self, request: &mut Request, out: &mut [u8]) -> Result<usize, ()> {
-        #[cfg(feature = "ctap")]
-        if request.staged() {
-            use canokey_protocol::response::StatusWord;
-            use canokey_rust_core::runtime::engine::InputSource;
-            struct Source<'a, P: Provider> {
-                request: &'a mut Request,
-                platform: &'a mut Platform<P>,
-                offset: usize,
-            }
-            impl<P: Provider> InputSource for Source<'_, P> {
-                fn read(&mut self, out: &mut [u8]) -> Result<usize, StatusWord> {
-                    if !self.request.read(self.offset, out, self.platform) {
-                        return Err(StatusWord::UNABLE_TO_PROCESS);
-                    }
-                    self.offset += out.len();
-                    Ok(out.len())
-                }
-                fn close(&mut self) {
-                    self.request.close(self.platform);
-                }
-            }
-            return unsafe {
-                core_ops::with_core::<P, _>(|core, p| {
-                    let total = request.len();
-                    let reply = core.receive_source(
-                        OWNER_CCID,
-                        total,
-                        &mut Source {
-                            request,
-                            platform: self,
-                            offset: 0,
-                        },
-                        p,
-                    );
-                    core.transmit(reply, out, p).map_err(|_| ())
-                })
-            };
-        }
+    fn exchange(&mut self, request: &Request, out: &mut [u8]) -> Result<usize, ()> {
         let input = request.short();
         let n = unsafe {
             core_ops::exchange::<P>(
@@ -184,16 +110,15 @@ pub unsafe extern "C" fn ck_ccid_idle() -> u8 {
         u8::from(
             GENERATION == ck_ccid_io_generation()
                 && ck_ccid_io_pending() == 0
-                && (ccid().idle(ck_ccid_io_now())
-                    || (ck_ccid_io_idle() != 0
-                        && ccid().completed_transaction()
-                        && core_ops::can_preempt())),
+                && ck_ccid_io_idle() != 0
+                && ccid().completed_transaction()
+                && core_ops::can_preempt(),
         )
     }
 }
 #[cfg(feature = "usb-keyboard")]
 pub unsafe fn ck_ccid_scratch_busy() -> u8 {
-    unsafe { u8::from(ccid().scratch_busy()) }
+    0
 }
 // The USB receive window is dead before applet/crypto execution starts.
 #[inline(never)]
@@ -206,7 +131,7 @@ unsafe fn receive_packet<P: Provider>(
     let mut tick = 0;
     // Only consume the packet whose command was admitted by the caller's peek.
     // An IRQ can enqueue a TRANSFER after an empty peek; taking that new packet
-    // would bypass HID ownership, including extended-request preparation.
+    // would bypass HID ownership.
     let n = if pending {
         unsafe { ck_ccid_io_take(platform.generation, packet.as_mut_ptr(), &mut tick) }
     } else {
@@ -216,16 +141,46 @@ unsafe fn receive_packet<P: Provider>(
         return false;
     }
     if n > 0 {
-        transport.receive(
-            &packet[..n as usize],
-            tick,
-            cfg!(feature = "ctap"),
-            platform,
-        );
-    } else {
-        transport.timeout(unsafe { ck_ccid_io_now() }, platform);
+        #[cfg(feature = "usb-webusb")]
+        let admitted = {
+            use canokey_protocol::ccid::{TRANSFER, payload_length};
+            // C reserves only a bounded XfrBlock, after its complete first
+            // header. Oversized/truncated transfers cannot revoke selection.
+            let requested = transport.completed_transaction()
+                && n as usize >= HEADER
+                && packet[0] == TRANSFER
+                && payload_length((&packet[..HEADER]).try_into().unwrap())
+                    <= canokey_rust_core::runtime::ccid::FRAME as u32;
+            unsafe {
+                !crate::transport::webusb::block_competitor()
+                    || crate::transport::webusb::try_preempt::<P>(requested, false)
+            }
+        };
+        #[cfg(not(feature = "usb-webusb"))]
+        let admitted = true;
+        transport.receive_admitted(&packet[..n as usize], admitted && !hid_busy());
     }
     true
+}
+/// Serialized reset service, including while USB is not yet configured.
+pub(crate) unsafe fn service_reset<P: Provider>() -> bool {
+    unsafe {
+        let generation = ck_ccid_io_generation();
+        if GENERATION == generation {
+            return false;
+        }
+        ccid().reset(&mut Platform::<P> {
+            generation,
+            provider: core::marker::PhantomData,
+        });
+        core::ptr::write_bytes(
+            core::ptr::addr_of_mut!(RESPONSE).cast::<u8>(),
+            0,
+            SHARED_IO_BYTES,
+        );
+        GENERATION = generation;
+        true
+    }
 }
 pub unsafe fn poll<P: Provider>() {
     unsafe {
@@ -233,19 +188,13 @@ pub unsafe fn poll<P: Provider>() {
         if crate::transport::nfc::is_nfc() != 0 {
             return;
         }
-        #[cfg(feature = "usb-webusb")]
-        if crate::transport::webusb::block_competitor()
-            && !crate::transport::webusb::try_preempt::<P>(matches!(
-                // POWER_ON/OFF and XfrBlock (6F), not passive slot polling.
-                u8::try_from(ck_ccid_io_peek()).ok(),
-                Some(
-                    canokey_protocol::ccid::POWER_ON
-                        | canokey_protocol::ccid::POWER_OFF
-                        | canokey_protocol::ccid::TRANSFER
-                )
-            ))
-        {
+        if service_reset::<P>() {
             return;
+        }
+        // Retire endpoint completion before WebUSB tests CCID admission. A new
+        // EP0 reservation cannot prevent bookkeeping for an already sent reply.
+        if ck_ccid_io_idle() != 0 {
+            ccid().completed();
         }
         let generation = ck_ccid_io_generation();
         let mut platform = Platform::<P> {
@@ -253,21 +202,10 @@ pub unsafe fn poll<P: Provider>() {
             provider: core::marker::PhantomData,
         };
         let transport = ccid();
-        if GENERATION != generation {
-            transport.reset(&mut platform);
-            (&mut *core::ptr::addr_of_mut!(RESPONSE)).fill(0);
-            GENERATION = generation;
-            return;
-        }
-        #[cfg(feature = "ctap")]
-        if ck_hid_active() != 0 {
-            return;
-        }
+        // Foreign HID RX/TX or a retained MSG source permits only independent
+        // control replies and refused-body drain, never shared APDU execution.
         let busy = hid_busy();
         let first = ck_ccid_io_peek();
-        if busy && transport.blocked_by_hid((first >= 0).then_some(first as u8)) {
-            return;
-        }
         if ck_ccid_io_idle() != 0 {
             transport.completed();
         }
@@ -278,13 +216,28 @@ pub unsafe fn poll<P: Provider>() {
         if generation != ck_ccid_io_generation() {
             return;
         }
+        let (output, capacity) = if transport.needs_apdu_buffer() {
+            (
+                core::ptr::addr_of_mut!(RESPONSE).cast::<u8>(),
+                RESPONSE_BYTES,
+            )
+        } else {
+            (
+                core::ptr::addr_of_mut!(CONTROL_RESPONSE).cast::<u8>(),
+                canokey_rust_core::runtime::ccid::CONTROL_REPLY,
+            )
+        };
         if transport.queued() {
-            transport.execute(busy, &mut platform, &mut *core::ptr::addr_of_mut!(RESPONSE));
+            transport.execute(
+                busy,
+                &mut platform,
+                core::slice::from_raw_parts_mut(output, capacity),
+            );
         }
         if generation != ck_ccid_io_generation() {
             return;
         }
-        if let Some(reply) = transport.reply(&*core::ptr::addr_of!(RESPONSE)) {
+        if let Some(reply) = transport.reply(core::slice::from_raw_parts(output, capacity)) {
             if ck_ccid_io_submit(
                 generation,
                 reply.as_ptr(),
@@ -295,11 +248,9 @@ pub unsafe fn poll<P: Provider>() {
                 transport.submitted();
             }
         }
-        transport.tx_timeout(ck_ccid_io_now(), &mut platform);
     }
 }
 
-#[cfg(any(feature = "usb-webusb", feature = "nfc"))]
 #[cfg(any(feature = "usb-webusb", feature = "nfc"))]
 pub fn ck_ccid_response_buffer() -> *mut u8 {
     core::ptr::addr_of_mut!(RESPONSE).cast()
@@ -307,7 +258,7 @@ pub fn ck_ccid_response_buffer() -> *mut u8 {
 
 /// Called only from HID execution, when no CCID borrow is outstanding.
 /// Never reset on generation change, consume APDUs/power commands, expire a
-/// session or touch the shared workspace. Slot replies use the CCID TX buffer.
+/// session or touch the shared workspace. Slot replies use the independent control TX buffer.
 #[cfg(all(feature = "usb-device", feature = "usb-hid"))]
 #[cfg_attr(test, allow(dead_code))]
 pub unsafe fn presence_progress<P: Provider>() {
@@ -327,13 +278,17 @@ pub unsafe fn presence_progress<P: Provider>() {
             if !crate::transport::ccid::io::take_presence(generation, &mut packet) {
                 return;
             }
-            transport.receive(&packet, ck_ccid_io_now(), false, &mut platform);
+            transport.receive(&packet);
             // take_presence admits only bodyless SLOT_STATUS: execute cannot
             // invoke the backend's reset, exchange or scratch operations.
-            transport.execute(true, &mut platform, &mut *core::ptr::addr_of_mut!(RESPONSE));
+            transport.execute(
+                true,
+                &mut platform,
+                &mut *core::ptr::addr_of_mut!(CONTROL_RESPONSE),
+            );
         }
         if transport.presence_reply() {
-            if let Some(reply) = transport.reply(&*core::ptr::addr_of!(RESPONSE)) {
+            if let Some(reply) = transport.reply(&*core::ptr::addr_of!(CONTROL_RESPONSE)) {
                 if ck_ccid_io_submit(generation, reply.as_ptr(), reply.len() as u16, 0) == 1 {
                     transport.submitted();
                 }

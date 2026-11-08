@@ -1,0 +1,1241 @@
+{
+  "schema": 1,
+  "scope": "Explicit serialized CCID/HID/WebUSB events through actual pinned C and Rust state machines/applets. HID IN drains to idle per event; literal report boundaries/bytes remain intact. No withheld-HID-IN, physical USB or arbitrary IRQ acceptance.",
+  "cases": [
+    {
+      "id": "native-PING-preserves-CCID-PIN",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "12345678810008010203040506070800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678810008010203040506070800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081009000"
+        }
+      ]
+    },
+    {
+      "id": "native-MSG-preserves-CCID-PIN",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "12345678830009000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081009000"
+        }
+      ]
+    },
+    {
+      "id": "native-MSG-retains-response-across-CCID-refusal",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000a801000000000010400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300030061ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "tick": 3000,
+          "expected": ""
+        },
+        {
+          "ccid": "6f0a000000000400000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000040081006400"
+        },
+        {
+          "tick": 3000,
+          "expected": ""
+        },
+        {
+          "hid": "1234567883000900c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678830003b561ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "native-MSG-retains-response-across-passive-CCID-status",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000a801000000000010400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300030061ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "tick": 3000,
+          "expected": ""
+        },
+        {
+          "ccid": "65000000000004000000",
+          "expected": "",
+          "expected_ccid": "81000000000004008100"
+        },
+        {
+          "hid": "1234567883000900c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678830003b561ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "MSG-short-four-byte-header",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "12345678830004000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678bf0001030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081009000"
+        }
+      ]
+    },
+    {
+      "id": "MSG-short-five-byte-header",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "12345678830005000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678bf0001030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081009000"
+        }
+      ]
+    },
+    {
+      "id": "MSG-Lc-exceeds-message",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "12345678830007000300000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678bf0001030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081009000"
+        }
+      ]
+    },
+    {
+      "id": "MSG-one-byte-trailer",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "12345678830008000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678bf0001030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081009000"
+        }
+      ]
+    },
+    {
+      "id": "MSG-three-byte-trailer",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000a000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678bf0001030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081009000"
+        }
+      ]
+    },
+    {
+      "id": "MSG-empty-Lc-absent-Le",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081009000"
+        }
+      ]
+    },
+    {
+      "id": "MSG-fifth-header-byte-is-not-ISO-Lc",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000900030000ff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081009000"
+        }
+      ]
+    },
+    {
+      "id": "MSG-immediate-foreign-CCID-refusal",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000a801000000000010400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300030061ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "ccid": "6f0a000000000400000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000040081006400"
+        },
+        {
+          "hid": "1234567883000900c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678830003b561ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "malformed-MSG-keeps-retained-response",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000a801000000000010400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300030061ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830004000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678bf0001030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "1234567883000900c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678830003b561ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "malformed-MSG-Lc-keeps-retained-response",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000a801000000000010400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300030061ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830008801000000000020400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678bf0001030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "1234567883000900c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678830003b561ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "CCID-PowerOn-during-native-HID-RX",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "123456788100c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000004000000",
+          "expected": "",
+          "expected_ccid": "8000000000000440e000"
+        },
+        {
+          "hid": "1234567800aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "hid": "1234567801aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "hid": "1234567802aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788100c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1234567800aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1234567801aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1234567802aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000500000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000050081009000"
+        }
+      ]
+    },
+    {
+      "id": "CCID-PowerOff-during-native-HID-RX",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "123456788100c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "63000000000004000000",
+          "expected": "",
+          "expected_ccid": "8100000000000440e000"
+        },
+        {
+          "hid": "1234567800aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "hid": "1234567801aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "hid": "1234567802aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788100c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1234567800aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1234567801aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1234567802aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000500000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000050081009000"
+        }
+      ]
+    },
+    {
+      "id": "CCID-SlotStatus-during-native-HID-RX",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "123456788100c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "65000000000004000000",
+          "expected": "",
+          "expected_ccid": "81000000000004008100"
+        },
+        {
+          "hid": "1234567800aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "hid": "1234567801aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "hid": "1234567802aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788100c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1234567800aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1234567801aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1234567802aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000500000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000050081009000"
+        }
+      ]
+    },
+    {
+      "id": "CCID-Parameters-during-native-HID-RX",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "123456788100c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "6c000000000004000000",
+          "expected": "",
+          "expected_ccid": "820700000000040081011110001500fe00"
+        },
+        {
+          "hid": "1234567800aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "hid": "1234567801aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "hid": "1234567802aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788100c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1234567800aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1234567801aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1234567802aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "poll": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000500000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000050081009000"
+        }
+      ]
+    },
+    {
+      "id": "native-MSG-retains-response-across-WebUSB-refusal",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000a801000000000010400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300030061ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "tick": 3000,
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000a00",
+          "expected": "STALL"
+        },
+        {
+          "tick": 3000,
+          "expected": "STALL"
+        },
+        {
+          "hid": "1234567883000900c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "STALL",
+          "expected_hid": "12345678830003b561ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "native-MSG-replacement-preserves-Rust-response-isolation",
+      "transport": "usb",
+      "oracle_rows": [
+        "E35"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000a801000000000010400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300030061ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830009000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected_hid_c": "123456788301aab50184665532465f5632684649444f5f325f30684649444f5f325f31684649444f5f325f3302876863726564426c6f626b6372656450726f7412345678006563746b686d61632d7365637265746e686d61632d7365637265742d6d636c6c61726765426c6f624b65796c6d696e50696e4c656e677468717468123456780169726450617274795061796d656e740350244eb29ee0904e4981fe1f20f8d3b8f404a962726bf568616c776179735576f468637265644d676d74f5123456780269617574686e72436667f569636c69656e7450696ef46a6c61726765426c6f6273f56e70696e557641757468546f6b656ef56f7365744d696e504912345678034e4c656e677468f5706d616b654372656455764e6f74527164f5051905100682010207100818460982636e6663637573620a84a263616c6726647412345678047970656a7075626c69632d6b6579a263616c672764747970656a7075626c69632d6b6579a263616c67383064747970656a7075626c69632d6b65791234567805a263616c67383564747970656a7075626c69632d6b65790b1910000d040e000f1820100414186b1681667061636b65641818f4181a82636e6663631234567806757362181d183f181f8302030490000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081009000"
+        }
+      ],
+      "difference": {
+        "id": "L8",
+        "disposition": "unresolved",
+        "reason": "Pinned C returns the retained GetInfo remainder after VERSION, whereas Rust returns the new VERSION response. Retain explicit outputs; this case is not wire parity."
+      }
+    },
+    {
+      "id": "native-MSG-GET-RESPONSE-ignores-fifth-byte",
+      "transport": "usb",
+      "oracle_rows": [
+        "E33",
+        "E34"
+      ],
+      "preconditions": "Fresh storage; configured USB. Poll CCID, HID and WebUSB in device_loop order for each event. Drain HID IN to idle within that event, completing each report and resuming Rust TX; C TX waits synchronously for completion. Fixed nonzero CID; no INIT allocation or response normalization.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000a801000000000010400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300030061ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "1234567883000900c00000ff00000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678830003b561ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    }
+  ]
+}

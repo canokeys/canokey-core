@@ -95,7 +95,7 @@ def run(library):
             assert d.lib.IFDHSetProtocolParameters(d.lun, 2, 0, 0, 0, 0) == 0
             assert d.power(500, capacity=1)[0] == 618
             rc, atr, n = d.power(500)
-            assert rc == 0 and n == 17 and atr.hex() == '3bf71100008131fe6543616e6f4b657999'
+            assert rc == 0 and n == 17 and atr.hex() == '3bf71100008131fe6543616e6f6b657999'
             assert d.capability(0x303) == (0, atr, n)
             assert d.capability(0x303, capacity=1)[0] == 618
             # ADMIN compatibility through the real IFD/APDU engine.
@@ -137,12 +137,12 @@ def run(library):
             assert d.power(502)[0] == 0
             assert d.lib.device_get_tick() >= before_reset, 'slot reset restarted the power-on window'
             admin(); edit(0x6982)
-            card.cmd('fido', 0xa4, 4, data=bytes.fromhex('a0000006472f0001'))
+            card.cmd('fido', 0xa4, 4, data=bytes.fromhex('f043414e4f464944'))
 
-            # USB PC/SC returns a response chunk; NFC FIDO mode aggregates it.
+            # Source-backed APDU output caps data at250 bytes; NFC FIDO mode aggregates it.
             getinfo = bytes.fromhex('80100000010400')
             rc, response, n = d.raw(getinfo)
-            assert rc == 0 and n == 258 and response[-2] == 0x61
+            assert rc == 0 and n == 252 and response[-2] == 0x61
             data = response[:-2]
             while response[-2] == 0x61:
                 rc, response, n = d.raw(bytes.fromhex('00c0000000'))
@@ -150,11 +150,14 @@ def run(library):
                 data += response[:-2]
             assert data[0] == 0 and cbor.decode(data[1:])[4]['credMgmt']
             os.environ['CANOKEY_TEST_NFC'] = '1'
+            assert d.raw(getinfo)[1] == b'\x6a\x82'
+            card.cmd('NFC FIDO', 0xa4, 4, data=bytes.fromhex('a0000006472f0001'))
             rc, aggregate, n = d.raw(bytes.fromhex('80108000010400'))
             assert rc == 0 and aggregate == data+b'\x90\x00' and n > 258
             assert d.raw(getinfo, capacity=257)[0] == 618
             assert d.raw(bytes.fromhex('00c0000000'))[1] == b'\x69\x86'
-            assert d.raw(bytes(1034))[0] == 618
+            # Logical1296 bytes plus the largest extended header/Le is1305.
+            assert d.raw(bytes(1306))[0] == 618
             assert d.raw(b'\x00')[1] == b'\x67\x00'
             assert d.raw(getinfo, capacity=1)[0] == 618
             card.cmd('reselect after malformed input', 0xa4, 4, data=bytes.fromhex('a0000006472f0001'))
@@ -221,9 +224,12 @@ def run(library):
 
             # NFC registration needs no touch polling; USB still requires it.
             challenge, app = hashlib.sha256(b'challenge').digest(), hashlib.sha256(b'app').digest()
-            register = bytes.fromhex('00010000000040')+challenge+app
             for nfc in [False, True]:
+                # USB uses short APDUs; retain the extended vector on NFC.
+                register = bytes.fromhex('00010000000040' if nfc else '0001000040')+challenge+app
                 os.environ['CANOKEY_TEST_NFC'] = str(int(nfc))
+                card.cmd('select reader transport', 0xa4, 4, data=bytes.fromhex(
+                    'a0000006472f0001' if nfc else 'f043414e4f464944'))
                 rc, reply, _ = d.raw(register)
                 assert rc == 0
                 if nfc:

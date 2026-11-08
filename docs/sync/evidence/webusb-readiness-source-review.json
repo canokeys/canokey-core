@@ -1,0 +1,79 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Two explicitly read acquisition-guard hunks in src/device.c, original and merge-parent diffs. Source inspection plus bounded fresh-product readiness comparison, not complete session/IRQ acceptance.",
+  "reviews": [
+    {
+      "commit": "8a166672d63b2b19a71f8bfaf8e883d079c26d8a",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "src/device.c",
+      "ordinals": [
+        12
+      ],
+      "reviewed_units": 1,
+      "assessment": "Only the session-acquisition guard/no-expiry hunk: readiness precedes same-owner reuse; foreign/context-change admission checks pending APDU state without elapsed-time expiry. Rust samples serviced generation at WebUSB command SETUP, retains continuation protection via engine::can_preempt, WebUSB reservation and CCID/HID ownership. E54 exercises fresh unready gate and recovery; existing E32/E34 exercise continuation retention and competitors. Surrounding CAS/reservation/lifecycle hunks remain unreviewed. Original diff uses USBD_CANOKEY_Ready; merge diff uses optional device_usb_ready wrapper."
+    },
+    {
+      "commit": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "src/device.c",
+      "ordinals": [
+        12
+      ],
+      "reviewed_units": 1,
+      "assessment": "Only the session-acquisition guard/no-expiry hunk: readiness precedes same-owner reuse; foreign/context-change admission checks pending APDU state without elapsed-time expiry. Rust samples serviced generation at WebUSB command SETUP, retains continuation protection via engine::can_preempt, WebUSB reservation and CCID/HID ownership. E54 exercises fresh unready gate and recovery; existing E32/E34 exercise continuation retention and competitors. Surrounding CAS/reservation/lifecycle hunks remain unreviewed. Original diff uses USBD_CANOKEY_Ready; merge diff uses optional device_usb_ready wrapper."
+    }
+  ],
+  "source_review": [
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/class/webusb/webusb.c",
+      "sha256": "3f6b93223ef0b7c055153bcc76cd02b2001d31c0ec081a334bb7b7eec74ecadf",
+      "observed": "Command SETUP acquires APDU interface before preparing RX; status does not acquire it. Empty response fetch stalls. E54 exercises actual USB control routing, with no invalid OUT after rejection."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "src/apdu.c",
+      "sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "observed": "acquire_apdu_interface calls device_applet_session_acquire before buffer acquisition; a failed session acquisition cannot arm WebUSB RX."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "src/device.c",
+      "sha256": "e375e3f61ef1c5559c462094dfe5231c5e37cefe3762b8a2cd74db51f3a9f8bb",
+      "observed": "Pinned session acquisition rejects !device_usb_ready even for the same owner, with no elapsed lease expiry; final reservation-sentinel/CAS changes remain outside the two mapped historical hunks."
+    }
+  ],
+  "rust_sources": [
+    {
+      "path": "crates/ffi/src/transport/usb.rs",
+      "sha256": "d08cab70ef3d43dfde032785e86c604c7b29574b2c0466dc24a7fb8993a544ba"
+    },
+    {
+      "path": "crates/ffi/src/transport/webusb.rs",
+      "sha256": "768fecd3846bd35f4b8caa237dd2ba8827a8b338bfd377534ad3338bacacb446"
+    },
+    {
+      "path": "crates/ffi/src/transport/usb/tests/web.rs",
+      "sha256": "ce0b322ce6e0876168a88df242d23345c5247d1d0943dd740543b33cdb3fc278"
+    },
+    {
+      "path": "crates/ffi/src/transport/ccid/mod.rs",
+      "sha256": "58805b40cca3ff90d43f28a5081520d41f409bedd48330354006ddd3cbef726c"
+    },
+    {
+      "path": "crates/core/src/runtime/engine.rs",
+      "sha256": "e5ee7484a82f7b1ed29195907c9cc3731a329ed80eff31be39e2083ced9f8fa2"
+    }
+  ],
+  "regressions": [
+    "tests/fixtures/c312-webusb-readiness/vectors.json",
+    "tests/fixtures/c312-usb-ownership/vectors.json",
+    "tests/fixtures/c312-hid-ownership/vectors.json",
+    "crates/ffi/src/transport/usb/tests/web.rs"
+  ],
+  "remaining": [
+    "Retained pre-reset WebUSB status states.",
+    "Actual IRQ interruption of Provider cleanup, withheld IN, endpoint failures and physical acceptance.",
+    "Surrounding unreviewed device-session reservation/CAS/lifecycle hunks."
+  ]
+}

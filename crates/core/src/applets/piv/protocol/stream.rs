@@ -61,10 +61,7 @@ impl Piv {
             } else {
                 repo::algorithm(h.p1, &self.config).map_err(|_| Sw::WRONG_P1P2)?
             };
-            if a >= alg::MLKEM768
-                || h.p1 == wire_alg::ED25519_STREAM
-                || (a == alg::SM2 && h.chained())
-            {
+            if repo::pq(a) || h.p1 == wire_alg::ED25519_STREAM || (a == alg::SM2 && h.chained()) {
                 self.agreement = None;
                 self.stream_phase = StreamPhase::Identity;
                 self.sm2_id_used = 0;
@@ -87,7 +84,7 @@ impl Piv {
                 // Changing the workspace variant destroys classic key/input
                 // backing; initialize the stream only after the transition.
                 let s = w.stream_with(p.memory);
-                let operation = if a == alg::MLKEM768 {
+                let operation = if crate::ports::mlkem::parameters(a).is_some() {
                     StreamOperation::DecapsulateInit
                 } else {
                     StreamOperation::SignInit
@@ -133,8 +130,8 @@ impl Piv {
                         }
                         ga_tag::CHALLENGE
                             if self.stream_phase == StreamPhase::ResponseTag
-                                && (a != alg::MLKEM768
-                                    || n == crate::ports::mlkem768::CIPHERTEXT_BYTES) =>
+                                && crate::ports::mlkem::parameters(a)
+                                    .is_none_or(|params| n == params.ciphertext_bytes) =>
                         {
                             if a == alg::SM2 {
                                 p.crypto
@@ -161,7 +158,7 @@ impl Piv {
                 } else if tag == ga_tag::CHALLENGE {
                     p.crypto
                         .stream(
-                            if a == alg::MLKEM768 {
+                            if crate::ports::mlkem::parameters(a).is_some() {
                                 StreamOperation::DecapsulateUpdate
                             } else {
                                 StreamOperation::SignUpdate
@@ -217,8 +214,8 @@ impl Piv {
             let SessionWorkspace::Stream(s) = w else {
                 return Err(Sw::UNABLE_TO_PROCESS);
             };
-            if a == alg::MLKEM768 {
-                let mut secret = [0; crate::ports::mlkem768::SHARED_KEY_BYTES];
+            if crate::ports::mlkem::parameters(a).is_some() {
+                let mut secret = [0; crate::ports::mlkem::SHARED_KEY_BYTES];
                 let r = p
                     .crypto
                     .stream(StreamOperation::DecapsulateFinal, a, s, &[], &mut secret)
@@ -226,7 +223,7 @@ impl Piv {
                 abort_stream(a, s, p);
                 self.request = Request::None;
                 let n = r?;
-                if n != crate::ports::mlkem768::SHARED_KEY_BYTES {
+                if n != crate::ports::mlkem::SHARED_KEY_BYTES {
                     p.memory.wipe(&mut secret);
                     return Err(Sw::UNABLE_TO_PROCESS);
                 }
@@ -273,7 +270,7 @@ impl Piv {
         let (a, n) = if let Some(a) = generated_algorithm {
             // The seed crosses the workspace variant transition only on this
             // bounded stack frame. Persistent staging owns the eventual commit.
-            let mut seed = [0; crate::ports::mlkem768::SEED_BYTES];
+            let mut seed = [0; crate::ports::mlkem::SEED_BYTES];
             let length = repo::material(a);
             seed[..length].copy_from_slice(&w.classic_with(p.memory).key.bytes[..length]);
             let s = w.stream_with(p.memory);

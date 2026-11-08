@@ -190,12 +190,12 @@ impl Piv {
         for pair in value.as_chunks::<2>().0 {
             let c = u16::from_le_bytes(*pair);
             if c == 0
-                || (!high && (0xdc00..=0xdfff).contains(&c))
-                || (high && !(0xdc00..=0xdfff).contains(&c))
+                || (!high && (c >= 0xdc00 && c <= 0xdfff))
+                || (high && (c < 0xdc00 || c > 0xdfff))
             {
                 return Err(Sw::WRONG_DATA);
             }
-            high = !high && (0xd800..=0xdbff).contains(&c);
+            high = !high && (c >= 0xd800 && c <= 0xdbff);
         }
         if high {
             return Err(Sw::WRONG_DATA);

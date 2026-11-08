@@ -1,0 +1,774 @@
+{
+  "core_revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "tinycbor_revision": "6442e749ca811e24afad1551338a45c75e09808f",
+  "evidence": "Native execution of pinned TinyCBOR skip; no C CTAP/transport execution",
+  "max_unknown_containers": 4,
+  "inputs": {
+    "src/cborparser.c": "28f5f23480108ddf4a4c6666a3e7f036ca7f13b001f2f748c428b7d17c858893",
+    "src/cbor.h": "4de3076ed4c09c81388a9e70387cc551c16b8312b2a4cae3014fcafb2cb37cff",
+    "src/cborinternal_p.h": "aedf9a9b0dd24e50a45cbfac8949c0226e674bcc8d6d3e877ac1599e87aa6660",
+    "src/cborinternalmacros_p.h": "10deb0959b71262595396564e9083e2e888885918404efee5a3fc26dfa2fb7d2",
+    "src/compilersupport_p.h": "08a613f3e67a3a159ff9d7a9d8394579def058ce1f18fe9f88041803f389aaaf",
+    "src/memory.h": "e2c454d07bc2c3a0a5f5bea8c6cbe40567c566f228cb80d3d7989dd020a09220"
+  },
+  "nesting_error": 1025,
+  "executions": 252,
+  "vectors": [
+    {
+      "shape": "array",
+      "depth": 0,
+      "value": "00",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 0,
+      "value": "784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 0,
+      "value": "590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 1,
+      "value": "8100",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 1,
+      "value": "81784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 1,
+      "value": "81590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 3,
+      "value": "81818100",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 3,
+      "value": "818181784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 3,
+      "value": "818181590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 4,
+      "value": "8181818100",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 4,
+      "value": "81818181784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 4,
+      "value": "81818181590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 5,
+      "value": "818181818100",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 5,
+      "value": "8181818181784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 5,
+      "value": "8181818181590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 8,
+      "value": "818181818181818100",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 8,
+      "value": "8181818181818181784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 8,
+      "value": "8181818181818181590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 9,
+      "value": "81818181818181818100",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 9,
+      "value": "818181818181818181784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "array",
+      "depth": 9,
+      "value": "818181818181818181590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 0,
+      "value": "00",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 0,
+      "value": "784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 0,
+      "value": "590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 1,
+      "value": "a10000",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 1,
+      "value": "a100784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 1,
+      "value": "a100590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 3,
+      "value": "a100a100a10000",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 3,
+      "value": "a100a100a100784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 3,
+      "value": "a100a100a100590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 4,
+      "value": "a100a100a100a10000",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 4,
+      "value": "a100a100a100a100784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 4,
+      "value": "a100a100a100a100590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 5,
+      "value": "a100a100a100a100a10000",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 5,
+      "value": "a100a100a100a100a100784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 5,
+      "value": "a100a100a100a100a100590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 8,
+      "value": "a100a100a100a100a100a100a100a10000",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 8,
+      "value": "a100a100a100a100a100a100a100a100784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 8,
+      "value": "a100a100a100a100a100a100a100a100590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 9,
+      "value": "a100a100a100a100a100a100a100a100a10000",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 9,
+      "value": "a100a100a100a100a100a100a100a100a100784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "map",
+      "depth": 9,
+      "value": "a100a100a100a100a100a100a100a100a100590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 0,
+      "value": "00",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 0,
+      "value": "784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 0,
+      "value": "590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 1,
+      "value": "8100",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 1,
+      "value": "81784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 1,
+      "value": "81590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 3,
+      "value": "81a1008100",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 3,
+      "value": "81a10081784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 3,
+      "value": "81a10081590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 4,
+      "value": "a10081a1008100",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 4,
+      "value": "a10081a10081784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 4,
+      "value": "a10081a10081590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": true,
+      "known_parent_results": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 5,
+      "value": "81a10081a1008100",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 5,
+      "value": "81a10081a10081784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 5,
+      "value": "81a10081a10081590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 8,
+      "value": "a10081a10081a10081a1008100",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 8,
+      "value": "a10081a10081a10081a10081784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 8,
+      "value": "a10081a10081a10081a10081590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 9,
+      "value": "81a10081a10081a10081a1008100",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 9,
+      "value": "81a10081a10081a10081a10081784678787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "shape": "mixed",
+      "depth": 9,
+      "value": "81a10081a10081a10081a10081590100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "accepted": false,
+      "known_parent_results": [
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    }
+  ]
+}

@@ -51,6 +51,24 @@ pub mod usb {
         ck_usb_out as out_event, ck_usb_resume as resume, ck_usb_set_landing as set_landing,
         ck_usb_setup as setup, ck_usb_suspend as suspend, deinit, init, progress,
     };
+
+    /// # Safety
+    /// Run only on the serialized main loop, outside any Core borrow, using
+    /// the installed Provider. IRQs only publish the lifecycle flags consumed
+    /// here. Enumeration must not dispatch application commands before boot
+    /// self-checks; service reset/cleanup independently of normal transport poll.
+    pub unsafe fn service<P: super::Provider>() {
+        unsafe {
+            let generation = crate::transport::usb::service_generation();
+            #[cfg(feature = "usb-webusb")]
+            crate::transport::webusb::service_reset::<P>();
+            #[cfg(feature = "usb-hid")]
+            crate::transport::hid::link::service_reset::<P>();
+            #[cfg(feature = "usb-ccid")]
+            crate::transport::ccid::service_reset::<P>();
+            crate::transport::usb::service_complete(generation);
+        }
+    }
 }
 
 /// Capabilities constructed by the firmware, host or test owner.

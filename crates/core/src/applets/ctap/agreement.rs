@@ -36,7 +36,7 @@ impl Parser {
         coordinates: &mut [u8; 64],
         length_error: Status,
     ) -> Result<bool, Status> {
-        if super::skip_cbor_event(&mut self.skip, event) {
+        if super::skip_cbor_event(&mut self.skip, event)? {
             return Ok(false);
         }
         if let Some((key, _)) = self.body {

@@ -1,0 +1,294 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Align selected-applet SELECT status, CLA/chaining admission, NDEF INS-only dispatch/finalization and FIDO terminal INS validation with C3.1.2.",
+  "mapping": [
+    "The exact global SELECT discriminator is CLA00/INS A4/P1=04. Noncanonical SELECT reaches the selected applet. C Admin/PIV/OpenPGP check P1/P2 after CLA; Rust now returns6A86 for their local SELECT instead of unsupported INS.",
+    "OpenPGP strips CLA chain bit only for certificate PUT DATA, key IMPORT and PSO decipher, matching the C handler. The host OpenPGP helper sends ordinary objects including Lc255 URL in one short APDU; its certificate fragmentation remains193 bytes. One initial full CTest exposed this fixture policy mismatch; the corrected fixture is independently checked by E66 URL schedules.",
+    "C NDEF has no CLA filter. Rust now accepts any CLA, adjusts SELECT/READ chain headers to final, and keeps only the UPDATE chain bit with canonicalized continuation offsets. Engine uses that same adjusted header for end_frame, not the original CLA bit.",
+    "C FIDO rejects CLA10. Proprietary intermediate CLA90 fragments acknowledge before INS dispatch; Rust defers unsupported INS until terminal finish and rejects before CBOR dispatch. The terminal header is supplied through the existing registry finish call, with no new request storage.",
+    "The deterministic main612-case generator derives expected outputs from dispatch rules. Six additional URL/NDEF schedules check rejected chained URL, valid short Lc255 URL, retained grants/response prefixes and contiguous NDEF writes using arbitrary CLA. No implementation outputs are copied into expectations.",
+    "618 literal cases/27932 events pass unchanged pinned C and repaired Rust. The saved old Rust runner passes474, so144 cases are repaired. Prior1054 literal result arrays remain unchanged. This evidence approves no additional per-parent source audit unit."
+  ],
+  "targets": [
+    {
+      "path": "crates/core/src/runtime/engine.rs",
+      "sha256": "0f9ae7a5624856049754e8e546555280d9e858e040ba81689aca0ccf6bb5fab1"
+    },
+    {
+      "path": "crates/core/src/runtime/registry.rs",
+      "sha256": "f47a5659f2fc6989d5e4614ddd8df42f77f1a6f0ae279d8abbb427f31567e731"
+    },
+    {
+      "path": "crates/core/src/applets/admin/protocol.rs",
+      "sha256": "e836cae63cb86ff107f528a6274117e3458270f36dcc9968ea678f5563548354"
+    },
+    {
+      "path": "crates/core/src/applets/ctap/apdu.rs",
+      "sha256": "12a46d25228c90ffd7b81df27feeb40b7c736da29fb6ca6e7eec36529654b79f"
+    },
+    {
+      "path": "crates/core/src/applets/openpgp/protocol.rs",
+      "sha256": "e7c7d2a290c1f30da71acbddccdfcb594b1e414d710cfd1cdcbca2f1eeefedcd"
+    },
+    {
+      "path": "crates/core/src/applets/piv/protocol.rs",
+      "sha256": "03482530eeb288cc8d6afb0dc4118ec0be4b762e40f90eafcfe5b4c219db05c9"
+    },
+    {
+      "path": "tests/integration/openpgp_normal.py",
+      "sha256": "571135967f658bfb5741ffacc9c47468f5f50840f3a1d29bfdac3f8d8e1d178c"
+    },
+    {
+      "path": "tests/support/c312_select_header_vectors.py",
+      "sha256": "3d229cb242741f5ba1625bfed8519d41885b547f6d6ac9f7d5b97e2cd21708cb"
+    },
+    {
+      "path": "tests/CMakeLists.txt",
+      "sha256": "875eade7e55ab9f52e7b4b141beca557f76c6cfd36b362dbbc8c7886774b328e"
+    }
+  ],
+  "regression": {
+    "cases": 618,
+    "main_header_matrix": 612,
+    "additional_url_ndef": 6,
+    "events": 27932,
+    "before_c_passed": 618,
+    "before_rust_passed": 474,
+    "old_failures": 144,
+    "final_equal": 618,
+    "additional_buffers": 0
+  },
+  "literal": {
+    "suites": 17,
+    "cases": 1672,
+    "events": 62136,
+    "equal_output": 1655,
+    "unresolved": 17,
+    "previous_results_unchanged": 1054,
+    "summary": [
+      {
+        "name": "ccid",
+        "cases": 47,
+        "events": 454,
+        "equal": 47,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb",
+        "cases": 28,
+        "events": 576,
+        "equal": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "nfc",
+        "cases": 124,
+        "events": 2776,
+        "equal": 124,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-ownership",
+        "cases": 18,
+        "events": 408,
+        "equal": 18,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-ownership",
+        "cases": 21,
+        "events": 221,
+        "equal": 20,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-admission",
+        "cases": 28,
+        "events": 364,
+        "equal": 27,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-channels",
+        "cases": 40,
+        "events": 433,
+        "equal": 36,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-control",
+        "cases": 36,
+        "events": 228,
+        "equal": 29,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-lifecycle",
+        "cases": 33,
+        "events": 302,
+        "equal": 33,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-readiness",
+        "cases": 9,
+        "events": 75,
+        "equal": 5,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb-readiness",
+        "cases": 8,
+        "events": 126,
+        "equal": 8,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb-retained",
+        "cases": 14,
+        "events": 605,
+        "equal": 14,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "large-blob-usb",
+        "cases": 12,
+        "events": 2859,
+        "equal": 12,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "large-blob-nfc",
+        "cases": 11,
+        "events": 2478,
+        "equal": 11,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select",
+        "cases": 285,
+        "events": 5043,
+        "equal": 285,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select-config",
+        "cases": 340,
+        "events": 17256,
+        "equal": 340,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select-header",
+        "cases": 618,
+        "events": 27932,
+        "equal": 618,
+        "previous_results_unchanged": false
+      }
+    ]
+  },
+  "source_review": {
+    "core_reviewed": 645,
+    "core_total": 2254,
+    "platform_reviewed": 142,
+    "platform_total": 373,
+    "additional_approvals": 0
+  },
+  "remaining": [
+    "Further header/body mutations and inline-size boundaries, pending/config transitions and physical USB/RF acceptance remain open.",
+    "Complete volatile authorization/native-HID equivalence after selection/config changes is not established by these APDU cases.",
+    "E63 after-WTX differences, mixed NFC cache/cleanup/TXEN source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open."
+  ],
+  "final_c_excerpts": [
+    {
+      "path": "src/apdu.c",
+      "line": 488,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "  const uint8_t is_select_by_aid = CLA == 0x00 && INS == 0xA4 && P1 == 0x04;\n  if (!is_select_by_aid) {\n    if (current_applet == APPLET_PIV) {\n      if (!applet_enabled_on_transport(APPLET_PIV, transport)) {\n        disabled_applet_response(rapdu);\n        return;\n      }\n      piv_process_apdu_message(&rapdu_chaining, capdu, rapdu);\n      return;\n    }\n    if (current_applet == APPLET_OPENPGP) {\n      if (!applet_enabled_on_transport(APPLET_OPENPGP, transport)) {\n        disabled_applet_response(rapdu);\n        return;\n      }\n      openpgp_process_apdu_message(&rapdu_chaining, capdu, rapdu);\n      return;\n    }\n#if ENABLE_APPLET_NDEF\n    if (current_applet == APPLET_NDEF) {\n      ndef_process_apdu_message(&rapdu_chaining, capdu, rapdu);\n      return;\n    }"
+    },
+    {
+      "path": "src/apdu.c",
+      "line": 631,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "      ctap_schedule_runtime_reset();\n      ctap_install(0);\n      SW = 0x9000;\n      LL = 0;\n      break;\n    }\n    if (CLA == 0x00 && INS == 0xEF) {\n      testmode_inject_error(P1, P2, LC, DATA);\n      SW = 0x9000;\n      LL = 0;\n      break;\n    }\n#endif\n    if (((CLA & 0xEF) == 0x80) && ((CLA & 0x10) != 0 || fido_capdu_chaining.in_chaining)) {\n      const int chaining = fido_apdu_input(capdu);\n      if (chaining == APDU_CHAINING_OVERFLOW) {\n        fido_capdu_reset();\n        LL = 0;\n        SW = SW_WRONG_LENGTH;\n#if ENABLE_NFC\n        if (transport == APDU_TRANSPORT_NFC) {\n          rapdu->data[0] = 0x39; // CTAP2_ERR_REQUEST_TOO_LARGE\n          LL = 1;\n          SW = SW_NO_ERROR;\n        }\n#endif\n        break;\n      }\n      if (chaining == APDU_CHAINING_ERROR) {\n        fido_capdu_reset();\n        LL = 0;\n        SW = SW_UNABLE_TO_PROCESS;\n        break;\n      }\n      if (chaining == APDU_CHAINING_NOT_LAST_BLOCK) {\n        LL = 0;\n        SW = SW_NO_ERROR;\n        break;"
+    },
+    {
+      "path": "applets/admin/admin.c",
+      "line": 524,
+      "file_sha256": "6fb4f42afcb23cf38a940aad3610f43ddc5ff640219d2ff4af135826a0b4cae2",
+      "source": "int __attribute__((noinline)) admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {\n  LL = 0;\n  SW = SW_NO_ERROR;\n  if (!(CLA == 0x00 || (CLA == 0x10 && INS == ADMIN_INS_WRITE_FIDO_CERT))) EXCEPT(SW_CLA_NOT_SUPPORTED);\n\n  int ret = 0;\n  switch (INS) {\n  case ADMIN_INS_SELECT:\n    if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);\n    return 0;\n\n  case ADMIN_INS_READ_VERSION:"
+    },
+    {
+      "path": "applets/piv/piv.c",
+      "line": 1503,
+      "file_sha256": "bbbdd4ede2595733f730c0ef46a8b3e3f5d33b29cf0aa7832480432b0d25c562",
+      "source": "static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {\n  if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);\n\n  // SP 800-73-4 Part 2 \u00a73.1.1: re-selecting the PIV Card Application (full or\n  // right-truncated AID) must not change any security status indicator, so PIN,\n  // PUK and management-key authentication survive a repeated SELECT. They are\n  // cleared by piv_poweroff() when the selected applet changes. Streaming and\n  // GA stream state are already reset by the INS checks in piv_process_apdu,\n  // and the management-key mutual-auth challenge by piv_poweroff().\n\n  RDATA[0] = 0x61;"
+    },
+    {
+      "path": "applets/piv/piv.c",
+      "line": 3047,
+      "file_sha256": "bbbdd4ede2595733f730c0ef46a8b3e3f5d33b29cf0aa7832480432b0d25c562",
+      "source": "int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {\n  LL = 0;\n  SW = SW_NO_ERROR;\n  if (!(CLA == 0x00 || (CLA == 0x10 && (INS == PIV_INS_PUT_DATA || INS == PIV_INS_IMPORT_ASYMMETRIC_KEY ||\n                                        INS == PIV_INS_GENERAL_AUTHENTICATE)))) {\n    piv_abort_chained_state();\n    EXCEPT(SW_CLA_NOT_SUPPORTED);\n  }\n\n  if (INS != PIV_INS_PUT_DATA) piv_do_write = -1;\n  if (INS != PIV_INS_GET_DATA_RESPONSE) piv_do_read = -1;\n  if (INS != PIV_INS_IMPORT_ASYMMETRIC_KEY) piv_import_reset();\n  if (INS != PIV_INS_GENERAL_AUTHENTICATE) {\n    piv_auth_reset();\n    piv_sm2_agreement_reset();\n  }\n\n  int ret;\n  switch (INS) {\n  case PIV_INS_SELECT:\n    ret = piv_select(capdu, rapdu);\n    break;\n  case PIV_INS_GET_DATA:\n    ret = piv_get_data(capdu, rapdu);"
+    },
+    {
+      "path": "applets/openpgp/openpgp.c",
+      "line": 457,
+      "file_sha256": "357e94281c9b2418f4760ce32ecd3d15431e3a9da3c0b6470bb953c6b112069b",
+      "source": "static int openpgp_select(const CAPDU *capdu, RAPDU *rapdu) {\n  if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);\n  if (LC != 6 || memcmp(DATA, aid, LC) != 0) EXCEPT(SW_FILE_NOT_FOUND);\n  if (read_attr(DATA_PATH, ATTR_TOUCH_CACHE_TIME, &touch_cache_time, sizeof(touch_cache_time)) < 0) return -1;\n  return 0;\n}\n"
+    },
+    {
+      "path": "applets/openpgp/openpgp.c",
+      "line": 1696,
+      "file_sha256": "357e94281c9b2418f4760ce32ecd3d15431e3a9da3c0b6470bb953c6b112069b",
+      "source": "int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {\n  LL = 0;\n  SW = SW_NO_ERROR;\n  if (!(CLA == 0x00 ||\n        (CLA == 0x10 && ((INS == OPENPGP_INS_PUT_DATA && P1 == 0x7F && P2 == 0x21) || INS == OPENPGP_INS_IMPORT_KEY ||\n                         (INS == OPENPGP_INS_PSO && P1 == 0x80 && P2 == 0x86)))))\n    EXCEPT(SW_CLA_NOT_SUPPORTED);\n  if (INS != OPENPGP_INS_PUT_DATA || P1 != 0x7F || P2 != 0x21) openpgp_cert_write_reset();\n  if (INS != OPENPGP_INS_IMPORT_KEY) openpgp_import_reset();\n  if (INS != OPENPGP_INS_PSO || P1 != 0x80 || P2 != 0x86) {\n    openpgp_decipher_reset();\n    openpgp_crypto_release();"
+    },
+    {
+      "path": "applets/openpgp/openpgp.c",
+      "line": 1737,
+      "file_sha256": "357e94281c9b2418f4760ce32ecd3d15431e3a9da3c0b6470bb953c6b112069b",
+      "source": "#ifndef FUZZ\n  if (terminated == 1 && INS != OPENPGP_INS_ACTIVATE && INS != OPENPGP_INS_SELECT) EXCEPT(SW_TERMINATED);\n#endif\n\n  int ret;\n  switch (INS) {\n  case OPENPGP_INS_SELECT:\n    ret = openpgp_select(capdu, rapdu);\n    break;\n  case OPENPGP_INS_ACTIVATE:\n    if (terminated == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);\n    ret = openpgp_activate(capdu, rapdu);"
+    },
+    {
+      "path": "applets/ndef/ndef.c",
+      "line": 109,
+      "file_sha256": "bfb73d67485702d6d5b83941d30aa8c088c525a07b27c430a347ae106ae8ef8e",
+      "source": "  ndef_write_reset();\n  if (P1 == 0x04 && P2 == 0x00) return 0;\n  if (P1 != 0x00 || P2 != 0x0C) EXCEPT(SW_WRONG_P1P2);\n  if (LC < 2) EXCEPT(SW_WRONG_LENGTH);\n  if (DATA[0] == 0xE1 && DATA[1] == 0x03)\n    selected = CC;\n  else if (DATA[0] == 0x00 && DATA[1] == 0x01)\n    selected = NDEF;\n  else\n    EXCEPT(SW_FILE_NOT_FOUND);\n  return 0;\n}"
+    },
+    {
+      "path": "applets/ndef/ndef.c",
+      "line": 144,
+      "file_sha256": "bfb73d67485702d6d5b83941d30aa8c088c525a07b27c430a347ae106ae8ef8e",
+      "source": "  if (ret < 0) return -1;\n  LL = (uint16_t)ret;\n  return 0;\n}\n\nstatic int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {\n  const uint16_t offset = (uint16_t)(P1 << 8) | P2;\n  if (offset > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);\n  if (LC > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);\n\n  switch (selected) {\n  case CC:\n    // do not allow change CC, only modified via admin\n    ndef_write_reset();\n    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);\n  case NDEF:\n    if (ndef_cc_ensure() < 0) return -1;\n    if (CC_W != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);\n    const uint16_t write_offset = ndef_write_offset == UINT16_MAX ? offset : ndef_write_offset;\n    if (LC > NDEF_FILE_MAX_LENGTH - write_offset) {\n      ndef_write_reset();\n      EXCEPT(SW_WRONG_LENGTH);\n    }\n    if (write_file(NDEF_FILE, DATA, write_offset, LC, 0) < 0) return -1;\n    ndef_write_offset = (CLA & 0x10) != 0 ? write_offset + LC : UINT16_MAX;\n    break;\n  case NONE:"
+    },
+    {
+      "path": "applets/ndef/ndef.c",
+      "line": 176,
+      "file_sha256": "bfb73d67485702d6d5b83941d30aa8c088c525a07b27c430a347ae106ae8ef8e",
+      "source": "\nint ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {\n  LL = 0;\n  SW = SW_NO_ERROR;\n  if (INS != NDEF_INS_UPDATE) ndef_write_reset();\n\n  int ret;\n  switch (INS) {\n  case NDEF_INS_SELECT:\n    ret = ndef_select(capdu, rapdu);\n    break;\n  case NDEF_INS_READ_BINARY:\n    ret = ndef_read_binary(capdu, rapdu);\n    break;\n  case NDEF_INS_UPDATE:\n    ret = ndef_update(capdu, rapdu);\n    break;\n  default:\n    EXCEPT(SW_INS_NOT_SUPPORTED);\n  }\n  if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);\n  return 0;\n}\n\nint ndef_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu) {\n  return apdu_process_streaming_message(rapdu_chaining, capdu, rapdu, apdu_is_get_response(capdu), APDU_BUFFER_SIZE,\n                                        ndef_process_apdu);"
+    },
+    {
+      "path": "applets/ctap/ctap.c",
+      "line": 3926,
+      "file_sha256": "d6c32d99aacebb0017def6ef232c6c1fc6674f766a201c3160a5bcd9ede21e0d",
+      "source": "  }\n  SW = SW_NO_ERROR;\n  if (CLA == 0x80) {\n    if (INS == CTAP_INS_MSG) {\n      ret = ctap_process_apdu_cbor_message(DATA, LC, rapdu);\n    } else {\n      current_cmd_src = CTAP_SRC_NONE;\n      ctap_req_lifetime_end();\n      EXCEPT(SW_INS_NOT_SUPPORTED);\n    }\n  } else if (CLA == 0x00) {\n    switch (INS) {\n    case U2F_REGISTER:\n      if (ctap_config_always_uv_enabled()) EXCEPT(SW_INS_NOT_SUPPORTED);\n      ret = u2f_register(capdu, rapdu);\n      break;\n    case U2F_AUTHENTICATE:\n      if (ctap_config_always_uv_enabled()) EXCEPT(SW_INS_NOT_SUPPORTED);\n      ret = u2f_authenticate(capdu, rapdu);\n      break;\n    case U2F_VERSION:\n      ret = u2f_version(capdu, rapdu);\n      break;\n    case U2F_SELECT:\n      ret = u2f_select(capdu, rapdu);\n      break;\n    case CTAP_INS_MSG:\n      LL = 0;\n      SW = SW_NO_ERROR;\n      break;\n    default:\n      current_cmd_src = CTAP_SRC_NONE;\n      ctap_req_lifetime_end();\n      EXCEPT(SW_INS_NOT_SUPPORTED);\n    }\n  } else {\n    current_cmd_src = CTAP_SRC_NONE;\n    ctap_req_lifetime_end();\n    EXCEPT(SW_CLA_NOT_SUPPORTED);\n  }\n"
+    }
+  ],
+  "products": {
+    "devkit": {
+      "flash": 178464,
+      "static_ram": 8272,
+      "udf": 139,
+      "correctness_delta": 152,
+      "elf_sha256": "12c2d0f35b078d03a8a60da45b783172bbeaf4eae64d5d9b052a365740684c54"
+    },
+    "nfcc": {
+      "flash": 187608,
+      "static_ram": 8432,
+      "udf": 145,
+      "correctness_delta": 200,
+      "elf_sha256": "25b9b4dc8ae4c8c116ddbeb05e8971b9c5cf9cad64bd7fa3df9162abe05ef2b9",
+      "overflow": 5848,
+      "diagnostic_elf_only": true
+    }
+  }
+}

@@ -16,7 +16,8 @@ pub fn version_bytes(value: &str) -> [u8; 3] {
         .expect("version must have exactly three components")
 }
 
-pub fn main() {
+pub fn main() -> u32 {
+    let mut firmware = 0;
     let mut release = String::new();
     for (name, declaration, default, max) in [
         (
@@ -39,6 +40,9 @@ pub fn main() {
         } else {
             value.parse::<u32>().expect("decimal release field")
         };
+        if name == "CANOKEY_FIDO_FIRMWARE_VERSION" {
+            firmware = number;
+        }
         assert!(number <= max, "{name} exceeds its ABI width");
         release.push_str(&format!("pub const {declaration} = {number};\n"));
     }
@@ -54,4 +58,5 @@ pub fn main() {
         release,
     )
     .expect("write release fields");
+    firmware
 }

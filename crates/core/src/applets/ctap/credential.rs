@@ -17,6 +17,7 @@ mod scheme {
     pub const ED25519: u8 = 0x01;
     pub const SM2: u8 = 0x02;
     pub const MLDSA65: u8 = 0x03;
+    pub const MLDSA44: u8 = 0x04;
 }
 pub(super) const ID_BYTES: usize = 34;
 pub(super) type Id = [u8; ID_BYTES];
@@ -54,6 +55,7 @@ pub(super) fn algorithm(id: &Id) -> Result<u8, Status> {
         scheme::ED25519 => Ok(alg::ED25519),
         scheme::SM2 => Ok(alg::SM2),
         scheme::MLDSA65 => Ok(alg::MLDSA65),
+        scheme::MLDSA44 => Ok(alg::MLDSA44),
         _ => Err(Status::NoCredentials),
     }
 }
@@ -106,6 +108,7 @@ pub(super) fn create(
             alg::ED25519 => scheme::ED25519,
             alg::SM2 => scheme::SM2,
             alg::MLDSA65 => scheme::MLDSA65,
+            alg::MLDSA44 => scheme::MLDSA44,
             _ => return Err(Status::UnsupportedAlgorithm),
         };
         id[1] = flags;
@@ -232,6 +235,7 @@ pub(super) fn cose_algorithm(algorithm: u8, sm2: super::settings::Sm2) -> i32 {
         alg::P256 => super::wire::cose::ES256,
         alg::ED25519 => super::wire::cose::EDDSA,
         alg::MLDSA65 => super::wire::cose::MLDSA65,
+        alg::MLDSA44 => super::wire::cose::MLDSA44,
         alg::SM2 => sm2.algorithm,
         _ => super::wire::cose::ES256,
     }
@@ -239,8 +243,8 @@ pub(super) fn cose_algorithm(algorithm: u8, sm2: super::settings::Sm2) -> i32 {
 pub(super) fn public_length(algorithm: u8) -> usize {
     if algorithm == alg::ED25519 {
         32
-    } else if algorithm == alg::MLDSA65 {
-        super::pq::PUBLIC_BYTES
+    } else if let Some(params) = crate::ports::mldsa::parameters(algorithm) {
+        params.public_bytes
     } else {
         64
     }

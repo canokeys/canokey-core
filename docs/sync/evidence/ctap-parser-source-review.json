@@ -1,0 +1,959 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "87 explicitly read units in full-RP authorization, shared parser scratch/window and cancellation changes, including two merge-parent deltas and emitted-response regression. Not full CTAP/transport/canonical acceptance.",
+  "reviews": [
+    {
+      "commit": "e50dc02478c84df86cd37fdeddc312941e73b2e4",
+      "parent": "8fd934426f258ad4973c36eb336febacac50b8c4",
+      "path": "applets/ctap/ctap-internal.h",
+      "patch_sha256": "302443d2dd905d983f58ee8653fb45ff0c919d65b9b1eab08e7751115086cbcf",
+      "patch": "diff --git a/applets/ctap/ctap-internal.h b/applets/ctap/ctap-internal.h\nindex 922730f9cac59168cafd5344785e60549d631bda..ec7692a20e02b8ee8f90cc1ff745a135f5fc1fb6 100644\n--- a/applets/ctap/ctap-internal.h\n+++ b/applets/ctap/ctap-internal.h\n@@ -385,0 +386,2 @@ typedef struct {\n+bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len);\n+\n@@ -391,2 +393 @@ typedef struct {\n-  uint8_t rp_id_full[DOMAIN_NAME_MAX_SIZE];\n-  size_t rp_id_full_len;\n+  bool min_pin_rpid_authorized;\n",
+      "hunks": [
+        {
+          "ordinal": 0,
+          "header": "file metadata",
+          "sha256": "1382dcb57979c7f63e4d9d8be9cdb90024a43f339915ccb939dcc60b5e30f8b6",
+          "behaviors": [
+            "C1",
+            "C2"
+          ],
+          "assessment": "Expose full-RP authorization and replace duplicate full-RP storage with a bool in C. Rust retains its owned full RP and hashes it before authorization; no C struct/layout transplant. File metadata identifies this reviewed parent delta."
+        },
+        {
+          "ordinal": 1,
+          "header": "@@ -385,0 +386,2 @@ typedef struct {",
+          "sha256": "2ce6130ade4776b616d2d3e5f0fab22a9f41eba5928a26affeae8a43ad26beef",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Expose full-RP authorization and replace duplicate full-RP storage with a bool in C. Rust retains its owned full RP and hashes it before authorization; no C struct/layout transplant. File metadata identifies this reviewed parent delta."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -391,2 +393 @@ typedef struct {",
+          "sha256": "78a1746de9d1204a9fa74af73a976fc3fc048a6e514a4346042c7f8ac2e1092e",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Expose full-RP authorization and replace duplicate full-RP storage with a bool in C. Rust retains its owned full RP and hashes it before authorization; no C struct/layout transplant. File metadata identifies this reviewed parent delta."
+        }
+      ]
+    },
+    {
+      "commit": "e50dc02478c84df86cd37fdeddc312941e73b2e4",
+      "parent": "8fd934426f258ad4973c36eb336febacac50b8c4",
+      "path": "applets/ctap/ctap-parser.c",
+      "patch_sha256": "1d0fe9b5887b7e440cda7c534f4d1e7ec153a3b1abdda787e4988a9cb223225f",
+      "patch": "diff --git a/applets/ctap/ctap-parser.c b/applets/ctap/ctap-parser.c\nindex decfb82c99403a9c5964e33cf3fb34dba7cd2c63..3caab21868f00792407d1ab20b3fa0c35c240a40 100644\n--- a/applets/ctap/ctap-parser.c\n+++ b/applets/ctap/ctap-parser.c\n@@ -2,0 +3 @@\n+#include \"applet-scratch.h\"\n@@ -26 +26,0 @@ typedef struct {\n-  uint8_t scratch[MAX_CTAP_EXTERNAL_STRING_CHUNK];\n@@ -32,0 +33,5 @@ static bool ctap_cbor_source_cancelled(const ctap_req_src_t *src) {\n+// Reader cancellation may otherwise surface as a TinyCBOR I/O or EOF error.\n+static uint8_t ctap_parser_source_result(const ctap_req_src_t *src, uint8_t status) {\n+  return ctap_cbor_source_cancelled(src) ? CTAP2_ERR_KEEPALIVE_CANCEL : status;\n+}\n+\n@@ -55 +60 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t\n-  uint8_t *buf = dst != NULL ? (uint8_t *)dst : reader->scratch;\n+  uint8_t *buf = dst != NULL ? (uint8_t *)dst : applet_session_scratch.ctap_reader;\n@@ -59 +64 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t\n-  if (len > sizeof(reader->scratch) && dst == NULL) return NULL;\n+  if (len > sizeof(applet_session_scratch.ctap_reader) && dst == NULL) return NULL;\n@@ -79,2 +84,3 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si\n-  if (len > sizeof(reader->scratch)) return CborErrorOutOfMemory;\n-  if (reader->src->read(reader->src->ctx, reader->src->base_offset + reader->offset + offset, reader->scratch, len) < 0)\n+  if (len > sizeof(applet_session_scratch.ctap_reader)) return CborErrorOutOfMemory;\n+  if (reader->src->read(reader->src->ctx, reader->src->base_offset + reader->offset + offset,\n+                        applet_session_scratch.ctap_reader, len) < 0)\n@@ -82 +88 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si\n-  if (userptr != NULL) *userptr = reader->scratch;\n+  if (userptr != NULL) *userptr = applet_session_scratch.ctap_reader;\n@@ -103 +109 @@ static uint8_t ctap_parser_init_src(CborParser *parser, CborValue *it, ctap_cbor\n-  memset(reader, 0, sizeof(*reader));\n+  reader->offset = 0;\n@@ -305,2 +311,3 @@ static uint8_t parse_rp(CTAP_make_credential *mc, CborValue *val) {\n-      memcpy(mc->rp_id_full, domain, len);\n-      mc->rp_id_full_len = len;\n+      // Consume the exact RP ID while available; only the authorization\n+      // decision must survive parsing, keepalive and crypto.\n+      mc->min_pin_rpid_authorized = ctap_min_pin_rpid_authorized((const uint8_t *)domain, len);\n@@ -1121 +1128 @@ uint8_t parse_make_credential_src(CborParser *parser, CTAP_make_credential *mc,\n-  return parse_make_credential_impl(parser, mc, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_make_credential_impl(parser, mc, NULL, len, src));\n@@ -1240 +1247 @@ uint8_t parse_get_assertion_src(CborParser *parser, CTAP_get_assertion *ga, cons\n-  return parse_get_assertion_impl(parser, ga, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_get_assertion_impl(parser, ga, NULL, len, src));\n@@ -1424 +1431 @@ uint8_t parse_client_pin_src(CborParser *parser, CTAP_client_pin *cp, const ctap\n-  return parse_client_pin_impl(parser, cp, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_client_pin_impl(parser, cp, NULL, len, src));\n@@ -1533 +1540 @@ uint8_t parse_credential_management_src(CborParser *parser, CTAP_credential_mana\n-  return parse_credential_management_impl(parser, cm, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_credential_management_impl(parser, cm, NULL, len, src));\n@@ -1692 +1699 @@ uint8_t parse_config_src(CborParser *parser, CTAP_config *cfg, const ctap_req_sr\n-  return parse_config_impl(parser, cfg, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_config_impl(parser, cfg, NULL, len, src));\n@@ -1826 +1833 @@ uint8_t parse_large_blobs_src(CborParser *parser, CTAP_large_blobs *lb, const ct\n-  return parse_large_blobs_impl(parser, lb, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_large_blobs_impl(parser, lb, NULL, len, src));\n",
+      "hunks": [
+        {
+          "ordinal": 0,
+          "header": "file metadata",
+          "sha256": "f9367d088eb8158ed4f02577b8934a74de7d544dda02eec1a94dcf1f94ac9e87",
+          "behaviors": [
+            "C1",
+            "C2"
+          ],
+          "assessment": "Reviewed parser parent delta metadata; RP authorization is C1, shared external-reader scratch and cancellation wrapping are C2. The exact hunks are mapped individually below."
+        },
+        {
+          "ordinal": 1,
+          "header": "@@ -2,0 +3 @@",
+          "sha256": "dd8679784e0acf76687d806f624c68b08f9ab04f61d3b80307d4a8e7e5e3555d",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -26 +26,0 @@ typedef struct {",
+          "sha256": "f77e04d8797b8bf19584c9d91a10f2925e59b00fbb2f117b00d4d5520ef4cb07",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 3,
+          "header": "@@ -32,0 +33,5 @@ static bool ctap_cbor_source_cancelled(const ctap_req_src_t *src) {",
+          "sha256": "ebbee98e50a677038d4ed82fc5c976d659b92fc4c36561feebdb2da505e00284",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 4,
+          "header": "@@ -55 +60 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t",
+          "sha256": "9de0767f556781cfa5d1a8027b3d887b1cf23f9d7e45e4f380f80bef2ae87394",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 5,
+          "header": "@@ -59 +64 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t",
+          "sha256": "f48735852610463d4d99824a61431fdfc4f581ad30c25886605cc8c95a7c5660",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 6,
+          "header": "@@ -79,2 +84,3 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si",
+          "sha256": "06a9877cfdb4445521ea3a6a62ae8541a654a24535bdd3ed5a79163980128414",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 7,
+          "header": "@@ -82 +88 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si",
+          "sha256": "b9d192bea974957eb37a99d75f7d0e46f6ef58a128a49b180a44833f78652e8d",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 8,
+          "header": "@@ -103 +109 @@ static uint8_t ctap_parser_init_src(CborParser *parser, CborValue *it, ctap_cbor",
+          "sha256": "7ce197856d954b82f9d14f36f75b66921aaf99f407a144646c2e773a9d9c9731",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 9,
+          "header": "@@ -305,2 +311,3 @@ static uint8_t parse_rp(CTAP_make_credential *mc, CborValue *val) {",
+          "sha256": "ee4633fceeb02691782a0126c40f20796d05eb0d76a8252b808bf49b02b9dde7",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        },
+        {
+          "ordinal": 10,
+          "header": "@@ -1121 +1128 @@ uint8_t parse_make_credential_src(CborParser *parser, CTAP_make_credential *mc,",
+          "sha256": "3651a3c5a818d24669a1b8c996becb9c61b5b72f8ab9f6667f363bf641ecd0a9",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 11,
+          "header": "@@ -1240 +1247 @@ uint8_t parse_get_assertion_src(CborParser *parser, CTAP_get_assertion *ga, cons",
+          "sha256": "b55e09fd2f77c54077240691844f1570afeefeaa3eab69e6c22799cc3a3b1d3e",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 12,
+          "header": "@@ -1424 +1431 @@ uint8_t parse_client_pin_src(CborParser *parser, CTAP_client_pin *cp, const ctap",
+          "sha256": "eb06ce22dccb00a00f50173429d2d060b5970a0dc1ee3dd481ae8b98223410bf",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 13,
+          "header": "@@ -1533 +1540 @@ uint8_t parse_credential_management_src(CborParser *parser, CTAP_credential_mana",
+          "sha256": "864743ab81c61a651d6d55cb15e6847fa09828cf028d21218d789d22d2aa01f7",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 14,
+          "header": "@@ -1692 +1699 @@ uint8_t parse_config_src(CborParser *parser, CTAP_config *cfg, const ctap_req_sr",
+          "sha256": "96e8c8c2fc741dcff6c7bc9ee2752f6636df3db533dd3321f7da7f9573d20697",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 15,
+          "header": "@@ -1826 +1833 @@ uint8_t parse_large_blobs_src(CborParser *parser, CTAP_large_blobs *lb, const ct",
+          "sha256": "876729894c9e1b6c3fe73330577937d0adabc42e17b7723d6ee54283d2527ea3",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        }
+      ]
+    },
+    {
+      "commit": "e50dc02478c84df86cd37fdeddc312941e73b2e4",
+      "parent": "8fd934426f258ad4973c36eb336febacac50b8c4",
+      "path": "applets/ctap/ctap.c",
+      "patch_sha256": "8253994b92eb561a5850919a7fd56c0c614f0bfa0ba03a79b936092bab0b7124",
+      "patch": "diff --git a/applets/ctap/ctap.c b/applets/ctap/ctap.c\nindex 0cba4b526592549c2b3f74a1a4408c5b0f9696ba..e88b168e83a7190f6b4cae7ed11a49029c901d08 100644\n--- a/applets/ctap/ctap.c\n+++ b/applets/ctap/ctap.c\n@@ -579 +579 @@ static int ctap_min_pin_rpids_store(const CTAP_config *cfg) {\n-static bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len) {\n+bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len) {\n@@ -2029,2 +2029 @@ step12:\n-  bool ext_min_pin_authorized =\n-      mc->ext_min_pin_length && ctap_min_pin_rpid_authorized(mc->rp_id_full, mc->rp_id_full_len);\n+  bool ext_min_pin_authorized = mc->ext_min_pin_length && mc->min_pin_rpid_authorized;\n",
+      "hunks": [
+        {
+          "ordinal": 0,
+          "header": "file metadata",
+          "sha256": "abbb83dc8d8850cee63d307d2a6d5f0ddbc686511f555c037890d2ac65c12496",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        },
+        {
+          "ordinal": 1,
+          "header": "@@ -579 +579 @@ static int ctap_min_pin_rpids_store(const CTAP_config *cfg) {",
+          "sha256": "ad9fa8ab93a19f2bd7bd25991366267b1b598f95916bb8ac2b5c81e2f121b2a2",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -2029,2 +2029 @@ step12:",
+          "sha256": "d77831e4a2dfe423921b286fffb48291c614603bc4013f50d3ece1c726350924",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        }
+      ]
+    },
+    {
+      "commit": "e50dc02478c84df86cd37fdeddc312941e73b2e4",
+      "parent": "8fd934426f258ad4973c36eb336febacac50b8c4",
+      "path": "include/applet-scratch.h",
+      "patch_sha256": "bc7fc87acb2df94fee64b4cc677158bfeecd6fdc33e57214d7932c9b0c527817",
+      "patch": "diff --git a/include/applet-scratch.h b/include/applet-scratch.h\nindex 19c57461087a12320f919bc2201fb36999fa692a..7f39e641797dfecbe07d873e61c03eafca85cfa1 100644\n--- a/include/applet-scratch.h\n+++ b/include/applet-scratch.h\n@@ -187,2 +187,9 @@ typedef union {\n-  CTAP_make_credential ctap_mc;\n-  CTAP_get_assertion ctap_ga;\n+  struct {\n+    union {\n+      CTAP_make_credential ctap_mc;\n+      CTAP_get_assertion ctap_ga;\n+    };\n+    // One parser runs under the applet session at a time. Keep its temporary\n+    // string window disjoint from semantic MC/GA state, including during RX.\n+    uint8_t ctap_reader[MAX_CTAP_EXTERNAL_STRING_CHUNK];\n+  };\n@@ -196,0 +204,9 @@ typedef union {\n+_Static_assert(sizeof(applet_session_scratch_t) == sizeof(CTAP_mldsa_stream_state),\n+               \"CTAP reader must not enlarge shared scratch\");\n+_Static_assert(offsetof(applet_session_scratch_t, ctap_reader) >= sizeof(CTAP_make_credential) &&\n+                   offsetof(applet_session_scratch_t, ctap_reader) >= sizeof(CTAP_get_assertion),\n+               \"CTAP reader overlaps parsed command state\");\n+_Static_assert(offsetof(applet_session_scratch_t, ctap_reader) + MAX_CTAP_EXTERNAL_STRING_CHUNK <=\n+                   offsetof(CTAP_mldsa_stream_state, kind),\n+               \"CTAP reader overlaps live response stream metadata\");\n+\n",
+      "hunks": [
+        {
+          "ordinal": 0,
+          "header": "file metadata",
+          "sha256": "5b58a941070cdbf663404bd9d38a2f3ea8a1731c1bf8f76d3e7cd97e5113846d",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 1,
+          "header": "@@ -187,2 +187,9 @@ typedef union {",
+          "sha256": "41caf044d1c0d384a12be30ae90605c8288fad748c2b41dcd2b8198a3ba0d6ec",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -196,0 +204,9 @@ typedef union {",
+          "sha256": "a4bf60196c4b07210295fc389f2d0983e5c1020cd6bba5aca7c799c239f2e099",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        }
+      ]
+    },
+    {
+      "commit": "e50dc02478c84df86cd37fdeddc312941e73b2e4",
+      "parent": "8fd934426f258ad4973c36eb336febacac50b8c4",
+      "path": "test/test_apdu.c",
+      "patch_sha256": "846c409b8e8269e12cd05f1629c8d5a3f105669c88e3b0f558198ae32a5f0338",
+      "patch": "diff --git a/test/test_apdu.c b/test/test_apdu.c\nindex bcd80b8a5e93febf27c5fbdaf5b8e0773074b745..0d0f40a7bdaccbbeef49c3413b2ce3117db6450c 100644\n--- a/test/test_apdu.c\n+++ b/test/test_apdu.c\n@@ -4706,0 +4707,57 @@ static int client_pin_length_source_read(void *ctx, size_t offset, uint8_t *buf,\n+static void test_make_credential_min_pin_exact_rpid(void **state) {\n+  UNUSED(state);\n+  init_apdu_buffer();\n+  device_init();\n+  assert_int_equal(applets_install(), 0);\n+  char domain[DOMAIN_NAME_MAX_SIZE + 1];\n+  memset(domain, 'a', sizeof(domain) - 1);\n+  domain[sizeof(domain) - 1] = 0;\n+  CTAP_min_pin_rp_id allowed = {.len = DOMAIN_NAME_MAX_SIZE};\n+  memcpy(allowed.id, domain, allowed.len);\n+  assert_int_equal(write_file(MIN_PIN_RPIDS_FILE, &allowed, 0, sizeof(allowed), 1), 0);\n+  uint8_t stored[MAX_STORED_RPID_LENGTH];\n+  for (int source_backed = 0; source_backed < 2; ++source_backed) {\n+    for (int match = 1; match >= 0; --match) {\n+      // These full RP IDs have the same truncated stored representation.\n+      domain[0] = match ? 'a' : 'b';\n+      uint8_t req[1024], zero32[32] = {0}, *p = req;\n+      *p++ = 0xA5;\n+      *p++ = 1;\n+      put_cbor_bytes(&p, zero32, sizeof(zero32));\n+      *p++ = 2;\n+      *p++ = 0xA1;\n+      put_cbor_text(&p, \"id\");\n+      put_cbor_text(&p, domain);\n+      *p++ = 3;\n+      *p++ = 0xA1;\n+      put_cbor_text(&p, \"id\");\n+      put_cbor_bytes(&p, zero32, 1);\n+      *p++ = 4;\n+      *p++ = 0x81;\n+      *p++ = 0xA2;\n+      put_cbor_text(&p, \"alg\");\n+      put_cbor_int(&p, COSE_ALG_ES256);\n+      put_cbor_text(&p, \"type\");\n+      put_cbor_text(&p, \"public-key\");\n+      *p++ = 6;\n+      *p++ = 0xA1;\n+      put_cbor_text(&p, \"minPinLength\");\n+      *p++ = 0xF5;\n+      CborParser parser;\n+      CTAP_make_credential *mc = &applet_session_scratch.ctap_mc;\n+      ctap_req_src_t source = {.read = client_pin_length_source_read, .ctx = req, .len = p - req};\n+      assert_int_equal(source_backed ? parse_make_credential_src(&parser, mc, &source, p - req)\n+                                     : parse_make_credential(&parser, mc, req, p - req),\n+                       0);\n+      assert_true(mc->ext_min_pin_length);\n+      assert_int_equal(mc->min_pin_rpid_authorized, match);\n+      assert_int_equal(mc->rp_id_len, sizeof(stored));\n+      if (match)\n+        memcpy(stored, mc->rp_id, sizeof(stored));\n+      else\n+        assert_memory_equal(stored, mc->rp_id, sizeof(stored));\n+    }\n+  }\n+  assert_int_equal(write_file(MIN_PIN_RPIDS_FILE, NULL, 0, 0, 1), 0);\n+}\n+\n@@ -5257,0 +5315 @@ int main() {\n+      cmocka_unit_test(test_make_credential_min_pin_exact_rpid),\n",
+      "hunks": [
+        {
+          "ordinal": 0,
+          "header": "file metadata",
+          "sha256": "447f09abb8773c94167d1ee01a455a79e1af432ceedb680ca7a7f18035c4a6db",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        },
+        {
+          "ordinal": 1,
+          "header": "@@ -4706,0 +4707,57 @@ static int client_pin_length_source_read(void *ctx, size_t offset, uint8_t *buf,",
+          "sha256": "571dcd799a7d282cf701c7bcb0285eff2dfa21502fe7d44ec1082a7a49c45317",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -5257,0 +5315 @@ int main() {",
+          "sha256": "49f65f543c9d9af7b55d7115e9129e2dbff1dee50565ff01c9de23d53994b402",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        }
+      ]
+    },
+    {
+      "commit": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "applets/ctap/ctap-internal.h",
+      "patch_sha256": "8767aae4511922ef051fed98ab41f9c9d39763e8b4e22cce348e2d20048e59e2",
+      "patch": "diff --git a/applets/ctap/ctap-internal.h b/applets/ctap/ctap-internal.h\nindex 7392009c4dd98db674ac6e3e9e73ecf857774742..ec7692a20e02b8ee8f90cc1ff745a135f5fc1fb6 100644\n--- a/applets/ctap/ctap-internal.h\n+++ b/applets/ctap/ctap-internal.h\n@@ -284 +284,4 @@\n-#define MAX_CTAP_EXTERNAL_STRING_CHUNK MAX_FRAGMENT_LENGTH\n+// TinyCBOR transfers a whole definite string even when skipping an unknown\n+// value. Its reader window must cover any string within an accepted message,\n+// independently of the smaller largeBlobs fragment limit.\n+#define MAX_CTAP_EXTERNAL_STRING_CHUNK MAX_CTAP_BUFSIZE\n@@ -382,0 +386,2 @@ typedef struct {\n+bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len);\n+\n@@ -388,2 +393 @@ typedef struct {\n-  uint8_t rp_id_full[DOMAIN_NAME_MAX_SIZE];\n-  size_t rp_id_full_len;\n+  bool min_pin_rpid_authorized;\n",
+      "hunks": [
+        {
+          "ordinal": 0,
+          "header": "file metadata",
+          "sha256": "197c8de58ab15f1e80fc5959c9a511e05efc7ae0a50444265f450f40e7f9e0f5",
+          "behaviors": [
+            "C1",
+            "C2"
+          ],
+          "assessment": "Expose full-RP authorization and replace duplicate full-RP storage with a bool in C. Rust retains its owned full RP and hashes it before authorization; no C struct/layout transplant. File metadata identifies this reviewed parent delta."
+        },
+        {
+          "ordinal": 1,
+          "header": "@@ -284 +284,4 @@",
+          "sha256": "292d0af50bd1207f800fad1cfe18cdecae6cb7093f05d23d072d8d53e76ac7dc",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -382,0 +386,2 @@ typedef struct {",
+          "sha256": "4a66867f808259f998bd0407e304c534b07be25c0be5fc22720aa7db86afd4a1",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Expose full-RP authorization and replace duplicate full-RP storage with a bool in C. Rust retains its owned full RP and hashes it before authorization; no C struct/layout transplant. File metadata identifies this reviewed parent delta."
+        },
+        {
+          "ordinal": 3,
+          "header": "@@ -388,2 +393 @@ typedef struct {",
+          "sha256": "45c0d528e372a2daaebec688c36e28e35b5f2149567c76648d7208407f26923e",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Expose full-RP authorization and replace duplicate full-RP storage with a bool in C. Rust retains its owned full RP and hashes it before authorization; no C struct/layout transplant. File metadata identifies this reviewed parent delta."
+        }
+      ]
+    },
+    {
+      "commit": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "applets/ctap/ctap-parser.c",
+      "patch_sha256": "c3c248073cee60c227635336f60a354b45331afac4356282ee393802a217b80c",
+      "patch": "diff --git a/applets/ctap/ctap-parser.c b/applets/ctap/ctap-parser.c\nindex 54c213131dcc51b3f8ab36388f93fe7f69bb0ffa..3caab21868f00792407d1ab20b3fa0c35c240a40 100644\n--- a/applets/ctap/ctap-parser.c\n+++ b/applets/ctap/ctap-parser.c\n@@ -2,0 +3 @@\n+#include \"applet-scratch.h\"\n@@ -26 +26,0 @@ typedef struct {\n-  uint8_t scratch[MAX_CTAP_EXTERNAL_STRING_CHUNK];\n@@ -32,0 +33,5 @@ static bool ctap_cbor_source_cancelled(const ctap_req_src_t *src) {\n+// Reader cancellation may otherwise surface as a TinyCBOR I/O or EOF error.\n+static uint8_t ctap_parser_source_result(const ctap_req_src_t *src, uint8_t status) {\n+  return ctap_cbor_source_cancelled(src) ? CTAP2_ERR_KEEPALIVE_CANCEL : status;\n+}\n+\n@@ -48 +53 @@ static bool ctap_cbor_can_read_bytes(void *token, size_t len) {\n-  (void)ctap_cbor_source_cancelled(reader->src);\n+  if (ctap_cbor_source_cancelled(reader->src)) return false;\n@@ -55 +60 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t\n-  uint8_t *buf = dst != NULL ? (uint8_t *)dst : reader->scratch;\n+  uint8_t *buf = dst != NULL ? (uint8_t *)dst : applet_session_scratch.ctap_reader;\n@@ -57 +62 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t\n-  (void)ctap_cbor_source_cancelled(reader->src);\n+  if (ctap_cbor_source_cancelled(reader->src)) return NULL;\n@@ -59 +64 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t\n-  if (len > sizeof(reader->scratch) && dst == NULL) return NULL;\n+  if (len > sizeof(applet_session_scratch.ctap_reader) && dst == NULL) return NULL;\n@@ -75 +80 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si\n-  (void)ctap_cbor_source_cancelled(reader->src);\n+  if (ctap_cbor_source_cancelled(reader->src)) return CborErrorIO;\n@@ -79,2 +84,3 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si\n-  if (len > sizeof(reader->scratch)) return CborErrorOutOfMemory;\n-  if (reader->src->read(reader->src->ctx, reader->src->base_offset + reader->offset + offset, reader->scratch, len) < 0)\n+  if (len > sizeof(applet_session_scratch.ctap_reader)) return CborErrorOutOfMemory;\n+  if (reader->src->read(reader->src->ctx, reader->src->base_offset + reader->offset + offset,\n+                        applet_session_scratch.ctap_reader, len) < 0)\n@@ -82 +88 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si\n-  if (userptr != NULL) *userptr = reader->scratch;\n+  if (userptr != NULL) *userptr = applet_session_scratch.ctap_reader;\n@@ -103 +109 @@ static uint8_t ctap_parser_init_src(CborParser *parser, CborValue *it, ctap_cbor\n-  memset(reader, 0, sizeof(*reader));\n+  reader->offset = 0;\n@@ -305,2 +311,3 @@ static uint8_t parse_rp(CTAP_make_credential *mc, CborValue *val) {\n-      memcpy(mc->rp_id_full, domain, len);\n-      mc->rp_id_full_len = len;\n+      // Consume the exact RP ID while available; only the authorization\n+      // decision must survive parsing, keepalive and crypto.\n+      mc->min_pin_rpid_authorized = ctap_min_pin_rpid_authorized((const uint8_t *)domain, len);\n@@ -1121 +1128 @@ uint8_t parse_make_credential_src(CborParser *parser, CTAP_make_credential *mc,\n-  return parse_make_credential_impl(parser, mc, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_make_credential_impl(parser, mc, NULL, len, src));\n@@ -1240 +1247 @@ uint8_t parse_get_assertion_src(CborParser *parser, CTAP_get_assertion *ga, cons\n-  return parse_get_assertion_impl(parser, ga, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_get_assertion_impl(parser, ga, NULL, len, src));\n@@ -1424 +1431 @@ uint8_t parse_client_pin_src(CborParser *parser, CTAP_client_pin *cp, const ctap\n-  return parse_client_pin_impl(parser, cp, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_client_pin_impl(parser, cp, NULL, len, src));\n@@ -1533 +1540 @@ uint8_t parse_credential_management_src(CborParser *parser, CTAP_credential_mana\n-  return parse_credential_management_impl(parser, cm, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_credential_management_impl(parser, cm, NULL, len, src));\n@@ -1692 +1699 @@ uint8_t parse_config_src(CborParser *parser, CTAP_config *cfg, const ctap_req_sr\n-  return parse_config_impl(parser, cfg, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_config_impl(parser, cfg, NULL, len, src));\n@@ -1826 +1833 @@ uint8_t parse_large_blobs_src(CborParser *parser, CTAP_large_blobs *lb, const ct\n-  return parse_large_blobs_impl(parser, lb, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_large_blobs_impl(parser, lb, NULL, len, src));\n",
+      "hunks": [
+        {
+          "ordinal": 0,
+          "header": "file metadata",
+          "sha256": "2040782546d5ce713601ddbb31dfed7de45e64ea925a208ca3871b8d43d9f8ef",
+          "behaviors": [
+            "C1",
+            "C2"
+          ],
+          "assessment": "Reviewed parser parent delta metadata; RP authorization is C1, shared external-reader scratch and cancellation wrapping are C2. The exact hunks are mapped individually below."
+        },
+        {
+          "ordinal": 1,
+          "header": "@@ -2,0 +3 @@",
+          "sha256": "dd8679784e0acf76687d806f624c68b08f9ab04f61d3b80307d4a8e7e5e3555d",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -26 +26,0 @@ typedef struct {",
+          "sha256": "f77e04d8797b8bf19584c9d91a10f2925e59b00fbb2f117b00d4d5520ef4cb07",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 3,
+          "header": "@@ -32,0 +33,5 @@ static bool ctap_cbor_source_cancelled(const ctap_req_src_t *src) {",
+          "sha256": "ebbee98e50a677038d4ed82fc5c976d659b92fc4c36561feebdb2da505e00284",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 4,
+          "header": "@@ -48 +53 @@ static bool ctap_cbor_can_read_bytes(void *token, size_t len) {",
+          "sha256": "0229b05d34be4364eae6324c24e6db32da345149e543625c89738ce062a59550",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 5,
+          "header": "@@ -55 +60 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t",
+          "sha256": "9de0767f556781cfa5d1a8027b3d887b1cf23f9d7e45e4f380f80bef2ae87394",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 6,
+          "header": "@@ -57 +62 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t",
+          "sha256": "662bd0e4ee455950ef22a871de0f58909c706ff4e81761dd81eec06449423cd4",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 7,
+          "header": "@@ -59 +64 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t",
+          "sha256": "f48735852610463d4d99824a61431fdfc4f581ad30c25886605cc8c95a7c5660",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 8,
+          "header": "@@ -75 +80 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si",
+          "sha256": "89bef22a59c15c02a0d35761a9ca97863d37f9998beaf57b80ea5b8a858adaad",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 9,
+          "header": "@@ -79,2 +84,3 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si",
+          "sha256": "06a9877cfdb4445521ea3a6a62ae8541a654a24535bdd3ed5a79163980128414",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 10,
+          "header": "@@ -82 +88 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si",
+          "sha256": "b9d192bea974957eb37a99d75f7d0e46f6ef58a128a49b180a44833f78652e8d",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 11,
+          "header": "@@ -103 +109 @@ static uint8_t ctap_parser_init_src(CborParser *parser, CborValue *it, ctap_cbor",
+          "sha256": "7ce197856d954b82f9d14f36f75b66921aaf99f407a144646c2e773a9d9c9731",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 12,
+          "header": "@@ -305,2 +311,3 @@ static uint8_t parse_rp(CTAP_make_credential *mc, CborValue *val) {",
+          "sha256": "ee4633fceeb02691782a0126c40f20796d05eb0d76a8252b808bf49b02b9dde7",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        },
+        {
+          "ordinal": 13,
+          "header": "@@ -1121 +1128 @@ uint8_t parse_make_credential_src(CborParser *parser, CTAP_make_credential *mc,",
+          "sha256": "3651a3c5a818d24669a1b8c996becb9c61b5b72f8ab9f6667f363bf641ecd0a9",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 14,
+          "header": "@@ -1240 +1247 @@ uint8_t parse_get_assertion_src(CborParser *parser, CTAP_get_assertion *ga, cons",
+          "sha256": "b55e09fd2f77c54077240691844f1570afeefeaa3eab69e6c22799cc3a3b1d3e",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 15,
+          "header": "@@ -1424 +1431 @@ uint8_t parse_client_pin_src(CborParser *parser, CTAP_client_pin *cp, const ctap",
+          "sha256": "eb06ce22dccb00a00f50173429d2d060b5970a0dc1ee3dd481ae8b98223410bf",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 16,
+          "header": "@@ -1533 +1540 @@ uint8_t parse_credential_management_src(CborParser *parser, CTAP_credential_mana",
+          "sha256": "864743ab81c61a651d6d55cb15e6847fa09828cf028d21218d789d22d2aa01f7",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 17,
+          "header": "@@ -1692 +1699 @@ uint8_t parse_config_src(CborParser *parser, CTAP_config *cfg, const ctap_req_sr",
+          "sha256": "96e8c8c2fc741dcff6c7bc9ee2752f6636df3db533dd3321f7da7f9573d20697",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 18,
+          "header": "@@ -1826 +1833 @@ uint8_t parse_large_blobs_src(CborParser *parser, CTAP_large_blobs *lb, const ct",
+          "sha256": "876729894c9e1b6c3fe73330577937d0adabc42e17b7723d6ee54283d2527ea3",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        }
+      ]
+    },
+    {
+      "commit": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "applets/ctap/ctap.c",
+      "patch_sha256": "7dd65f3f8e9f9eadd2e2902158416f700c7ec63cfd5decb2391d10cbe8061a53",
+      "patch": "diff --git a/applets/ctap/ctap.c b/applets/ctap/ctap.c\nindex a562708f4aa69055ef90b71c6b73fab70af46297..e88b168e83a7190f6b4cae7ed11a49029c901d08 100644\n--- a/applets/ctap/ctap.c\n+++ b/applets/ctap/ctap.c\n@@ -409,5 +408,0 @@ static int ctap_mem_req_read(void *ctx, size_t offset, uint8_t *buf, size_t len)\n-static int ctap_pke_req_read(void *ctx, size_t offset, uint8_t *buf, size_t len) {\n-  UNUSED(ctx);\n-  return pke_buffer_read(offset, buf, len);\n-}\n-\n@@ -426,8 +421 @@ static int ctap_req_read_payload_bytes(size_t offset, uint8_t *buf, size_t len)\n-static void ctap_req_src_clear(void) {\n-  current_req_src.read = NULL;\n-  current_req_src.cancelled = NULL;\n-  current_req_src.close = NULL;\n-  current_req_src.ctx = NULL;\n-  current_req_src.base_offset = 0;\n-  current_req_src.len = 0;\n-}\n+static void ctap_req_src_clear(void) { memset(&current_req_src, 0, sizeof(current_req_src)); }\n@@ -591 +579 @@ static int ctap_min_pin_rpids_store(const CTAP_config *cfg) {\n-static bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len) {\n+bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len) {\n@@ -981 +969 @@ static int ctap_make_credential_stream_read(void *ctx, uint8_t *out, size_t max_\n-      if (read_file(segment->path, out + copied, segment->file_off + segment->off, n) < 0) return -1;\n+      if (read_file(segment->path, out + copied, segment->file_off + segment->off, n) != (int)n) return -1;\n@@ -2041,2 +2029 @@ step12:\n-  bool ext_min_pin_authorized =\n-      mc->ext_min_pin_length && ctap_min_pin_rpid_authorized(mc->rp_id_full, mc->rp_id_full_len);\n+  bool ext_min_pin_authorized = mc->ext_min_pin_length && mc->min_pin_rpid_authorized;\n@@ -3407 +3394 @@ static uint8_t ctap_reset_data(void) {\n-static uint8_t __attribute__((noinline)) ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, size_t len) {\n+static uint8_t __attribute__((noinline)) ctap_large_blobs(const uint8_t *params, size_t len) {\n@@ -3411 +3397,0 @@ static uint8_t __attribute__((noinline)) ctap_large_blobs(CborEncoder *encoder,\n-  CborEncoder map;\n@@ -3466,13 +3452,12 @@ static uint8_t __attribute__((noinline)) ctap_large_blobs(CborEncoder *encoder,\n-    ret = cbor_encoder_create_map(encoder, &map, 1);\n-    CHECK_CBOR_RET(ret);\n-    ret = cbor_encode_int(&map, LB_RESP_CONFIG);\n-    CHECK_CBOR_RET(ret);\n-    // to save RAM, we encode the buffer manually\n-    uint8_t *ptr = map.data.ptr;\n-    ret = cbor_encode_uint(&map, lb.get);\n-    CHECK_CBOR_RET(ret);\n-    *ptr |= 0x40; // CBOR Major type 2\n-    if (read_file(LB_FILE, map.data.ptr, lb.offset, lb.get) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;\n-    map.data.ptr += lb.get;\n-    ret = cbor_encoder_close_container(encoder, &map);\n-    CHECK_CBOR_RET(ret);\n+    // Reuse the segmented MC response engine: only this small CBOR prefix\n+    // lives in scratch. The fragment itself is pulled from its existing file,\n+    // without writing past the encoder window or keeping a file cache open.\n+    uint8_t *prefix = applet_session_scratch.buffer;\n+    uint8_t *ptr = prefix;\n+    *ptr++ = CTAP1_ERR_SUCCESS;\n+    *ptr++ = 0xA1;\n+    *ptr++ = LB_RESP_CONFIG;\n+    if (cbor_put_bytes_header(&ptr, lb.get) < 0 ||\n+        ctap_make_credential_stream_add_mem(prefix, (size_t)(ptr - prefix)) < 0 ||\n+        ctap_make_credential_stream_add_file(LB_FILE, lb.offset, lb.get) < 0)\n+      return CTAP2_ERR_UNHANDLED_REQUEST;\n@@ -3652 +3637,10 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t\n-    status = ctap_large_blobs(&encoder, req, req_len);\n+    memset(&mc_stream_state, 0, sizeof(mc_stream_state));\n+    status = ctap_large_blobs(req, req_len);\n+    if (status == 0 && mc_stream_state.prepared) {\n+      *resp = 0;\n+      *resp_len = 0;\n+      if (!hid_cbor_stream_response_active)\n+        apdu_response_source_set((uint32_t)mc_stream_state.total_len, SW_NO_ERROR,\n+                                ctap_make_credential_stream_read_at, NULL, &mc_stream_state);\n+      goto finish;\n+    }\n@@ -3730,0 +3725 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint\n+    ctap_req_lifetime_end();\n@@ -3734 +3728,0 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint\n-      ctap_req_lifetime_end();\n@@ -3737 +3730,0 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint\n-    ctap_req_lifetime_end();\n@@ -3758,0 +3752,8 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint\n+    if (cmd == CTAP_LARGE_BLOBS && mc_stream_state.prepared && resp[0] == 0) {\n+      source->total_len = mc_stream_state.total_len;\n+      source->read = ctap_make_credential_stream_read;\n+      source->close = ctap_close_shared_buffer_source;\n+      source->ctx = &mc_stream_state;\n+      ctap_req_lifetime_end();\n+      return 1;\n+    }\n@@ -3880,0 +3882 @@ static int __attribute__((noinline)) ctap_process_apdu_cbor_message(uint8_t *req\n+    ctap_req_lifetime_end();\n@@ -3887 +3888,0 @@ static int __attribute__((noinline)) ctap_process_apdu_cbor_message(uint8_t *req\n-      ctap_req_lifetime_end();\n@@ -3892 +3892,0 @@ static int __attribute__((noinline)) ctap_process_apdu_cbor_message(uint8_t *req\n-    ctap_req_lifetime_end();\n@@ -4000 +4000 @@ int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t\n-      .read = ctap_pke_req_read,\n+      .read = apdu_request_read_pke,\n",
+      "hunks": [
+        {
+          "ordinal": 3,
+          "header": "@@ -591 +579 @@ static int ctap_min_pin_rpids_store(const CTAP_config *cfg) {",
+          "sha256": "b3a9e6198a1944e02a0634ed18b4d75ee0bbba57175129c50d50008b6ced9aa7",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        },
+        {
+          "ordinal": 5,
+          "header": "@@ -2041,2 +2029 @@ step12:",
+          "sha256": "a3fca10d90b1e735dfc4e77c5ddb919fe7de912b54b97c776a131fa95bb35a57",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        }
+      ]
+    },
+    {
+      "commit": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "include/applet-scratch.h",
+      "patch_sha256": "bc7fc87acb2df94fee64b4cc677158bfeecd6fdc33e57214d7932c9b0c527817",
+      "patch": "diff --git a/include/applet-scratch.h b/include/applet-scratch.h\nindex 19c57461087a12320f919bc2201fb36999fa692a..7f39e641797dfecbe07d873e61c03eafca85cfa1 100644\n--- a/include/applet-scratch.h\n+++ b/include/applet-scratch.h\n@@ -187,2 +187,9 @@ typedef union {\n-  CTAP_make_credential ctap_mc;\n-  CTAP_get_assertion ctap_ga;\n+  struct {\n+    union {\n+      CTAP_make_credential ctap_mc;\n+      CTAP_get_assertion ctap_ga;\n+    };\n+    // One parser runs under the applet session at a time. Keep its temporary\n+    // string window disjoint from semantic MC/GA state, including during RX.\n+    uint8_t ctap_reader[MAX_CTAP_EXTERNAL_STRING_CHUNK];\n+  };\n@@ -196,0 +204,9 @@ typedef union {\n+_Static_assert(sizeof(applet_session_scratch_t) == sizeof(CTAP_mldsa_stream_state),\n+               \"CTAP reader must not enlarge shared scratch\");\n+_Static_assert(offsetof(applet_session_scratch_t, ctap_reader) >= sizeof(CTAP_make_credential) &&\n+                   offsetof(applet_session_scratch_t, ctap_reader) >= sizeof(CTAP_get_assertion),\n+               \"CTAP reader overlaps parsed command state\");\n+_Static_assert(offsetof(applet_session_scratch_t, ctap_reader) + MAX_CTAP_EXTERNAL_STRING_CHUNK <=\n+                   offsetof(CTAP_mldsa_stream_state, kind),\n+               \"CTAP reader overlaps live response stream metadata\");\n+\n",
+      "hunks": [
+        {
+          "ordinal": 0,
+          "header": "file metadata",
+          "sha256": "5b58a941070cdbf663404bd9d38a2f3ea8a1731c1bf8f76d3e7cd97e5113846d",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 1,
+          "header": "@@ -187,2 +187,9 @@ typedef union {",
+          "sha256": "41caf044d1c0d384a12be30ae90605c8288fad748c2b41dcd2b8198a3ba0d6ec",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -196,0 +204,9 @@ typedef union {",
+          "sha256": "a4bf60196c4b07210295fc389f2d0983e5c1020cd6bba5aca7c799c239f2e099",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        }
+      ]
+    },
+    {
+      "commit": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "parent": "99df44df4653051887ac6fdb9355508314a01efc",
+      "path": "applets/ctap/ctap-internal.h",
+      "patch_sha256": "8767aae4511922ef051fed98ab41f9c9d39763e8b4e22cce348e2d20048e59e2",
+      "patch": "diff --git a/applets/ctap/ctap-internal.h b/applets/ctap/ctap-internal.h\nindex 7392009c4dd98db674ac6e3e9e73ecf857774742..ec7692a20e02b8ee8f90cc1ff745a135f5fc1fb6 100644\n--- a/applets/ctap/ctap-internal.h\n+++ b/applets/ctap/ctap-internal.h\n@@ -284 +284,4 @@\n-#define MAX_CTAP_EXTERNAL_STRING_CHUNK MAX_FRAGMENT_LENGTH\n+// TinyCBOR transfers a whole definite string even when skipping an unknown\n+// value. Its reader window must cover any string within an accepted message,\n+// independently of the smaller largeBlobs fragment limit.\n+#define MAX_CTAP_EXTERNAL_STRING_CHUNK MAX_CTAP_BUFSIZE\n@@ -382,0 +386,2 @@ typedef struct {\n+bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len);\n+\n@@ -388,2 +393 @@ typedef struct {\n-  uint8_t rp_id_full[DOMAIN_NAME_MAX_SIZE];\n-  size_t rp_id_full_len;\n+  bool min_pin_rpid_authorized;\n",
+      "hunks": [
+        {
+          "ordinal": 0,
+          "header": "file metadata",
+          "sha256": "197c8de58ab15f1e80fc5959c9a511e05efc7ae0a50444265f450f40e7f9e0f5",
+          "behaviors": [
+            "C1",
+            "C2"
+          ],
+          "assessment": "Expose full-RP authorization and replace duplicate full-RP storage with a bool in C. Rust retains its owned full RP and hashes it before authorization; no C struct/layout transplant. File metadata identifies this reviewed parent delta."
+        },
+        {
+          "ordinal": 1,
+          "header": "@@ -284 +284,4 @@",
+          "sha256": "292d0af50bd1207f800fad1cfe18cdecae6cb7093f05d23d072d8d53e76ac7dc",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -382,0 +386,2 @@ typedef struct {",
+          "sha256": "4a66867f808259f998bd0407e304c534b07be25c0be5fc22720aa7db86afd4a1",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Expose full-RP authorization and replace duplicate full-RP storage with a bool in C. Rust retains its owned full RP and hashes it before authorization; no C struct/layout transplant. File metadata identifies this reviewed parent delta."
+        },
+        {
+          "ordinal": 3,
+          "header": "@@ -388,2 +393 @@ typedef struct {",
+          "sha256": "45c0d528e372a2daaebec688c36e28e35b5f2149567c76648d7208407f26923e",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Expose full-RP authorization and replace duplicate full-RP storage with a bool in C. Rust retains its owned full RP and hashes it before authorization; no C struct/layout transplant. File metadata identifies this reviewed parent delta."
+        }
+      ]
+    },
+    {
+      "commit": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "parent": "99df44df4653051887ac6fdb9355508314a01efc",
+      "path": "applets/ctap/ctap-parser.c",
+      "patch_sha256": "c3c248073cee60c227635336f60a354b45331afac4356282ee393802a217b80c",
+      "patch": "diff --git a/applets/ctap/ctap-parser.c b/applets/ctap/ctap-parser.c\nindex 54c213131dcc51b3f8ab36388f93fe7f69bb0ffa..3caab21868f00792407d1ab20b3fa0c35c240a40 100644\n--- a/applets/ctap/ctap-parser.c\n+++ b/applets/ctap/ctap-parser.c\n@@ -2,0 +3 @@\n+#include \"applet-scratch.h\"\n@@ -26 +26,0 @@ typedef struct {\n-  uint8_t scratch[MAX_CTAP_EXTERNAL_STRING_CHUNK];\n@@ -32,0 +33,5 @@ static bool ctap_cbor_source_cancelled(const ctap_req_src_t *src) {\n+// Reader cancellation may otherwise surface as a TinyCBOR I/O or EOF error.\n+static uint8_t ctap_parser_source_result(const ctap_req_src_t *src, uint8_t status) {\n+  return ctap_cbor_source_cancelled(src) ? CTAP2_ERR_KEEPALIVE_CANCEL : status;\n+}\n+\n@@ -48 +53 @@ static bool ctap_cbor_can_read_bytes(void *token, size_t len) {\n-  (void)ctap_cbor_source_cancelled(reader->src);\n+  if (ctap_cbor_source_cancelled(reader->src)) return false;\n@@ -55 +60 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t\n-  uint8_t *buf = dst != NULL ? (uint8_t *)dst : reader->scratch;\n+  uint8_t *buf = dst != NULL ? (uint8_t *)dst : applet_session_scratch.ctap_reader;\n@@ -57 +62 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t\n-  (void)ctap_cbor_source_cancelled(reader->src);\n+  if (ctap_cbor_source_cancelled(reader->src)) return NULL;\n@@ -59 +64 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t\n-  if (len > sizeof(reader->scratch) && dst == NULL) return NULL;\n+  if (len > sizeof(applet_session_scratch.ctap_reader) && dst == NULL) return NULL;\n@@ -75 +80 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si\n-  (void)ctap_cbor_source_cancelled(reader->src);\n+  if (ctap_cbor_source_cancelled(reader->src)) return CborErrorIO;\n@@ -79,2 +84,3 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si\n-  if (len > sizeof(reader->scratch)) return CborErrorOutOfMemory;\n-  if (reader->src->read(reader->src->ctx, reader->src->base_offset + reader->offset + offset, reader->scratch, len) < 0)\n+  if (len > sizeof(applet_session_scratch.ctap_reader)) return CborErrorOutOfMemory;\n+  if (reader->src->read(reader->src->ctx, reader->src->base_offset + reader->offset + offset,\n+                        applet_session_scratch.ctap_reader, len) < 0)\n@@ -82 +88 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si\n-  if (userptr != NULL) *userptr = reader->scratch;\n+  if (userptr != NULL) *userptr = applet_session_scratch.ctap_reader;\n@@ -103 +109 @@ static uint8_t ctap_parser_init_src(CborParser *parser, CborValue *it, ctap_cbor\n-  memset(reader, 0, sizeof(*reader));\n+  reader->offset = 0;\n@@ -305,2 +311,3 @@ static uint8_t parse_rp(CTAP_make_credential *mc, CborValue *val) {\n-      memcpy(mc->rp_id_full, domain, len);\n-      mc->rp_id_full_len = len;\n+      // Consume the exact RP ID while available; only the authorization\n+      // decision must survive parsing, keepalive and crypto.\n+      mc->min_pin_rpid_authorized = ctap_min_pin_rpid_authorized((const uint8_t *)domain, len);\n@@ -1121 +1128 @@ uint8_t parse_make_credential_src(CborParser *parser, CTAP_make_credential *mc,\n-  return parse_make_credential_impl(parser, mc, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_make_credential_impl(parser, mc, NULL, len, src));\n@@ -1240 +1247 @@ uint8_t parse_get_assertion_src(CborParser *parser, CTAP_get_assertion *ga, cons\n-  return parse_get_assertion_impl(parser, ga, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_get_assertion_impl(parser, ga, NULL, len, src));\n@@ -1424 +1431 @@ uint8_t parse_client_pin_src(CborParser *parser, CTAP_client_pin *cp, const ctap\n-  return parse_client_pin_impl(parser, cp, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_client_pin_impl(parser, cp, NULL, len, src));\n@@ -1533 +1540 @@ uint8_t parse_credential_management_src(CborParser *parser, CTAP_credential_mana\n-  return parse_credential_management_impl(parser, cm, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_credential_management_impl(parser, cm, NULL, len, src));\n@@ -1692 +1699 @@ uint8_t parse_config_src(CborParser *parser, CTAP_config *cfg, const ctap_req_sr\n-  return parse_config_impl(parser, cfg, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_config_impl(parser, cfg, NULL, len, src));\n@@ -1826 +1833 @@ uint8_t parse_large_blobs_src(CborParser *parser, CTAP_large_blobs *lb, const ct\n-  return parse_large_blobs_impl(parser, lb, NULL, len, src);\n+  return ctap_parser_source_result(src, parse_large_blobs_impl(parser, lb, NULL, len, src));\n",
+      "hunks": [
+        {
+          "ordinal": 0,
+          "header": "file metadata",
+          "sha256": "2040782546d5ce713601ddbb31dfed7de45e64ea925a208ca3871b8d43d9f8ef",
+          "behaviors": [
+            "C1",
+            "C2"
+          ],
+          "assessment": "Reviewed parser parent delta metadata; RP authorization is C1, shared external-reader scratch and cancellation wrapping are C2. The exact hunks are mapped individually below."
+        },
+        {
+          "ordinal": 1,
+          "header": "@@ -2,0 +3 @@",
+          "sha256": "dd8679784e0acf76687d806f624c68b08f9ab04f61d3b80307d4a8e7e5e3555d",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -26 +26,0 @@ typedef struct {",
+          "sha256": "f77e04d8797b8bf19584c9d91a10f2925e59b00fbb2f117b00d4d5520ef4cb07",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 3,
+          "header": "@@ -32,0 +33,5 @@ static bool ctap_cbor_source_cancelled(const ctap_req_src_t *src) {",
+          "sha256": "ebbee98e50a677038d4ed82fc5c976d659b92fc4c36561feebdb2da505e00284",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 4,
+          "header": "@@ -48 +53 @@ static bool ctap_cbor_can_read_bytes(void *token, size_t len) {",
+          "sha256": "0229b05d34be4364eae6324c24e6db32da345149e543625c89738ce062a59550",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 5,
+          "header": "@@ -55 +60 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t",
+          "sha256": "9de0767f556781cfa5d1a8027b3d887b1cf23f9d7e45e4f380f80bef2ae87394",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 6,
+          "header": "@@ -57 +62 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t",
+          "sha256": "662bd0e4ee455950ef22a871de0f58909c706ff4e81761dd81eec06449423cd4",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 7,
+          "header": "@@ -59 +64 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t",
+          "sha256": "f48735852610463d4d99824a61431fdfc4f581ad30c25886605cc8c95a7c5660",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 8,
+          "header": "@@ -75 +80 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si",
+          "sha256": "89bef22a59c15c02a0d35761a9ca97863d37f9998beaf57b80ea5b8a858adaad",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 9,
+          "header": "@@ -79,2 +84,3 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si",
+          "sha256": "06a9877cfdb4445521ea3a6a62ae8541a654a24535bdd3ed5a79163980128414",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 10,
+          "header": "@@ -82 +88 @@ static CborError ctap_cbor_transfer_string(void *token, const void **userptr, si",
+          "sha256": "b9d192bea974957eb37a99d75f7d0e46f6ef58a128a49b180a44833f78652e8d",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 11,
+          "header": "@@ -103 +109 @@ static uint8_t ctap_parser_init_src(CborParser *parser, CborValue *it, ctap_cbor",
+          "sha256": "7ce197856d954b82f9d14f36f75b66921aaf99f407a144646c2e773a9d9c9731",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 12,
+          "header": "@@ -305,2 +311,3 @@ static uint8_t parse_rp(CTAP_make_credential *mc, CborValue *val) {",
+          "sha256": "ee4633fceeb02691782a0126c40f20796d05eb0d76a8252b808bf49b02b9dde7",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        },
+        {
+          "ordinal": 13,
+          "header": "@@ -1121 +1128 @@ uint8_t parse_make_credential_src(CborParser *parser, CTAP_make_credential *mc,",
+          "sha256": "3651a3c5a818d24669a1b8c996becb9c61b5b72f8ab9f6667f363bf641ecd0a9",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 14,
+          "header": "@@ -1240 +1247 @@ uint8_t parse_get_assertion_src(CborParser *parser, CTAP_get_assertion *ga, cons",
+          "sha256": "b55e09fd2f77c54077240691844f1570afeefeaa3eab69e6c22799cc3a3b1d3e",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 15,
+          "header": "@@ -1424 +1431 @@ uint8_t parse_client_pin_src(CborParser *parser, CTAP_client_pin *cp, const ctap",
+          "sha256": "eb06ce22dccb00a00f50173429d2d060b5970a0dc1ee3dd481ae8b98223410bf",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 16,
+          "header": "@@ -1533 +1540 @@ uint8_t parse_credential_management_src(CborParser *parser, CTAP_credential_mana",
+          "sha256": "864743ab81c61a651d6d55cb15e6847fa09828cf028d21218d789d22d2aa01f7",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 17,
+          "header": "@@ -1692 +1699 @@ uint8_t parse_config_src(CborParser *parser, CTAP_config *cfg, const ctap_req_sr",
+          "sha256": "96e8c8c2fc741dcff6c7bc9ee2752f6636df3db533dd3321f7da7f9573d20697",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 18,
+          "header": "@@ -1826 +1833 @@ uint8_t parse_large_blobs_src(CborParser *parser, CTAP_large_blobs *lb, const ct",
+          "sha256": "876729894c9e1b6c3fe73330577937d0adabc42e17b7723d6ee54283d2527ea3",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        }
+      ]
+    },
+    {
+      "commit": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "parent": "99df44df4653051887ac6fdb9355508314a01efc",
+      "path": "applets/ctap/ctap.c",
+      "patch_sha256": "7dd65f3f8e9f9eadd2e2902158416f700c7ec63cfd5decb2391d10cbe8061a53",
+      "patch": "diff --git a/applets/ctap/ctap.c b/applets/ctap/ctap.c\nindex a562708f4aa69055ef90b71c6b73fab70af46297..e88b168e83a7190f6b4cae7ed11a49029c901d08 100644\n--- a/applets/ctap/ctap.c\n+++ b/applets/ctap/ctap.c\n@@ -409,5 +408,0 @@ static int ctap_mem_req_read(void *ctx, size_t offset, uint8_t *buf, size_t len)\n-static int ctap_pke_req_read(void *ctx, size_t offset, uint8_t *buf, size_t len) {\n-  UNUSED(ctx);\n-  return pke_buffer_read(offset, buf, len);\n-}\n-\n@@ -426,8 +421 @@ static int ctap_req_read_payload_bytes(size_t offset, uint8_t *buf, size_t len)\n-static void ctap_req_src_clear(void) {\n-  current_req_src.read = NULL;\n-  current_req_src.cancelled = NULL;\n-  current_req_src.close = NULL;\n-  current_req_src.ctx = NULL;\n-  current_req_src.base_offset = 0;\n-  current_req_src.len = 0;\n-}\n+static void ctap_req_src_clear(void) { memset(&current_req_src, 0, sizeof(current_req_src)); }\n@@ -591 +579 @@ static int ctap_min_pin_rpids_store(const CTAP_config *cfg) {\n-static bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len) {\n+bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len) {\n@@ -981 +969 @@ static int ctap_make_credential_stream_read(void *ctx, uint8_t *out, size_t max_\n-      if (read_file(segment->path, out + copied, segment->file_off + segment->off, n) < 0) return -1;\n+      if (read_file(segment->path, out + copied, segment->file_off + segment->off, n) != (int)n) return -1;\n@@ -2041,2 +2029 @@ step12:\n-  bool ext_min_pin_authorized =\n-      mc->ext_min_pin_length && ctap_min_pin_rpid_authorized(mc->rp_id_full, mc->rp_id_full_len);\n+  bool ext_min_pin_authorized = mc->ext_min_pin_length && mc->min_pin_rpid_authorized;\n@@ -3407 +3394 @@ static uint8_t ctap_reset_data(void) {\n-static uint8_t __attribute__((noinline)) ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, size_t len) {\n+static uint8_t __attribute__((noinline)) ctap_large_blobs(const uint8_t *params, size_t len) {\n@@ -3411 +3397,0 @@ static uint8_t __attribute__((noinline)) ctap_large_blobs(CborEncoder *encoder,\n-  CborEncoder map;\n@@ -3466,13 +3452,12 @@ static uint8_t __attribute__((noinline)) ctap_large_blobs(CborEncoder *encoder,\n-    ret = cbor_encoder_create_map(encoder, &map, 1);\n-    CHECK_CBOR_RET(ret);\n-    ret = cbor_encode_int(&map, LB_RESP_CONFIG);\n-    CHECK_CBOR_RET(ret);\n-    // to save RAM, we encode the buffer manually\n-    uint8_t *ptr = map.data.ptr;\n-    ret = cbor_encode_uint(&map, lb.get);\n-    CHECK_CBOR_RET(ret);\n-    *ptr |= 0x40; // CBOR Major type 2\n-    if (read_file(LB_FILE, map.data.ptr, lb.offset, lb.get) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;\n-    map.data.ptr += lb.get;\n-    ret = cbor_encoder_close_container(encoder, &map);\n-    CHECK_CBOR_RET(ret);\n+    // Reuse the segmented MC response engine: only this small CBOR prefix\n+    // lives in scratch. The fragment itself is pulled from its existing file,\n+    // without writing past the encoder window or keeping a file cache open.\n+    uint8_t *prefix = applet_session_scratch.buffer;\n+    uint8_t *ptr = prefix;\n+    *ptr++ = CTAP1_ERR_SUCCESS;\n+    *ptr++ = 0xA1;\n+    *ptr++ = LB_RESP_CONFIG;\n+    if (cbor_put_bytes_header(&ptr, lb.get) < 0 ||\n+        ctap_make_credential_stream_add_mem(prefix, (size_t)(ptr - prefix)) < 0 ||\n+        ctap_make_credential_stream_add_file(LB_FILE, lb.offset, lb.get) < 0)\n+      return CTAP2_ERR_UNHANDLED_REQUEST;\n@@ -3652 +3637,10 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t\n-    status = ctap_large_blobs(&encoder, req, req_len);\n+    memset(&mc_stream_state, 0, sizeof(mc_stream_state));\n+    status = ctap_large_blobs(req, req_len);\n+    if (status == 0 && mc_stream_state.prepared) {\n+      *resp = 0;\n+      *resp_len = 0;\n+      if (!hid_cbor_stream_response_active)\n+        apdu_response_source_set((uint32_t)mc_stream_state.total_len, SW_NO_ERROR,\n+                                ctap_make_credential_stream_read_at, NULL, &mc_stream_state);\n+      goto finish;\n+    }\n@@ -3730,0 +3725 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint\n+    ctap_req_lifetime_end();\n@@ -3734 +3728,0 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint\n-      ctap_req_lifetime_end();\n@@ -3737 +3730,0 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint\n-    ctap_req_lifetime_end();\n@@ -3758,0 +3752,8 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint\n+    if (cmd == CTAP_LARGE_BLOBS && mc_stream_state.prepared && resp[0] == 0) {\n+      source->total_len = mc_stream_state.total_len;\n+      source->read = ctap_make_credential_stream_read;\n+      source->close = ctap_close_shared_buffer_source;\n+      source->ctx = &mc_stream_state;\n+      ctap_req_lifetime_end();\n+      return 1;\n+    }\n@@ -3880,0 +3882 @@ static int __attribute__((noinline)) ctap_process_apdu_cbor_message(uint8_t *req\n+    ctap_req_lifetime_end();\n@@ -3887 +3888,0 @@ static int __attribute__((noinline)) ctap_process_apdu_cbor_message(uint8_t *req\n-      ctap_req_lifetime_end();\n@@ -3892 +3892,0 @@ static int __attribute__((noinline)) ctap_process_apdu_cbor_message(uint8_t *req\n-    ctap_req_lifetime_end();\n@@ -4000 +4000 @@ int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t\n-      .read = ctap_pke_req_read,\n+      .read = apdu_request_read_pke,\n",
+      "hunks": [
+        {
+          "ordinal": 3,
+          "header": "@@ -591 +579 @@ static int ctap_min_pin_rpids_store(const CTAP_config *cfg) {",
+          "sha256": "b3a9e6198a1944e02a0634ed18b4d75ee0bbba57175129c50d50008b6ced9aa7",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        },
+        {
+          "ordinal": 5,
+          "header": "@@ -2041,2 +2029 @@ step12:",
+          "sha256": "a3fca10d90b1e735dfc4e77c5ddb919fe7de912b54b97c776a131fa95bb35a57",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        }
+      ]
+    },
+    {
+      "commit": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "parent": "99df44df4653051887ac6fdb9355508314a01efc",
+      "path": "include/applet-scratch.h",
+      "patch_sha256": "bc7fc87acb2df94fee64b4cc677158bfeecd6fdc33e57214d7932c9b0c527817",
+      "patch": "diff --git a/include/applet-scratch.h b/include/applet-scratch.h\nindex 19c57461087a12320f919bc2201fb36999fa692a..7f39e641797dfecbe07d873e61c03eafca85cfa1 100644\n--- a/include/applet-scratch.h\n+++ b/include/applet-scratch.h\n@@ -187,2 +187,9 @@ typedef union {\n-  CTAP_make_credential ctap_mc;\n-  CTAP_get_assertion ctap_ga;\n+  struct {\n+    union {\n+      CTAP_make_credential ctap_mc;\n+      CTAP_get_assertion ctap_ga;\n+    };\n+    // One parser runs under the applet session at a time. Keep its temporary\n+    // string window disjoint from semantic MC/GA state, including during RX.\n+    uint8_t ctap_reader[MAX_CTAP_EXTERNAL_STRING_CHUNK];\n+  };\n@@ -196,0 +204,9 @@ typedef union {\n+_Static_assert(sizeof(applet_session_scratch_t) == sizeof(CTAP_mldsa_stream_state),\n+               \"CTAP reader must not enlarge shared scratch\");\n+_Static_assert(offsetof(applet_session_scratch_t, ctap_reader) >= sizeof(CTAP_make_credential) &&\n+                   offsetof(applet_session_scratch_t, ctap_reader) >= sizeof(CTAP_get_assertion),\n+               \"CTAP reader overlaps parsed command state\");\n+_Static_assert(offsetof(applet_session_scratch_t, ctap_reader) + MAX_CTAP_EXTERNAL_STRING_CHUNK <=\n+                   offsetof(CTAP_mldsa_stream_state, kind),\n+               \"CTAP reader overlaps live response stream metadata\");\n+\n",
+      "hunks": [
+        {
+          "ordinal": 0,
+          "header": "file metadata",
+          "sha256": "5b58a941070cdbf663404bd9d38a2f3ea8a1731c1bf8f76d3e7cd97e5113846d",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 1,
+          "header": "@@ -187,2 +187,9 @@ typedef union {",
+          "sha256": "41caf044d1c0d384a12be30ae90605c8288fad748c2b41dcd2b8198a3ba0d6ec",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -196,0 +204,9 @@ typedef union {",
+          "sha256": "a4bf60196c4b07210295fc389f2d0983e5c1020cd6bba5aca7c799c239f2e099",
+          "behaviors": [
+            "C2"
+          ],
+          "assessment": "Move C reader strings off stack into disjoint shared scratch; retain bounds/base offsets, support whole unknown strings up to the logical request budget, and prioritize cancellation across all six source parsers. Rust incremental decoding needs no C reader window.445 executed full-parser vectors compare every Rust split;1610 C-only cancellation cases all return0x2d. Actual Rust source cancellation/release and broader malformed/canonical schedules remain open. Unknown RP/options map-wide types are now preserved; long unknown credential labels are bounded-consumed."
+        }
+      ]
+    },
+    {
+      "commit": "2ce074b12aee58e3d6c9a1bdf2abbb4d696c3bee",
+      "parent": "36d1cc217026ef4521d10d8290b708261b61e418",
+      "path": "test/test_apdu.c",
+      "patch_sha256": "3f7b40d49fa3789f1772af733022c95389fdf3818504c1cd5933b870572e128b",
+      "patch": "diff --git a/test/test_apdu.c b/test/test_apdu.c\nindex 0d0f40a7bdaccbbeef49c3413b2ce3117db6450c..1cfa4fea713e6a2bc700fce208d97b0883c61d04 100644\n--- a/test/test_apdu.c\n+++ b/test/test_apdu.c\n@@ -4711,0 +4712,4 @@ static void test_make_credential_min_pin_exact_rpid(void **state) {\n+  uint8_t private_key[32] = {1};\n+  const uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};\n+  assert_int_equal(write_attr(CTAP_CERT_FILE, KEY_ATTR, private_key, sizeof(private_key)), 0);\n+  assert_int_equal(write_file(CTAP_CERT_FILE, cert, 0, sizeof(cert), 1), 0);\n@@ -4758,0 +4763,23 @@ static void test_make_credential_min_pin_exact_rpid(void **state) {\n+\n+      // Check the emitted extension, not only the parser's authorization flag.\n+      uint8_t command[sizeof(req) + 1], scratch[64], response[2048], auth_data[1024];\n+      command[0] = CTAP_MAKE_CREDENTIAL;\n+      memcpy(command + 1, req, p - req);\n+      CTAPHID_TxSource output = {0};\n+      size_t written, auth_len;\n+      assert_int_equal(\n+          ctap_process_cbor_stream_with_src(command, p - req + 1, scratch, sizeof(scratch), &output, CTAP_SRC_HID), 1);\n+      assert_int_equal(read_tx_source_all(&output, response, sizeof(response), &written), 0);\n+      assert_int_equal(response[0], 0);\n+      assert_int_equal(\n+          test_cbor_get_auth_data(response, written, MC_RESP_AUTH_DATA, auth_data, sizeof(auth_data), &auth_len), 0);\n+      if (match) {\n+        test_cbor_view extensions, value;\n+        assert_int_equal(test_cbor_get_auth_data_extensions(response, written, MC_RESP_AUTH_DATA, auth_data,\n+                                                            sizeof(auth_data), &extensions),\n+                         0);\n+        assert_int_equal(test_cbor_map_lookup_text_key(extensions, \"minPinLength\", &value), 0);\n+      } else {\n+        assert_false(auth_data[32] & 0x80); // No other extensions were requested.\n+      }\n+      if (output.close) output.close(output.ctx);\n",
+      "hunks": [
+        {
+          "ordinal": 0,
+          "header": "file metadata",
+          "sha256": "15cfc8fa9679edf8c0a20e884a9146a467052f182512cea704801a43e70c56b7",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        },
+        {
+          "ordinal": 1,
+          "header": "@@ -4711,0 +4712,4 @@ static void test_make_credential_min_pin_exact_rpid(void **state) {",
+          "sha256": "01d0f9cbcc257cf4df8b97092dda4080d6b5e99bfe7fdfbe34297a677c1c6236",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        },
+        {
+          "ordinal": 2,
+          "header": "@@ -4758,0 +4763,23 @@ static void test_make_credential_min_pin_exact_rpid(void **state) {",
+          "sha256": "d5f1ec11467cd7dd9471eea3a286347bac49ff29ae974c7c4b2c7ef13d481514",
+          "behaviors": [
+            "C1"
+          ],
+          "assessment": "Consume the exact full RP before C display truncation and retain its authorization decision; Rust already hashes owned RP bytes. Unchanged C test checks254-byte storage collisions and emitted minPinLength; Rust host test checks254-byte first-byte/suffix mutations, signed RP hash and independent packed attestation."
+        }
+      ]
+    }
+  ],
+  "parser_report": {
+    "path": "tests/fixtures/c312-parser/report.json",
+    "sha256": "469b1afc2fdca842964879e7f5704f7d163ee5f014a80f96265bf89f44bff0ad"
+  },
+  "rust_sources": [
+    {
+      "path": "crates/core/src/applets/ctap/credential_request.rs",
+      "sha256": "2e1dc362fbec61c6f4a3d2b108ba8e83ee0129ea2a83c3cb6304e9c05a0fe4ca"
+    },
+    {
+      "path": "crates/core/src/applets/ctap/request_decoder.rs",
+      "sha256": "77c336941933a999bea2abc6b1035a96208e793195d643831ca652b3ee925bd3"
+    },
+    {
+      "path": "crates/core/src/applets/ctap/authentication.rs",
+      "sha256": "bbd7563677e89f7af0b224de99d624ea7b9b935a46af758821be86442d12ff81"
+    },
+    {
+      "path": "crates/core/src/applets/ctap/cbor_skip_tests.rs",
+      "sha256": "2c0904336ad5438b172c6c8a2e3058e61634b92362a2434e4d5462cb5aa8596a"
+    },
+    {
+      "path": "tests/integration/ctap_normal.py",
+      "sha256": "b54f81de15bec196cd76e2ca481026c0494186b35e9bb4e3919d6b0af93cb1c4"
+    }
+  ],
+  "findings": [
+    "Actual full-parser comparison found32-byte unknown-label rejection and missing RP/text and options/bool constraints in Rust. Both corrected without larger buffers.",
+    "Equal-length long unknown labels follow C skip behavior; bounded labels retain exact ordering. Broader canonical policies remain outside this proof.",
+    "C emits success in102 one-shot reader-fault runs. Raw results are archived, not treated as correct fail-closed behavior or Rust parity.",
+    "C cancellation precedence is executed; Rust cancellation/error/lease dispatch requires separate actual transport evidence."
+  ],
+  "validation": {
+    "core": "142 unit tests plus full-feature integration suites passed",
+    "host": "39/39 CTests passed",
+    "parser": "445 vectors,3289 C parser executions;2399 faults/cancellations;1610 cancellations return0x2d. Rust compares445 statuses at every fragment boundary.",
+    "wire": "12 rerun dual suites342 cases/6358 events,325 equal-output and17 unresolved cases; parser counts are separate."
+  }
+}

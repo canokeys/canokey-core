@@ -16,7 +16,7 @@ from smartcard.scard import SCARD_LEAVE_CARD, SCARD_UNPOWER_CARD
 
 
 SELECT_HEADER = bytes.fromhex("00A40400")  # ISO SELECT by AID.
-FIDO_SELECT = bytes.fromhex("00A4040008A0000006472F0001")  # Select the FIDO AID.
+FIDO_SELECT = bytes.fromhex("00A4040008F043414E4F464944")  # Select the private USB FIDO AID.
 GET_INFO = bytes.fromhex("80100000010400")  # CTAP authenticatorGetInfo.
 SW_SUCCESS = (0x90, 0x00)
 SW_NO_APPLET = (0x6A, 0x82)
@@ -45,6 +45,10 @@ class Connection:
             self.fail_next = False
             raise CardConnectionException("injected connection loss")
         if apdu[:4] == SELECT_HEADER:
+            expected = bytes.fromhex("00A4040008A0000006472F0001") if self.card.nfc else FIDO_SELECT
+            if apdu != expected:
+                self.card.selected = False
+                return [], *SW_NO_APPLET
             self.card.selected = True
             return list(b"U2F_V2"), *SW_SUCCESS
         if not self.card.selected:
@@ -68,11 +72,26 @@ class SelectionTests(unittest.TestCase):
         cls.reboot = staticmethod(namespace["send_nfc_reboot"])
 
     def setUp(self):
-        self.card = SimpleNamespace(selected=False)
+        environment = patch.dict("os.environ", {"CANOKEY_TEST_NFC": "0"})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.card = SimpleNamespace(selected=False, nfc=False)
         self.old = Connection(self.card)
         self.client_type(self.old, "old reader")
         self.connection = Connection(self.card)
         self.client = self.client_type(self.connection, "active reader")
+
+    def test_nfc_uses_standard_aid_and_usb_rejects_it(self):
+        standard = bytes.fromhex("00A4040008A0000006472F0001")
+        self.assertEqual(self.connection.transmit(standard)[1:], SW_NO_APPLET)
+        with patch.dict("os.environ", {"CANOKEY_TEST_NFC": "1"}):
+            self.card.nfc = True
+            connection = Connection(self.card)
+            client = self.client_type(connection, "NFC reader")
+            self.assertEqual(connection.sent[0], standard)
+            connection.fail_next = True
+            self.assertEqual(client.apdu_exchange(GET_INFO)[1:], SW_SUCCESS)
+            self.assertIn(standard, connection.sent[1:])
 
     def test_late_old_connection_cleanup_preserves_selection(self):
         self.old.disconnect()

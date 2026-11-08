@@ -1,420 +1,294 @@
 // SPDX-License-Identifier: Apache-2.0
+//! C 3.1.2 short-only contract through the production CCID state machine.
 use canokey_protocol::ccid::*;
-use canokey_rust_core::runtime::ccid::{Backend, Request, Scratch, TIMEOUT, Transport};
-
+use canokey_rust_core::runtime::ccid::{Backend, CONTROL_REPLY, REPLY, Request, Transport};
+#[derive(Default)]
 struct Mock {
-    now: u32,
-    pke: [u8; 1024],
-    held: bool,
-    closes: usize,
     resets: usize,
     power_cycles: usize,
     executions: usize,
     input: Vec<u8>,
-    prepare_error: Option<u16>,
-    acquire_fail: bool,
-    write_fail: bool,
-    read_fail: bool,
-    exchange_fail: bool,
     arms: usize,
     disarms: usize,
-    reply_size: usize,
-}
-impl Default for Mock {
-    fn default() -> Self {
-        Self {
-            now: 0,
-            pke: [0; 1024],
-            held: false,
-            closes: 0,
-            resets: 0,
-            power_cycles: 0,
-            executions: 0,
-            input: vec![],
-            prepare_error: None,
-            acquire_fail: false,
-            write_fail: false,
-            read_fail: false,
-            exchange_fail: false,
-            arms: 0,
-            disarms: 0,
-            reply_size: 2,
-        }
-    }
-}
-impl Scratch for Mock {
-    fn acquire(&mut self, n: usize) -> bool {
-        assert!(!self.held);
-        assert!(n <= 1024);
-        if self.acquire_fail {
-            return false;
-        }
-        self.held = true;
-        true
-    }
-    fn write(&mut self, at: usize, bytes: &[u8]) -> bool {
-        assert!(self.held);
-        if self.write_fail {
-            return false;
-        }
-        self.pke[at..at + bytes.len()].copy_from_slice(bytes);
-        true
-    }
-    fn read(&mut self, at: usize, bytes: &mut [u8]) -> bool {
-        assert!(self.held);
-        if self.read_fail {
-            return false;
-        }
-        bytes.copy_from_slice(&self.pke[at..at + bytes.len()]);
-        true
-    }
-    fn close(&mut self) {
-        assert!(self.held);
-        self.pke.fill(0);
-        self.held = false;
-        self.closes += 1;
-    }
+    fail: bool,
+    refuse_power: bool,
 }
 impl Backend for Mock {
-    fn now(&mut self) -> u32 {
-        self.now
-    }
     fn reset(&mut self) {
-        assert!(!self.held);
         self.resets += 1;
     }
-    fn slot_power(&mut self) {
-        assert!(!self.held);
+    fn slot_power(&mut self) -> bool {
+        if self.refuse_power {
+            return false;
+        }
         self.power_cycles += 1;
+        true
     }
-    fn prepare_extended(&mut self, prefix: &[u8; 7], total: usize) -> Result<u16, u16> {
-        assert!(!self.held);
-        if let Some(sw) = self.prepare_error {
-            return Err(sw);
-        }
-        if prefix[..5] != [0x80, 0x10, 0, 0, 0] {
-            return Err(0x6700);
-        }
-        let n = u16::from_be_bytes([prefix[5], prefix[6]]);
-        if n == 0 || n > 1024 || ![7 + n as usize, 9 + n as usize].contains(&total) {
-            return Err(0x6700);
-        }
-        Ok(n)
-    }
-    fn exchange(&mut self, request: &mut Request, out: &mut [u8]) -> Result<usize, ()> {
-        self.input.clear();
-        if request.staged() {
-            let mut chunk = [0; 64];
-            for offset in (0..request.len()).step_by(64) {
-                let n = 64.min(request.len() - offset);
-                if !request.read(offset, &mut chunk[..n], self) {
-                    request.close(self);
-                    return Err(());
-                }
-                self.input.extend_from_slice(&chunk[..n]);
-            }
-            assert!(!request.read(request.len(), &mut chunk[..1], self));
-            request.close(self);
-        } else {
-            self.input.extend_from_slice(request.short());
-        }
-        assert!(!self.held); // Crypto may now overwrite PKE.
-        self.pke.fill(0xa5);
+    fn exchange(&mut self, request: &Request, out: &mut [u8]) -> Result<usize, ()> {
         self.executions += 1;
-        if self.exchange_fail {
+        self.input = request.short().to_vec();
+        if self.fail {
             return Err(());
         }
-        out[..self.reply_size].fill(0);
-        out[0] = 0x90;
-        Ok(self.reply_size)
+        out[..2].copy_from_slice(&[0x90, 0]);
+        Ok(2)
     }
     fn arm(&mut self, bytes: &[u8; 10], interval: u16) {
-        assert_eq!(bytes, &[0x80, 0, 0, 0, 0, 0, 0x56, 0x80, 1, 0]);
         assert_eq!(interval, 500);
+        assert_eq!(bytes[7..9], [0x80, 1]);
         self.arms += 1;
     }
     fn disarm(&mut self) {
         self.disarms += 1;
     }
 }
-fn frame(command: u8, payload: &[u8]) -> Vec<u8> {
-    let mut v = vec![command, 0, 0, 0, 0, 0, 0x56, 0, 0, 0];
-    v[1..5].copy_from_slice(&(payload.len() as u32).to_le_bytes());
-    v.extend_from_slice(payload);
-    v
+fn frame(command: u8, bytes: &[u8]) -> Vec<u8> {
+    let mut frame = vec![command, 0, 0, 0, 0, 0, 0x37, 0, 0, 0];
+    frame[1..5].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
+    frame.extend_from_slice(bytes);
+    frame
 }
-fn finish(t: &mut Transport, m: &mut Mock) -> Vec<u8> {
-    let mut output = [0; HEADER + canokey_rust_core::runtime::ccid::REPLY];
-    t.execute(false, m, &mut output);
-    let r = t.reply(&output).unwrap().to_vec();
+fn finish(t: &mut Transport, m: &mut Mock, hid_busy: bool) -> Vec<u8> {
+    let mut output = [0; HEADER + REPLY];
+    t.execute(hid_busy, m, &mut output);
+    let reply = t.reply(&output).expect("complete declared RX").to_vec();
     t.submitted();
     t.completed();
-    r
+    reply
 }
 fn start() -> (Transport, Mock) {
-    let mut t = Transport::new();
-    let mut m = Mock::default();
-    t.receive(&frame(POWER_ON, &[]), 0, true, &mut m);
-    assert_eq!(&finish(&mut t, &mut m)[10..], ATR);
+    let (mut t, mut m) = (Transport::new(), Mock::default());
+    t.receive(&frame(POWER_ON, &[]));
+    assert_eq!(&finish(&mut t, &mut m, false)[HEADER..], ATR);
     (t, m)
 }
-fn extended(n: usize, le: bool) -> Vec<u8> {
-    let mut bytes = vec![0x80, 0x10, 0, 0, 0, (n >> 8) as u8, n as u8];
-    bytes.extend((0..n).map(|x| (x * 37) as u8));
-    if le {
-        bytes.extend([1, 0x23]);
-    }
-    frame(TRANSFER, &bytes)
+#[test]
+fn foreign_refusal_drains_and_stays_latched_when_admission_changes() {
+    let (mut t, mut m) = start();
+    let wire = frame(TRANSFER, &[0x5a; 120]);
+    t.receive_admitted(&wire[..64], false);
+    assert!(!t.queued());
+    t.receive_admitted(&wire[64..], true);
+    assert!(!t.needs_apdu_buffer());
+    let mut output = [0; CONTROL_REPLY];
+    t.execute(false, &mut m, &mut output);
+    let reply = t.reply(&output).unwrap();
+    assert_eq!(&reply[HEADER..], &[0x64, 0]);
+    assert_eq!(reply[7..9], [0, SUCCESS_ERROR]);
+    assert_eq!((m.executions, m.arms, m.power_cycles), (0, 0, 1));
+    t.submitted();
+    t.completed();
+    t.receive(&frame(TRANSFER, &[0, 3, 0, 0, 0]));
+    assert_eq!(&finish(&mut t, &mut m, false)[HEADER..], &[0x90, 0]);
+    assert_eq!(m.executions, 1);
 }
 #[test]
-fn literal_header_and_all_short_splits() {
-    let h = [0x6f, 0x2c, 1, 0, 0, 0, 0x56, 0, 0, 0];
-    assert_eq!(payload_length(&h), 300);
-    for split in 0..=15 {
+fn foreign_refusal_keeps_slot_and_length_error_precedence() {
+    for (length, slot, error) in [(262, 0, BAD_LENGTH), (262, 1, BAD_SLOT), (5, 1, BAD_SLOT)] {
         let (mut t, mut m) = start();
-        let f = frame(TRANSFER, &[0, 0xc0, 0, 0, 0]);
-        t.receive(&f[..split], 0, true, &mut m);
-        t.receive(&f[split..], 0, true, &mut m);
-        assert_eq!(
-            finish(&mut t, &mut m),
-            [0x80, 2, 0, 0, 0, 0, 0x56, 0, 0, 0, 0x90, 0]
-        );
-        assert_eq!(m.input, [0, 0xc0, 0, 0, 0]);
-        assert_eq!(m.arms, 1);
-        assert_eq!(m.disarms, 1);
+        let mut wire = frame(TRANSFER, &vec![0; length]);
+        wire[SLOT_OFFSET] = slot;
+        for packet in wire.chunks(64) {
+            t.receive_admitted(packet, false);
+        }
+        let mut output = [0; CONTROL_REPLY];
+        t.execute(false, &mut m, &mut output);
+        let reply = t.reply(&output).unwrap();
+        assert_eq!(reply.len(), HEADER);
+        assert_eq!(reply[8], error);
+        assert_eq!((m.executions, m.arms), (0, 0));
     }
 }
 #[test]
-fn extended_every_split_and_packet_boundary() {
-    for n in [253, 254, 291, 1024] {
-        for le in [false, true] {
-            let f = extended(n, le);
-            for split in 1..f.len() {
-                let (mut t, mut m) = start();
-                for piece in f[..split].chunks(64) {
-                    t.receive(piece, 0, true, &mut m);
+fn refused_power_reset_preserves_active_slot_without_calling_reset() {
+    let (mut t, mut m) = start();
+    m.refuse_power = true;
+    for command in [POWER_ON, POWER_OFF] {
+        t.receive(&frame(command, &[]));
+        let reply = finish(&mut t, &mut m, false);
+        assert_eq!(reply[7..9], [COMMAND_FAILED, SLOT_BUSY]);
+    }
+    assert_eq!((m.power_cycles, m.resets), (1, 0));
+    t.receive(&frame(SLOT_STATUS, &[]));
+    assert_eq!(finish(&mut t, &mut m, false)[7..9], [0, SUCCESS_ERROR]);
+}
+#[test]
+fn short261_every_split_and_packet_boundary() {
+    let mut apdu = vec![0x80, 0x10, 0, 0, 255];
+    apdu.resize(260, 0x5a);
+    apdu.push(0);
+    let wire = frame(TRANSFER, &apdu);
+    assert_eq!(wire.len(), 271);
+    for split in core::iter::once(0).chain(HEADER..=wire.len()) {
+        let (mut t, mut m) = start();
+        t.receive(&wire[..split]);
+        t.receive(&wire[split..]);
+        let reply = finish(&mut t, &mut m, false);
+        assert_eq!(&reply[HEADER..], &[0x90, 0]);
+        assert_eq!(m.input, apdu);
+        assert_eq!((m.arms, m.disarms), (1, 1));
+    }
+    for size in [1, 10, 16, 63, 64] {
+        let (mut t, mut m) = start();
+        t.receive(&wire[..HEADER]);
+        for piece in wire[HEADER..].chunks(size) {
+            t.receive(piece);
+        }
+        assert_eq!(&finish(&mut t, &mut m, false)[HEADER..], &[0x90, 0]);
+    }
+}
+#[test]
+fn truncated_first_header_is_discarded_before_independent_message() {
+    for length in 1..HEADER {
+        let (mut t, mut m) = (Transport::new(), Mock::default());
+        t.receive(&frame(POWER_ON, &[])[..length]);
+        assert!(t.completed_transaction());
+        t.receive(&frame(POWER_ON, &[]));
+        let reply = finish(&mut t, &mut m, false);
+        assert_eq!(&reply[HEADER..], ATR);
+        assert_eq!((reply[7], reply[8]), (0, SUCCESS_ERROR));
+        assert_eq!(m.power_cycles, 1);
+    }
+}
+#[test]
+fn atr_checksum_and_historical_bytes_match_the_card_contract() {
+    assert_eq!(&ATR[9..16], b"Canokey");
+    // ISO7816 TCK covers T0 through TCK, excluding the initial convention TS.
+    assert_eq!(ATR[1..].iter().fold(0, |xor, byte| xor ^ byte), 0);
+}
+#[test]
+fn bounded_extended_and_malformed_return6700_without_entering_core() {
+    for apdu in [
+        vec![],
+        vec![0; 3],
+        vec![0x80, 0x10, 0, 0, 0, 0, 1],
+        vec![0x80, 0x10, 0, 0, 0, 0, 1, 4],
+        vec![0x80, 0x10, 0, 0, 0, 0, 1, 4, 0, 0],
+    ] {
+        let (mut t, mut m) = start();
+        t.receive(&frame(TRANSFER, &apdu));
+        let reply = finish(&mut t, &mut m, false);
+        assert_eq!(&reply[HEADER..], &[0x67, 0]);
+        assert_eq!(reply[7..9], [0, SUCCESS_ERROR]);
+        assert_eq!((m.executions, m.arms), (0, 0));
+    }
+}
+#[test]
+fn oversized_and_slot_payloads_drain_fully_before_one_reply_and_recover() {
+    for command in [
+        TRANSFER,
+        POWER_ON,
+        POWER_OFF,
+        SLOT_STATUS,
+        GET_PARAMETERS,
+        0x69,
+        0x6b,
+        0x73,
+    ] {
+        for length in [262, 291, 1033, 4096] {
+            let (mut t, mut m) = start();
+            let wire = frame(command, &vec![0x5a; length]);
+            let mut output = [0; HEADER + REPLY];
+            for chunk in wire[..wire.len() - 1].chunks(64) {
+                t.receive(chunk);
+                // There is no receive clock/deadline to expire between chunks.
+                t.execute(false, &mut m, &mut output);
+                assert!(t.reply(&output).is_none());
+            }
+            t.receive(&wire[wire.len() - 1..]);
+            let reply = finish(&mut t, &mut m, false);
+            assert_eq!(reply.len(), HEADER);
+            assert_eq!(
+                reply[8],
+                if [TRANSFER, POWER_ON, POWER_OFF, SLOT_STATUS, GET_PARAMETERS].contains(&command) {
+                    1
+                } else {
+                    0
                 }
-                for piece in f[split..].chunks(64) {
-                    t.receive(piece, 0, true, &mut m);
+            );
+            assert_eq!(reply[7], 0x40);
+            assert_eq!(m.executions, 0);
+            t.receive(&frame(TRANSFER, &[0, 3, 0, 0, 0]));
+            assert_eq!(&finish(&mut t, &mut m, false)[HEADER..], &[0x90, 0]);
+        }
+    }
+    // Full 32-bit dwLength cannot wrap through the CCID header addition.
+    let (mut t, mut m) = start();
+    t.receive(&[0x6f, 255, 255, 255, 255, 0, 0, 0, 0, 0]);
+    t.receive(&[0x5a; 64]);
+    assert!(!t.queued());
+    t.reset(&mut m);
+    t.receive(&frame(POWER_ON, &[]));
+    assert_eq!(&finish(&mut t, &mut m, false)[HEADER..], ATR);
+}
+#[test]
+fn literal_response_families_slot_rfu_and_error_precedence() {
+    // command, slot, response family, payload length, status, error, protocol.
+    for [command, slot, kind, length, status, error, specific] in [
+        [0x62, 0, 0x80, 17, 0, 0x81, 0],
+        [0x63, 0, 0x81, 0, 1, 0x81, 0],
+        [0x65, 0, 0x81, 0, 1, 0x81, 0],
+        [0x6c, 0, 0x82, 7, 1, 0x81, 1],
+        [0x6d, 0, 0x82, 0, 0x41, 0, 1],
+        [0x61, 0, 0x82, 0, 0x41, 0, 1],
+        [0x6b, 0, 0x83, 0, 0x41, 0, 0],
+        [0x69, 0, 0x80, 0, 0x41, 0, 0],
+        [0x73, 0, 0x84, 0, 0x41, 0, 0],
+        [0x65, 1, 0x81, 0, 0x42, 5, 0],
+        [0x6c, 1, 0x82, 0, 0x42, 5, 1],
+        [0x62, 1, 0x80, 0, 0x42, 5, 0],
+    ] {
+        let (mut t, mut m) = (Transport::new(), Mock::default());
+        t.receive(&[command, 0, 0, 0, 0, slot, 0x37, 0, 0, 0]);
+        let reply = finish(&mut t, &mut m, false);
+        assert_eq!(
+            &reply[..10],
+            &[kind, length, 0, 0, 0, slot, 0x37, status, error, specific]
+        );
+    }
+    for command in [POWER_ON, POWER_OFF, SLOT_STATUS, GET_PARAMETERS] {
+        for slot in [0, 1] {
+            for length in [0, 1] {
+                for reserved in [0, 1] {
+                    let (mut t, mut m) = start();
+                    let mut wire = frame(command, &vec![0; length]);
+                    wire[5] = slot;
+                    wire[8] = reserved;
+                    t.receive(&wire);
+                    let reply = finish(&mut t, &mut m, false);
+                    let expected = if slot != 0 {
+                        5
+                    } else if length != 0 {
+                        1
+                    } else if reserved != 0 {
+                        if command == POWER_ON { 8 } else { 7 }
+                    } else {
+                        SUCCESS_ERROR
+                    };
+                    assert_eq!(reply[8], expected);
                 }
-                let r = finish(&mut t, &mut m);
-                assert_eq!(r[7..9], [0, 0]);
-                assert_eq!(m.input, f[10..]);
-                assert!(!m.held);
-                assert_eq!(m.closes, usize::from(f.len() > 271));
             }
         }
     }
 }
 #[test]
-fn every_truncated_header_and_payload_expires() {
-    let f = extended(291, true);
-    for end in 1..f.len() {
-        let (mut t, mut m) = start();
-        m.now = u32::MAX - 100;
-        for piece in f[..end].chunks(64) {
-            t.receive(piece, m.now, true, &mut m);
-        }
-        t.timeout(m.now.wrapping_add(TIMEOUT - 1), &mut m);
-        assert!(!t.queued());
-        t.timeout(m.now.wrapping_add(TIMEOUT), &mut m);
-        if end >= 10 {
-            assert_eq!(finish(&mut t, &mut m)[7..9], [0x40, 8]);
-        } else {
-            assert!(t.can_receive());
-        }
-        assert!(!m.held);
-        assert_eq!(m.executions, 0);
-    }
-}
-#[test]
-fn late_queued_packet_does_not_revive_input() {
+fn pending_in_is_immutable_and_busy_power_preserves_card_context() {
     let (mut t, mut m) = start();
-    let f = extended(291, true);
-    t.receive(&f[..64], 0, true, &mut m);
-    t.receive(&f[64..128], 2000, true, &mut m);
-    assert_eq!(finish(&mut t, &mut m)[8], BAD_LENGTH);
-    assert_eq!(m.closes, 1);
-    assert_eq!(m.executions, 0);
-}
-#[test]
-fn errors_and_cleanup_before_execution() {
-    for fault in 0..6 {
-        let (mut t, mut m) = start();
-        match fault {
-            0 => m.prepare_error = Some(0x6986),
-            1 => m.acquire_fail = true,
-            2 => m.write_fail = true,
-            3 => m.read_fail = true,
-            4 => m.exchange_fail = true,
-            _ => (),
-        }
-        let f = extended(291, true);
-        for p in f.chunks(64) {
-            t.receive(p, 0, true, &mut m);
-        }
-        let r = finish(&mut t, &mut m);
-        if fault == 0 {
-            assert_eq!(&r[10..], &[0x69, 0x86]);
-        } else if fault < 5 {
-            assert_eq!(r[8], HARDWARE);
-        }
-        assert!(!m.held);
-        assert_eq!(m.closes, usize::from(fault >= 2));
-    }
-}
-#[test]
-fn reset_closes_once_and_does_not_execute_partial() {
-    let (mut t, mut m) = start();
-    let f = extended(291, true);
-    t.receive(&f[..64], 0, true, &mut m);
-    assert!(t.scratch_busy());
-    t.reset(&mut m);
-    t.reset(&mut m);
-    assert_eq!(m.closes, 1);
-    assert_eq!(m.executions, 0);
-    assert!(t.can_receive());
-}
-#[test]
-fn overflow_oversized_and_trailing_bytes_are_rejected() {
-    for n in [1034, u32::MAX - 9, u32::MAX] {
-        let (mut t, mut m) = start();
-        let mut f = frame(TRANSFER, &[]);
-        f[1..5].copy_from_slice(&n.to_le_bytes());
-        t.receive(&f, 0, true, &mut m);
-        t.timeout(2000, &mut m);
-        assert_eq!(finish(&mut t, &mut m)[8], BAD_LENGTH);
-        assert_eq!(m.executions, 0);
-    }
-    let (mut t, mut m) = start();
-    let mut f = frame(TRANSFER, &[0]);
-    f.push(0);
-    t.receive(&f, 0, true, &mut m);
-    assert_eq!(finish(&mut t, &mut m)[8], BAD_LENGTH);
-    let f = extended(291, true);
-    for p in f.chunks(64) {
-        t.receive(p, 0, false, &mut m);
-    }
-    assert_eq!(finish(&mut t, &mut m)[8], BAD_LENGTH);
-    assert_eq!(m.closes, 0);
-}
-#[test]
-fn slot_parameter_precedence_and_zero_error_unsupported() {
-    let (mut t, mut m) = start();
-    for (cmd, payload, param, error, kind) in [
-        (0xff, vec![], 0, 0, STATUS),
-        (POWER_ON, vec![], 1, 7, DATA),
-        (POWER_ON, vec![0], 1, 8, DATA),
-        (SET_PARAMETERS, vec![], 0, 7, PARAMETERS),
-        (SET_PARAMETERS, vec![0; 7], 1, 0, PARAMETERS),
-        (GET_PARAMETERS, vec![], 0, 0, PARAMETERS),
-        (RESET_PARAMETERS, vec![], 0, 0, PARAMETERS),
-        (SLOT_STATUS, vec![0], 0, 8, STATUS),
-    ] {
-        let mut f = frame(cmd, &payload);
-        f[7] = param;
-        t.receive(&f, 0, true, &mut m);
-        let r = finish(&mut t, &mut m);
-        assert_eq!(r[0], kind);
-        assert_eq!(r[8], error);
-        assert_eq!(
-            r[7] & 0x40,
-            if error != 0 || cmd == 0xff { 0x40 } else { 0 }
-        );
-        if kind == PARAMETERS && error == 0 {
-            assert_eq!(&r[10..], T1);
-        }
-    }
-    let mut f = frame(TRANSFER, &[]);
-    f[5] = 1;
-    f[8] = 1;
-    t.receive(&f, 0, true, &mut m);
-    assert_eq!(finish(&mut t, &mut m)[8], BAD_SLOT);
-    t.receive(&frame(POWER_OFF, &[]), 0, true, &mut m);
-    assert_eq!(finish(&mut t, &mut m)[7], 1);
-    t.receive(&frame(TRANSFER, &[]), 0, true, &mut m);
-    assert_eq!(finish(&mut t, &mut m)[7..9], [0x41, MUTE]);
-}
-#[test]
-fn leases_discovery_and_delayed_final_completion() {
-    let (mut t, mut m) = start();
-    assert_eq!(m.power_cycles, 1);
-    assert_eq!(m.resets, 0);
-    assert!(!t.idle(1999));
-    assert!(t.idle(2000));
-    assert!(t.blocked_by_hid(Some(TRANSFER)));
-    assert!(!t.blocked_by_hid(Some(SLOT_STATUS)));
-    let resets = m.resets;
-    t.receive(&frame(POWER_ON, &[]), 0, true, &mut m);
-    let mut output = [0; HEADER + canokey_rust_core::runtime::ccid::REPLY];
-    t.execute(true, &mut m, &mut output);
-    assert_eq!(m.resets, resets);
-    t.submitted();
-    assert!(!t.can_receive());
-    t.completed();
-    t.receive(&frame(TRANSFER, &[0]), 0, true, &mut m);
+    let cycles = m.power_cycles;
+    t.receive(&frame(POWER_OFF, &[]));
+    let reply = finish(&mut t, &mut m, true);
+    assert_eq!(reply[7..9], [0x40, 0xe0]);
+    assert_eq!(m.power_cycles, cycles);
+    t.receive(&frame(SLOT_STATUS, &[]));
+    assert_eq!(finish(&mut t, &mut m, false)[7], 0);
+    t.receive(&frame(TRANSFER, &[0, 3, 0, 0, 0]));
+    let mut output = [0; HEADER + REPLY];
     t.execute(false, &mut m, &mut output);
-    let reply = t.reply(&output).unwrap().to_vec();
-    t.receive(&frame(POWER_OFF, &[]), 0, true, &mut m);
-    assert_eq!(t.reply(&output).unwrap(), reply);
+    let original = t.reply(&output).unwrap().to_vec();
+    t.receive(&frame(POWER_OFF, &[]));
+    assert_eq!(t.reply(&output).unwrap(), original);
     t.submitted();
-    t.tx_timeout(2000, &mut m);
-    assert_eq!(m.resets, resets + 1);
-    t.tx_timeout(3000, &mut m);
-    assert_eq!(m.resets, resets + 1);
     assert!(!t.can_receive());
     t.completed();
     assert!(t.can_receive());
-}
-
-#[test]
-fn literal_discovery_and_rejected_command_headers() {
-    // request, slot, response family, length, status, error, protocol number
-    for [command, slot, kind, length, status, error, specific] in [
-        [0x62, 0, 0x80, 17, 0, 0, 0],
-        [0x63, 0, 0x81, 0, 1, 0, 0],
-        [0x65, 0, 0x81, 0, 1, 0, 0],
-        [0x6c, 0, 0x82, 7, 1, 0, 1],
-        [0x6d, 0, 0x82, 7, 1, 0, 1],
-        [0x61, 0, 0x82, 0, 0x41, 7, 1],
-        [0x6b, 0, 0x83, 0, 0x41, 0, 0],
-        [0x69, 0, 0x80, 0, 0x41, 0, 0],
-        [0x72, 0, 0x81, 0, 0x41, 0, 0],
-        [0x65, 1, 0x81, 0, 0x41, 5, 0],
-        [0x6c, 1, 0x82, 0, 0x41, 5, 1],
-        [0x62, 1, 0x80, 0, 0x41, 5, 0],
-        [0x6d, 1, 0x82, 0, 0x41, 5, 1],
-        [0x61, 1, 0x82, 0, 0x41, 5, 1],
-        [0x6b, 1, 0x83, 0, 0x41, 5, 0],
-        [0x69, 1, 0x80, 0, 0x41, 5, 0],
-    ] {
-        let mut t = Transport::new();
-        let mut m = Mock::default();
-        t.receive(&[command, 0, 0, 0, 0, slot, 0x37, 0, 0, 0], 0, true, &mut m);
-        let reply = finish(&mut t, &mut m);
-        assert_eq!(
-            &reply[..10],
-            &[kind, length, 0, 0, 0, slot, 0x37, status, error, specific],
-            "command {command:02x}, slot {slot}"
-        );
-        assert_eq!(reply.len(), 10 + usize::from(length));
-        if length == 7 {
-            assert_eq!(&reply[10..], &[0x11, 0x10, 0, 0x15, 0, 0xfe, 0]);
-        }
-        if length == 17 {
-            assert_eq!(
-                &reply[10..],
-                b"\x3b\xf7\x11\x00\x00\x81\x31\xfe\x65CanoKey\x99"
-            );
-        }
-    }
-}
-
-#[test]
-fn header_length_is_unaligned_little_endian_without_native_layout() {
-    let input = [0x6f, 0x12, 0x34, 0x56, 0x78, 0, 0x37, 0, 0, 0];
-    assert_eq!(payload_length(&input), 0x78563412);
-    let mut output = [0xa5; 10];
-    response(&mut output, 0x80, 0x78563412, 1, 0x37, 0x41, 5, 0);
-    assert_eq!(output, [0x80, 0x12, 0x34, 0x56, 0x78, 1, 0x37, 0x41, 5, 0]);
 }

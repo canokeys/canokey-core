@@ -1,0 +1,1335 @@
+{
+  "scope": "Exploratory before-fix observations; placeholder expected/pass fields are not acceptance. No OUT is sent after a rejected command SETUP; a status SETUP supersedes it before recovery.",
+  "executables": {
+    "c": "d2a442256a3438b85ca388c0e0e34a02027d72931cb022d0c3b7826e4a511b82",
+    "rust": "7b6b14b91679480819004c387561d472f1d8ba2fb0dc9b2b93381bab5614fd38"
+  },
+  "results": [
+    {
+      "case": {
+        "id": "reconfigure-command",
+        "transport": "usb",
+        "oracle_rows": [
+          "E54"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "reconfigure-response",
+        "transport": "usb",
+        "oracle_rows": [
+          "E54"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "reconfigure-status",
+        "transport": "usb",
+        "oracle_rows": [
+          "E54"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "reconfigure-configuration",
+        "transport": "usb",
+        "oracle_rows": [
+          "E54"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "8008000000000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "01",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "01",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "bus-reset-command",
+        "transport": "usb",
+        "oracle_rows": [
+          "E54"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "service": false,
+            "reset": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0005110000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "bus-reset-response",
+        "transport": "usb",
+        "oracle_rows": [
+          "E54"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "service": false,
+            "reset": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0005110000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "bus-reset-status",
+        "transport": "usb",
+        "oracle_rows": [
+          "E54"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "service": false,
+            "reset": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0005110000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "bus-reset-configuration",
+        "transport": "usb",
+        "oracle_rows": [
+          "E54"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "service": false,
+            "reset": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0005110000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "8008000000000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "01",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "01",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,145 @@
+{
+  "scope": "ROM-only behavioral preservation; no new C synchronization units approved",
+  "baseline": {
+    "path": "docs/evidence/c312-response-stream-checkpoint/report.json",
+    "sha256": "d6470f49e99d66a3fc3c8879e1a19a752ffae4bad72163a3b0d6e9bbdfb36566",
+    "artifacts_unchanged": 103
+  },
+  "sources": [
+    {
+      "path": "canokey-core/crates/core/src/applets/ctap/credential_request.rs",
+      "before_sha256": "2e1dc362fbec61c6f4a3d2b108ba8e83ee0129ea2a83c3cb6304e9c05a0fe4ca",
+      "after_sha256": "97911fdf2b048dd8b38f9dd9efb38d863d8f25c9b891a0d6920e639f615bd7dd"
+    },
+    {
+      "path": "canokey-core/crates/core/src/mechanisms/pin/record.rs",
+      "before_sha256": "bbb48d352d32623008e923cd59f7681e6bf934bc81471fa5979a3ccbb18392af",
+      "after_sha256": "dccbe75185a836a062f5d597438221369c4f5e086c189575eec2d7815c5ed950"
+    },
+    {
+      "path": "canokey-core/crates/protocol/src/apdu/decode.rs",
+      "before_sha256": "b36eb7c5082b434f58506ce63e81ee18a7e86dcc1c3e8ea587b7550593bd2ceb",
+      "after_sha256": "1d8a601a5729bc53b9e9e7502df49b73b84200dfa97a8fa8126ec927b1cef2b8"
+    },
+    {
+      "path": "canokey-core/crates/protocol/src/nfc.rs",
+      "before_sha256": "a1ac49ea98343eff738901d78b0e9aab5a758573bf478d17da90eb72aa145286",
+      "after_sha256": "ccee7c4ed935b4607d1ff6ac740a2b45e65a99f160e0f35b3bf4478eeaa8e7e4"
+    }
+  ],
+  "validation": {
+    "protocol": "13 unit +9 NFC +6 protocol integration passed",
+    "core": "142 unit tests plus full-feature integrations passed",
+    "host_ctest": "42/42 passed",
+    "clippy": "Both exact CI commands passed",
+    "sync_unit": "9/9 passed",
+    "paired_wire": "365 cases /11695 events; all fourteen result arrays unchanged,348 equal-output and17 pre-existing unresolved cases",
+    "hardware": "Not run; no runtime timing/stack or physical acceptance claimed",
+    "structure": "Both gates pass; Core585/2254, platform142/373 reviewed",
+    "strict": "Both gates reject unfinished synchronization without stale fingerprints"
+  },
+  "wire_reports": [
+    {
+      "path": "tests/fixtures/c312-ccid/report.json",
+      "sha256": "9ae0b7c05c8b877fa340f1535dad930664b12a91664d887fb6f1cf51ee06ef74",
+      "cases": 47,
+      "events": 454,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-webusb/report.json",
+      "sha256": "14c75852d152f6cb8028ce8482779ee84b0da019776b6f962ce2fb3024798c2b",
+      "cases": 28,
+      "events": 576,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-nfc/report.json",
+      "sha256": "581347f37857bc1db02912b88b68c969b65d1dc3fe7ca9684bf1c9fa5f31f0a8",
+      "cases": 60,
+      "events": 2566,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-usb-ownership/report.json",
+      "sha256": "b6663d72b6601556debeea4f6be664b78c85b982a5a788cace8b47938d8f8baf",
+      "cases": 18,
+      "events": 408,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-hid-ownership/report.json",
+      "sha256": "b7b96709229976c39a372af9d1f8f48541c9f914f1dfab7c5e8abed13d172675",
+      "cases": 21,
+      "events": 221,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-hid-admission/report.json",
+      "sha256": "02be78e451bc778b96953e9b3a7fcf709b2f10f9465cb0eb536d5eb395c00b00",
+      "cases": 28,
+      "events": 364,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-hid-channels/report.json",
+      "sha256": "56cef95fb4bae4ab20805afe44f9813062c10a83145242e5c1ce2a8bd249caec",
+      "cases": 40,
+      "events": 433,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-usb-control/report.json",
+      "sha256": "60f614e91fb320129bfcb7edde977a1fe97d04dd15e1cddb4abce4f2c4cbe321",
+      "cases": 36,
+      "events": 228,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-usb-lifecycle/report.json",
+      "sha256": "4a02440126128bbadba4ad47a1ce8ff82f257ca393e43722ed0b7a95e20cf801",
+      "cases": 33,
+      "events": 302,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-usb-readiness/report.json",
+      "sha256": "8c66c037b2a5efcf5442f462b50c71ff448baeb7da0447589d249bec1584e9dc",
+      "cases": 9,
+      "events": 75,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-webusb-readiness/report.json",
+      "sha256": "71b647998a775aa30a2b6469bbccea50009f6fef26896c74d00c66cd59aaa2f5",
+      "cases": 8,
+      "events": 126,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-webusb-retained/report.json",
+      "sha256": "66588abdf8dea38d28e4cb1fe4826bf9849b823dcb10ca9ede427859dfa8980b",
+      "cases": 14,
+      "events": 605,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-large-blob-usb/report.json",
+      "sha256": "67585274b9c2eea1d6120ea91a43a29c766c4b109a54cb770ecce1afe01da939",
+      "cases": 12,
+      "events": 2859,
+      "results_unchanged": true
+    },
+    {
+      "path": "tests/fixtures/c312-large-blob-nfc/report.json",
+      "sha256": "57d46adcb8a072d8c11d9d184f22a234c81da65b89c0e293e4db794afaafbc67",
+      "cases": 11,
+      "events": 2478,
+      "results_unchanged": true
+    }
+  ],
+  "platform_report": {
+    "path": "docs/evidence/rom-review-20261108/report.json",
+    "sha256": "a3ef5eb59d5003561438b513271c8d19fb7e76f97b410c3518a3fa367cb140e9"
+  }
+}

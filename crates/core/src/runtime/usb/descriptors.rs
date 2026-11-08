@@ -237,17 +237,8 @@ impl Configuration {
             ]);
         }
         descriptor.append(&[9, 4, interfaces.ccid(), 0, 2, 0x0b, 0, 0, 0]);
-        let max: u16 = if interfaces.hid {
-            ccid::HEADER as u16
-                + apdu::EXTENDED_OVERHEAD_BYTES as u16
-                + canokey_protocol::ctaphid::CTAP_MAX_REQUEST as u16
-        } else {
-            ccid::HEADER as u16 + apdu::SHORT_FRAME_BYTES as u16
-        };
-        // CCID1.10: one slot, 5V/3V/1.8V, T=1, clock4 MHz, baud307200,
-        // dwMaxIFSD261, automatic parameter/clock/baud/voltage negotiation.
-        // dwFeatures=0x000400FE (extended APDU) with HID, else 0x000200FE
-        // (short APDU); GET RESPONSE/ENVELOPE class=0xFF.
+        let max = (ccid::HEADER + apdu::SHORT_FRAME_BYTES) as u16;
+        // CCID1.10, short APDU exchange on every composition; IFSD254.
         descriptor.append(&[
             0x36,
             0x21,
@@ -277,10 +268,10 @@ impl Configuration {
             0x04,
             0x00, // Maximum data rate307200 bps.
             0x00, // No explicit supported-data-rate table.
-            0x05,
-            0x01,
+            0xfe,
             0x00,
-            0x00, // dwMaxIFSD261.
+            0x00,
+            0x00, // dwMaxIFSD254.
             0x00,
             0x00,
             0x00,
@@ -291,7 +282,7 @@ impl Configuration {
             0x00, // No mechanical features.
             0xfe,
             0x00,
-            if interfaces.hid { 0x04 } else { 0x02 },
+            0x02,
             0x00, // dwFeatures.
             max as u8,
             (max >> 8) as u8,

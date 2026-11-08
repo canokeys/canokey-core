@@ -28,7 +28,7 @@ impl Scratch for Memory {
     fn webauthn_enabled(&mut self) -> bool {
         !self.disabled
     }
-    fn begin(&mut self, pke: bool) -> Result<(), Error> {
+    fn begin(&mut self, pke: bool, _preserve_context: bool) -> Result<(), Error> {
         assert!(!self.leased);
         if self.busy {
             return Err(Error::Busy);
@@ -83,9 +83,7 @@ impl Scratch for Memory {
             self.execute_message(cid, command)
         }
     }
-    fn wink(&mut self, cid: u32) -> usize {
-        self.execute(cid, Ok(canokey_rust_core::applets::ctap::Command::Wink))
-    }
+    fn wink(&mut self, _cid: u32) {}
     fn read_response(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Error> {
         if self.response_failure {
             return Err(Error::Other);
@@ -144,7 +142,7 @@ fn request(hid: &mut Transport, memory: &mut Memory, command: u8, body: &[u8]) {
 
 #[test]
 fn ping_boundaries_and_monotonic_source_lifetime() {
-    for length in [0, 57, 58, 192, 193, 1024, 1033, 1288, 3072] {
+    for length in [0, 57, 58, 192, 193, 1024, 1033, 1288, 1296] {
         let mut hid = Transport::new();
         let mut memory = Memory::default();
         let body: Vec<u8> = (0..length).map(|n| (n * 37) as u8).collect();
@@ -195,7 +193,8 @@ fn channel_contention_resync_sequence_and_wrapping_timeout() {
     assert_eq!(&out[..8], &[0, 0, 0, 2, 0xbf, 0, 1, 6]);
     assert_eq!(mem.closes, 0);
     assert!(!hid.timeout(699, &mut out, &mut mem));
-    assert!(hid.timeout(700, &mut out, &mut mem));
+    assert!(!hid.timeout(700, &mut out, &mut mem));
+    assert!(hid.timeout(701, &mut out, &mut mem));
     assert_eq!(out[7], 5);
     assert_eq!(mem.closes, 1);
     assert!(!hid.receive(&start, 0, &mut out, &mut mem));
@@ -302,13 +301,73 @@ fn cbor_releases_input_before_response_and_cancel_is_silent() {
 }
 
 #[test]
+fn cancel_during_unknown_value_rx_is_sequence_error_before_parser_entry() {
+    const CID: u32 = 0x12345678;
+    // getPinRetries plus four ignored arrays around a256-byte string. This
+    // spans PKE-backed RX and the parser's192-byte read boundary.
+    let mut body = vec![6, 0xa2, 2, 1, 0x18, 99, 0x81, 0x81, 0x81, 0x81, 0x59, 1, 0];
+    body.extend_from_slice(&[0x42; 256]);
+    let mut hid = Transport::new();
+    let mut memory = Memory::default();
+    let mut out = [0; wire::REPORT_SIZE];
+    assert!(!hid.receive(
+        &initial(CID, wire::CBOR, body.len(), &body[..57]),
+        0,
+        &mut out,
+        &mut memory
+    ));
+    assert!(hid.receive(
+        &initial(CID, wire::CANCEL, 0, &[]),
+        1,
+        &mut out,
+        &mut memory
+    ));
+    assert_eq!(&out[4..8], &[wire::ERROR, 0, 1, Error::Sequence as u8]);
+    assert!(memory.request.is_none() && memory.message.is_none());
+    for (seq, bytes) in body[57..].chunks(59).enumerate() {
+        // The abandoned request never feeds the CBOR parser. Its remaining
+        // continuations are spurious; a complete new request must recover.
+        assert!(!hid.receive(
+            &continuation(CID, seq as u8, bytes),
+            seq as u32 + 2,
+            &mut out,
+            &mut memory
+        ));
+    }
+    assert_eq!(memory.closes, 1);
+    assert!(!memory.leased);
+    assert!(!hid.transmit(&mut out, &mut memory));
+    request(&mut hid, &mut memory, wire::CBOR, &body);
+    assert!(hid.transmit(&mut out, &mut memory));
+    assert_eq!(&out[4..11], &[0x90, 0, 4, 0, 0xa1, 3, 8]);
+    hid.completed(&mut memory);
+    assert!(!hid.active());
+
+    assert!(!hid.receive(
+        &initial(CID, wire::CBOR, body.len(), &body[..57]),
+        0,
+        &mut out,
+        &mut memory
+    ));
+    hid.reset(&mut memory);
+    assert!(!memory.leased);
+    request(&mut hid, &mut memory, wire::CBOR, &[4]);
+    assert!(hid.transmit(&mut out, &mut memory));
+    assert_eq!(out[7], 0);
+}
+
+#[test]
 fn apdu_input_abort_preserves_response_backing() {
     use canokey_protocol::apdu::Header;
     use canokey_rust_core::runtime::{engine::Router, registry::Registry};
     let mut ctap = Registry::new();
     support::with_platform(&mut support::Backend::default(), |p| {
-        ctap.select(canokey_rust_core::applets::ctap::apdu::AID, p)
-            .unwrap();
+        ctap.select(
+            &canokey_protocol::apdu::FIDO_USB_AID,
+            canokey_protocol::apdu::Transport::Usb,
+            p,
+        )
+        .unwrap();
         ctap.consume(&[], p).unwrap();
         ctap.consume(&[0x04], p).unwrap();
         ctap.consume(&[], p).unwrap();
@@ -318,7 +377,7 @@ fn apdu_input_abort_preserves_response_backing() {
             p1: 0,
             p2: 0,
         };
-        assert!(ctap.finish(h, None, p).unwrap().0 > 0);
+        assert!(ctap.finish(h, 256, p).unwrap().0 > 0);
         ctap.abort_command(p);
         let mut prefix = [0; 8];
         ctap.read_response(2, &mut prefix, p).unwrap();
@@ -331,16 +390,15 @@ fn apdu_input_abort_preserves_response_backing() {
 #[test]
 fn msg_apdu_status_and_source_release() {
     for (body, expected) in [
-        (vec![0, 3, 0, 0], b"U2F_V2\x90\x00".to_vec()),
+        (vec![0, 3, 0, 0, 0, 0, 0, 0, 0], b"U2F_V2\x90\x00".to_vec()),
         (vec![0, 3, 0, 0, 0, 0, 0], b"U2F_V2\x90\x00".to_vec()),
-        (vec![0, 3, 0], vec![0x67, 0]),
-        (vec![0x81, 3, 0, 0], vec![0x6e, 0]),
+        (vec![0x81, 3, 0, 0, 0, 0, 0], vec![0x6e, 0]),
         // Extended input exceeds the inline area; parsing closes PKE before execution.
         (
             [vec![0, 3, 0, 0, 0, 1, 0], vec![0; 256]].concat(),
             vec![0x67, 0],
         ),
-        (vec![0x80, 0x10, 0, 0, 1, 0x7f], vec![0xf1, 0x90, 0]),
+        (vec![0x80, 0x10, 0, 0, 0, 0, 1, 0x7f], vec![0xf1, 0x90, 0]),
     ] {
         let mut hid = Transport::new();
         let mut memory = Memory::default();
@@ -517,8 +575,7 @@ fn disabled_webauthn_rejects_cbor_and_msg_without_disabling_ping() {
 fn response_limits_and_read_failure_close_once() {
     for (command, body) in [
         (wire::CBOR, &[4][..]),
-        (wire::MSG, &[0, 3, 0, 0, 0][..]),
-        (wire::WINK, &[][..]),
+        (wire::MSG, &[0, 3, 0, 0, 0, 0, 0][..]),
     ] {
         for length in [
             0,
@@ -595,11 +652,15 @@ fn response_limits_and_read_failure_close_once() {
 }
 
 #[test]
-fn ping_staging_limit_is_separate_from_ctap_request_policy() {
+fn total_message_limit_applies_before_staging_for_all_commands() {
     let mut hid = Transport::new();
     let mut mem = Memory::default();
     let mut out = [0; 64];
-    for (command, length) in [(wire::PING, 3073), (wire::CBOR, 1025), (wire::MSG, 1034)] {
+    for (command, length) in [
+        (wire::PING, wire::CTAP_MAX_REQUEST + 1),
+        (wire::CBOR, wire::CTAP_MAX_REQUEST + 1),
+        (wire::MSG, wire::CTAP_MAX_REQUEST + 1),
+    ] {
         assert!(hid.receive(&initial(1, command, length, &[]), 0, &mut out, &mut mem));
         assert_eq!(&out[4..8], &[wire::ERROR, 0, 1, Error::Length as u8]);
         assert!(!hid.active() && !mem.leased);

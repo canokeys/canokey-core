@@ -18,14 +18,19 @@ pub const STATUS: u8 = 0x81;
 pub const PARAMETERS: u8 = 0x82;
 pub const BAD_SLOT: u8 = 0x05;
 pub const BAD_POWER: u8 = 0x07;
-pub const BAD_LENGTH: u8 = 0x08;
+pub const BAD_LENGTH: u8 = 0x01;
+pub const BAD_RFU2: u8 = 0x08;
+pub const SLOT_BUSY: u8 = 0xe0;
 pub const MUTE: u8 = 0xfe; // USB CCID 1.1 bError: ICC_MUTE (ICC did not respond).
 pub const HARDWARE: u8 = 0xfb; // USB CCID 1.1 bError: HW_ERROR (hardware failure).
-// ISO 7816-3 ATR: direct convention; seven historical bytes "CanoKey".
+// C 3.1.2 puts its internal no-error sentinel in successful CCID replies.
+// bStatus determines success; bError is interpreted only for failed commands.
+pub const SUCCESS_ERROR: u8 = 0x81;
+// ISO 7816-3 ATR: direct convention; seven historical bytes "Canokey".
 // TA1=Fi372/Di1; TD1/TD2 select T=1; TA3=IFSC254, TB3=BWI6/CWI5;
 // TB1/TC1 are zero, and final 0x99 is the XOR check byte TCK.
 pub const ATR: &[u8] = &[
-    0x3b, 0xf7, 0x11, 0, 0, 0x81, 0x31, 0xfe, 0x65, 0x43, 0x61, 0x6e, 0x6f, 0x4b, 0x65, 0x79, 0x99,
+    0x3b, 0xf7, 0x11, 0, 0, 0x81, 0x31, 0xfe, 0x65, 0x43, 0x61, 0x6e, 0x6f, 0x6b, 0x65, 0x79, 0x99,
 ];
 // CCID 1.1 section 6.1.8: Fi/Di, TCCKS(T=1 direct), guard, BWI1/CWI5,
 // clock stop, IFSC254, NAD0. These are CCID parameters, not the ATR TB3 value.

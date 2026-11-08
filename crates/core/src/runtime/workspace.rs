@@ -2,6 +2,7 @@
 //! One session-owned workspace, lent by the registry to the selected applet.
 //! Key material, crypto input and result are simultaneously live at the crypto
 //! boundary. Certificates and encoded import messages never occupy this area.
+#[cfg(any(crypto_applet, feature = "admin"))]
 use crate::ports::KeyMaterial;
 /// Byte offsets in retained SM2 exchange state, separate from the primitive
 /// input packet: our ephemeral scalar, our ephemeral/static public X||Y,
@@ -21,30 +22,36 @@ pub mod agreement_layout {
 // Bounded non-streaming request capacity in bytes (including Ed25519 messages).
 pub const INPUT_BYTES: usize = 544;
 // RSA-4096 output (512 bytes) plus room for protocol wrappers.
+#[cfg(any(crypto_applet, feature = "admin"))]
 pub const OUTPUT_BYTES: usize = 528;
 /// A temporary split borrow of the classic fields in the session reservation.
 pub struct Workspace<'a> {
-    #[cfg_attr(not(crypto_applet), expect(dead_code))]
+    #[cfg(any(crypto_applet, feature = "admin"))]
+    #[cfg_attr(all(not(crypto_applet), not(feature = "ndef")), expect(dead_code))]
     pub key: &'a mut KeyMaterial,
     #[cfg(feature = "piv")]
     pub agreement: &'a mut [u8; agreement_layout::SIZE],
     pub input: &'a mut [u8; INPUT_BYTES],
+    #[cfg(any(crypto_applet, feature = "admin"))]
     pub output: &'a mut [u8; OUTPUT_BYTES],
 }
 impl Workspace<'_> {
-    #[cfg_attr(not(crypto_applet), expect(dead_code))]
+    #[cfg_attr(all(not(crypto_applet), not(feature = "ndef")), expect(dead_code))]
     pub fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         clear_classic(
+            #[cfg(any(crypto_applet, feature = "admin"))]
             self.key,
             self.input,
             #[cfg(feature = "piv")]
             self.agreement,
             memory,
         );
+        #[cfg(any(crypto_applet, feature = "admin"))]
         memory.wipe(self.output);
     }
 }
 pub(crate) struct Classic {
+    #[cfg(any(crypto_applet, feature = "admin"))]
     pub key: KeyMaterial,
     #[cfg(feature = "piv")]
     pub agreement: [u8; agreement_layout::SIZE],
@@ -53,6 +60,7 @@ pub(crate) struct Classic {
 impl Classic {
     const fn new() -> Self {
         Self {
+            #[cfg(any(crypto_applet, feature = "admin"))]
             key: KeyMaterial::new(),
             #[cfg(feature = "piv")]
             agreement: [0; agreement_layout::SIZE],
@@ -61,6 +69,7 @@ impl Classic {
     }
     pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         clear_classic(
+            #[cfg(any(crypto_applet, feature = "admin"))]
             &mut self.key,
             &mut self.input,
             #[cfg(feature = "piv")]
@@ -70,16 +79,19 @@ impl Classic {
     }
 }
 fn clear_classic(
-    key: &mut KeyMaterial,
+    #[cfg(any(crypto_applet, feature = "admin"))] key: &mut KeyMaterial,
     input: &mut [u8; INPUT_BYTES],
     #[cfg(feature = "piv")] agreement: &mut [u8; agreement_layout::SIZE],
     memory: &(impl crate::ports::Memory + ?Sized),
 ) {
     #[cfg(feature = "piv")]
     memory.wipe(agreement);
-    memory.wipe(&mut key.bytes);
-    key.bits = 0;
-    key.reserved = 0;
+    #[cfg(any(crypto_applet, feature = "admin"))]
+    {
+        memory.wipe(&mut key.bytes);
+        key.bits = 0;
+        key.reserved = 0;
+    }
     memory.wipe(input);
 }
 macro_rules! workspace_view {
@@ -111,7 +123,7 @@ pub struct Working {
     pub(crate) primitive: Primitive,
     #[cfg(feature = "ctap")]
     pub(crate) framing: crate::applets::ctap::pq::Framing,
-    #[cfg(not(feature = "ctap"))]
+    #[cfg(all(not(feature = "ctap"), any(crypto_applet, feature = "admin")))]
     output: [u8; OUTPUT_BYTES],
 }
 impl Working {
@@ -120,7 +132,7 @@ impl Working {
             primitive: Primitive::Classic(Classic::new()),
             #[cfg(feature = "ctap")]
             framing: crate::applets::ctap::pq::Framing::new(),
-            #[cfg(not(feature = "ctap"))]
+            #[cfg(all(not(feature = "ctap"), any(crypto_applet, feature = "admin")))]
             output: [0; OUTPUT_BYTES],
         }
     }
@@ -132,7 +144,7 @@ impl Working {
         }
         #[cfg(feature = "ctap")]
         self.framing.clear(memory);
-        #[cfg(not(feature = "ctap"))]
+        #[cfg(all(not(feature = "ctap"), any(crypto_applet, feature = "admin")))]
         memory.wipe(&mut self.output);
     }
 }
@@ -195,13 +207,14 @@ impl SessionWorkspace {
             _ => unreachable!(),
         };
         Workspace {
+            #[cfg(any(crypto_applet, feature = "admin"))]
             key: &mut c.key,
             #[cfg(feature = "piv")]
             agreement: &mut c.agreement,
             input: &mut c.input,
             #[cfg(feature = "ctap")]
             output: (&mut w.framing.bytes[..OUTPUT_BYTES]).try_into().unwrap(),
-            #[cfg(not(feature = "ctap"))]
+            #[cfg(all(not(feature = "ctap"), any(crypto_applet, feature = "admin")))]
             output: &mut w.output,
         }
     }

@@ -288,6 +288,24 @@ impl Storage for StorageBackend {
         )
         .map(|_| ())
     }
+    #[cfg(feature = "ctap")]
+    fn read_some_at(
+        &mut self,
+        file: Record,
+        offset: u32,
+        out: &mut [u8],
+    ) -> Result<usize, StorageError> {
+        let n = io_count(
+            unsafe { ck_platform_read_at(file.id(), offset, out.as_mut_ptr(), out.len()) },
+            None,
+            StorageError::Unavailable,
+        )?;
+        if n <= out.len() {
+            Ok(n)
+        } else {
+            Err(StorageError::Unavailable)
+        }
+    }
     #[cfg(feature = "storage")]
     fn replace_at(&mut self, file: Record, offset: u32, input: &[u8]) -> Result<(), StorageError> {
         io_count(

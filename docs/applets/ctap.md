@@ -35,7 +35,8 @@ The independent `ctap` feature links no C CTAP dispatcher or applet. It is a
 - CTAPHID INIT, PING, WINK, LOCK and CBOR dispatch; INIT advertises WINK and
   CBOR (`0x05`). NMSG is not advertised. U2F/MSG handling is available through
   the native transport path.
-- CCID FIDO SELECT (`00 A4 04 00`, AID `A0000006472F0001`) returns the legacy six-byte `U2F_V2` response.
+- USB CCID/WebUSB FIDO SELECT (`00 A4 04 00`, AID `F043414E4F464944`) returns the legacy six-byte `U2F_V2` response.
+  NFC uses standard AID `A0000006472F0001`.
   CTAP2 GetInfo continues to advertise the supported FIDO2 versions; keeping
   SELECT at six bytes preserves existing U2F/NFC client buffers. Unknown U2F
   instructions return `6D00` for both short and well-formed extended APDUs;
@@ -47,7 +48,7 @@ The independent `ctap` feature links no C CTAP dispatcher or applet. It is a
   changePIN, legacy getPinToken and getPinUvAuthTokenUsingPinWithPermissions.
   GetInfo reports the actual configured-PIN flag and protocols `[1, 2]`.
 - GetInfo is encoded once with minicbor into the shared response workspace.
-  It reports resident credentials, ES256/Ed25519/SM2, credential management,
+  It reports resident credentials, ES256/Ed25519/ML-DSA-65/ML-DSA-44/SM2, credential management,
   largeBlobs and the implemented extensions. The AAGUID is
   `244eb29e-e090-4e49-81fe-1f20f8d3b8f4`.
 - authenticatorSelection (`0b`) waits up to 30 seconds for a fresh press/release.
@@ -61,23 +62,24 @@ The independent `ctap` feature links no C CTAP dispatcher or applet. It is a
   cached authorization but does not restore retry counters. Future CTAP records
   must join this reset path when their owning commands are added.
 
-- makeCredential/getAssertion/getNextAssertion support ES256, Ed25519, ML-DSA-65 and default-profile SM2 with
+- makeCredential/getAssertion/getNextAssertion support ES256, Ed25519, both ML-DSA parameter sets and default-profile SM2 with
   independently verified packed self-attestation and assertion signatures.
   U2F registration continues to require the provisioned attestation key and
   certificate because its wire format has no packed self-attestation variant.
   ML-DSA makeCredential also requires provisioned P-256 attestation material;
-  its 3309-byte signature cannot fit the bounded packed framing workspace.
+  their3309/2420-byte signatures cannot fit the bounded packed framing workspace.
   Discoverable credentials, exclusion, credProtect, minPinLength (RP allowlist),
   credBlob (32 bytes), largeBlobKey, hmac-secret/hmac-secret-mc (protocols 1/2),
   and thirdPartyPayment are implemented.
 - Credential management (`0a`, preview `41`) supports metadata, RP/credential
   enumeration, deletion and user-information updates with CM token permission.
-- largeBlobs (`0c`) supports a 4096-byte serialized array and 960-byte fragments.
+- largeBlobs (`0c`) supports a 4096-byte serialized array and 1232-byte fragments.
 
-Configurable SM2 COSE identifiers remain to be migrated. CANCEL is silent when
-idle or receiving; while a command waits, same-channel CANCEL returns CTAP `2d`.
-The independent CTAP firmware is the implementation target; combined firmware
-capacity is deferred until protocol functionality is complete.
+Admin configures SM2 COSE identifiers, excluding reserved algorithm IDs.
+Idle/late bounded CANCEL is silent. During fragmented RX, same-channel CANCEL
+is an unexpected initial report and returns HID sequence error; a foreign
+CANCEL returns busy without altering RX. While a command executes, matching
+zero-length CANCEL uses the transport progress path and returns CTAP `2d`.
 
 ## Credentials and large blobs
 
@@ -228,42 +230,51 @@ rearming OUT and lending the copy to Rust. This lets CANCEL arrive during a
 presence wait without modifying Rust's borrowed input. An interrupt arriving
 during an empty poll remains queued for the next poll. The endpoint driver
 retains another 64-byte RX report; none is an entire request. Short requests use a 192-byte inline buffer. Larger requests use
-`pke_buffer_read/write`, with a public message limit of 1024 bytes. There are no
+`pke_buffer_read/write`, with a public message limit of 1296 bytes. There are no
 transport files, Flash caches, heap allocations or full-request RAM buffers.
 
-Before request staging, the FFI adapter requires CCID to be idle. After CCID's
-final IN completion, a session with no input chain permits immediate takeover
-when its response is complete or the applet declares its source abandonable,
-matching the legacy preemptable-APDU rule. An ordinary response continuation
-retains the two-second lease. The HID session retains its own
-two-second idle lease. Admission then lets the other transport reset the session
-(including PIN grants and key agreement) and acquire PKE. A queued CCID
-packet cannot block the HID owner's commands during that lease; otherwise it
-would force a premature preemption between getKeyAgreement and clientPIN. CCID
-slot discovery and power requests remain responsive during an idle HID lease,
-without resetting core; only APDU execution waits. Active HID execution still
-excludes all CCID handling until its borrowed core state has returned. While HID aggregates or responds, CCID dispatch and keyboard
-core calls wait. CCID link interrupts still run. These actual entrypoint gates,
-not the PKE owner flag alone, exclude crypto that could clobber PKE.
+Before request staging, the FFI adapter requires CCID to be idle. Active
+APDU input chains and ordinary pending responses retain their owner until
+completion or an explicit lifecycle event; elapsed idle time does not release
+them. Native HID execution borrows the shared workspace without revoking the
+retained APDU selection or PIN grant. A completed, preemptable session may yield
+to an actual competing command. Rejected admission, INIT/CANCEL traffic and
+passive polling must not revoke another interface's grant.
+
+Native MSG continuations retain explicit HID ownership across arbitrary idle
+gaps. CCID slot discovery and power requests remain responsive as permitted by
+execution/ownership state; slot power revokes APDU context. Active HID execution
+still excludes general CCID dispatch until its borrowed Core state returns;
+presence progress services only the permitted mailbox operations. USB IRQs never
+borrow Core. These entrypoint gates, together with lease cleanup, protect PKE.
 
 GetInfo consumes its command byte and releases request storage before preparing
 the response. Parsers copy needed semantic fields and close the
 request before crypto, presence waits or other PKE users. `largeBlobs.set` and
 other authenticated raw CBOR spans need their own bounded copy/verification schedule.
-Config streams the envelope and copies only subCommandParams into the shared
-request workspace (bounded by the 1024-byte request limit). Parser events carry
+Config streams the envelope into the shared request workspace (bounded by
+the 1296-byte request limit) and authenticates only the exact subCommandParams
+span. Parser events carry
 consumed-byte offsets, so split headers and unknown parameters retain their exact
 encoding without a second parser or re-encoding. RP spans refer to this owned
 copy, never to PKE. The command is moved out before the workspace changes to its
 crypto view; crypto, hashing and storage run only after request release.
 A source must not become a persistent collection of offsets into PKE.
 
+Generic CTAP file segments and native HID require exact record reads. ISO U2F
+registration instead uses `Storage::read_some_at`: a short certificate read
+returns the already copied registration prefix plus actual certificate bytes,
+then resumes at that exact offset on GET RESPONSE. Signature bytes are copied
+only after the complete certificate. Zero total progress or excessive counts
+fail and close the response source; bytes outside the returned prefix are never
+published. Exact-only Storage backends keep their existing failure semantics.
+
 PING is a transport-only exception: it echoes the staged request in ascending
 chunks, without invoking applets/crypto, while retaining exclusive ownership.
 The source closes once, after final IN completion or on abort/reset/error.
 Rust rejects source results above the 7609-byte HID framing limit with
 ERR_INVALID_LEN before sending a report, closing the response exactly once.
-This response limit is distinct from the advertised 1024-byte request limit. Each
+This response limit is distinct from the advertised 1296-byte request limit. Each
 outgoing report remains owned by C until USB completes it; host retries never
 repeat source reads or execute an operation again.
 
@@ -284,11 +295,16 @@ be released before a fresh press/release; successful, timed-out and cancelled
 attempts all consume the gesture for PASS keyboard-output inhibition. Timeout is
 CTAP `2f`; reset outside the power-on window is `30`. Neither command accepts a body.
 
-Receive timeout is 800 ms since the last packet's **receipt** timestamp, using
+Receive timeout occurs strictly after800 ms since the last packet's **receipt** timestamp, using
 wrapping subtraction. Process queued input before checking current time. A foreign
 CID gets CHANNEL_BUSY without altering the current transaction; same-CID INIT
-resynchronizes it. Wrong sequence, timeout, staging failure and USB reset release
-the source. After a one-second IN stall, release the source/session but retain the
+resynchronizes it. Wrong sequence, timeout and staging failure release unfinished
+input; pre-parser errors preserve an older native response continuation. Bind
+that continuation to its producing CID, independently of the current request
+CID. Other-channel CBOR, PING/WINK and malformed requests cannot transfer it;
+foreign MSG returns busy without reading or advancing it. Bounded WINK payloads
+are consumed and ignored. Reset/INIT close the continuation explicitly.
+After a one-second IN stall, release the source/session but retain the
 submitted report until actual completion/reset. CIU's `FlushEP` is a no-op and
 must not be used as permission to overwrite endpoint-owned bytes.
 
@@ -302,8 +318,8 @@ must not be used as permission to overwrite endpoint-owned bytes.
 - `runtime/ctaphid.rs`: HID channel/fragments and request/response lifetime.
   Initialization, packet receive, completed-request execution and transmit are
   separate operations. One storage state tracks released, inline or PKE input.
-- `runtime/ccid.rs` and `ffi/ccid.rs`: CCID framing and endpoint handoff; both queued
-  late packets and clock expiry use the same receive cleanup.
+- `runtime/ccid.rs` and `ffi/transport/ccid`: CCID framing and endpoint handoff;
+  accepted/refused RX drains its declared payload without a receive-gap deadline.
 - `protocol/cbor.rs`: bounded incremental adaptation of minicbor.
 
 ## Request parsing and CBOR
@@ -343,27 +359,58 @@ complete CTAP validation must close that gap. Known fields have protocol-specifi
 length/type checks. Missing parameters return 0x14, wrong types 0x11, malformed CBOR
 0x12, invalid protocol 0x02 and unsupported subcommands 0x3e.
 
-## Standalone extended FIDO over CCID
+## Transport-specific extended APDUs
 
-After FIDO SELECT, CCID accepts `80 10 00 00 00 LcHi LcLo`, followed by
-1..1024 CTAP bytes and optionally a two-byte Le. Lc and Le are big-endian.
-This exception cannot start or finish an ISO command chain; other applets keep
-short APDUs and chaining. The envelope itself requires no PIN; the embedded command decides authorization
-and persistent side effects.
+CCID accepts short APDU envelopes up to261 bytes and rejects bounded extended
+encoding with6700 before applet routing. Oversized XfrBlock payloads drain to
+the declared length without PKE or a receive-gap deadline, then return the
+command-specific CCID error (valid XfrBlock parameters: bError01). Short ISO
+command chaining and streamed GET RESPONSE remain available for PQ operations.
+The removed extended-CCID feature and historical tests are pinned in
+[the provenance archive](../history/ccid-extended-removed/README.md).
 
-The short APDU buffer remains 261 bytes. Larger requests keep the seven-byte
-prefix and optional Le in that buffer and stage only the body in PKE. Rust
-validates the selected applet, command shape, size and session before PKE is
-acquired, closing previous input/response resources first. A virtual input
-source joins prefix, body and Le for the existing APDU parser. It closes before
-applet finalization, including on read or parse failure.
+WebUSB admits structurally valid APDUs within a288-byte envelope, with no
+large-body exception. It receives the complete envelope in the shared CCID/EP0
+IO allocation before parsing, so a superseding SETUP aborts partial RX without
+revoking prior selection, PIN authorization or APDU chains. Foreign context
+preparation is likewise deferred until complete command dispatch. A completed
+transport changes Hold to Idle only after strictly more than2000 ms since the
+last WebUSB SETUP; status polls refresh this tick and IN completion does not.
+This releases the transport reservation, not the retained applet context.
+Pending APDU continuations still block foreign takeover after transport Idle.
+USB lifecycle reset remains a separate context-revoking operation.
 
-The CCID ISR queues the endpoint buffer pointer and receipt timestamp. OUT stays
-NAKed until the main loop consumes the packet; interrupts never call Rust or PKE.
-Header fragments are supported. A two-second receive deadline rejects late
-fragments, and errors/reset release staged input. USB connection generations
-suppress replies from work interrupted by reset. Keyboard work waits while CCID
-owns PKE, and HID waits until CCID is idle.
+NFC admits extended Lc<=279 inline to ordinary applet
+checks. Above279, only standalone selected FIDO CLA80/INS10 with valid P1/P2
+may stage a CTAP body in PKE; non-FIDO requests drain and return6700. Exactly
+seven bytes are Case2E (Le, no body) and do not borrow PKE. PIV retains its own
+extended-APDU rejection after transport admission.
+
+The current logical CTAP request limit is1296 and matches GetInfo. NFC stores
+only the envelope in its261-byte window plus27-byte tail; staged body input
+must be parsed and closed before crypto, presence or progress can reuse PKE.
+NFC FIDO extended responses aggregate within the current command's Le budget;
+finite exhausted Le leaves a continuation for external GET RESPONSE.
+An opposite-block-number R(NAK) replies with R(ACK) without advancing output.
+R(ACK) advances only a pending response chain; otherwise it is ignored without
+resetting selection or partial input. Retransmission uses the last Link packet,
+including a control ACK, and never rereads a forward-only response source.
+
+Interrupts publish bounded input; serialized main-loop code owns Core/PKE.
+USB/RF lifecycle resets close request/response leases and invalidate stale work.
+The common pinned-C boundary matrix is maintained in the platform alignment
+plan's `docs/c-3.1.2-extended-apdu-oracle.md`. Physical RF acceptance remains open.
+
+During initial USB enumeration, `composition::usb::service` consumes deferred
+CCID/HID/WebUSB reset events on the serialized main loop. It closes leases and
+revokes stale authorization without dispatching queued application commands.
+Normal transport polls share those reset handlers after boot self-checks.
+
+Unknown CBOR values have an independent four-map/array skip budget, matching
+C3.1.2's TinyCBOR build. Known schema parents do not consume it; strings consume
+no map/array depth. The incremental decoder retains its separate eight-container
+bound. Nonempty malformed CONFIG input reports its CBOR error even when the
+first fragment fails; a truly bare CONFIG keeps its legacy status.
 
 ## Endianness and USB composition
 
@@ -376,9 +423,8 @@ channels are transport labels, not authentication capabilities.
 
 When enabled, HID is interface 0, CCID is interface 1, and optional keyboard is
 interface 2. Without CTAP, the existing CCID/keyboard interface numbers stay
-unchanged. CTAP enables CCID extended exchange level and a 1043-byte maximum
-message (10-byte CCID header + 7-byte APDU prefix + 1024-byte body + 2-byte Le).
-Other profiles retain short exchange level and 271 bytes. Short HID transfers are discarded rather than parsing a stale tail.
+unchanged. All profiles advertise short CCID exchange level0x000200FE, IFSD254
+and maximum message271 bytes, independent of CTAP/HID enablement. Short HID transfers are discarded rather than parsing a stale tail.
 
 ## Validation
 
@@ -401,8 +447,9 @@ Rust tests cover literal endian vectors, request boundaries, monotonic source
 reads, close-once semantics, contention, sequence/timeout/resync and injected
 scratch failures. The C adapter test injects an interrupt during an empty poll,
 checks pending IN-buffer retention after timeout, and resets during a Rust poll.
-The CCID adapter test covers split headers, literal LE/BE lengths, PKE source
-boundaries, cleanup, late packets, reset races and HID contention. Execution checks cover CANCEL during in-flight
+The CCID adapter test covers split headers, literal LE/BE lengths, extended
+rejection, indefinite oversized drain, cleanup, reset races and HID contention.
+NFC tests cover inline boundaries, PKE sources, retransmission and finite Le. Execution checks cover CANCEL during in-flight
 KEEPALIVE, foreign-channel isolation, INIT resync and a stalled control endpoint. CBOR tests use
 minicbor-generated vectors at every split, one-byte fragments, all truncated
 prefixes, malformed canonical encodings, nesting limits and split UTF-8.
@@ -419,15 +466,19 @@ cmake --build --preset build-devkit
 
 The read-only HIL checks run 70 PINGs at 0/57/58/192/193/256/1024 bytes, independently
 decode GetInfo with python-fido2, check transport errors and CCID ownership, and
-check extended CCID buffer/PKE boundaries through 1024 bytes, asymmetric Lc/Le,
-malformed envelopes and chain conflicts, and optionally reset during a PKE-backed
-request. They create no credentials or PINs.
+check CCID extended rejection, oversized drain/recovery, malformed envelopes
+and chain conflicts. Historical extended-CCID successes are archived; NFC
+staging requires separate RF acceptance. They create no credentials or PINs.
 
 ## Remaining migration and target evidence
 
 Continue with configurable SM2 identifiers and provisioned attestation. Long crypto needs cooperative
-progress/cancellation. Nested unknown CBOR maps and long unknown text keys still
-need canonical-validation review. Preserve the input-close boundary throughout.
+progress/cancellation. Unknown credential-map text labels are consumed beyond
+the32-byte recognition window. Their complete UTF-8 is validated; equal-length
+long unknown names follow C's skip policy without retaining their full spelling.
+Bounded labels keep exact ordering checks. RP values must be text and options
+must be boolean even for unknown labels. Broader canonical-validation and
+source-cancellation review remains open. Preserve the input-close boundary.
 
 The independent CTAP Release build on 2026-09-24 uses 104,192 Flash bytes and
 6,732 static RAM bytes and passes the 48-vector/early-ResumeLoader gate. Other
@@ -463,8 +514,9 @@ before/after it. Preserve evidence of firmware identity and stack profile settin
 FIDO APDUs require explicit SELECT-by-name after startup or slot reset.
 CTAP2/U2F command headers do not select an applet; unselected short, chained
 and standalone extended FIDO requests return `6A82`. Native CTAPHID CBOR
-execution remains independent of APDU selection. Extended CCID/NFC admission
-requires an already selected applet before staging request bytes. Streaming
+execution remains independent of APDU selection. Large NFC admission requires
+an already selected FIDO applet before staging request bytes. CCID rejects
+extended encoding before selection checks. Streaming
 regressions cover explicit selection, bounded length, owner restrictions,
 source cleanup and chain errors.
 
@@ -556,9 +608,13 @@ rejected a combined signing/DER wrapper.
 
 ### ML-DSA response streaming correctness
 
-ML-DSA-65 public keys use the AKP COSE map `{1: 7, 3: -49, -1: public_key}`
-for both registration and credential management. The 1952-byte public key is
-carried at label -1; AKP has no OKP curve field or label -2 coordinate.
+ML-DSA public keys use the AKP COSE map `{1: 7, 3: algorithm, -1: public_key}`
+for registration and credential management. DSA65 uses algorithm-49/public1952/
+signature3309; DSA44 uses-48/public1312/signature2420. Label-1 carries public
+bytes; AKP has no OKP curve field or label-2 coordinate. Parameter metadata is
+shared by GetInfo, key selection, public encoding and streamed output. SM2
+configuration rejects both PQ COSE IDs. Full GetInfo algorithm order is
+`[-7,-8,-49,-48,SM2]`; restricted profiles retain `[-7,-8]`.
 
 ML-DSA makeCredential uses the same extension encoder as classic credentials,
 preserves UP/UV/ED flags and one counter increment, and splices the public bytes
@@ -629,8 +685,9 @@ checks core ownership so it cannot close another interface's response.
 
 `hid-core` compares full case 3/case 4 responses against native CBOR, checks
 limited/multiple windows, held-IN completion, file-backed payloads and aborts.
-`usb-sessions` verifies CCID/WebUSB takeover after the existing two-second lease
-invalidates the HID continuation. Two word-sized window fields are added to the
+`usb-sessions` verifies that CCID/WebUSB cannot take over a pending HID
+continuation across two3000ms gaps, and that takeover becomes possible after
+the final response completes. Two word-sized window fields are added to the
 applet; no private response buffer or protocol implementation is moved to C.
 
 Provisioned attestation certificates must contain 1..1152 bytes. With a provisioned key, an
@@ -662,7 +719,7 @@ them. Persistent records and U2F's P-256 path are unchanged. Full production
 presets leave this option OFF; restriction is not a firmware-capacity solution.
 
 The existing `ctap-normal` test also runs a separately compiled restricted
-host: real four-algorithm credentials and their master/resident records cross
+host: real five-algorithm credentials and their master/resident records cross
 the build boundary, followed by registration fallback, independently verified
 allowed signatures, resident continuation filtering and authenticated management.
 `RECORD` is an in-process host fixture control, never a firmware APDU.
@@ -785,3 +842,32 @@ commit that actually took effect. `ctap-normal` checks same-size and size-changi
 update rejection, reauthorization, reset persistence and normalized no-op updates.
 CIU's storage-cost fixture separately compares physical programs and erases
 against the historical interleaved-read publication path.
+
+NFC staged input checks both execution liveness and activation generation around
+source reads and after source cleanup. Runtime closes the source exactly once
+before applet execution; a close failure prevents execution even after complete
+parsing. This includes HALT during PKE clear/release and deselect without a new
+generation. Reader failures return APDU6900; cancelled activations suppress the
+APDU response while deselect retains its protocol echo. IRQ callbacks only
+update transport state and never reenter Core or release its active source.
+
+Coalesced HALT/ACTIVE interrupts read the live RF state after error/overflow
+checks. States9/10 (RATS/PPS) supersede the older HALT: the new activation
+revokes the old session and preserves its newly received frame. Other states
+retain HALT priority; a failed state read cannot publish FIFO bytes. Forced
+RF silence masks all active-high MAIN IRQ sources with0xFF. Recovery drains
+latched IRQs and restores the runtime mask only after unsilence, including when
+the mask write failed.
+
+Queued input retains its RF reply turn after the main loop takes its bytes,
+including while Request::append writes to PKE. Bounded overlapping FIFO frames
+are drained through a local32-byte IRQ window without decoding or replacing
+that input. Invalid hardware lengths and bus/IRQ errors still trigger recovery.
+An ignored unsolicited ACK releases its turn without resetting Core. The same
+pending-turn guard drains early reader frames while Core executes, until an
+APDU response or WTX is actually transmitted. A matching WTX echo permits the
+response; IRQ/field errors may still revoke execution. A deselect after WTX
+cancels the command and retains its protocol echo for main-loop service.
+Wrong echo/ACK/NAK/deselect after WTX still differ from pinned C's permissive
+continuation. Those cases, WTX retransmission-cache semantics and physical
+IRQ/RF timing acceptance remain explicitly unresolved.

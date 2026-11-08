@@ -1,0 +1,112 @@
+{
+  "scope": "Explicit review of13 parent/file diffs:37 USB control and54 descriptor units. Reviewing a source hunk does not close all behavior acceptance. No production source changed in this checkpoint.",
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "groups": [
+    {
+      "commit": "9f583f15e2d693912918a3108d40033925e17b05",
+      "parent": "d4c591579cc1166047d3b9254efb0853ea388dd8",
+      "path": "interfaces/USB/core/src/usbd_ctlreq.c",
+      "reviewed_units": 9,
+      "assessment": "HALT parameter/state validation, configured directional endpoint masks and unconditional driver clear; GET_STATUS uses persistent little-endian bytes. Rust already implements those fixes. Later string encoder refactoring removes the C length pass; Rust uses a bounded slice length and one encoding pass. U3 retains stricter Rust GET_STATUS validation as unresolved."
+    },
+    {
+      "commit": "9b0b1bc204d0cb57f0445ba0651be6d3efbd8d08",
+      "parent": "9f583f15e2d693912918a3108d40033925e17b05",
+      "path": "interfaces/USB/core/src/usbd_ctlreq.c",
+      "reviewed_units": 2,
+      "assessment": "HALT parameter/state validation, configured directional endpoint masks and unconditional driver clear; GET_STATUS uses persistent little-endian bytes. Rust already implements those fixes. Later string encoder refactoring removes the C length pass; Rust uses a bounded slice length and one encoding pass. U3 retains stricter Rust GET_STATUS validation as unresolved."
+    },
+    {
+      "commit": "ac0f1cd41ff7e55dba6dfbab1ea50fae76b432a4",
+      "parent": "9b0b1bc204d0cb57f0445ba0651be6d3efbd8d08",
+      "path": "interfaces/USB/core/src/usbd_ctlreq.c",
+      "reviewed_units": 8,
+      "assessment": "HALT parameter/state validation, configured directional endpoint masks and unconditional driver clear; GET_STATUS uses persistent little-endian bytes. Rust already implements those fixes. Later string encoder refactoring removes the C length pass; Rust uses a bounded slice length and one encoding pass. U3 retains stricter Rust GET_STATUS validation as unresolved."
+    },
+    {
+      "commit": "abe88223dbc387a12c85720459b351c659692e5c",
+      "parent": "d4c591579cc1166047d3b9254efb0853ea388dd8",
+      "path": "interfaces/USB/core/src/usbd_ctlreq.c",
+      "reviewed_units": 8,
+      "assessment": "HALT parameter/state validation, configured directional endpoint masks and unconditional driver clear; GET_STATUS uses persistent little-endian bytes. Rust already implements those fixes. Later string encoder refactoring removes the C length pass; Rust uses a bounded slice length and one encoding pass. U3 retains stricter Rust GET_STATUS validation as unresolved."
+    },
+    {
+      "commit": "99df44df4653051887ac6fdb9355508314a01efc",
+      "parent": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "path": "interfaces/USB/device/usbd_desc.c",
+      "reviewed_units": 14,
+      "assessment": "Factor dynamic descriptor refusal and UTF-16 encoding; initialize output length to zero on acquisition failure. Rust avoids shared APDU storage rather than copying C buffer ownership. E48 proves one retained FIDO source survives manufacturer/configuration requests; U4 exposes differing success versus stall. Product/serial/interface/BOS/MSOS busy variants and arbitrary RX/TX/IRQ schedules remain open."
+    },
+    {
+      "commit": "836a50a50c2a77d03f4673e79a03213138023145",
+      "parent": "c07ad675546049fddd732b6bef1305eff8f799c5",
+      "path": "interfaces/USB/device/usbd_desc.c",
+      "reviewed_units": 3,
+      "assessment": "CCID descriptor fixes IFSD254 and short-only dwFeatures0x000200FE. Rust has the same selected contract; existing T1 removal and descriptor vectors cover it."
+    },
+    {
+      "commit": "8fd934426f258ad4973c36eb336febacac50b8c4",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "interfaces/USB/device/usbd_desc.c",
+      "reviewed_units": 3,
+      "assessment": "CCID descriptor fixes IFSD254 and short-only dwFeatures0x000200FE. Rust has the same selected contract; existing T1 removal and descriptor vectors cover it."
+    },
+    {
+      "commit": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "interfaces/USB/device/usbd_desc.c",
+      "reviewed_units": 3,
+      "assessment": "CCID descriptor fixes IFSD254 and short-only dwFeatures0x000200FE. Rust has the same selected contract; existing T1 removal and descriptor vectors cover it."
+    },
+    {
+      "commit": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "parent": "99df44df4653051887ac6fdb9355508314a01efc",
+      "path": "interfaces/USB/device/usbd_desc.c",
+      "reviewed_units": 3,
+      "assessment": "CCID descriptor fixes IFSD254 and short-only dwFeatures0x000200FE. Rust has the same selected contract; existing T1 removal and descriptor vectors cover it."
+    },
+    {
+      "commit": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "parent": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "path": "interfaces/USB/device/usbd_desc.c",
+      "reviewed_units": 14,
+      "assessment": "Factor dynamic descriptor refusal and UTF-16 encoding; initialize output length to zero on acquisition failure. Rust avoids shared APDU storage rather than copying C buffer ownership. E48 proves one retained FIDO source survives manufacturer/configuration requests; U4 exposes differing success versus stall. Product/serial/interface/BOS/MSOS busy variants and arbitrary RX/TX/IRQ schedules remain open."
+    },
+    {
+      "commit": "39bc20fa9ea0c39694b84d6ccb793ab1825d81d1",
+      "parent": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "path": "interfaces/USB/core/src/usbd_ctlreq.c",
+      "reviewed_units": 5,
+      "assessment": "HALT parameter/state validation, configured directional endpoint masks and unconditional driver clear; GET_STATUS uses persistent little-endian bytes. Rust already implements those fixes. Later string encoder refactoring removes the C length pass; Rust uses a bounded slice length and one encoding pass. U3 retains stricter Rust GET_STATUS validation as unresolved."
+    },
+    {
+      "commit": "5be9c893702de473effd94c14e3ae7cf0e926604",
+      "parent": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "path": "interfaces/USB/core/src/usbd_ctlreq.c",
+      "reviewed_units": 5,
+      "assessment": "HALT parameter/state validation, configured directional endpoint masks and unconditional driver clear; GET_STATUS uses persistent little-endian bytes. Rust already implements those fixes. Later string encoder refactoring removes the C length pass; Rust uses a bounded slice length and one encoding pass. U3 retains stricter Rust GET_STATUS validation as unresolved."
+    },
+    {
+      "commit": "5be9c893702de473effd94c14e3ae7cf0e926604",
+      "parent": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "path": "interfaces/USB/device/usbd_desc.c",
+      "reviewed_units": 14,
+      "assessment": "Factor dynamic descriptor refusal and UTF-16 encoding; initialize output length to zero on acquisition failure. Rust avoids shared APDU storage rather than copying C buffer ownership. E48 proves one retained FIDO source survives manufacturer/configuration requests; U4 exposes differing success versus stall. Product/serial/interface/BOS/MSOS busy variants and arbitrary RX/TX/IRQ schedules remain open."
+    }
+  ],
+  "targets": [
+    "crates/core/src/runtime/usb/mod.rs",
+    "crates/core/src/runtime/usb/descriptors.rs",
+    "crates/ffi/src/transport/usb.rs"
+  ],
+  "evidence": [
+    "tests/fixtures/c312-usb-control/report.json",
+    "crates/core/tests/usb.rs",
+    "crates/ffi/src/transport/usb/tests.rs"
+  ],
+  "remaining": [
+    "U3 GET_STATUS validation and U4 busy-descriptor raw differences need release disposition.",
+    "Physical DATA-toggle/USB, full descriptor RX/TX/busy permutations and endpoint/IRQ/lifecycle schedules remain open.",
+    "Separate usbd_canokey.c lifecycle/endpoint-mask source diffs are not covered by these91 source units."
+  ]
+}

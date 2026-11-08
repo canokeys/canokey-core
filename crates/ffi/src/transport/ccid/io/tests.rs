@@ -162,6 +162,9 @@ fn normal_exchange() {
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     packet(&POWER[3..]);
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
+    assert_eq!(controller().length, 0);
+    packet(&POWER);
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     {
         let c = controller();
         assert_eq!(c.length, 27);

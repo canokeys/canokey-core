@@ -26,6 +26,7 @@ struct Controller {
     inject: u8,
     reset_during_poll: bool,
     respond: bool,
+    continuation: bool,
     idle: bool,
     in_flight: *const u8,
 }
@@ -39,6 +40,7 @@ static mut CONTROLLER: Controller = Controller {
     inject: 0,
     reset_during_poll: false,
     respond: false,
+    continuation: false,
     idle: true,
     in_flight: core::ptr::null(),
 };
@@ -90,7 +92,7 @@ pub(crate) unsafe fn ck_hid_poll<P: crate::composition::Provider>(
         unsafe { out.write([0x5a; DATA_PACKET_BYTES]) };
         return 3;
     }
-    0
+    u8::from(controller().continuation) << 2
 }
 pub(crate) unsafe fn ck_usb_dcd_lock() -> u32 {
     let (prior, reset) = {
@@ -241,10 +243,15 @@ fn hid_link_interrupt_leases_progress_and_cancellation() {
         poll();
         controller().idle = true;
         poll();
+        assert_eq!(ck_hid_busy(), 0);
+        controller().continuation = true;
+        poll();
         assert_ne!(ck_hid_busy(), 0);
-        controller().now += SESSION_IDLE_MS - 1;
+        controller().now += 3000;
+        poll();
         assert_ne!(ck_hid_busy(), 0);
-        controller().now += 1;
+        controller().continuation = false;
+        poll();
         assert_eq!(ck_hid_busy(), 0);
         packet(&PACKET);
         let sent = controller().sent;

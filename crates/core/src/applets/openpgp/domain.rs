@@ -14,9 +14,10 @@ const RSA4096_COMPONENT_BYTES: usize = 256;
 pub struct Algorithm(pub u8);
 impl Algorithm {
     pub fn rsa(self) -> bool {
-        (alg::RSA2048..=alg::RSA4096).contains(&self.0)
+        self.0 >= alg::RSA2048 && self.0 <= alg::RSA4096
     }
     /// Active bytes in one private component: EC scalar/seed or RSA prime.
+    #[inline(never)]
     pub fn private_component_bytes(self) -> usize {
         match self.0 {
             alg::P256 | alg::SECP256K1 | alg::ED25519 | alg::X25519 => EC_P256_BYTES,

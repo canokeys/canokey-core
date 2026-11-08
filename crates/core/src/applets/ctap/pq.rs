@@ -12,8 +12,6 @@ use crate::{
 };
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 use canokey_protocol::{cbor::Encoder, der::der_signature, response::StatusWord as Sw};
-pub(super) const PUBLIC_BYTES: usize = 1952;
-pub(super) const SIGNATURE_BYTES: usize = 3309;
 // Bounded envelope storage, excluding streamed public key/signature/certificate.
 // transfer() checks prefix + tail + assertion authData against this workspace slice.
 const FRAMING_BYTES: usize = 768;
@@ -25,6 +23,7 @@ pub enum Mode {
 }
 #[derive(Clone, Copy)]
 pub struct Pending {
+    pub algorithm: u8,
     pub mode: Mode,
     pub prefix: usize,
     pub auth: usize,
@@ -38,6 +37,7 @@ pub struct Pending {
 // Framing survives primitive initialization, but never aliases its opaque state.
 #[repr(C)]
 pub(crate) struct Framing {
+    algorithm: u8,
     length: usize,
     generated_at: usize,
     generated_length: usize,
@@ -51,6 +51,7 @@ pub(crate) struct Framing {
 impl Framing {
     pub(crate) const fn new() -> Self {
         Self {
+            algorithm: alg::P256,
             bytes: [0; FRAMING_BYTES],
             length: 0,
             material: [0; 64],
@@ -65,6 +66,7 @@ impl Framing {
     pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         memory.wipe(&mut self.bytes);
         memory.wipe(&mut self.material);
+        self.algorithm = alg::P256;
         self.length = 0;
         self.generated_at = 0;
         self.generated_length = 0;
@@ -87,12 +89,17 @@ struct Part {
     length: usize,
 }
 impl Stream<'_> {
+    fn parameters(&self) -> crate::ports::mldsa::Parameters {
+        // transfer() validates the selected algorithm before constructing this view.
+        crate::ports::mldsa::parameters(self.framing.algorithm).unwrap()
+    }
     #[inline(never)]
     fn transfer(
         plan: Pending,
         w: &mut SessionWorkspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
+        let params = crate::ports::mldsa::parameters(plan.algorithm).ok_or(Status::Other)?;
         if plan.output + plan.auth > FRAMING_BYTES {
             return Err(Status::Other);
         }
@@ -117,14 +124,15 @@ impl Stream<'_> {
         p.memory.wipe(&mut framing.bytes[framing.length..]);
         old.clear(p.memory);
         w.primitive = Primitive::Ctap(CryptoScratch::new());
+        framing.algorithm = plan.algorithm;
         framing.generated_at = match plan.mode {
             Mode::Make | Mode::Public => plan.public_at,
             Mode::Assert => plan.signature_at + plan.auth,
         };
         framing.generated_length = if matches!(plan.mode, Mode::Assert) {
-            SIGNATURE_BYTES
+            params.signature_bytes
         } else {
-            PUBLIC_BYTES
+            params.public_bytes
         };
         framing.certificate_at = plan.certificate.map_or(framing.length, |(at, _)| at);
         framing.certificate_length = plan.certificate.map_or(0, |(_, n)| n);
@@ -154,7 +162,7 @@ impl Stream<'_> {
         p.crypto
             .stream(
                 op,
-                alg::MLDSA65,
+                self.framing.algorithm,
                 self.crypto,
                 &self.framing.material[32..],
                 &mut [],
@@ -173,7 +181,7 @@ impl Stream<'_> {
                 p.crypto
                     .stream(
                         Op::SignUpdate,
-                        alg::MLDSA65,
+                        self.framing.algorithm,
                         self.crypto,
                         &self.framing.bytes[plan.prefix..plan.prefix + plan.auth],
                         &mut [],
@@ -182,22 +190,28 @@ impl Stream<'_> {
                 p.crypto
                     .stream(
                         Op::SignUpdate,
-                        alg::MLDSA65,
+                        self.framing.algorithm,
                         self.crypto,
                         &self.framing.material[..32],
                         &mut [],
                     )
                     .map_err(|_| Status::Other)?;
                 if p.crypto
-                    .stream(Op::SignFinal, alg::MLDSA65, self.crypto, &[], &mut [])
+                    .stream(
+                        Op::SignFinal,
+                        self.framing.algorithm,
+                        self.crypto,
+                        &[],
+                        &mut [],
+                    )
                     .map_err(|_| Status::Other)?
-                    != SIGNATURE_BYTES
+                    != self.parameters().signature_bytes
                 {
                     return Err(Status::Other);
                 }
             }
             Mode::Public => {
-                if self.init(Op::PublicInit, p)? != PUBLIC_BYTES {
+                if self.init(Op::PublicInit, p)? != self.parameters().public_bytes {
                     return Err(Status::Other);
                 }
             }
@@ -212,12 +226,12 @@ impl Stream<'_> {
         plan: Pending,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
-        if self.init(Op::PublicInit, p)? != PUBLIC_BYTES {
+        if self.init(Op::PublicInit, p)? != self.parameters().public_bytes {
             return Err(Status::Other);
         }
         // The stream API exposes public bytes only while the primitive
         // is open. Close it after hashing the first public view, then
-        // reopen it to emit the response; retaining a second 1952-byte
+        // reopen it to emit the response; retaining a second full public-key
         // copy would exceed the shared workspace budget.
         let mut hash = HashState {
             bytes: [0; crate::ports::HASH_STATE_BYTES],
@@ -226,10 +240,10 @@ impl Stream<'_> {
         let _ = p.crypto.digest(Hash::Abort, &mut hash, &[], &mut []);
         let _ = p
             .crypto
-            .stream(Op::Abort, alg::MLDSA65, self.crypto, &[], &mut []);
+            .stream(Op::Abort, self.framing.algorithm, self.crypto, &[], &mut []);
         let digest = digest_result?;
         self.attest(plan.signature_at + plan.auth, &digest, p)?;
-        if self.init(Op::PublicInit, p)? != PUBLIC_BYTES {
+        if self.init(Op::PublicInit, p)? != self.parameters().public_bytes {
             return Err(Status::Other);
         }
         Ok(())
@@ -252,13 +266,19 @@ impl Stream<'_> {
             )
             .map_err(|_| Status::Other)?;
         let mut window = [0; 128];
-        for offset in (0..PUBLIC_BYTES).step_by(window.len()) {
+        for offset in (0..self.parameters().public_bytes).step_by(window.len()) {
             if !p.device.progress() {
                 return Err(Status::Cancelled);
             }
-            let n = window.len().min(PUBLIC_BYTES - offset);
+            let n = window.len().min(self.parameters().public_bytes - offset);
             if p.crypto
-                .stream(Op::Read, alg::MLDSA65, self.crypto, &[], &mut window[..n])
+                .stream(
+                    Op::Read,
+                    self.framing.algorithm,
+                    self.crypto,
+                    &[],
+                    &mut window[..n],
+                )
                 .map_err(|_| Status::Other)?
                 != n
             {
@@ -366,7 +386,7 @@ impl Stream<'_> {
             match part.source {
                 PartSource::Generated => {
                     if p.crypto
-                        .stream(Op::Read, alg::MLDSA65, self.crypto, &[], dest)
+                        .stream(Op::Read, self.framing.algorithm, self.crypto, &[], dest)
                         .map_err(|_| Sw::UNABLE_TO_PROCESS)?
                         != n
                     {
@@ -388,7 +408,7 @@ impl Stream<'_> {
     pub fn close(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         let _ = p
             .crypto
-            .stream(Op::Abort, alg::MLDSA65, self.crypto, &[], &mut []);
+            .stream(Op::Abort, self.framing.algorithm, self.crypto, &[], &mut []);
         p.memory.wipe(&mut self.crypto.bytes);
         self.framing.clear(p.memory);
     }

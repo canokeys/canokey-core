@@ -51,7 +51,7 @@ impl Crypto for Backend {
         input: &[u8],
         out: &mut [u8],
     ) -> Result<usize, CryptoError> {
-        assert_eq!(algorithm, alg::MLDSA65);
+        let params = mldsa::parameters(algorithm).unwrap();
         if self.fail.is_some_and(|fail| fail as u8 == op as u8) {
             // Model a primitive that has written sensitive state before failing.
             scratch.bytes.fill(0xc7);
@@ -64,13 +64,13 @@ impl Crypto for Backend {
                 scratch.bytes.fill(0xc7);
                 self.offset = 0;
                 self.opens += 1;
-                PUBLIC_BYTES
+                params.public_bytes
             }
             Op::SignUpdate => {
                 self.signed.extend_from_slice(input);
                 0
             }
-            Op::SignFinal => SIGNATURE_BYTES,
+            Op::SignFinal => params.signature_bytes,
             Op::Read => {
                 for (i, b) in out.iter_mut().enumerate() {
                     *b = ((self.offset + i) % 251) as u8;
@@ -167,6 +167,7 @@ fn platform<'a>(
 }
 fn plan(mode: Mode) -> Pending {
     Pending {
+        algorithm: alg::MLDSA65,
         mode,
         prefix: 4,
         auth: if matches!(mode, Mode::Assert) { 37 } else { 0 },
@@ -199,164 +200,175 @@ fn erased(stream: &Stream<'_>) {
 
 #[test]
 fn framing_stays_in_place_and_every_segment_boundary_reads_exactly() {
-    for mode in [Mode::Assert, Mode::Public, Mode::Make] {
-        for chunk in [1, 4, 11, 64, 255, 1024, 4096] {
-            let plan = plan(mode);
-            let mut storage = Backend::default();
-            let mut crypto = Backend::default();
-            let mut device = Backend::default();
-            let memory = Backend::default();
-            let mut w = staged(plan, &memory);
-            let old = w.classic_with(&memory);
-            let (output_at, key_at, input_at) = (
-                old.output.as_ptr() as usize,
-                old.key.bytes.as_ptr() as usize,
-                old.input.as_ptr() as usize,
-            );
-            let mut p = platform(&mut storage, &mut crypto, &mut device, &memory);
-            let length = Stream::prepare(plan, &mut w, &mut p).unwrap();
-            let mut stream = w.ctap_stream().unwrap();
-            assert_eq!(stream.framing.bytes.as_ptr() as usize, output_at);
-            assert_eq!(stream.framing.material, [0; 64]);
-            assert!(
-                stream.framing.bytes[stream.framing.length..]
-                    .iter()
-                    .all(|&b| b == 0)
-            );
-            assert!(memory.wiped.borrow().contains(&(key_at, key_layout::SIZE)));
-            assert!(
-                memory
-                    .wiped
-                    .borrow()
-                    .contains(&(input_at, crate::runtime::workspace::INPUT_BYTES))
-            );
-            let mut expected: Vec<u8> = (0..20).collect();
-            if matches!(mode, Mode::Assert) {
-                expected.splice(4..4, vec![0xa6; 37]);
-            }
-            if matches!(mode, Mode::Make) {
-                // DER sequence of two positive, 32-byte integers, wrapped in CBOR.
-                let signature: Vec<u8> = [
-                    vec![0x58, 70, 0x30, 68, 2, 32],
-                    vec![1; 32],
-                    vec![2, 32],
-                    vec![1; 32],
-                ]
-                .concat();
-                expected.splice(12..12, signature);
-                expected.splice(16 + 72..16 + 72, b"certificate".iter().copied());
-            }
-            let generated_at = if matches!(mode, Mode::Assert) { 49 } else { 8 };
-            let generated_len = if matches!(mode, Mode::Assert) {
-                SIGNATURE_BYTES
-            } else {
-                PUBLIC_BYTES
-            };
-            expected.splice(
-                generated_at..generated_at,
-                (0..generated_len).map(|i| (i % 251) as u8),
-            );
-            assert_eq!(length, expected.len());
-            let mut actual = vec![0; length];
-            for (index, out) in actual.chunks_mut(chunk).enumerate() {
-                stream.read(index * chunk, out, &mut p).unwrap();
-            }
-            assert_eq!(actual, expected);
-            assert_eq!(stream.read(0, &mut [0], &mut p), Err(Sw::WRONG_LENGTH));
-            assert_eq!(stream.read(length, &mut [0], &mut p), Err(Sw::WRONG_LENGTH));
-            stream.close(&mut p);
-            erased(&stream);
-            if matches!(mode, Mode::Assert) {
-                assert_eq!(crypto.signed, [vec![0xa6; 37], vec![0x33; 32]].concat());
-            }
-            if matches!(mode, Mode::Make) {
-                assert_eq!(
-                    crypto.hashed,
-                    [
-                        (4..8).collect::<Vec<u8>>(),
-                        (0..PUBLIC_BYTES).map(|i| (i % 251) as u8).collect(),
-                        (8..12).collect(),
-                        vec![0x33; 32]
+    for params in mldsa::PARAMETER_SETS {
+        for mode in [Mode::Assert, Mode::Public, Mode::Make] {
+            for chunk in [1, 4, 11, 64, 255, 1024, 4096] {
+                let mut plan = plan(mode);
+                plan.algorithm = params.algorithm;
+                let mut storage = Backend::default();
+                let mut crypto = Backend::default();
+                let mut device = Backend::default();
+                let memory = Backend::default();
+                let mut w = staged(plan, &memory);
+                let old = w.classic_with(&memory);
+                let (output_at, key_at, input_at) = (
+                    old.output.as_ptr() as usize,
+                    old.key.bytes.as_ptr() as usize,
+                    old.input.as_ptr() as usize,
+                );
+                let mut p = platform(&mut storage, &mut crypto, &mut device, &memory);
+                let length = Stream::prepare(plan, &mut w, &mut p).unwrap();
+                let mut stream = w.ctap_stream().unwrap();
+                assert_eq!(stream.framing.bytes.as_ptr() as usize, output_at);
+                assert_eq!(stream.framing.material, [0; 64]);
+                assert!(
+                    stream.framing.bytes[stream.framing.length..]
+                        .iter()
+                        .all(|&b| b == 0)
+                );
+                assert!(memory.wiped.borrow().contains(&(key_at, key_layout::SIZE)));
+                assert!(
+                    memory
+                        .wiped
+                        .borrow()
+                        .contains(&(input_at, crate::runtime::workspace::INPUT_BYTES))
+                );
+                let mut expected: Vec<u8> = (0..20).collect();
+                if matches!(mode, Mode::Assert) {
+                    expected.splice(4..4, vec![0xa6; 37]);
+                }
+                if matches!(mode, Mode::Make) {
+                    // DER sequence of two positive, 32-byte integers, wrapped in CBOR.
+                    let signature: Vec<u8> = [
+                        vec![0x58, 70, 0x30, 68, 2, 32],
+                        vec![1; 32],
+                        vec![2, 32],
+                        vec![1; 32],
                     ]
-                    .concat()
+                    .concat();
+                    expected.splice(12..12, signature);
+                    expected.splice(16 + 72..16 + 72, b"certificate".iter().copied());
+                }
+                let generated_at = if matches!(mode, Mode::Assert) { 49 } else { 8 };
+                let generated_len = if matches!(mode, Mode::Assert) {
+                    params.signature_bytes
+                } else {
+                    params.public_bytes
+                };
+                expected.splice(
+                    generated_at..generated_at,
+                    (0..generated_len).map(|i| (i % 251) as u8),
+                );
+                assert_eq!(length, expected.len());
+                let mut actual = vec![0; length];
+                for (index, out) in actual.chunks_mut(chunk).enumerate() {
+                    stream.read(index * chunk, out, &mut p).unwrap();
+                }
+                assert_eq!(actual, expected);
+                assert_eq!(stream.read(0, &mut [0], &mut p), Err(Sw::WRONG_LENGTH));
+                assert_eq!(stream.read(length, &mut [0], &mut p), Err(Sw::WRONG_LENGTH));
+                stream.close(&mut p);
+                erased(&stream);
+                if matches!(mode, Mode::Assert) {
+                    assert_eq!(crypto.signed, [vec![0xa6; 37], vec![0x33; 32]].concat());
+                }
+                if matches!(mode, Mode::Make) {
+                    assert_eq!(
+                        crypto.hashed,
+                        [
+                            (4..8).collect::<Vec<u8>>(),
+                            (0..params.public_bytes).map(|i| (i % 251) as u8).collect(),
+                            (8..12).collect(),
+                            vec![0x33; 32]
+                        ]
+                        .concat()
+                    );
+                }
+                assert_eq!(
+                    crypto.aborts,
+                    if matches!(mode, Mode::Make) { 2 } else { 1 }
+                );
+                let old = w.classic_with(&memory);
+                assert!(
+                    old.input
+                        .iter()
+                        .chain(old.output.iter())
+                        .chain(old.key.bytes.iter())
+                        .all(|&b| b == 0)
                 );
             }
-            assert_eq!(
-                crypto.aborts,
-                if matches!(mode, Mode::Make) { 2 } else { 1 }
-            );
-            let old = w.classic_with(&memory);
-            assert!(
-                old.input
-                    .iter()
-                    .chain(old.output.iter())
-                    .chain(old.key.bytes.iter())
-                    .all(|&b| b == 0)
-            );
         }
     }
 }
 
 #[test]
 fn failed_initialization_and_cancelled_generation_erase_retained_material() {
-    for (mode, fail, cancel) in [
-        (Mode::Assert, Some(Op::SignInit), false),
-        (Mode::Assert, Some(Op::SignUpdate), false),
-        (Mode::Assert, Some(Op::SignFinal), false),
-        (Mode::Public, Some(Op::PublicInit), false),
-        (Mode::Make, Some(Op::Read), false),
-        (Mode::Make, None, true),
-    ] {
-        let mut storage = Backend::default();
-        let mut crypto = Backend {
-            fail,
-            ..Backend::default()
-        };
-        let mut device = Backend {
-            cancel,
-            ..Backend::default()
-        };
-        let memory = Backend::default();
-        let mut w = staged(plan(mode), &memory);
-        let mut p = platform(&mut storage, &mut crypto, &mut device, &memory);
-        assert_eq!(
-            Stream::prepare(plan(mode), &mut w, &mut p),
-            Err(if cancel {
-                Status::Cancelled
-            } else {
-                Status::Other
-            })
-        );
-        erased(&w.ctap_stream().unwrap());
-        assert!(crypto.aborts > 0);
+    for params in mldsa::PARAMETER_SETS {
+        for (mode, fail, cancel) in [
+            (Mode::Assert, Some(Op::SignInit), false),
+            (Mode::Assert, Some(Op::SignUpdate), false),
+            (Mode::Assert, Some(Op::SignFinal), false),
+            (Mode::Public, Some(Op::PublicInit), false),
+            (Mode::Make, Some(Op::Read), false),
+            (Mode::Make, None, true),
+        ] {
+            let mut request = plan(mode);
+            request.algorithm = params.algorithm;
+            let mut storage = Backend::default();
+            let mut crypto = Backend {
+                fail,
+                ..Backend::default()
+            };
+            let mut device = Backend {
+                cancel,
+                ..Backend::default()
+            };
+            let memory = Backend::default();
+            let mut w = staged(request, &memory);
+            let mut p = platform(&mut storage, &mut crypto, &mut device, &memory);
+            assert_eq!(
+                Stream::prepare(request, &mut w, &mut p),
+                Err(if cancel {
+                    Status::Cancelled
+                } else {
+                    Status::Other
+                })
+            );
+            erased(&w.ctap_stream().unwrap());
+            assert!(crypto.aborts > 0);
+        }
     }
 }
 
 #[test]
 fn short_or_failed_generated_read_does_not_advance_response() {
-    for short in [true, false] {
-        let mut storage = Backend::default();
-        let mut crypto = Backend::default();
-        let mut device = Backend::default();
-        let memory = Backend::default();
-        let mut w = staged(plan(Mode::Public), &memory);
-        Stream::prepare(
-            plan(Mode::Public),
-            &mut w,
-            &mut platform(&mut storage, &mut crypto, &mut device, &memory),
-        )
-        .unwrap();
-        crypto.short = short;
-        crypto.fail = (!short).then_some(Op::Read);
-        let mut p = platform(&mut storage, &mut crypto, &mut device, &memory);
-        let mut stream = w.ctap_stream().unwrap();
-        assert_eq!(
-            stream.read(0, &mut [0; 64], &mut p),
-            Err(Sw::UNABLE_TO_PROCESS)
-        );
-        assert_eq!(stream.framing.emitted, 0);
-        stream.close(&mut p);
-        erased(&stream);
+    for params in mldsa::PARAMETER_SETS {
+        let mut request = plan(Mode::Public);
+        request.algorithm = params.algorithm;
+        for short in [true, false] {
+            let mut storage = Backend::default();
+            let mut crypto = Backend::default();
+            let mut device = Backend::default();
+            let memory = Backend::default();
+            let mut w = staged(request, &memory);
+            Stream::prepare(
+                request,
+                &mut w,
+                &mut platform(&mut storage, &mut crypto, &mut device, &memory),
+            )
+            .unwrap();
+            crypto.short = short;
+            crypto.fail = (!short).then_some(Op::Read);
+            let mut p = platform(&mut storage, &mut crypto, &mut device, &memory);
+            let mut stream = w.ctap_stream().unwrap();
+            assert_eq!(
+                stream.read(0, &mut [0; 64], &mut p),
+                Err(Sw::UNABLE_TO_PROCESS)
+            );
+            assert_eq!(stream.framing.emitted, 0);
+            stream.close(&mut p);
+            erased(&stream);
+        }
     }
 }
 
@@ -399,32 +411,33 @@ fn full_capacity_insertion_preserves_both_sides_and_overflow_is_non_mutating() {
 
 #[test]
 fn failed_attestation_erases_partial_key_and_closes_stream() {
-    for key_result in [
-        Ok(0),
-        Ok(31),
-        Err(StorageError::Missing),
-        Err(StorageError::Unavailable),
-        Err(StorageError::Uncertain),
-        Ok(32),
-    ] {
-        let mut storage = Backend {
-            key_result: Some(key_result),
-            ..Backend::default()
-        };
-        let mut crypto = Backend {
-            fail_attestation: true,
-            ..Backend::default()
-        };
-        let mut device = Backend::default();
-        let memory = Backend::default();
-        let mut w = staged(plan(Mode::Make), &memory);
-        let mut p = platform(&mut storage, &mut crypto, &mut device, &memory);
-        assert_eq!(
-            Stream::prepare(plan(Mode::Make), &mut w, &mut p),
-            Err(Status::Other)
-        );
-        erased(&w.ctap_stream().unwrap());
-        assert!(memory.wiped_attestation.get());
-        assert!(crypto.aborts > 0);
+    for params in mldsa::PARAMETER_SETS {
+        let mut request = plan(Mode::Make);
+        request.algorithm = params.algorithm;
+        for key_result in [
+            Ok(0),
+            Ok(31),
+            Err(StorageError::Missing),
+            Err(StorageError::Unavailable),
+            Err(StorageError::Uncertain),
+            Ok(32),
+        ] {
+            let mut storage = Backend {
+                key_result: Some(key_result),
+                ..Backend::default()
+            };
+            let mut crypto = Backend {
+                fail_attestation: true,
+                ..Backend::default()
+            };
+            let mut device = Backend::default();
+            let memory = Backend::default();
+            let mut w = staged(request, &memory);
+            let mut p = platform(&mut storage, &mut crypto, &mut device, &memory);
+            assert_eq!(Stream::prepare(request, &mut w, &mut p), Err(Status::Other));
+            erased(&w.ctap_stream().unwrap());
+            assert!(memory.wiped_attestation.get());
+            assert!(crypto.aborts > 0);
+        }
     }
 }

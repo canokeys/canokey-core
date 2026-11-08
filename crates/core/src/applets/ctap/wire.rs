@@ -4,7 +4,8 @@ pub(super) const RP_ID_MAX: usize = 254;
 pub(super) mod cose {
     pub const ES256: i32 = -7;
     pub const EDDSA: i32 = -8;
-    pub const MLDSA65: i32 = -49;
+    pub const MLDSA65: i32 = crate::ports::mldsa::DSA65.cose;
+    pub const MLDSA44: i32 = crate::ports::mldsa::DSA44.cose;
     pub const KTY: i8 = 1;
     pub const ALG: i8 = 3;
     pub const CRV: i8 = -1;

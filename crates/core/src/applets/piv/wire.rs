@@ -70,6 +70,8 @@ pub(super) mod reference {
 }
 pub(super) mod wire_alg {
     pub const DEFAULT: u8 = 0x00;
+    // Reserved PIV TDEA identifier; this product does not implement TDEA keys.
+    pub const TDEA: u8 = 0x03;
     pub const RSA2048: u8 = 0x07;
     pub const AES192: u8 = 0x0a;
     pub const P256: u8 = 0x11;

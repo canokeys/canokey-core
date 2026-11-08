@@ -1,0 +1,159 @@
+{
+  "scope": "Host response-file faults and observable closure/recovery; test-only changes, no production semantics or resource changes",
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "report": {
+    "path": "tests/fixtures/c312-storage-response/report.json",
+    "sha256": "287f880b696a31df0a5e04bb4d5d8134eb782371704384243ff56ee0f66c7e4e"
+  },
+  "proof": {
+    "path": "docs/sync/evidence/storage-response-source-review.json",
+    "sha256": "948fd9449fa8f665d301e6ee2797f51e7e5874d70e44aa7e49ec32fdb36e32c3"
+  },
+  "results": [
+    {
+      "side": "c",
+      "transport": "ccid",
+      "cases": 18,
+      "outcomes": {
+        "success": 0,
+        "iso-error": 18,
+        "hid-error": 0
+      }
+    },
+    {
+      "side": "c",
+      "transport": "webusb",
+      "cases": 18,
+      "outcomes": {
+        "success": 0,
+        "iso-error": 18,
+        "hid-error": 0
+      }
+    },
+    {
+      "side": "c",
+      "transport": "msg",
+      "cases": 18,
+      "outcomes": {
+        "success": 0,
+        "iso-error": 0,
+        "hid-error": 18
+      }
+    },
+    {
+      "side": "c",
+      "transport": "cbor",
+      "cases": 18,
+      "outcomes": {
+        "success": 0,
+        "iso-error": 0,
+        "hid-error": 18
+      }
+    },
+    {
+      "side": "c",
+      "transport": "nfc",
+      "cases": 24,
+      "outcomes": {
+        "success": 3,
+        "iso-error": 21,
+        "hid-error": 0
+      }
+    },
+    {
+      "side": "rust",
+      "transport": "ccid",
+      "cases": 24,
+      "outcomes": {
+        "success": 0,
+        "iso-error": 24,
+        "hid-error": 0
+      }
+    },
+    {
+      "side": "rust",
+      "transport": "webusb",
+      "cases": 24,
+      "outcomes": {
+        "success": 0,
+        "iso-error": 24,
+        "hid-error": 0
+      }
+    },
+    {
+      "side": "rust",
+      "transport": "msg",
+      "cases": 24,
+      "outcomes": {
+        "success": 0,
+        "iso-error": 0,
+        "hid-error": 24
+      }
+    },
+    {
+      "side": "rust",
+      "transport": "cbor",
+      "cases": 24,
+      "outcomes": {
+        "success": 0,
+        "iso-error": 0,
+        "hid-error": 24
+      }
+    },
+    {
+      "side": "rust",
+      "transport": "nfc",
+      "cases": 30,
+      "outcomes": {
+        "success": 0,
+        "iso-error": 30,
+        "hid-error": 0
+      }
+    }
+  ],
+  "unresolved": {
+    "id": "T18",
+    "cases": [
+      "u2f-register-skip0-return0",
+      "u2f-register-skip0-return1",
+      "u2f-register-skip1-return1"
+    ],
+    "transport": "nfc",
+    "c": "valid complete registration",
+    "rust": "exact-read error6900 and closed source",
+    "disposition": "unresolved; no approval inferred"
+  },
+  "validation": {
+    "host_ctest": "44/44",
+    "ci_clippy": "both pass",
+    "auth_contracts": {
+      "c": 156,
+      "rust": 180
+    },
+    "literal_cases": 365,
+    "literal_events": 11695,
+    "equal_output": 348,
+    "prior_unresolved": 17,
+    "literal_results_unchanged": true
+  },
+  "resources": {
+    "note": "No production changes. Existing product/diagnostic ELF hashes match the preceding sealed checkpoint; no new board build or runtime measurement is inferred.",
+    "devkit_flash": 179148,
+    "nfcc_flash": 187744,
+    "nfcc_overflow": 5984,
+    "devkit_static_ram": 8272,
+    "nfcc_static_ram": 8432
+  },
+  "source_review": {
+    "core": "585/2254",
+    "platform": "142/373",
+    "newly_approved": 0
+  },
+  "platform_checkpoint": "docs/evidence/c312-storage-response-checkpoint/report.json",
+  "remaining": [
+    "Resolve T18 production semantics without claiming the existing fail-closed capability is C partial-read parity.",
+    "USB U2F polling/native registration, extended-NFC error aggregation, all file offsets/certificate lengths and broader close/cancel schedules.",
+    "Actual native-backend/physical storage, USB/RF/WTX, arbitrary IRQ/withheld endpoint schedules, CIU stack/PKE, Linux ASan/LeakSanitizer, prior unresolved wire dispositions and full source audit."
+  ],
+  "session_yield_preservation": "Rerun after E59: the same contract cases pass; original checkpoint and product hashes are historical, preserved in the immutable platform archives."
+}

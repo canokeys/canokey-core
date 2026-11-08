@@ -1,0 +1,1605 @@
+{
+  "schema": 1,
+  "scope": "Literal duplicate SET_CONFIGURATION, real deconfigure/reconfigure and bus-reset schedules. Production C device_loop and Rust USB service run before applet dispatch. Tests cover retained authorization/output and partial RX, with event-level drained IN. No arbitrary IRQ, withheld-HID-IN, physical USB or runtime resource acceptance.",
+  "cases": [
+    {
+      "id": "repeated-config1-preserves-halt-02",
+      "transport": "usb",
+      "oracle_rows": [
+        "E49"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "0203000002000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000002000200",
+          "expected": "0100"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0201000002000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000002000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "repeated-config1-preserves-halt-82",
+      "transport": "usb",
+      "oracle_rows": [
+        "E49"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "0203000082000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000082000200",
+          "expected": "0100"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0201000082000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000082000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "repeated-config1-preserves-halt-03",
+      "transport": "usb",
+      "oracle_rows": [
+        "E49"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "0203000003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000003000200",
+          "expected": "0100"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0201000003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000003000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "repeated-config1-preserves-halt-83",
+      "transport": "usb",
+      "oracle_rows": [
+        "E49"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "0203000083000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0100"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0201000083000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "8200000083000200",
+          "expected": "0000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "repeated-config1-preserves-WebUSB-PIN",
+      "transport": "usb",
+      "oracle_rows": [
+        "E49"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "repeated-config1-preserves-CCID-PIN",
+      "transport": "usb",
+      "oracle_rows": [
+        "E49"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081009000"
+        }
+      ]
+    },
+    {
+      "id": "repeated-config1-preserves-WebUSB-FIDO-source",
+      "transport": "usb",
+      "oracle_rows": [
+        "E49"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000700",
+          "expected": ""
+        },
+        {
+          "out": "80100000010401",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "0061ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "00c0000001",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "b561ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "repeated-config1-preserves-native-HID-source",
+      "transport": "usb",
+      "oracle_rows": [
+        "E49"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000a801000000000010400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300030061ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "hid": "1234567883000900c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678830003b561ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "repeated-config1-preserves-fragmented-CCID-command",
+      "transport": "usb",
+      "oracle_rows": [
+        "E49"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0d000000000200000000a4040008f043414e4f464944",
+          "expected": "",
+          "expected_ccid": "800800000000020081005532465f56329000"
+        },
+        {
+          "ccid": "6f050100000003000000",
+          "expected": "",
+          "expected_ccid": ""
+        },
+        {
+          "ccid": "90100000ff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_ccid": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "ccid": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_ccid": ""
+        },
+        {
+          "ccid": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_ccid": ""
+        },
+        {
+          "ccid": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_ccid": ""
+        },
+        {
+          "ccid": "0000000000",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        }
+      ]
+    },
+    {
+      "id": "repeated-config1-preserves-staged-HID-RX",
+      "transport": "usb",
+      "oracle_rows": [
+        "E49"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "hid": "1234567881012c031425364758697a8b9cadbecfe0f102132435465768798a9bacbdcedff00112233445566778899aabbccddeef00112233445566778899aabb",
+          "expected": "",
+          "expected_hid": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "hid": "1234567800ccddeeff102132435465768798a9bacbdcedfe0f2031425364758697a8b9cadbecfd0e1f30415263748596a7b8c9daebfc0d1e2f405162738495a6",
+          "expected": "",
+          "expected_hid": ""
+        },
+        {
+          "hid": "1234567801b7c8d9eafb0c1d2e3f5061728394a5b6c7d8e9fa0b1c2d3e4f60718293a4b5c6d7e8f90a1b2c3d4e5f708192a3b4c5d6e7f8091a2b3c4d5e6f8091",
+          "expected": "",
+          "expected_hid": ""
+        },
+        {
+          "hid": "1234567802a2b3c4d5e6f708192a3b4c5d6e7f90a1b2c3d4e5f60718293a4b5c6d7e8fa0b1c2d3e4f5061728394a5b6c7d8e9fb0c1d2e3f405162738495a6b7c",
+          "expected": "",
+          "expected_hid": ""
+        },
+        {
+          "hid": "12345678038d9eafc0d1e2f30415263748596a7b8c9daebfd0e1f2031425364758697a8b9cadbecfe0f102132435465768798a9bacbdcedff001122334455667",
+          "expected": "",
+          "expected_hid": ""
+        },
+        {
+          "hid": "123456780478899aabbccdde00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "1234567881012c031425364758697a8b9cadbecfe0f102132435465768798a9bacbdcedff00112233445566778899aabbccddeef00112233445566778899aabb1234567800ccddeeff102132435465768798a9bacbdcedfe0f2031425364758697a8b9cadbecfd0e1f30415263748596a7b8c9daebfc0d1e2f405162738495a61234567801b7c8d9eafb0c1d2e3f5061728394a5b6c7d8e9fa0b1c2d3e4f60718293a4b5c6d7e8f90a1b2c3d4e5f708192a3b4c5d6e7f8091a2b3c4d5e6f80911234567802a2b3c4d5e6f708192a3b4c5d6e7f90a1b2c3d4e5f60718293a4b5c6d7e8fa0b1c2d3e4f5061728394a5b6c7d8e9fb0c1d2e3f405162738495a6b7c12345678038d9eafc0d1e2f30415263748596a7b8c9daebfd0e1f2031425364758697a8b9cadbecfe0f102132435465768798a9bacbdcedff001122334455667123456780478899aabbccdde00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "deconfigure-reconfigure-revokes-WebUSB-PIN",
+      "transport": "usb",
+      "oracle_rows": [
+        "E50"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0009000000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "63c3"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "deconfigure-reconfigure-closes-retained-WebUSB-source",
+      "transport": "usb",
+      "oracle_rows": [
+        "E50"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000700",
+          "expected": ""
+        },
+        {
+          "out": "80100000010401",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "0061ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "0009000000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "00c0000001",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6986"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "deconfigure-reconfigure-closes-retained-native-HID-source",
+      "transport": "usb",
+      "oracle_rows": [
+        "E50"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000a801000000000010400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300030061ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "setup": "0009000000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "hid": "1234567883000900c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "bus-reset-revokes-WebUSB-PIN",
+      "transport": "usb",
+      "oracle_rows": [
+        "E50"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "reset": true,
+          "expected": ""
+        },
+        {
+          "setup": "0005110000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "63c3"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "bus-reset-closes-retained-WebUSB-source",
+      "transport": "usb",
+      "oracle_rows": [
+        "E50"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000700",
+          "expected": ""
+        },
+        {
+          "out": "80100000010401",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "0061ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "reset": true,
+          "expected": ""
+        },
+        {
+          "setup": "0005110000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "00c0000001",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6986"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "bus-reset-closes-retained-native-HID-source",
+      "transport": "usb",
+      "oracle_rows": [
+        "E50"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "hid": "1234567883000a801000000000010400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300030061ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "reset": true,
+          "expected": ""
+        },
+        {
+          "setup": "0005110000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "hid": "1234567883000900c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "repeated-config1-aborts-WebUSB-RX-preserves-PIN",
+      "transport": "usb",
+      "oracle_rows": [
+        "E49"
+      ],
+      "preconditions": "Fresh full product, configured USB; production deferred lifecycle service runs before each serialized main-loop dispatch. No arbitrary IRQ or withheld-HID-IN schedule.",
+      "steps": [
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001002000",
+          "expected": ""
+        },
+        {
+          "out": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+          "expected": ""
+        },
+        {
+          "setup": "0009010000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-00-no-Le",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000700c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-00-finite-Le",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000900c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-00-zero-Le",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000900c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-00-ignored-fifth",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000900c00000a500000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-00-P1P2-0100",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000900c001000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-00-P1P2-0001",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000900c000010000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "consumed-native-VERSION-then-GET-RESPONSE-00",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "1234567883000900c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-00-malformed-trailer",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000800c001000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678bf0001030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-80-no-Le",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000780c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-80-finite-Le",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000980c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-80-zero-Le",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000980c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-80-ignored-fifth",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000980c00000a500000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-80-P1P2-0100",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000980c001000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-80-P1P2-0001",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000980c000010000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "consumed-native-VERSION-then-GET-RESPONSE-80",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "1234567883000980c000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300026d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "empty-native-GET-RESPONSE-80-malformed-trailer",
+      "transport": "usb",
+      "oracle_rows": [
+        "E51"
+      ],
+      "preconditions": "Configured fresh product; native HID dispatch has no retained response. Event-level drained IN; no arbitrary IRQ schedule.",
+      "steps": [
+        {
+          "hid": "1234567883000880c001000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "12345678bf0001030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "hid": "12345678830007000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "expected": "",
+          "expected_hid": "123456788300085532465f5632900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    }
+  ]
+}

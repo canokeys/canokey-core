@@ -245,6 +245,10 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
         }
     }
     fn led(&mut self, on: bool) {
+        #[cfg(feature = "nfc")]
+        if on && unsafe { is_nfc() != 0 } {
+            return;
+        }
         #[cfg(feature = "platform-device")]
         {
             unsafe { ck_platform_led(u8::from(on)) }

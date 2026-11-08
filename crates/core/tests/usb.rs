@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use canokey_protocol::usb::Setup;
+use canokey_protocol::usb::{
+    CLEAR_FEATURE, CONTROL_BUFFER_BYTES, DEVICE_OUT, ENDPOINT_OUT, EP_CCID, EP_CCID_IN, EP_HID,
+    EP_HID_IN, EP_KEYBOARD, EP_KEYBOARD_IN, SET_CONFIGURATION, SET_FEATURE, Setup,
+};
 use canokey_rust_core::runtime::usb::{
     ControlIn, Device, Reply,
     descriptors::{Configuration, Interfaces},
@@ -89,10 +92,28 @@ fn standard_request_validation_and_state() {
     assert_eq!(d.address, 0); // only the status acknowledgement commits address
     d.address = 7;
     assert_eq!(
+        d.setup(
+            &configuration,
+            request(DEVICE_OUT, SET_CONFIGURATION, 0, 0, 0),
+            false,
+            &mut b,
+        ),
+        Reply::Status
+    );
+    assert_eq!(
         d.setup(&configuration, request(0, 9, 1, 0, 0), false, &mut b),
         Reply::Configure(true)
     );
     d.configured = true;
+    assert_eq!(
+        d.setup(
+            &configuration,
+            request(DEVICE_OUT, SET_CONFIGURATION, 1, 0, 0),
+            false,
+            &mut b,
+        ),
+        Reply::Status
+    );
     for s in [
         request(0, 5, 8, 0, 0),
         request(0x80, 9, 1, 0, 0),
@@ -128,6 +149,49 @@ fn standard_request_validation_and_state() {
     d.reset();
     assert!(!d.configured);
     assert_eq!(d.address, 0);
+}
+#[test]
+fn halt_uses_installed_endpoint_directions_and_requires_configuration() {
+    for hid in [false, true] {
+        for keyboard in [false, true] {
+            let configuration = Configuration::new(Interfaces {
+                webusb: true,
+                hid,
+                keyboard,
+            });
+            let mut d = Device::new();
+            d.address = 1;
+            let mut out = [0; CONTROL_BUFFER_BYTES];
+            for (ep, installed) in [
+                (EP_KEYBOARD, keyboard),
+                (EP_KEYBOARD_IN, keyboard),
+                (EP_HID, hid),
+                (EP_HID_IN, hid),
+                (EP_CCID, true),
+                (EP_CCID_IN, true),
+            ] {
+                for configured in [false, true] {
+                    d.configured = configured;
+                    for (operation, halt) in [(CLEAR_FEATURE, false), (SET_FEATURE, true)] {
+                        assert_eq!(
+                            d.setup(
+                                &configuration,
+                                request(ENDPOINT_OUT, operation, 0, u16::from(ep), 0),
+                                false,
+                                &mut out,
+                            ),
+                            if installed && configured {
+                                Reply::Halt(ep, halt)
+                            } else {
+                                Reply::Stall
+                            },
+                            "ep={ep:02x} hid={hid} keyboard={keyboard} configured={configured}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 #[test]
 fn hid_reports_idle_leds_and_rejected_class_requests() {
@@ -215,9 +279,9 @@ fn control_in_every_length_and_short_termination() {
     }
 }
 #[test]
-fn configurations_match_legacy_wire_fixtures() {
-    // Captured from the previous production C descriptor callbacks, separately
-    // compiled for each HID/keyboard combination before removing that source.
+fn configurations_match_c312_short_only_wire_fixtures() {
+    // Retained interface fixtures with C Core a349b268 CCID field values:
+    // IFSD254, dwFeatures0x000200FE, max CCID message271 for every profile.
     let fixtures = [
         include_str!("vectors/usb-config-00.hex"),
         include_str!("vectors/usb-config-01.hex"),

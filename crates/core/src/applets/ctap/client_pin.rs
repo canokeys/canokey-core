@@ -162,7 +162,7 @@ impl Fields {
             }
             return Ok(());
         }
-        if super::skip_cbor_event(&mut self.skip_depth, event) {
+        if super::skip_cbor_event(&mut self.skip_depth, event)? {
             return Ok(());
         }
         if let Some((key, _)) = self.body {

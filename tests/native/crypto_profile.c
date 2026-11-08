@@ -131,11 +131,14 @@ int main(void) {
   memset(output, 0x5a, sizeof(output));
   const uint8_t ops[] = {CK_STREAM_PUBLIC_INIT, CK_STREAM_DECAPSULATE_INIT,
                         CK_STREAM_DECAPSULATE_UPDATE, CK_STREAM_DECAPSULATE_FINAL};
+  const uint8_t algorithms[] = {MLKEM768, MLKEM512};
+  for (size_t a = 0; a < sizeof(algorithms); ++a) {
   for (size_t i = 0; i < sizeof(ops); ++i) {
-    assert(ck_platform_stream(ops[i], MLKEM768, scratch, seed, sizeof(seed), output, sizeof(output)) == -1);
+    assert(ck_platform_stream(ops[i], algorithms[a], scratch, seed, sizeof(seed), output, sizeof(output)) == -1);
     for (size_t j = 0; j < sizeof(output); ++j) assert(output[j] == 0x5a);
     assert(ck_platform_stream(CK_STREAM_ABORT, 0, scratch, NULL, 0, NULL, 0) == 0);
     for (size_t j = 0; j < sizeof(scratch); ++j) assert(scratch[j] == 0);
+  }
   }
 #endif
   return 0;

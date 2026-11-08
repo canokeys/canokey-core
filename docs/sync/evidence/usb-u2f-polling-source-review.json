@@ -1,0 +1,47 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Host fixture presence provenance and transport-contract mapping, not raw-touch timing equality or new source-unit approval.",
+  "functions": [
+    {
+      "path": "src/device.c",
+      "line": 77,
+      "file_sha256": "e375e3f61ef1c5559c462094dfe5231c5e37cefe3762b8a2cd74db51f3a9f8bb",
+      "source": "uint8_t get_touch_result(void) {\n#ifdef TEST // emulate user interaction in test mode\n  testmode_emulate_user_presence();\n#endif\n  return touch_result;\n}"
+    },
+    {
+      "path": "virt-card/device-sim.c",
+      "line": 167,
+      "file_sha256": "13ce4906caf4c848cd876c67110e8a0054fa171c417791da0007e80edb2f55b9",
+      "source": "int testmode_emulate_user_presence(void) {\n  if (!device_is_blinking()) return 0; // user only touches while blinking\n\n#ifndef FUZZ // speed up fuzzing\n  int counter = 0;\n  FILE *f_cnt = fopen(\"/tmp/canokey-test-up\", \"r\");\n  if (f_cnt != NULL) {\n    fscanf(f_cnt, \"%d\", &counter);\n    fclose(f_cnt);\n  } else {\n    ERR_MSG(\"Failed to open canokey-test-up for reading\\n\");\n  }\n  if (counter < 0) return 0;\n  counter++;\n  DBG_MSG(\"counter=%d\\n\", counter);\n  f_cnt = fopen(\"/tmp/canokey-test-up\", \"w\");\n  if (f_cnt != NULL) {\n    fprintf(f_cnt, \"%d\", counter);\n    fclose(f_cnt);\n  } else {\n    ERR_MSG(\"Failed to open canokey-test-up for writing\\n\");\n  }\n#endif\n\n  set_touch_result(TOUCH_SHORT);\n  return 0;\n}"
+    }
+  ],
+  "rust_fixture": [
+    {
+      "path": "tests/card/src/transport.rs",
+      "sha256": "bc974d00e0c4854c758e8c3def27a192ef9c8035943fa0c5828d389f125f7db9"
+    },
+    {
+      "path": "tests/card/src/bin/usb_sessions/portable_webusb.rs",
+      "sha256": "7df3eb77435f1565d57543ee396f7b799305536ca1235bfad641f3c4c3668a1a"
+    },
+    {
+      "path": "tests/support/c312_auth_response.py",
+      "sha256": "4acd294cc3f6f74137d95b15f22e9206cf09268714842340d0aff99c928bf4a3"
+    },
+    {
+      "path": "tests/support/c312_storage_faults.py",
+      "sha256": "ebd47dfb3d11e9af51c7c9613eb398ffe558d9ad90c28ab51d1d639b654536cb"
+    }
+  ],
+  "mapping": [
+    "Product and fixture both sample canokey_ports::Polling on the serialized main loop; Device::poll_presence consumes its completed-release latch.",
+    "Blocking touched() clears polling state; no poll result, applet response or authorization outcome is injected.",
+    "The Rust host advances the raw waveform by10 ms only after an empty6985; all denied attempts preserve the file-fault state.",
+    "Pinned C TEST get_touch_result calls its unchanged testmode_emulate_user_presence; that emulator supplies TOUCH_SHORT while the real prompt blinks. These runs therefore have no denied C retries.",
+    "ISO U2F read_some_at prefix progress matches on CCID/WebUSB/NFC; native MSG retains exact reads. All complete registration outputs are independently verified."
+  ],
+  "remaining": [
+    "Raw C/Rust sensor timing, latch expiry and physical presence equivalence are not established by the paired matrix.",
+    "Actual native-backend file faults, cancellation/IRQ/withheld endpoints, extended NFC fault aggregation, hardware and full release acceptance remain open."
+  ]
+}

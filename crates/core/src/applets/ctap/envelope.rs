@@ -46,6 +46,7 @@ pub struct Parser {
     decoder: super::request_decoder::RequestDecoder,
     fields: Fields,
     offset: usize,
+    has_body: bool,
 }
 impl Parser {
     pub const fn new(command: u8) -> Self {
@@ -53,11 +54,13 @@ impl Parser {
             decoder: super::request_decoder::RequestDecoder::new(),
             fields: Fields::new(command),
             offset: 0,
+            has_body: false,
         }
     }
     // Share this parser across HID and APDU callers on size-constrained targets.
     #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
+        self.has_body |= !bytes.is_empty();
         let f = &mut self.fields;
         let start = PREFIX + self.offset;
         let Some(dest) = f
@@ -85,7 +88,7 @@ impl Parser {
     #[inline(never)]
     pub fn finish(&mut self) -> Result<Command, Status> {
         // Preserve the legacy bare authenticatorConfig command status.
-        if self.fields.command == super::CONFIG && self.offset == 0 {
+        if self.fields.command == super::CONFIG && !self.has_body {
             return Err(Status::UnhandledRequest);
         }
         self.decoder.finish()?;
@@ -141,6 +144,7 @@ struct Fields {
     previous: Option<Key>,
     key: Option<Option<i8>>,
     depth: u8,
+    skip: u8,
     auth_offset: Option<usize>,
     start: Option<usize>,
     end: Option<usize>,
@@ -159,6 +163,7 @@ impl Fields {
             previous: None,
             key: None,
             depth: 0,
+            skip: 0,
             auth_offset: None,
             start: None,
             end: None,
@@ -188,7 +193,8 @@ impl Fields {
             return Ok(());
         }
         if self.depth != 0 {
-            if self.start.is_some() && self.end.is_none() {
+            let skipped = super::skip_cbor_event(&mut self.skip, event)?;
+            if !skipped && self.start.is_some() && self.end.is_none() {
                 if self.command == super::CONFIG {
                     self.parameter(event, offset)?;
                 } else {
@@ -263,6 +269,7 @@ impl Fields {
                     Event::Map(_) | Event::Array(_) | Event::Bytes(_) | Event::Text(_)
                 ) {
                     self.depth = 1;
+                    self.skip = 1;
                 }
             }
         }
@@ -312,7 +319,11 @@ impl Fields {
                 Event::Bool(b) => self.params.force = b,
                 _ => return Err(Status::UnexpectedType),
             },
-            _ => (),
+            _ => {
+                if super::is_cbor_container(event) {
+                    self.skip = 1;
+                }
+            }
         }
         Ok(())
     }

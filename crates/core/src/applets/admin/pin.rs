@@ -26,7 +26,7 @@ pub fn retries(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<u8, 
 }
 pub fn verify(pin: &[u8], p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Error> {
     // Preserve ADMIN's length error even when storage is unavailable or blocked.
-    if !(MIN_LENGTH..=MAX_LENGTH).contains(&pin.len()) {
+    if pin.len() < MIN_LENGTH || pin.len() > MAX_LENGTH {
         return Err(Error::Length);
     }
     PIN.verify(pin, MIN_LENGTH, Charge::OnMismatch, p)

@@ -2,103 +2,45 @@
 //! Main-loop CCID protocol. Endpoint/timer callbacks never borrow this state.
 use canokey_protocol::ccid::*;
 
-use canokey_protocol::apdu::{EXTENDED_HEADER_BYTES, EXTENDED_OVERHEAD_BYTES};
 pub const FRAME: usize = canokey_protocol::apdu::SHORT_FRAME_BYTES;
 pub const REPLY: usize = canokey_protocol::apdu::SHORT_REPLY_BYTES;
-pub const TIMEOUT: u32 = 2000;
+// PowerOn has the largest reply that never needs the shared APDU workspace.
+pub const CONTROL_REPLY: usize = HEADER + ATR.len();
 pub const EXTENSION_INTERVAL: u16 = 500;
-const PREFIX: usize = HEADER + EXTENDED_HEADER_BYTES;
 
-pub trait Scratch {
-    fn acquire(&mut self, length: usize) -> bool;
-    fn read(&mut self, offset: usize, out: &mut [u8]) -> bool;
-    fn write(&mut self, offset: usize, bytes: &[u8]) -> bool;
-    /// Wipe and release, or halt. A failed wipe must never permit reuse.
-    fn close(&mut self);
-}
-
-pub trait Backend: Scratch {
-    fn now(&mut self) -> u32;
+pub trait Backend {
     fn reset(&mut self);
-    fn slot_power(&mut self) {
+    fn slot_power(&mut self) -> bool {
         self.reset();
+        true
     }
-    fn prepare_extended(
-        &mut self,
-        prefix: &[u8; EXTENDED_HEADER_BYTES],
-        total: usize,
-    ) -> Result<u16, u16>;
-    /// The backend must close staged input before executing the parsed command.
-    fn exchange(&mut self, request: &mut Request, out: &mut [u8]) -> Result<usize, ()>;
-    /// Copy these opaque bytes into a disjoint IRQ-owned periodic TX buffer.
+    fn exchange(&mut self, request: &Request, out: &mut [u8]) -> Result<usize, ()>;
+    /// Copy into the disjoint IRQ-owned processing-extension buffer.
     fn arm(&mut self, bytes: &[u8; HEADER], interval: u16);
     fn disarm(&mut self);
 }
-
 pub struct Request {
     bytes: [u8; HEADER + FRAME],
-    received: u32,
-    expected: u32,
-    body: u16,
-    status: u16,
-    held: bool,
+    // Wider than dwLength: even UINT32_MAX must drain without header overflow.
+    received: u64,
+    expected: u64,
 }
 impl Request {
     const fn new() -> Self {
         Self {
             bytes: [0; HEADER + FRAME],
             received: 0,
-            expected: HEADER as u32,
-            body: 0,
-            status: 0,
-            held: false,
+            expected: HEADER as u64,
         }
     }
     pub fn len(&self) -> usize {
-        self.expected as usize - HEADER
+        (self.expected - HEADER as u64) as usize
     }
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    pub fn staged(&self) -> bool {
-        self.held
-    }
     pub fn short(&self) -> &[u8] {
-        &self.bytes[HEADER..self.expected as usize]
-    }
-    pub fn close(&mut self, scratch: &mut impl Scratch) {
-        if self.held {
-            scratch.close();
-            self.held = false;
-        }
-    }
-    pub fn read(&self, mut offset: usize, mut out: &mut [u8], scratch: &mut impl Scratch) -> bool {
-        if !self.held || offset > self.len() || out.len() > self.len() - offset {
-            return false;
-        }
-        while !out.is_empty() {
-            let n = if offset < EXTENDED_HEADER_BYTES {
-                let n = out.len().min(EXTENDED_HEADER_BYTES - offset);
-                out[..n].copy_from_slice(&self.bytes[HEADER + offset..HEADER + offset + n]);
-                n
-            } else if offset < EXTENDED_HEADER_BYTES + self.body as usize {
-                let n = out
-                    .len()
-                    .min(EXTENDED_HEADER_BYTES + self.body as usize - offset);
-                if !scratch.read(offset - EXTENDED_HEADER_BYTES, &mut out[..n]) {
-                    return false;
-                }
-                n
-            } else {
-                let n = out.len();
-                let start = PREFIX + offset - EXTENDED_HEADER_BYTES - self.body as usize;
-                out.copy_from_slice(&self.bytes[start..start + n]);
-                n
-            };
-            offset += n;
-            out = &mut out[n..];
-        }
-        true
+        &self.bytes[HEADER..HEADER + self.len()]
     }
 }
 
@@ -116,10 +58,7 @@ pub struct Transport {
     phase: Phase,
     error: u8,
     active: bool,
-    last_received: u32,
-    session_owned: bool,
-    session_last: u32,
-    tx_started: u32,
+    refused: bool,
 }
 impl Default for Transport {
     fn default() -> Self {
@@ -134,82 +73,51 @@ impl Transport {
             phase: Phase::Idle,
             error: 0,
             active: false,
-            last_received: 0,
-            session_owned: false,
-            session_last: 0,
-            tx_started: 0,
+            refused: false,
         }
     }
     pub fn reset(&mut self, backend: &mut impl Backend) {
         backend.disarm();
-        self.request.close(backend);
         backend.reset();
         self.request.bytes.fill(0);
         self.request.received = 0;
-        self.request.expected = HEADER as u32;
+        self.request.expected = HEADER as u64;
         self.phase = Phase::Idle;
         self.active = false;
-        self.session_owned = false;
     }
-    pub fn scratch_busy(&self) -> bool {
-        self.request.held
-    }
-    /// Logical completion is separate from the controller's final IN completion.
+    /// Logical completion is separate from final endpoint completion.
     pub fn completed_transaction(&self) -> bool {
         self.phase == Phase::Idle
     }
-    pub fn idle(&self, now: u32) -> bool {
+    pub fn idle(&self, _now: u32) -> bool {
         self.phase == Phase::Idle
-            && (!self.session_owned || now.wrapping_sub(self.session_last) >= TIMEOUT)
     }
     pub fn can_receive(&self) -> bool {
         matches!(self.phase, Phase::Idle | Phase::Receiving)
     }
-    pub fn blocked_by_hid(&self, first_byte: Option<u8>) -> bool {
-        let command = if self.phase == Phase::Idle {
-            first_byte
-        } else {
-            Some(self.request.bytes[0])
-        };
-        command == Some(TRANSFER)
+    /// No receive-gap expiry: accepted and refused messages drain their
+    /// complete declared payload until an explicit reset/disconnect.
+    pub fn receive(&mut self, data: &[u8]) {
+        self.receive_admitted(data, true);
     }
-    fn expire(&mut self, backend: &mut impl Backend) {
-        self.error = BAD_LENGTH;
-        self.request.close(backend);
-        self.phase = if self.request.received < HEADER as u32 {
-            Phase::Idle
-        } else {
-            Phase::Queued
-        };
-    }
-    pub fn timeout(&mut self, now: u32, backend: &mut impl Backend) {
-        if self.phase == Phase::Receiving && now.wrapping_sub(self.last_received) >= TIMEOUT {
-            self.expire(backend);
-        }
-    }
-    pub fn receive(
-        &mut self,
-        mut data: &[u8],
-        tick: u32,
-        extended: bool,
-        backend: &mut impl Backend,
-    ) {
+    /// Latch buffer admission at the first packet. A refused body drains even
+    /// if the foreign owner releases its reservation before the final packet.
+    pub fn receive_admitted(&mut self, mut data: &[u8], admitted: bool) {
         if !self.can_receive() || data.is_empty() {
             return;
         }
-        if self.phase == Phase::Receiving && tick.wrapping_sub(self.last_received) >= TIMEOUT {
-            self.expire(backend);
-            return;
-        }
         if self.phase == Phase::Idle {
+            // A new USB transfer must carry its complete CCID header. Do not
+            // splice a truncated first packet into the next independent message.
+            if data.len() < HEADER {
+                return;
+            }
             self.request.received = 0;
-            self.request.expected = HEADER as u32;
+            self.request.expected = HEADER as u64;
             self.error = 0;
-            self.request.status = 0;
-            self.request.body = 0;
+            self.refused = !admitted;
             self.phase = Phase::Receiving;
         }
-        self.last_received = tick;
         while !data.is_empty() && self.request.received < self.request.expected {
             let r = &mut self.request;
             let at = r.received as usize;
@@ -217,79 +125,20 @@ impl Transport {
             if at < HEADER {
                 n = n.min(HEADER - at);
                 r.bytes[at..at + n].copy_from_slice(&data[..n]);
-            } else if self.error == 0 && r.expected as usize <= r.bytes.len() {
+            } else if !self.refused && r.len() <= FRAME && r.bytes[0] == TRANSFER {
                 r.bytes[at..at + n].copy_from_slice(&data[..n]);
-            } else if self.error == 0 {
-                if at < PREFIX {
-                    n = n.min(PREFIX - at);
-                    r.bytes[at..at + n].copy_from_slice(&data[..n]);
-                } else if r.status == 0 {
-                    if at < PREFIX + r.body as usize {
-                        n = n.min(PREFIX + r.body as usize - at);
-                        if !backend.write(at - PREFIX, &data[..n]) {
-                            self.error = HARDWARE;
-                        }
-                    } else {
-                        let start = PREFIX + at - PREFIX - r.body as usize;
-                        r.bytes[start..start + n].copy_from_slice(&data[..n]);
-                    }
-                }
             }
-            r.received += n as u32;
+            r.received += n as u64;
             data = &data[n..];
-            if r.received == HEADER as u32 {
+            if r.received == HEADER as u64 {
                 let payload = payload_length(r.bytes[..HEADER].try_into().unwrap());
-                r.expected = payload.saturating_add(HEADER as u32);
-                let maximum = if extended {
-                    (canokey_protocol::ctaphid::CTAP_MAX_REQUEST + EXTENDED_OVERHEAD_BYTES) as u32
-                } else {
-                    FRAME as u32
-                };
-                if payload > maximum || (payload > FRAME as u32 && r.bytes[0] != TRANSFER) {
+                r.expected = u64::from(payload) + HEADER as u64;
+                if payload > FRAME as u32 && r.bytes[0] == TRANSFER {
                     self.error = BAD_LENGTH;
                 }
             }
-            if r.received == PREFIX as u32 && r.expected as usize > r.bytes.len() && self.error == 0
-            {
-                if r.bytes[SLOT_OFFSET] != 0 {
-                    self.error = BAD_SLOT;
-                } else if !self.active {
-                    self.error = MUTE;
-                } else if r.bytes[SPECIFIC_OFFSET + 1] != 0 || r.bytes[SPECIFIC_OFFSET + 2] != 0 {
-                    self.error = BAD_LENGTH;
-                } else {
-                    match backend
-                        .prepare_extended(r.bytes[HEADER..PREFIX].try_into().unwrap(), r.len())
-                    {
-                        Err(sw) => r.status = sw,
-                        Ok(length) => {
-                            // Bound the backend contract before any PKE write or suffix copy.
-                            if length == 0
-                                || usize::from(length) > canokey_protocol::ctaphid::CTAP_MAX_REQUEST
-                                || ![
-                                    EXTENDED_HEADER_BYTES + length as usize,
-                                    EXTENDED_OVERHEAD_BYTES + length as usize,
-                                ]
-                                .contains(&r.len())
-                            {
-                                self.error = HARDWARE;
-                            } else if !backend.acquire(length as usize) {
-                                self.error = HARDWARE;
-                            } else {
-                                r.body = length;
-                                r.held = true;
-                            }
-                        }
-                    }
-                }
-            }
         }
-        if !data.is_empty() {
-            self.error = BAD_LENGTH;
-        }
-        if self.error != 0 {
-            self.request.close(backend);
-        }
+        // C truncates excess bytes in the final packet to the declared length.
         if self.request.received == self.request.expected {
             self.phase = Phase::Queued;
         }
@@ -299,19 +148,25 @@ impl Transport {
     pub fn queued(&self) -> bool {
         self.phase == Phase::Queued
     }
+    pub fn needs_apdu_buffer(&self) -> bool {
+        self.request.bytes[0] == TRANSFER && !self.refused && self.error == 0
+    }
     /// A progress callback may retry only a slot poll's unsent response.
     pub fn presence_reply(&self) -> bool {
         self.phase == Phase::Reply && self.request.bytes[0] == SLOT_STATUS
     }
-    pub fn execute(
-        &mut self,
-        hid_busy: bool,
-        backend: &mut impl Backend,
-        output: &mut [u8; HEADER + REPLY],
-    ) {
+    pub fn execute(&mut self, hid_busy: bool, backend: &mut impl Backend, output: &mut [u8]) {
         if self.phase != Phase::Queued {
             return;
         }
+        assert!(
+            output.len()
+                >= if self.needs_apdu_buffer() {
+                    HEADER + REPLY
+                } else {
+                    CONTROL_REPLY
+                }
+        );
         let r = &mut self.request;
         let command = r.bytes[0];
         let slot = r.bytes[SLOT_OFFSET];
@@ -322,89 +177,83 @@ impl Transport {
             TRANSFER | POWER_ON | 0x69 => DATA, // Secure
             GET_PARAMETERS | RESET_PARAMETERS | SET_PARAMETERS => PARAMETERS,
             0x6b => 0x83, // Escape
+            0x73 => 0x84, // SetDataRateAndClockFrequency
             _ => STATUS,
         };
-        let mut error = if slot != 0 { BAD_SLOT } else { self.error };
+        let rfu = match command {
+            POWER_ON => 2,
+            POWER_OFF | SLOT_STATUS | GET_PARAMETERS => 3,
+            _ => 0,
+        };
+        let mut error = if slot != 0 {
+            BAD_SLOT
+        } else if rfu != 0 && !r.is_empty() {
+            BAD_LENGTH
+        } else if rfu != 0 && (r.bytes[8] != 0 || r.bytes[9] != 0 || (rfu == 3 && r.bytes[7] != 0))
+        {
+            if rfu == 2 { BAD_RFU2 } else { BAD_POWER }
+        } else {
+            self.error
+        };
         let specific = u8::from(kind == PARAMETERS);
         let mut unsupported = false;
         let mut length = 0;
         if error == 0 {
             match command {
-                POWER_ON => {
-                    if r.len() != 0
-                        || r.bytes[SPECIFIC_OFFSET + 1] != 0
-                        || r.bytes[SPECIFIC_OFFSET + 2] != 0
-                    {
-                        error = BAD_LENGTH;
-                    } else if r.bytes[SPECIFIC_OFFSET] != 0 {
+                POWER_ON | POWER_OFF => {
+                    if command == POWER_ON && r.bytes[SPECIFIC_OFFSET] != 0 {
                         error = BAD_POWER;
+                    } else if hid_busy || !backend.slot_power() {
+                        error = SLOT_BUSY;
                     } else {
-                        self.session_owned = !hid_busy;
-                        if self.session_owned {
-                            backend.slot_power();
+                        self.active = command == POWER_ON;
+                        if self.active {
+                            output[HEADER..HEADER + ATR.len()].copy_from_slice(ATR);
+                            length = ATR.len();
                         }
-                        self.session_last = backend.now();
-                        self.active = true;
-                        output[HEADER..HEADER + ATR.len()].copy_from_slice(ATR);
-                        length = ATR.len();
                     }
                 }
-                POWER_OFF => {
-                    if r.len() != 0 {
-                        error = BAD_LENGTH;
-                    } else {
-                        if !hid_busy {
-                            backend.slot_power();
-                        }
-                        self.session_owned = false;
-                        self.active = false;
-                    }
-                }
-                SLOT_STATUS => {
-                    if r.len() != 0 {
-                        error = BAD_LENGTH;
-                    }
-                }
+                SLOT_STATUS => {}
                 TRANSFER => {
-                    if !self.active {
-                        error = MUTE;
-                    } else if r.bytes[SPECIFIC_OFFSET + 1] != 0 || r.bytes[SPECIFIC_OFFSET + 2] != 0
-                    {
-                        error = BAD_LENGTH;
+                    if self.refused {
+                        // C's SW_ERR_NOT_PERSIST: transport admission failed,
+                        // without entering Core or touching the foreign buffer.
+                        output[HEADER..HEADER + 2].copy_from_slice(&[0x64, 0]);
+                        length = 2;
                     } else {
-                        backend.arm(&extension(slot, seq), EXTENSION_INTERVAL);
-                        let result = if r.status != 0 {
-                            output[HEADER..HEADER + 2].copy_from_slice(&r.status.to_be_bytes());
+                        let input = r.short();
+                        // Reject before Core routing; even a tiny Case2E returns6700
+                        // without changing selection or an existing command chain.
+                        let bounded_short = canokey_protocol::apdu::parse(input)
+                            .is_ok_and(|command| !command.info.extended);
+                        let result = if !bounded_short {
+                            output[HEADER..HEADER + 2].copy_from_slice(&[0x67, 0]);
                             Ok(2)
                         } else {
-                            backend.exchange(r, &mut output[HEADER..])
+                            backend.arm(&extension(slot, seq), EXTENSION_INTERVAL);
+                            let result = backend.exchange(r, &mut output[HEADER..]);
+                            backend.disarm();
+                            result
                         };
-                        backend.disarm();
-                        self.session_owned = true;
-                        self.session_last = backend.now();
                         match result {
-                            Ok(n) if n <= REPLY => length = n,
+                            Ok(n) if n >= 2 && n <= REPLY => {
+                                length = n;
+                                self.active = true;
+                            }
                             _ => error = HARDWARE,
                         }
                     }
                 }
-                GET_PARAMETERS | RESET_PARAMETERS | SET_PARAMETERS => {
-                    if command == SET_PARAMETERS
-                        && (r.bytes[SPECIFIC_OFFSET] != 1 || r.len() != T1.len())
-                    {
-                        error = BAD_POWER;
-                    } else {
-                        output[HEADER..HEADER + T1.len()].copy_from_slice(T1);
-                        length = T1.len();
-                    }
+                GET_PARAMETERS => {
+                    output[HEADER..HEADER + T1.len()].copy_from_slice(T1);
+                    length = T1.len();
                 }
                 _ => {
                     unsupported = true;
                 }
             }
         }
-        r.close(backend);
-        let status = u8::from(!self.active)
+        let status = if slot != 0 { 2 } else { u8::from(!self.active) }
             | if error != 0 || unsupported {
                 COMMAND_FAILED
             } else {
@@ -417,15 +266,18 @@ impl Transport {
             slot,
             seq,
             status,
-            error,
+            if error == 0 && !unsupported {
+                SUCCESS_ERROR
+            } else {
+                error
+            },
             specific,
         );
         self.reply_len = HEADER + length;
         self.phase = Phase::Reply;
-        self.tx_started = backend.now();
     }
-    pub fn reply<'a>(&self, output: &'a [u8; HEADER + REPLY]) -> Option<&'a [u8]> {
-        (self.phase == Phase::Reply).then_some(&output[..self.reply_len])
+    pub fn reply<'a>(&self, output: &'a [u8]) -> Option<&'a [u8]> {
+        (self.phase == Phase::Reply).then(|| &output[..self.reply_len])
     }
     pub fn submitted(&mut self) {
         self.phase = Phase::InFlight;
@@ -433,16 +285,6 @@ impl Transport {
     pub fn completed(&mut self) {
         if self.phase == Phase::InFlight {
             self.phase = Phase::Idle;
-        }
-    }
-    /// Logical timeout never reuses the endpoint-owned response buffer.
-    pub fn tx_timeout(&mut self, now: u32, backend: &mut impl Backend) {
-        if matches!(self.phase, Phase::Reply | Phase::InFlight)
-            && now.wrapping_sub(self.tx_started) >= TIMEOUT
-            && self.session_owned
-        {
-            backend.reset();
-            self.session_owned = false;
         }
     }
 }

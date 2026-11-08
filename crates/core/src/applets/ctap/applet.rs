@@ -144,6 +144,31 @@ impl Applet {
             self.read_payload(offset, output, w, p)
         }
     }
+    pub fn read_apdu(
+        &mut self,
+        offset: usize,
+        output: &mut [u8],
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<usize, Sw> {
+        let n = self.response.apdu_chunk(output.len());
+        if self.message_status.is_none() {
+            if let Response::Authentication {
+                registration: true, ..
+            } = self.response
+            {
+                return self.response.read_window(
+                    &w.classic_with(p.memory),
+                    offset,
+                    &mut output[..n],
+                    p.storage,
+                    true,
+                );
+            }
+        }
+        self.read(offset, &mut output[..n], w, p)?;
+        Ok(n)
+    }
     fn read_payload(
         &mut self,
         offset: usize,

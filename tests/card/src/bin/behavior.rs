@@ -6,7 +6,12 @@ const RESPONSE_BYTES: usize = 258;
 const OWNER_CCID: u8 = 1;
 #[cfg(feature = "ctap")]
 const OWNER_WEBUSB: u8 = 3;
-#[cfg(any(feature = "ctap", feature = "piv", feature = "openpgp"))]
+#[cfg(any(
+    feature = "ctap",
+    feature = "piv",
+    feature = "openpgp",
+    feature = "ndef"
+))]
 const OWNER_NFC: u8 = 4;
 const INS_SELECT: u8 = 0xa4;
 #[cfg(any(
@@ -26,7 +31,9 @@ const OPENPGP_AID: &[u8] = &[0xd2, 0x76, 0, 1, 0x24, 1];
 #[cfg(feature = "piv")]
 const PIV_AID: &[u8] = &[0xa0, 0, 0, 3, 8, 0, 0, 0x10, 0];
 #[cfg(feature = "ctap")]
-const FIDO_AID: &[u8] = &[0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1];
+const FIDO_AID: &[u8] = b"\xf0CANOFID";
+#[cfg(feature = "ctap")]
+const FIDO_NFC_AID: &[u8] = &[0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1];
 #[cfg(feature = "ndef")]
 const NDEF_AID: &[u8] = &[0xd2, 0x76, 0, 0, 0x85, 1, 1];
 // Short ISO 7816 GET RESPONSE, Le=0 requests 256 bytes.
@@ -489,7 +496,12 @@ fn ndef() {
     f.command(UPDATE, 0, 100, &[0xcc], None, Sw::SUCCESS);
     f.command(READ, 0, 100, &[], Some(3), Sw::SUCCESS);
     assert_eq!(&f.buffer[..3], &[0xaa, 0xbb, 0xcc]);
-    // Extended Le=1024; response is drained through four short chunks.
+    f.raw(&[0, READ, 0, 0, 0, 4, 0], Sw::WRONG_LENGTH);
+    f.owner = OWNER_NFC;
+    f.reset();
+    f.select(NDEF_AID, Sw::SUCCESS);
+    f.command(INS_SELECT, 0, 12, &[0, 1], None, Sw::SUCCESS);
+    // NFC admits extended Le=1024; non-FIDO output retains visible61xx.
     f.raw(&[0, READ, 0, 0, 0, 4, 0], Sw::remaining(768));
     for remaining in [512, 256, 0] {
         f.raw(
@@ -511,9 +523,35 @@ fn ctap_sessions() {
         f.owner = owner;
         f.reset();
         f.command(U2F_VERSION, 0, 0, &[], Some(6), Sw::FILE_NOT_FOUND);
-        f.select(FIDO_AID, Sw::SUCCESS);
+        let (allowed, denied) = if owner == OWNER_NFC {
+            (FIDO_NFC_AID, FIDO_AID)
+        } else {
+            (FIDO_AID, FIDO_NFC_AID)
+        };
+        f.select(denied, Sw::FILE_NOT_FOUND);
+        f.select(allowed, Sw::SUCCESS);
         f.command(U2F_VERSION, 0, 0, &[], Some(6), Sw::SUCCESS);
         assert_eq!(&f.buffer[..6], b"U2F_V2");
+        if owner != OWNER_NFC {
+            // Unknown/standard AID and invalid P2 must revoke USB FIDO.
+            for (aid, p2, error) in [
+                (denied, 0, Sw::FILE_NOT_FOUND),
+                (allowed, 1, Sw::WRONG_P1P2),
+                (&[0xff][..], 0, Sw::FILE_NOT_FOUND),
+            ] {
+                f.select(allowed, Sw::SUCCESS);
+                f.command(INS_SELECT, SELECT_BY_NAME, p2, aid, None, error);
+                f.command(U2F_VERSION, 0, 0, &[], None, Sw::FILE_NOT_FOUND);
+                f.command(
+                    INS_GET_RESPONSE,
+                    0,
+                    0,
+                    &[],
+                    Some(0),
+                    Sw::COMMAND_NOT_ALLOWED,
+                );
+            }
+        }
     }
     f.owner = OWNER_CCID;
     f.reset();
@@ -533,18 +571,20 @@ fn ctap_sessions() {
     }
     f.reset();
     f.owner = OWNER_NFC;
-    f.select(FIDO_AID, Sw::SUCCESS);
+    f.select(FIDO_NFC_AID, Sw::SUCCESS);
     // NFC extended CTAP GetInfo: CLA 80, INS 10, extended Lc=1, command 04.
     const GET_INFO: &[u8] = &[0x80, 0x10, 0, 0, 0, 0, 1, 4];
     let n = f
         .card
         .exchange_owner(f.owner, GET_INFO, &mut f.buffer)
         .unwrap();
-    assert_eq!(n, RESPONSE_BYTES);
-    assert_eq!(f.buffer[256], 0x61);
+    // Source-backed ISO APDU output uses250 data bytes plus the status word.
+    const SOURCE_CHUNK: usize = 250;
+    assert_eq!(n, SOURCE_CHUNK + 2);
+    assert_eq!(f.buffer[SOURCE_CHUNK], 0x61);
     assert_eq!(f.buffer[0], 0);
     assert_eq!(f.buffer[1] & 0xe0, 0xa0);
-    let mut total = 256;
+    let mut total = SOURCE_CHUNK;
     let mut complete = false;
     for _ in 0..8 {
         let n = f
@@ -628,7 +668,8 @@ fn response_cleanup() {
                     f.select(PIV_AID, Sw::SUCCESS);
                     let mut output = vec![0; capacity];
                     assert_eq!(
-                        f.card.exchange_owner(owner, &[0, 0xfd, 0, 0], &mut output),
+                        f.card
+                            .exchange_owner(owner, &[0, 0xfd, 0, 0, 0], &mut output),
                         Some(capacity)
                     );
                     assert_eq!(output[capacity - 2], 0x61);

@@ -4,7 +4,7 @@
 use super::domain::{grant, key_role};
 use super::{
     encoding::BufferRange,
-    wire::{ins::*, limits, reference, tag},
+    wire::{ins::*, key_tag, limits, reference, tag},
 };
 use super::{
     import::Import,
@@ -112,6 +112,14 @@ impl OpenPgp {
             _ => limits::ORDINARY_COMMAND_BYTES,
         })
     }
+    pub fn supports_chaining(h: Header) -> bool {
+        matches!(
+            (h.ins, u16::from_be_bytes([h.p1, h.p2])),
+            (PUT_DATA, tag::CERTIFICATE)
+                | (IMPORT_KEY, _)
+                | (PERFORM_SECURITY_OPERATION, key_tag::PSO_DECIPHER)
+        )
+    }
     pub(super) fn admin(&self) -> Result<(), Sw> {
         self.session.admin().map_err(Into::into)
     }
@@ -124,6 +132,11 @@ impl OpenPgp {
         self.used = 0;
         w.clear(p.memory);
         self.response = Response::Memory;
+        // Exact SELECT-by-name is handled by the global AID router. A local
+        // SELECT has invalid P1; it still reaches the applet's parameter check.
+        if h.ins == canokey_protocol::apdu::INS_SELECT {
+            return Err(Sw::WRONG_P1P2);
+        }
         let terminated = self.is_terminated(p)?;
         if terminated && h.ins != ACTIVATE {
             return Err(Sw::SELECTED_FILE_TERMINATED);

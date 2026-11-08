@@ -92,7 +92,14 @@ impl Device {
             (DEVICE_OUT, SET_CONFIGURATION)
                 if s.index == 0 && s.length == 0 && s.value <= 1 && self.address != 0 =>
             {
-                Reply::Configure(s.value != 0)
+                let enabled = s.value != 0;
+                if self.configured == enabled {
+                    // The C release acknowledges the current configuration
+                    // without resetting endpoint leases or applet sessions.
+                    Reply::Status
+                } else {
+                    Reply::Configure(enabled)
+                }
             }
             (DEVICE_IN, GET_CONFIGURATION) if zero && s.length == 1 && self.address != 0 => {
                 out[0] = self.configured as u8;

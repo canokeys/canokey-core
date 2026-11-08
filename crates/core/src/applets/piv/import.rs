@@ -56,8 +56,8 @@ impl Import {
                         self.component as u8 + key_tag::IMPORT_RSA_P
                     } else {
                         match a {
-                            alg::MLDSA65 => key_tag::IMPORT_MLDSA,
-                            alg::MLKEM768 => key_tag::IMPORT_MLKEM,
+                            alg::MLDSA65 | alg::MLDSA44 => key_tag::IMPORT_MLDSA,
+                            alg::MLKEM768 | alg::MLKEM512 => key_tag::IMPORT_MLKEM,
                             _ => key_tag::IMPORT_EC,
                         }
                     };
@@ -111,7 +111,7 @@ impl Import {
                 }
                 Phase::PolicyTag => {
                     if !matches!(v, key_tag::PIN_POLICY | key_tag::TOUCH_POLICY) {
-                        if a == alg::MLKEM768 {
+                        if crate::ports::mlkem::parameters(a).is_some() {
                             return Err(Sw::WRONG_DATA);
                         }
                         self.phase = Phase::IgnoredTail;

@@ -1,0 +1,119 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Exactly four applet/header deltas against one parent, repeated in two commits: 16 inventory units. No other hunks or whole-file approvals.",
+  "patches": [
+    {
+      "commit": "8a166672d63b2b19a71f8bfaf8e883d079c26d8a",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "applets/openpgp/openpgp.c",
+      "sha256": "35de7e26a981ff782d6eeb4124fa1892925d87916002d7d4a02ee0b19c324ffd",
+      "patch": "diff --git a/applets/openpgp/openpgp.c b/applets/openpgp/openpgp.c\nindex 88b7da9006ae2117741e6f3e288a17351a83fa5a..67220b0262c503be5ce9c35ff404f5fd2cce05e1 100644\n--- a/applets/openpgp/openpgp.c\n+++ b/applets/openpgp/openpgp.c\n@@ -371,0 +372,5 @@ static uint16_t add_all_algorithm_info(uint8_t *buffer) {\n+int openpgp_session_can_yield(void) {\n+  return !openpgp_crypto_owned && !openpgp_pke_owned && cert_write_path == NULL &&\n+         import_key_path == NULL && decipher_received == 0;\n+}\n+\n"
+    },
+    {
+      "commit": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "applets/openpgp/openpgp.c",
+      "sha256": "35de7e26a981ff782d6eeb4124fa1892925d87916002d7d4a02ee0b19c324ffd",
+      "patch": "diff --git a/applets/openpgp/openpgp.c b/applets/openpgp/openpgp.c\nindex 88b7da9006ae2117741e6f3e288a17351a83fa5a..67220b0262c503be5ce9c35ff404f5fd2cce05e1 100644\n--- a/applets/openpgp/openpgp.c\n+++ b/applets/openpgp/openpgp.c\n@@ -371,0 +372,5 @@ static uint16_t add_all_algorithm_info(uint8_t *buffer) {\n+int openpgp_session_can_yield(void) {\n+  return !openpgp_crypto_owned && !openpgp_pke_owned && cert_write_path == NULL &&\n+         import_key_path == NULL && decipher_received == 0;\n+}\n+\n"
+    },
+    {
+      "commit": "8a166672d63b2b19a71f8bfaf8e883d079c26d8a",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "applets/piv/piv.c",
+      "sha256": "2ed7b0c56967f4d03fdcac72adeb0e01be8438018f0c4cbe2180bb493bf5a680",
+      "patch": "diff --git a/applets/piv/piv.c b/applets/piv/piv.c\nindex d37f7626983d81f07c57c224c0064e15fb521676..9b3dec7aeac0b892ffdabd8cbf5c71ae860e5aaa 100644\n--- a/applets/piv/piv.c\n+++ b/applets/piv/piv.c\n@@ -1421,0 +1422,5 @@ static void piv_algorithm_extension_config_set_default(void) {\n+int piv_session_can_yield(void) {\n+  return !piv_pke_owned && !piv_auth_active && !piv_sm2_agreement_active &&\n+         piv_do_write < 0 && piv_do_read < 0 && piv_import_len == 0;\n+}\n+\n"
+    },
+    {
+      "commit": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "applets/piv/piv.c",
+      "sha256": "2ed7b0c56967f4d03fdcac72adeb0e01be8438018f0c4cbe2180bb493bf5a680",
+      "patch": "diff --git a/applets/piv/piv.c b/applets/piv/piv.c\nindex d37f7626983d81f07c57c224c0064e15fb521676..9b3dec7aeac0b892ffdabd8cbf5c71ae860e5aaa 100644\n--- a/applets/piv/piv.c\n+++ b/applets/piv/piv.c\n@@ -1421,0 +1422,5 @@ static void piv_algorithm_extension_config_set_default(void) {\n+int piv_session_can_yield(void) {\n+  return !piv_pke_owned && !piv_auth_active && !piv_sm2_agreement_active &&\n+         piv_do_write < 0 && piv_do_read < 0 && piv_import_len == 0;\n+}\n+\n"
+    },
+    {
+      "commit": "8a166672d63b2b19a71f8bfaf8e883d079c26d8a",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "include/openpgp.h",
+      "sha256": "e126f9fc48666427c2d70a788d0cf824baedd514bf2dce6b6ffeef370eee994d",
+      "patch": "diff --git a/include/openpgp.h b/include/openpgp.h\nindex 8624aa0f1bf0879f29754d31d6bc872cd7fe4117..95e10b8d7978908cada1466ff7d1d18c8436d3d6 100644\n--- a/include/openpgp.h\n+++ b/include/openpgp.h\n@@ -66,0 +67 @@\n+int openpgp_session_can_yield(void);\n"
+    },
+    {
+      "commit": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "include/openpgp.h",
+      "sha256": "e126f9fc48666427c2d70a788d0cf824baedd514bf2dce6b6ffeef370eee994d",
+      "patch": "diff --git a/include/openpgp.h b/include/openpgp.h\nindex 8624aa0f1bf0879f29754d31d6bc872cd7fe4117..95e10b8d7978908cada1466ff7d1d18c8436d3d6 100644\n--- a/include/openpgp.h\n+++ b/include/openpgp.h\n@@ -66,0 +67 @@\n+int openpgp_session_can_yield(void);\n"
+    },
+    {
+      "commit": "8a166672d63b2b19a71f8bfaf8e883d079c26d8a",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "include/piv.h",
+      "sha256": "999040045db23d99811540d2ded9ca330476481c51a89328e975cc49f7929634",
+      "patch": "diff --git a/include/piv.h b/include/piv.h\nindex 0d0c53afaae76eae4ac68b158a5b50d77a80ffcf..4d5bad2bdef903ea65e986362fc2be423a26223b 100644\n--- a/include/piv.h\n+++ b/include/piv.h\n@@ -112,0 +113 @@ int piv_install(uint8_t reset);\n+int piv_session_can_yield(void);\n"
+    },
+    {
+      "commit": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "include/piv.h",
+      "sha256": "999040045db23d99811540d2ded9ca330476481c51a89328e975cc49f7929634",
+      "patch": "diff --git a/include/piv.h b/include/piv.h\nindex 0d0c53afaae76eae4ac68b158a5b50d77a80ffcf..4d5bad2bdef903ea65e986362fc2be423a26223b 100644\n--- a/include/piv.h\n+++ b/include/piv.h\n@@ -112,0 +113 @@ int piv_install(uint8_t reset);\n+int piv_session_can_yield(void);\n"
+    }
+  ],
+  "functions": [
+    {
+      "path": "applets/openpgp/openpgp.c",
+      "file_sha256": "357e94281c9b2418f4760ce32ecd3d15431e3a9da3c0b6470bb953c6b112069b",
+      "line": 372,
+      "source": "int openpgp_session_can_yield(void) {\n  return !openpgp_crypto_owned && !openpgp_pke_owned && cert_write_path == NULL &&\n         import_key_path == NULL && decipher_received == 0;\n}"
+    },
+    {
+      "path": "applets/piv/piv.c",
+      "file_sha256": "bbbdd4ede2595733f730c0ef46a8b3e3f5d33b29cf0aa7832480432b0d25c562",
+      "line": 1422,
+      "source": "int piv_session_can_yield(void) {\n  return !piv_pke_owned && !piv_auth_active && !piv_sm2_agreement_active &&\n         piv_do_write < 0 && piv_do_read < 0 && piv_import_len == 0;\n}"
+    },
+    {
+      "path": "src/apdu.c",
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "line": 428,
+      "source": "int apdu_session_can_preempt(void) {\n  if (buffer_owner != BUFFER_OWNER_NONE) return 0;\n  if (apdu_response_source_active() || !openpgp_session_can_yield() || !piv_session_can_yield()) return 0;\n  // Continuations retain their backing even after a transport response ends.\n  if (rapdu_chaining.sent < rapdu_chaining.rapdu.len) return 0;\n  if (fido_capdu_chaining.in_chaining || fido_capdu_pke_owner) return 0;\n  return 1;\n}"
+    },
+    {
+      "path": "src/device.c",
+      "file_sha256": "e375e3f61ef1c5559c462094dfe5231c5e37cefe3762b8a2cd74db51f3a9f8bb",
+      "line": 280,
+      "source": "int device_applet_session_acquire(device_applet_session_owner_t owner) {\n  const uint32_t previous = session_owner;\n  if (owner == DEVICE_APPLET_SESSION_NONE || previous == SESSION_RESERVING || !device_usb_ready()) return -1;\n  if (previous == owner) return 0;\n  /* Reserve BEFORE inspecting backing. Otherwise a same-owner RX interrupt\n   * can acquire the I/O buffer without changing previous, defeating the CAS.\n   * IRQ contenders refuse this sentinel; no cleanup runs while it is held. */\n  if (device_atomic_compare_and_swap(&session_owner, previous, SESSION_RESERVING) != 0) return -1;\n  int ret = 0;\n  /* No lease expiry: unfinished APDUs may retain scratch for arbitrary gaps. */\n  if (previous != DEVICE_APPLET_SESSION_NONE || owner != apdu_context_owner) {\n    if (previous == DEVICE_APPLET_SESSION_CTAPHID || !apdu_session_can_preempt()) ret = -1;\n  }\n  // Only this caller can replace SESSION_RESERVING; failed acquisition leaves\n  // the old context and every resource reservation intact.\n  session_owner = ret ? previous : owner;\n  return ret;\n}"
+    },
+    {
+      "path": "src/device.c",
+      "file_sha256": "e375e3f61ef1c5559c462094dfe5231c5e37cefe3762b8a2cd74db51f3a9f8bb",
+      "line": 301,
+      "source": "void device_applet_session_prepare(device_applet_session_owner_t owner) {\n  if (owner == DEVICE_APPLET_SESSION_CTAPHID || owner == apdu_context_owner) return;\n  if (apdu_context_owner != DEVICE_APPLET_SESSION_NONE) device_applet_context_reset();\n  apdu_context_owner = owner;\n}"
+    }
+  ],
+  "mapping": [
+    {
+      "c": "PIV piv_sm2_agreement_active",
+      "rust": "Piv::agreement through Router::can_yield and Runtime::can_preempt",
+      "evidence": "Both identities, MSG/CBOR/staged refusal and independent step-2 key verification on CCID/WebUSB"
+    },
+    {
+      "c": "PIV piv_auth_active/piv_import_len/piv_do_write; OpenPGP cert_write_path/import_key_path/decipher_received",
+      "rust": "Runtime frame/chain lease surrounds begin/consume/finish; adapters clear Request/import/input after finish or abort. No retained OpenPGP request remains after a completed command.",
+      "evidence": "PIV object and OpenPGP certificate actual chained writes/refused CBOR/verified stored bytes. Existing full Core/host suites cover imports, decipher, cancellation and cleanup; every arbitrary interruption is not claimed."
+    },
+    {
+      "c": "PIV piv_do_read, piv_pke_owned; OpenPGP openpgp_crypto_owned/openpgp_pke_owned",
+      "rust": "Runtime response lease plus output_busy; source-backed object/certificate/crypto responses hold the lease. Synchronous crypto remains inside serialized Core execution.",
+      "evidence": "Actual unread PIV/OpenPGP file responses, inline controls preserving cursors, busy native CBOR and exact subsequent contents; E57/E58 crypto sources and read faults rerun."
+    },
+    {
+      "c": "Header declarations",
+      "rust": "Safe Router/Piv methods; C applet symbols are not linked or exported by the Rust product.",
+      "evidence": "Both final product build attempts, unchanged imported crypto ABI and DevKit post-link gates."
+    }
+  ],
+  "remaining": [
+    "Physical USB/RF, arbitrary IRQ/withheld endpoint and all import/decipher schedules, CIU runtime stack/PKE and Linux sanitizer acceptance remain open."
+  ]
+}

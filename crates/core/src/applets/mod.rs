@@ -47,6 +47,7 @@ pub(crate) fn read_response_chunk(
     feature = "piv",
     feature = "openpgp"
 ))]
+#[inline(never)]
 pub(crate) fn append_bounded(
     used: &mut usize,
     buf: &mut [u8],

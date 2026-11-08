@@ -70,9 +70,20 @@ pub(super) fn management_tail(
     e.finish()
 }
 
-pub(super) fn mldsa_public_header(e: &mut Encoder<&mut [u8]>) -> Result<(), EncodeError> {
-    e.encoded(COSE_MLDSA65)
-        .bytes_len(super::pq::PUBLIC_BYTES as u64);
+fn mldsa_header(algorithm: u8) -> Result<&'static [u8], EncodeError> {
+    match algorithm {
+        alg::MLDSA65 => Ok(COSE_MLDSA65),
+        alg::MLDSA44 => Ok(COSE_MLDSA44),
+        _ => Err(EncodeError),
+    }
+}
+pub(super) fn mldsa_public_header(
+    e: &mut Encoder<&mut [u8]>,
+    algorithm: u8,
+) -> Result<(), EncodeError> {
+    let params = crate::ports::mldsa::parameters(algorithm).ok_or(EncodeError)?;
+    e.encoded(mldsa_header(algorithm)?)
+        .bytes_len(params.public_bytes as u64);
     e.finish()
 }
 
@@ -100,8 +111,8 @@ pub(super) fn public_key(
     sm2: Sm2,
     public: &[u8],
 ) -> Result<(), EncodeError> {
-    if algorithm == alg::MLDSA65 {
-        e.encoded(COSE_MLDSA65).bytes(public);
+    if crate::ports::mldsa::parameters(algorithm).is_some() {
+        e.encoded(mldsa_header(algorithm)?).bytes(public);
     } else if algorithm != alg::ED25519 {
         e.encoded(COSE_EC2)
             .i32(credential::cose_algorithm(algorithm, sm2))
@@ -143,7 +154,13 @@ mod tests {
     #[test]
     fn public_key_schemas_preserve_dynamic_identifiers_and_bounds() {
         let public = [0x5a; 1952];
-        for algorithm in [alg::P256, alg::ED25519, alg::SM2, alg::MLDSA65] {
+        for algorithm in [
+            alg::P256,
+            alg::ED25519,
+            alg::SM2,
+            alg::MLDSA65,
+            alg::MLDSA44,
+        ] {
             for value in [
                 i32::MIN,
                 -65537,
@@ -292,10 +309,12 @@ mod tests {
 
     #[test]
     fn streamed_public_and_agreement_headers_match_cose() {
-        check(
-            b"\xa3\x01\x07\x03\x38\x30\x20\x59\x07\xa0",
-            mldsa_public_header,
-        );
+        check(b"\xa3\x01\x07\x03\x38\x30\x20\x59\x07\xa0", |e| {
+            mldsa_public_header(e, alg::MLDSA65)
+        });
+        check(b"\xa3\x01\x07\x03\x38\x2f\x20\x59\x05\x20", |e| {
+            mldsa_public_header(e, alg::MLDSA44)
+        });
         let mut expected = [0; 80];
         let prefix = b"\xa1\x01\xa5\x01\x02\x03\x38\x18\x20\x01\x21\x58\x20";
         expected[..prefix.len()].copy_from_slice(prefix);
@@ -317,8 +336,14 @@ mod tests {
         sm2: Sm2,
         public: &[u8],
     ) -> Result<(), canokey_protocol::cbor::EncodeError> {
-        if algorithm == alg::MLDSA65 {
-            e.map(3).u8(1).u8(7).u8(3).i8(-49).i8(-1).bytes(public);
+        if matches!(algorithm, alg::MLDSA65 | alg::MLDSA44) {
+            e.map(3)
+                .u8(1)
+                .u8(7)
+                .u8(3)
+                .i8(if algorithm == alg::MLDSA44 { -48 } else { -49 })
+                .i8(-1)
+                .bytes(public);
         } else if algorithm != alg::ED25519 {
             e.map(5)
                 .u8(1)

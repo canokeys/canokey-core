@@ -25,6 +25,7 @@ const LARGE_BLOB_KEY_END: usize = LARGE_BLOB_KEY_OFFSET + 32;
 
 fn mldsa_public_response(
     entry: &resident::Entry<'_>,
+    algorithm: u8,
     id: &credential::Id,
     total: u8,
     subcommand: u8,
@@ -41,7 +42,7 @@ fn mldsa_public_response(
     )
     .map_err(|_| Status::Other)?;
     e.u8(8).finish().map_err(|_| Status::Other)?;
-    super::encoding::mldsa_public_header(&mut e).map_err(|_| Status::Other)?;
+    super::encoding::mldsa_public_header(&mut e, algorithm).map_err(|_| Status::Other)?;
     let public_at = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     super::encoding::management_tail(
         &mut e,
@@ -53,6 +54,7 @@ fn mldsa_public_response(
     let output = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     Ok((
         super::pq::Pending {
+            algorithm,
             mode: super::pq::Mode::Public,
             prefix: public_at,
             auth: 0,
@@ -411,8 +413,8 @@ impl Session {
                     // record stays validated and borrowed through encoding.
                     let id = entry.id;
                     let algorithm = credential::open(id, self.sm2, &self.management.rp, w.key, p)?;
-                    let pq_public =
-                        algorithm == crate::ports::alg::MLDSA65 && !self.management.metadata_only;
+                    let pq_public = crate::ports::mldsa::parameters(algorithm).is_some()
+                        && !self.management.metadata_only;
                     let public_len = if self.management.metadata_only || pq_public {
                         0
                     } else {
@@ -451,13 +453,13 @@ impl Session {
                                 .unwrap()
                         });
                         let (plan, length) = mldsa_public_response(
-                            &entry, id, total, subcommand, blob_key, w.output,
+                            &entry, algorithm, id, total, subcommand, blob_key, w.output,
                         )?;
                         // Encode directly from the input record before reusing
                         // it for the stream seed; maximal user records exceed 256 B.
                         w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
                         self.auth_response = Some(super::Response::Pending(plan));
-                        return Ok(length + super::pq::PUBLIC_BYTES);
+                        return Ok(length + credential::public_length(algorithm));
                     }
                     w.output[0] = 0;
                     let mut e = Encoder::new(&mut w.output[1..]);

@@ -1,0 +1,51 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Retained applet scratch admission and non-destructive native HID borrowing; no full release acceptance",
+  "report": {
+    "path": "tests/fixtures/c312-session-yield/report.json",
+    "sha256": "73de4835c74b627a434c8f0a6c42a33ffd7dcac16d0bd1fb116af77177ee1ad1"
+  },
+  "proof": {
+    "path": "docs/sync/evidence/session-yield-source-review.json",
+    "sha256": "59e2ac6f29702ed220195fdefab8e7cb7593f4fa27b35f6eb9c996c50acac253"
+  },
+  "checks": {
+    "c": 150,
+    "rust": 150,
+    "per_transport": 75
+  },
+  "validation": {
+    "host_ctest": "45/45",
+    "literal_results": "365 cases /11695 events; 348 equal-output and unchanged 17 unresolved cases",
+    "auth": {
+      "c": 156,
+      "rust": 180
+    },
+    "storage_faults": {
+      "c": 96,
+      "rust": 126
+    },
+    "core": "142 unit plus all full-feature integrations",
+    "ffi": "8 unit plus doc test",
+    "clippy": "Both exact CI commands pass"
+  },
+  "products": {
+    "devkit_flash": 179164,
+    "nfcc_flash": 187816,
+    "nfcc_overflow": 6056,
+    "devkit_delta": 16,
+    "nfcc_delta": 72,
+    "static_ram_unchanged": true
+  },
+  "source_review": {
+    "new_units": 16,
+    "core": "601/2254",
+    "platform": "142/373"
+  },
+  "platform_archive": "docs/evidence/c312-session-yield-checkpoint/report.json",
+  "remaining": [
+    "Prior five unresolved wire behaviors, full source audit, physical USB/RF/WTX, arbitrary IRQ/endpoint faults, CIU runtime stack/PKE and Linux LeakSanitizer remain open."
+  ],
+  "u2f_progress_preservation": "Rerun after T18: the same contract checks pass. Original checkpoint/resource measurements remain historical in the immutable platform archives.",
+  "usb_u2f_polling_preservation": "Current paired report rerun after host-only Polling fixture support. Production measurements and initial acceptance are historical in the immutable platform archive; see usb-u2f-polling-checkpoint.json for current host coverage."
+}

@@ -24,6 +24,10 @@ pub const WTX_INTERVAL_MS: u16 = 150;
 pub const FM_REG_MAIN_IRQ: u16 = 0xfff7;
 pub const FM_IRQ_BYTES: usize = 3;
 pub const FM_REG_FIFO_WORDCNT: u16 = 0xfff2;
+// RF_STATUS high nibble is NFC_STATE (FM11NT082C section 3.3.3.12).
+pub const FM_REG_RF_STATUS: u16 = 0xfff3;
+pub const FM_STATE_RATS: u8 = 9;
+pub const FM_STATE_PPS: u8 = 10;
 pub const FM_REG_FIFO_ACCESS: u16 = 0xfff0;
 pub const FM_REG_RF_TXEN: u16 = 0xfff4;
 pub const FM_RF_TX_ENABLE: u8 = 0x55;
@@ -32,6 +36,8 @@ pub const FM_SILENCE: u8 = 0x33;
 pub const FM_UNSILENCE: u8 = 0xcc;
 pub const FM_REG_MAIN_IRQ_MASK: u16 = 0xfffa;
 pub const FM_MAIN_IRQ_MASK: u8 = 0x22;
+// FM11NT IRQ masks are active-high; silence recovery masks every MAIN source.
+pub const FM_MAIN_IRQ_MASK_ALL: u8 = 0xff;
 pub const FM_AUX_ERRORS: u8 = 0x78;
 pub const FM_FIFO_OVERFLOW: u8 = 0x04;
 // AUX register (the third IRQ triplet byte): halt request from the frontend.
@@ -60,7 +66,7 @@ pub enum Error {
     Multiplier,
 }
 pub fn decode(frame: &[u8]) -> Result<Block<'_>, Error> {
-    if !(3..=FRAME_LIMIT).contains(&frame.len()) {
+    if frame.len() < 3 || frame.len() > FRAME_LIMIT {
         return Err(Error::Length);
     }
     let pcb = frame[0];
@@ -77,7 +83,7 @@ pub fn decode(frame: &[u8]) -> Result<Block<'_>, Error> {
         }),
         PCB_DESELECT if inf.is_empty() => Ok(Block::Deselect),
         PCB_WTX if inf.len() == 1 => {
-            if !(1..=WTX_MULTIPLIER_MAX).contains(&inf[0]) {
+            if inf[0] < 1 || inf[0] > WTX_MULTIPLIER_MAX {
                 return Err(Error::Multiplier);
             }
             Ok(Block::Waiting(inf[0]))
@@ -89,7 +95,7 @@ pub fn decode(frame: &[u8]) -> Result<Block<'_>, Error> {
     }
 }
 /// Packet bytes exclude CRC; the chip generates it. The last successful
-/// information packet is retained by the runtime for exact retransmission.
+/// Link packet is retained by the runtime for exact retransmission.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Packet {
     bytes: [u8; 30],
@@ -114,7 +120,7 @@ impl Packet {
         Self::control(PCB_DESELECT)
     }
     pub fn waiting(multiplier: u8) -> Result<Self, Error> {
-        if !(1..=WTX_MULTIPLIER_MAX).contains(&multiplier) {
+        if multiplier < 1 || multiplier > WTX_MULTIPLIER_MAX {
             return Err(Error::Multiplier);
         }
         let mut packet = Self::control(PCB_WTX);

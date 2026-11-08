@@ -13,7 +13,7 @@ canokey-rust-core = { path = "../core" }
 [features]
 ctap-restrict-algorithms = ["ctap", "canokey-rust-core/ctap-restrict-algorithms"]
 device-runtime = ["usb-device", "canokey-ports/device-runtime"]
-nfc = ["ndef", "usb-device", "canokey-ports/nfc"]
+nfc = ["canokey-rust-core/ctap-nfc", "ndef", "usb-device", "canokey-ports/nfc"]
 ndef = ["canokey-rust-core/ndef", "canokey-ports/ndef", "storage"]
 dynamic-backend = ["canokey-ports/dynamic-backend"]
 static-backend = ["canokey-ports/static-backend"]

@@ -67,6 +67,7 @@ pub(in crate::applets::ctap) struct Parser {
     previous_text: Span,
     text_kind: u8, // 1: member name, 2: credential type.
     public_key: bool,
+    skip: u8,
 }
 impl Parser {
     pub const fn new() -> Self {
@@ -80,6 +81,7 @@ impl Parser {
             previous_text: Span::NONE,
             text_kind: 0,
             public_key: false,
+            skip: 0,
         }
     }
     pub fn event(
@@ -102,6 +104,9 @@ impl Parser {
         depth: u8,
         offset: usize,
     ) -> Result<(), Status> {
+        if crate::applets::ctap::skip_cbor_event(&mut self.skip, event)? {
+            return Ok(());
+        }
         let span = |len| Span {
             start: (super::PREFIX + offset) as u16,
             len,
@@ -132,7 +137,11 @@ impl Parser {
                 }
                 (VENDOR_METADATA_ONLY, Event::Bool(value)) => p.metadata_only = value,
                 (1..=3 | VENDOR_METADATA_ONLY, _) => return Err(Status::UnexpectedType),
-                _ => (),
+                _ => {
+                    if crate::applets::ctap::is_cbor_container(event) {
+                        self.skip = 1;
+                    }
+                }
             }
         } else if self.entity != 0 && depth == 2 {
             if self.value {
@@ -151,7 +160,11 @@ impl Parser {
                     (3, 1, Event::Bytes(n @ 1..=64)) => p.spans[2] = span(n),
                     (3, 1, Event::Bytes(_)) => return Err(Status::InvalidLength),
                     (3, m @ (3 | 4), Event::Text(n)) => p.spans[usize::from(m)] = span(n),
-                    (_, 0, _) => (),
+                    (_, 0, _) => {
+                        if crate::applets::ctap::is_cbor_container(event) {
+                            self.skip = 1;
+                        }
+                    }
                     _ => return Err(Status::UnexpectedType),
                 }
             } else {

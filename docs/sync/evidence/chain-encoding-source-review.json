@@ -1,0 +1,250 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Mixed APDU encodings continue bounded WebUSB/NDEF input; NFC extended MSG resets old FIDO input under CLA80/90.",
+  "mapping": [
+    "C WebUSB validates its bounded envelope before process_apdu_from. Extended encoding does not bypass fido_apdu_input or NDEF UPDATE continuation. Runtime no longer imposes an active-command-chain admission ban. Existing transport owner, output-busy, SELECT and per-applet allows_extended policies remain; PIV still rejects extended frames and CCID rejects before routing.",
+    "C NFC dispatch masks only the chaining bit when recognizing proprietary MSG and resets fido_capdu input on every extended encoding. Runtime now uses Header.unchained for the same discriminator. Inline CLA90/Case2E can start a fresh semantic request. Large PKE staging still requires exact CLA80 and remains unchanged; no larger transport/request buffer is introduced.",
+    "The generator derives literal semantics from C src/apdu.c and NDEF selector/write cursor, not from outputs.461 cases include both transports, four envelope forms, six prefix splits, intermediate/final fragments, finite Le continuation,255/256/279-byte inline bodies, actual NDEF readback, CCID extended rejection and fresh-request cleanup.267 old failures are repaired.",
+    "The first NDEF fixture used the wrong message EF identifierE104. C and Rust both correctly rejected it. The corrected fixture uses0001 from pinned C ndef_select and its CC declaration. Initial failed vectors/reports remain archived and do not count as production defects. The final461-case report is authoritative."
+  ],
+  "targets": [
+    {
+      "path": "crates/core/src/runtime/engine.rs",
+      "sha256": "1f63db1b3ce10af81a3b78c9fe777daac52028a5dacdd4fd89df1efbe2d10d91"
+    },
+    {
+      "path": "tests/support/c312_chain_encoding_vectors.py",
+      "sha256": "e2b54d0bf81c9dabc7d1e6f233807307ddfa7829b1c2b8bea655c367ef1b3563"
+    },
+    {
+      "path": "tests/CMakeLists.txt",
+      "sha256": "b0fd830bb5831ff4bfd485031fd3660c939244861db7a57906f3858977279762"
+    }
+  ],
+  "regression": {
+    "cases": 461,
+    "events": 13403,
+    "before_c_passed": 461,
+    "before_rust_passed": 194,
+    "old_failures": 267,
+    "final_equal": 461,
+    "additional_buffers": 0
+  },
+  "literal": {
+    "suites": 19,
+    "cases": 2852,
+    "events": 97466,
+    "equal_output": 2835,
+    "unresolved": 17,
+    "previous_results_unchanged": 2391,
+    "summary": [
+      {
+        "name": "ccid",
+        "cases": 47,
+        "events": 454,
+        "equal": 47,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb",
+        "cases": 28,
+        "events": 576,
+        "equal": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "nfc",
+        "cases": 124,
+        "events": 2776,
+        "equal": 124,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-ownership",
+        "cases": 18,
+        "events": 408,
+        "equal": 18,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-ownership",
+        "cases": 21,
+        "events": 221,
+        "equal": 20,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-admission",
+        "cases": 28,
+        "events": 364,
+        "equal": 27,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-channels",
+        "cases": 40,
+        "events": 433,
+        "equal": 36,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-control",
+        "cases": 36,
+        "events": 228,
+        "equal": 29,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-lifecycle",
+        "cases": 33,
+        "events": 302,
+        "equal": 33,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-readiness",
+        "cases": 9,
+        "events": 75,
+        "equal": 5,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb-readiness",
+        "cases": 8,
+        "events": 126,
+        "equal": 8,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb-retained",
+        "cases": 14,
+        "events": 605,
+        "equal": 14,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "large-blob-usb",
+        "cases": 12,
+        "events": 2859,
+        "equal": 12,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "large-blob-nfc",
+        "cases": 11,
+        "events": 2478,
+        "equal": 11,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select",
+        "cases": 285,
+        "events": 5043,
+        "equal": 285,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select-config",
+        "cases": 340,
+        "events": 17256,
+        "equal": 340,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select-header",
+        "cases": 618,
+        "events": 27932,
+        "equal": 618,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "chain-control",
+        "cases": 719,
+        "events": 21927,
+        "equal": 719,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "chain-encoding",
+        "cases": 461,
+        "events": 13403,
+        "equal": 461,
+        "previous_results_unchanged": false
+      }
+    ]
+  },
+  "source_review": {
+    "core_reviewed": 645,
+    "core_total": 2254,
+    "platform_reviewed": 142,
+    "platform_total": 373,
+    "additional_approvals": 0
+  },
+  "remaining": [
+    "Malformed/rejected staged NFC retention, full parameter/header/body mutations, pending configuration and volatile native-HID transitions still require review.",
+    "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 and17 previous unequal literal cases remain unresolved.",
+    "Physical USB/RF/WTX, CIU total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open."
+  ],
+  "final_c_excerpts": [
+    {
+      "path": "src/apdu.c",
+      "line": 252,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "static int fido_apdu_input(const CAPDU *sh) {\n  CAPDU *cmd = &fido_capdu_chaining.capdu;\n  // Compare the complete command header with only the chaining bit masked.\n  uint32_t previous_header, incoming_header;\n  memcpy(&previous_header, &cmd->cla, sizeof(previous_header));\n  memcpy(&incoming_header, &sh->cla, sizeof(incoming_header));\n  incoming_header &= htobe32(0xEFFFFFFFu);\n  if (fido_capdu_chaining.in_chaining && previous_header != incoming_header) fido_capdu_reset();\n  if (!fido_capdu_chaining.in_chaining) {\n    *cmd = *sh;\n    cmd->cla &= 0xEF;\n    cmd->lc = 0;\n    cmd->data = shared_io_buffer;\n  }\n  const uint32_t new_len = (uint32_t)cmd->lc + sh->lc;\n  if (new_len > CTAP_MAX_REQUEST_SIZE) return APDU_CHAINING_OVERFLOW;\n  // This helper is entered only for command chaining. Stage the very first\n  // fragment: receiving the next APDU will overwrite the shared input buffer.\n  if (!fido_capdu_pke_owner) {\n    if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return APDU_CHAINING_ERROR;\n    fido_capdu_pke_owner = 1;\n  }\n  if (pke_buffer_write(cmd->lc, sh->data, sh->lc) < 0) return APDU_CHAINING_ERROR;\n  cmd->lc = (uint16_t)new_len;\n  fido_capdu_chaining.in_chaining = (sh->cla & 0x10) != 0;\n  if (fido_capdu_chaining.in_chaining) return APDU_CHAINING_NOT_LAST_BLOCK;\n  cmd->le = sh->le;\n  return APDU_CHAINING_LAST_BLOCK;\n}\n\nint apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {\n  if (response_source.view.read) {\n    uint32_t remaining = response_source.view.total_len - response_source.view.offset;"
+    },
+    {
+      "path": "src/apdu.c",
+      "line": 607,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "          }\n        }\n        break;\n      }\n      // Large staged commands mirror these checks in NFC append_rx before\n      // acquiring PKE. Boundary tests exercise both inline and staged input.\n      if ((CLA & 0xEF) == 0x80 && INS == CTAP_INS_MSG) {\n        if ((P1 & 0x7F) || P2) {\n          fido_capdu_reset();\n          LL = 0;\n          SW = SW_WRONG_P1P2;\n          break;\n        }\n        // Standalone extended encoding starts a new logical request, even\n        // when its body is small enough for the inline buffer.\n        if (capdu->extended) fido_capdu_reset();\n      }\n    }\n#endif\n#ifdef TESTMODE_INS_HOOKS\n    if (CLA == 0x00 && INS == 0xEE && LC == 0x04 && memcmp(DATA, \"\\x12\\x56\\xAB\\xF0\", 4) == 0) {\n      DBG_MSG(\"MAGIC REBOOT command received!\\r\\n\");\n      testmode_set_initial_ticks(0);\n      testmode_set_initial_ticks(device_get_tick());\n      ctap_schedule_runtime_reset();\n      ctap_install(0);\n      SW = 0x9000;\n      LL = 0;\n      break;\n    }\n    if (CLA == 0x00 && INS == 0xEF) {\n      testmode_inject_error(P1, P2, LC, DATA);\n      SW = 0x9000;\n      LL = 0;\n      break;\n    }\n#endif\n    if (((CLA & 0xEF) == 0x80) && ((CLA & 0x10) != 0 || fido_capdu_chaining.in_chaining)) {\n      const int chaining = fido_apdu_input(capdu);\n      if (chaining == APDU_CHAINING_OVERFLOW) {\n        fido_capdu_reset();\n        LL = 0;\n        SW = SW_WRONG_LENGTH;\n#if ENABLE_NFC\n        if (transport == APDU_TRANSPORT_NFC) {\n          rapdu->data[0] = 0x39; // CTAP2_ERR_REQUEST_TOO_LARGE\n          LL = 1;\n          SW = SW_NO_ERROR;\n        }\n#endif\n        break;\n      }\n      if (chaining == APDU_CHAINING_ERROR) {\n        fido_capdu_reset();\n        LL = 0;\n        SW = SW_UNABLE_TO_PROCESS;\n        break;\n      }\n      if (chaining == APDU_CHAINING_NOT_LAST_BLOCK) {\n        LL = 0;\n        SW = SW_NO_ERROR;\n        break;\n      }\n      capdu = &fido_capdu_chaining.capdu;\n    }\n    const apdu_request_source_t chained_source = {\n        .read = apdu_request_read_pke, .close = fido_capdu_release_request, .len = LC};\n    if (!source && fido_capdu_pke_owner) source = &chained_source;\n    if (source)"
+    },
+    {
+      "path": "interfaces/USB/class/webusb/webusb.c",
+      "line": 108,
+      "file_sha256": "3f6b93223ef0b7c055153bcc76cd02b2001d31c0ec081a334bb7b7eec74ecadf",
+      "source": "  }\n  if (state != STATE_PROCESS) return;\n\n  DBG_MSG(\"C: \");\n  PRINT_HEX(shared_io_buffer, apdu_buffer_size);\n\n  CAPDU *capdu = &apdu_cmd;\n  RAPDU *rapdu = &apdu_resp;\n\n  device_applet_session_prepare(DEVICE_APPLET_SESSION_WEBUSB);\n  if (build_capdu(&apdu_cmd, shared_io_buffer, apdu_buffer_size) < 0) {\n    // abandon malformed apdu\n    LL = 0;\n    SW = SW_WRONG_LENGTH;\n  } else if (device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB) != 0) {\n    LL = 0;\n    SW = SW_CONDITIONS_NOT_SATISFIED;\n  } else {\n    device_applet_session_touch(DEVICE_APPLET_SESSION_WEBUSB);\n    process_apdu_from(capdu, rapdu, APDU_TRANSPORT_WEBUSB);\n  }\n\n  apdu_buffer_size = LL + 2;\n  shared_io_buffer[LL] = HI(SW);\n  shared_io_buffer[LL + 1] = LO(SW);"
+    },
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 122,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "      }\n      if (shared_io_buffer[4] == 0) {\n        const uint16_t lc = ((uint16_t)shared_io_buffer[5] << 8) | shared_io_buffer[6];\n        if (lc > APDU_COMMAND_BUFFER_SIZE - 9) {\n          memcpy(&apdu_cmd.cla, shared_io_buffer, 4);\n          apdu_cmd.lc = lc;\n          apdu_cmd.extended = 1;\n          transfer_state.rx_mode = RX_DISCARD;\n          apdu_resp.sw = SW_WRONG_LENGTH;\n          if (apdu_cmd.cla == 0x80 && apdu_cmd.ins == CTAP_INS_MSG) {\n            apdu_resp.sw = SW_FILE_NOT_FOUND;\n            // Mirror process_apdu_impl's NFC FIDO admission/error order before\n            // staging: selection, P1/P2, then CTAP size. Keep both paths aligned.\n            if (apdu_fido_selected()) {\n              // Abandon old command chaining before acquiring the new RX staging.\n              apdu_fido_chain_reset();\n              apdu_resp.sw = SW_WRONG_P1P2;\n              if (!(apdu_cmd.p1 & 0x7F) && !apdu_cmd.p2) {\n                apdu_resp.sw = SW_NO_ERROR;\n                if (lc <= CTAP_MAX_REQUEST_SIZE) {\n                  apdu_resp.sw = SW_UNABLE_TO_PROCESS;\n                  if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) == 0) {\n                    apdu_cmd.pke_backed = 1;\n                    transfer_state.rx_mode = RX_PKE;\n                  }\n                }\n              }\n            }\n          }\n        }"
+    },
+    {
+      "path": "applets/ndef/ndef.c",
+      "line": 12,
+      "file_sha256": "bfb73d67485702d6d5b83941d30aa8c088c525a07b27c430a347ae106ae8ef8e",
+      "source": "#define CC_LENGTH 15\n\nstatic uint8_t current_cc[CC_LENGTH];\nstatic bool cc_valid;\nstatic const uint8_t default_cc[CC_LENGTH] = {\n    0x00, 0x0F,                                         // len\n    0x20,                                               // version, 2.0\n    HI(NDEF_FILE_MAX_LENGTH), LO(NDEF_FILE_MAX_LENGTH), // mle\n    HI(NDEF_FILE_MAX_LENGTH), LO(NDEF_FILE_MAX_LENGTH), // mlc\n    // the following are tlv data\n    0x04,                                               // t\n    0x06,                                               // l\n    0x00, 0x01,                                         // file id\n    HI(NDEF_FILE_MAX_LENGTH), LO(NDEF_FILE_MAX_LENGTH), // max_size\n    0x00,                                               // read access without any security\n    0x00                                                // write access without any security"
+    },
+    {
+      "path": "applets/ndef/ndef.c",
+      "line": 108,
+      "file_sha256": "bfb73d67485702d6d5b83941d30aa8c088c525a07b27c430a347ae106ae8ef8e",
+      "source": "static int ndef_select(const CAPDU *capdu, RAPDU *rapdu) {\n  ndef_write_reset();\n  if (P1 == 0x04 && P2 == 0x00) return 0;\n  if (P1 != 0x00 || P2 != 0x0C) EXCEPT(SW_WRONG_P1P2);\n  if (LC < 2) EXCEPT(SW_WRONG_LENGTH);\n  if (DATA[0] == 0xE1 && DATA[1] == 0x03)\n    selected = CC;\n  else if (DATA[0] == 0x00 && DATA[1] == 0x01)\n    selected = NDEF;\n  else\n    EXCEPT(SW_FILE_NOT_FOUND);\n  return 0;"
+    },
+    {
+      "path": "applets/ndef/ndef.c",
+      "line": 148,
+      "file_sha256": "bfb73d67485702d6d5b83941d30aa8c088c525a07b27c430a347ae106ae8ef8e",
+      "source": "\nstatic int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {\n  const uint16_t offset = (uint16_t)(P1 << 8) | P2;\n  if (offset > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);\n  if (LC > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);\n\n  switch (selected) {\n  case CC:\n    // do not allow change CC, only modified via admin\n    ndef_write_reset();\n    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);\n  case NDEF:\n    if (ndef_cc_ensure() < 0) return -1;\n    if (CC_W != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);\n    const uint16_t write_offset = ndef_write_offset == UINT16_MAX ? offset : ndef_write_offset;\n    if (LC > NDEF_FILE_MAX_LENGTH - write_offset) {\n      ndef_write_reset();\n      EXCEPT(SW_WRONG_LENGTH);\n    }\n    if (write_file(NDEF_FILE, DATA, write_offset, LC, 0) < 0) return -1;\n    ndef_write_offset = (CLA & 0x10) != 0 ? write_offset + LC : UINT16_MAX;\n    break;\n  case NONE:\n    ndef_write_reset();\n    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);\n  }\n  return 0;\n}"
+    }
+  ],
+  "products": {
+    "devkit": {
+      "flash": 178760,
+      "static_ram": 8272,
+      "udf": 140,
+      "change_from_previous": -16,
+      "elf_sha256": "0408b4e2103caacd55ec6f80d6a80a52fd44d6a5960f8d4de84f8a1b30abd5dc"
+    },
+    "nfcc": {
+      "flash": 187864,
+      "static_ram": 8432,
+      "udf": 146,
+      "change_from_previous": -56,
+      "elf_sha256": "d7358c0027394235d5dc40ba651354b0a801f0ff368309c6772ed5c3c5e5b3d4",
+      "overflow": 6104,
+      "diagnostic_elf_only": true
+    }
+  }
+}

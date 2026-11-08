@@ -9,26 +9,18 @@ import argparse
 import hashlib
 import json
 import piv_sm2 as sm2
-from cryptography.hazmat.primitives.asymmetric import mldsa
 from fido2 import cbor
 from fido2.ctap2.base import AuthenticatorData
 from fido2.ctap2.pin import PinProtocolV1, PinProtocolV2
 from card_test import Card, connection
-from ctap_fixture import provision, AAGUID
+from ctap_fixture import provision, verify_credential, padded_request, AAGUID
 
 
 def run(wire):
     card = Card(wire)
     verify_attestation = provision(card)
-    def verify_credential(key, message, signature):
-        if key[3] == -49:
-            assert set(key) == {1, 3, -1} and key[1] == 7 and len(key[-1]) == 1952
-            assert len(signature) == 3309
-            mldsa.MLDSA65PublicKey.from_public_bytes(key[-1]).verify(signature, message)
-        else:
-            key.verify(message, signature)
     def select():
-        assert card.cmd("select", 0xa4, 4, data=bytes.fromhex("a0000006472f0001")) == b"U2F_V2"
+        assert card.cmd("select", 0xa4, 4, data=bytes.fromhex("f043414e4f464944")) == b"U2F_V2"
     def call(command, parameters=None, status=0, raw=None):
         data = bytes([command]) + (raw if raw is not None else cbor.encode(parameters) if parameters is not None else b"")
         answer = card.cmd(f"CTAP {command:02x}", 0x10, data=data, cla=0x80)
@@ -43,10 +35,10 @@ def run(wire):
     call(13, status=0xf1)
     info = call(4)
     assert info[3] == AAGUID
-    assert info[5] == 1024
+    assert info[5] == 1296
     assert "FIDO_2_3" in info[1]
     assert {"minPinLength", "thirdPartyPayment"} <= set(info[2])
-    assert info[4] == {"rk": True, "up": True, "alwaysUv": False,
+    assert info[4] == {"rk": True, "alwaysUv": False,
                        "credMgmt": True, "authnrCfg": True, "clientPin": False,
                        "largeBlobs": True, "pinUvAuthToken": True,
                        "setMinPINLength": True, "makeCredUvNotRqd": True}
@@ -57,6 +49,8 @@ def run(wire):
     call(13, {1: 2})
     enabled = call(4)
     assert enabled[4]["alwaysUv"] is True and "U2F_V2" not in enabled[1]
+    assert enabled[4]["makeCredUvNotRqd"] is False
+    assert 12 not in info and 12 not in enabled
     wire.command("RESET")
     select()
     assert call(4) == enabled
@@ -81,6 +75,15 @@ def run(wire):
     check_pin_probe(False)
     make_options = {1: client_hash, 2: {"id": rp}, 3: user,
                     4: [{"type": "public-key", "alg": -7}]}
+    large_make = make_options | {6: {"credBlob": b"b" * 32}}
+    for size in (1023, 1024, 1025, 1295, 1296):
+        raw = padded_request(1, large_make, size)
+        result = call(1, raw=raw[1:])
+        verify_attestation(result, client_hash)
+        assert AuthenticatorData(result[2]).extensions == {"credBlob": False}
+    card.cmd("oversized logical request", 0x10, cla=0x80,
+             data=padded_request(1, large_make, 1297), status=0x6700)
+    assert call(4) == info
     for field in ("name", "icon"):
         for value in (8, b"bytes", False, {}):
             call(1, make_options | {2: {"id": rp, field: value}}, 0x11)
@@ -90,7 +93,7 @@ def run(wire):
         call(1, make_options | {7: {"up": value}}, 0x2c)
         call(2, {1: rp, 2: assertion_hash, 5: {"rk": value}}, 0x2b)
     credentials = []
-    for algorithm in [-7, -8]:
+    for algorithm in [-7, -8, -49, -48]:
         request = {1: client_hash, 2: {"id": rp, "name": "Example"}, 3: user,
                    4: [{"type": "public-key", "alg": -999}, {"type": "public-key", "alg": algorithm}]}
         result = call(1, request)
@@ -102,7 +105,7 @@ def run(wire):
         descriptor = {"id": auth.credential_data.credential_id, "type": "public-key"}
         assert len(descriptor["id"]) == 34
         answer = call(2, {1: rp, 2: assertion_hash, 3: [descriptor]})
-        key.verify(answer[2] + assertion_hash, answer[3])
+        verify_credential(key, answer[2] + assertion_hash, answer[3])
         assert answer[1] == descriptor and AuthenticatorData(answer[2]).counter > auth.counter
         call(2, {1: "other.example", 2: assertion_hash, 3: [descriptor]}, 0x2e)
         corrupt = dict(descriptor, id=bytes([descriptor["id"][0] ^ 1]) + descriptor["id"][1:])
@@ -220,7 +223,7 @@ def run(wire):
 
     salts = hashlib.sha256(b"salt one").digest() + hashlib.sha256(b"salt two").digest()
     hmac_results = {}
-    for protocol, algorithm in [(PinProtocolV1(), -7), (PinProtocolV2(), -49)]:
+    for protocol, algorithm in [(PinProtocolV1(), -7), (PinProtocolV2(), -49), (PinProtocolV2(), -48)]:
         public, secret = protocol.encapsulate(call(6, {1: protocol.VERSION, 2: 2})[1])
         def hmac_input(value):
             encrypted = protocol.encrypt(secret, value)
@@ -433,16 +436,23 @@ def run(wire):
     public, secret = protocol.encapsulate(call(6, {1: version, 2: 2})[1])
     hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
     token = protocol.decrypt(secret, call(6, {1: version, 2: 9, 3: public, 6: hashed, 9: 0x20})[2])
-    policy = {1: 6, 2: [rp]}
+    long_rp = "p" * (254 - len(".example")) + ".example"
+    # Cover both prefix and suffix truncation at the maximum RP length. The
+    # first-byte mutation collides under C's stored ellipsis/suffix projection.
+    other_long_rp = long_rp[:-len(".example")] + ".invalid"
+    same_suffix_rp = "q" + long_rp[1:]
+    assert len(long_rp) == len(other_long_rp) == len(same_suffix_rp) == 254
+    policy = {1: 6, 2: [rp, long_rp]}
     message = b"\xff" * 32 + b"\x0d\x03" + cbor.encode(policy)
     call(13, {1: 3, 2: policy, 3: version, 4: protocol.authenticate(token, message)})
-    for origin in [rp, "unauthorized.example"]:
+    for origin in [rp, "unauthorized.example", long_rp, other_long_rp, same_suffix_rp]:
         request = {1: client_hash, 2: {"id": origin}, 3: user,
                    4: [{"type": "public-key", "alg": -7}],
                    6: {"credProtect": 2, "minPinLength": True}}
         result = call(1, request)
         auth = AuthenticatorData(result[2])
-        assert auth.extensions == ({"credProtect": 2, "minPinLength": 6} if origin == rp else {"credProtect": 2})
+        assert auth.rp_id_hash == hashlib.sha256(origin.encode()).digest()
+        assert auth.extensions == ({"credProtect": 2, "minPinLength": 6} if origin in (rp, long_rp) else {"credProtect": 2})
         verify_attestation(result, client_hash)
     call(1, request | {4: [{"alg": -7}]}, 0x14)
     call(1, request | {4: [{"type": "public-key"}]}, 0x14)
@@ -464,7 +474,7 @@ def run(wire):
                  4: [{"type": "public-key", "alg": -7}],
                  8: protocol.authenticate(token, client_hash), 9: version}, 0x33)
         # Credential use consumes MC/GA, but this same token must still write blobs.
-        def write_blob(fragment, offset, length=None, status=0, byteorder="little", width=None):
+        def write_blob(fragment, offset, length=None, status=0, byteorder="little", width=None, wire_size=None):
             message = b"\xff" * 32 + b"\x0c\x00" + offset.to_bytes(4, byteorder) + hashlib.sha256(fragment).digest()
             params = {2: fragment, 3: offset, 5: protocol.authenticate(token, message), 6: version}
             if length is not None:
@@ -475,9 +485,20 @@ def run(wire):
                 raw = bytes([0xa0 + len(params), 2, {2: 0x59, 4: 0x5a, 8: 0x5b}[width]])
                 raw += len(fragment).to_bytes(width, "big") + fragment
                 raw += b"".join(cbor.encode(k) + cbor.encode(v) for k, v in sorted(params.items()) if k != 2)
+            if wire_size is not None:
+                assert raw is None
+                raw = padded_request(12, params, wire_size)[1:]
             return call(12, params, status, raw=raw)
         for width in (2, 4, 8):
             write_blob(empty, 0, len(empty), width=width)
+            assert call(12, {1: 960, 3: 0})[1] == empty
+        # Split the minimum valid blob at every checksum boundary, including
+        # exactly at the hash/checksum boundary and a complete first fragment.
+        for checksum_bytes in range(17):
+            split = 1 + checksum_bytes
+            write_blob(empty[:split], 0, len(empty))
+            if split < len(empty):
+                write_blob(empty[split:], split)
             assert call(12, {1: 960, 3: 0})[1] == empty
         body = cbor.encode([bytes(range(256)) * 5])
         blob = body + hashlib.sha256(body).digest()[:16]
@@ -500,6 +521,20 @@ def run(wire):
         write_blob(blob[700:] + b"x", 700, status=2)
         write_blob(empty[:-1] + bytes([empty[-1] ^ 1]), 0, len(empty), status=0x3d)
         assert call(12, {1: 960, 3: 0})[1] == blob[:960]
+        # The advertised1296-byte request budget permits1232-byte fragments.
+        # Authentication covers the actual fragment; the ignored parameter
+        # exercises exact total-request bounds without changing blob semantics.
+        for size in (1023, 1024, 1025, 1295, 1296):
+            fragment_size = 900 if size < 1295 else 1232
+            body = cbor.encode([bytes(fragment_size - 20)])
+            maximal = body + hashlib.sha256(body).digest()[:16]
+            assert len(maximal) == fragment_size
+            write_blob(maximal, 0, len(maximal), wire_size=size)
+            assert call(12, {1: 1232, 3: 0})[1] == maximal
+        call(12, {1: 1233, 3: 0}, status=3)
+        write_blob(bytes(1233), 0, 1233, status=3)
+        write_blob(blob[:700], 0, len(blob))
+        write_blob(blob[700:], 700)
         write_blob(empty[:1], 0, len(empty))
         wire.command("RESET")
         select()
@@ -611,8 +646,8 @@ def run(wire):
     encrypted = protocol.encrypt(secret, pin.ljust(64, b"\0"))
     call(6, {1: 2, 2: 4, 3: public, 4: protocol.authenticate(secret, encrypted + hashed),
              5: encrypted, 6: hashed})
-    assert call(4)[12] is False
-    return {"passed": True, "algorithms": ["ES256", "Ed25519", "SM2", "ML-DSA-65"], "checks": len(card.checks)}
+    assert 12 not in call(4)
+    return {"passed": True, "algorithms": ["ES256", "Ed25519", "SM2", "ML-DSA-65", "ML-DSA-44"], "checks": len(card.checks)}
 
 
 def algorithm_policy(full_path, restricted_path):
@@ -623,18 +658,18 @@ def algorithm_policy(full_path, restricted_path):
         attest = provision(source)
         target_attest = provision(target)
         for card in (source, target):
-            card.cmd("FIDO", 0xa4, 4, data=bytes.fromhex("a0000006472f0001"))
+            card.cmd("FIDO", 0xa4, 4, data=bytes.fromhex("f043414e4f464944"))
         def call(card, command, params=None, status=0):
             answer = card.cmd("algorithm policy", 0x10, cla=0x80,
                               data=bytes([command]) + (cbor.encode(params) if params is not None else b""))
             assert answer[0] == status, (command, answer.hex(), status)
             return cbor.decode(answer[1:]) if len(answer) > 1 else {}
-        assert [a["alg"] for a in call(source, 4)[10]] == [-7, -8, -54, -49]
+        assert [a["alg"] for a in call(source, 4)[10]] == [-7, -8, -49, -48, -54]
         assert [a["alg"] for a in call(target, 4)[10]] == [-7, -8]
         challenge = hashlib.sha256(b"policy migration").digest()
         rp = "policy.example"
         # Disallowed residents surround permitted records to check continuation.
-        algorithms = [-54, -7, -49, -8]
+        algorithms = [-54, -7, -49, -48, -8]
         credentials = []
         for resident in (False, True):
             for i, algorithm in enumerate(algorithms):
@@ -644,12 +679,12 @@ def algorithm_policy(full_path, restricted_path):
                 attest(answer, challenge)
                 data = AuthenticatorData(answer[2]).credential_data
                 credentials.append((resident, algorithm, {"id": data.credential_id, "type": "public-key"}, data.public_key))
-        for record in [78, 80]:
+        for record in [78, *range(80, 80 + (len(algorithms) + 3) // 4)]:
             data = full.command(f"RECORD {record}")
             assert data[-2:] == b"\x90\x00"
             assert restricted.command(f"RECORD {record} {data[:-2].hex()}") == b"\x90\x00"
         restricted.command("RESET")
-        target.cmd("FIDO", 0xa4, 4, data=bytes.fromhex("a0000006472f0001"))
+        target.cmd("FIDO", 0xa4, 4, data=bytes.fromhex("f043414e4f464944"))
         for resident, algorithm, descriptor, key in credentials:
             params = {1: rp, 2: challenge, 3: [descriptor]}
             allowed = algorithm in (-7, -8)
@@ -697,14 +732,14 @@ def algorithm_policy(full_path, restricted_path):
                 message = bytes([command]) + (cbor.encode(params) if params is not None else b"")
                 request.update({3: 2, 4: protocol.authenticate(token, message)})
             return call(target, 10, request)
-        assert manage(1) == {1: 4, 2: 96}
+        assert manage(1) == {1: len(algorithms), 2: 100 - len(algorithms)}
         answer = manage(4, {1: hashlib.sha256(rp.encode()).digest()})
-        assert answer[9] == 4
-        for i, (_, algorithm, descriptor, key) in enumerate(credentials[4:]):
+        assert answer[9] == len(algorithms)
+        for i, (_, algorithm, descriptor, key) in enumerate(credentials[len(algorithms):]):
             if i:
                 answer = manage(5)
             assert answer[7] == descriptor and answer[8] == key
-        for _, algorithm, descriptor, _ in credentials[4:]:
+        for _, algorithm, descriptor, _ in credentials[len(algorithms):]:
             if algorithm not in (-7, -8):
                 manage(6, {2: descriptor})
         assert manage(1) == {1: 2, 2: 98}

@@ -12,14 +12,21 @@ pub struct CredentialId(pub u32);
 pub trait Repository {
     fn first(&mut self) -> Result<Option<CredentialId>, Error>;
     fn next(&mut self, id: CredentialId) -> Result<Option<CredentialId>, Error>;
-    fn load(&mut self, id: CredentialId) -> Result<Credential, Error>;
+    /// Read directly into caller-owned storage; on failure `out` is erased.
+    fn load_into(&mut self, id: CredentialId, out: &mut Credential) -> Result<(), Error>;
+    fn load(&mut self, id: CredentialId) -> Result<Credential, Error> {
+        let mut record = Credential::empty();
+        self.load_into(id, &mut record)?;
+        Ok(record)
+    }
     fn matches_name(
         &mut self,
         id: CredentialId,
         name: &[u8],
         crypto: &mut (impl Crypto + ?Sized),
     ) -> Result<bool, Error> {
-        let mut record = self.load(id)?;
+        let mut record = Credential::empty();
+        self.load_into(id, &mut record)?;
         let found = record.name() == name;
         record.clear(crypto);
         Ok(found)
@@ -42,6 +49,14 @@ pub struct Digest {
     length: usize,
 }
 impl Digest {
+    /// Zeroed output buffer for `calculate_into`; not a valid result.
+    pub const fn new() -> Self {
+        Self {
+            digits: 0,
+            bytes: [0; 64],
+            length: 0,
+        }
+    }
     pub const fn digits(&self) -> u8 {
         self.digits
     }
@@ -97,7 +112,8 @@ pub fn rename(
         Err(Error::Missing) => (),
         Err(error) => return Err(error),
     }
-    let mut record = repository.load(id)?;
+    let mut record = Credential::empty();
+    repository.load_into(id, &mut record)?;
     let result = record
         .rename(new, crypto)
         .and_then(|()| repository.replace(id, &record));
@@ -113,8 +129,22 @@ pub fn calculate(
     challenge: &[u8],
     presence: Presence,
 ) -> Result<Digest, Error> {
-    let mut record = repository.load(id)?;
-    let result = calculate_loaded(repository, crypto, id, &record, challenge, presence);
+    let mut digest = Digest::new();
+    calculate_into(repository, crypto, id, challenge, presence, &mut digest)?;
+    Ok(digest)
+}
+/// As `calculate`, writing into caller-owned storage that the caller clears.
+pub fn calculate_into(
+    repository: &mut (impl Repository + ?Sized),
+    crypto: &mut (impl Crypto + ?Sized),
+    id: CredentialId,
+    challenge: &[u8],
+    presence: Presence,
+    digest: &mut Digest,
+) -> Result<(), Error> {
+    let mut record = Credential::empty();
+    repository.load_into(id, &mut record)?;
+    let result = calculate_loaded(repository, crypto, id, &record, challenge, presence, digest);
     record.clear(crypto);
     result
 }
@@ -127,7 +157,8 @@ pub(super) fn calculate_loaded(
     record: &Credential,
     challenge: &[u8],
     presence: Presence,
-) -> Result<Digest, Error> {
+    digest: &mut Digest,
+) -> Result<(), Error> {
     if record.properties().touch() && matches!(presence, Presence::NotConfirmed) {
         return Err(Error::PresenceRequired);
     }
@@ -156,14 +187,11 @@ pub(super) fn calculate_loaded(
             challenge
         }
     };
-    let mut digest = Digest {
-        digits: record.digits(),
-        bytes: [0; 64],
-        length: record.algorithm().digest_length(),
-    };
+    digest.digits = record.digits();
+    digest.length = record.algorithm().digest_length();
     if let Err(error) = crypto.hmac(record.algorithm(), record.key(), message, &mut digest.bytes) {
         digest.clear(crypto);
         return Err(error);
     }
-    Ok(digest)
+    Ok(())
 }

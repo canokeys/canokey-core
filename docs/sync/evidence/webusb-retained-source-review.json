@@ -1,0 +1,90 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Two explicitly inspected device-context clear/init hunks, original and merge-parent diffs. Actual retained-state EP0 schedules plus scoped unit cancellation/admission checks, not complete lifecycle/IRQ/erasure acceptance.",
+  "reviews": [
+    {
+      "commit": "8a166672d63b2b19a71f8bfaf8e883d079c26d8a",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "src/device.c",
+      "ordinals": [
+        11
+      ],
+      "reviewed_units": 1,
+      "assessment": "Only device_init/context-clear addition: initialize context owner to NONE; main-loop lifecycle clear resets applet context and releases USB reservations after old endpoint epoch invalidation. Rust composition serializes WebUSB/HID/CCID cleanup, Core::reset closes/aborts response/input and resets router/auth/owner; Registry clears selection and grants. E50/E55 verify old-source rejection and PIN revocation. New WebUSB deferred initialization retains status but blocks command/response until cleanup; executing cancellation stays immediate. Adjacent reservation/CAS code and full IRQ/resource acceptance remain unreviewed/open."
+    },
+    {
+      "commit": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "src/device.c",
+      "ordinals": [
+        11
+      ],
+      "reviewed_units": 1,
+      "assessment": "Only device_init/context-clear addition: initialize context owner to NONE; main-loop lifecycle clear resets applet context and releases USB reservations after old endpoint epoch invalidation. Rust composition serializes WebUSB/HID/CCID cleanup, Core::reset closes/aborts response/input and resets router/auth/owner; Registry clears selection and grants. E50/E55 verify old-source rejection and PIN revocation. New WebUSB deferred initialization retains status but blocks command/response until cleanup; executing cancellation stays immediate. Adjacent reservation/CAS code and full IRQ/resource acceptance remain unreviewed/open."
+    }
+  ],
+  "source_review": [
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/device/usbd_canokey.c",
+      "sha256": "673236df9e96765674ea6ae91e4974dc9ccbf72b83003efe843ac0d6aeeba8fe",
+      "observed": "Init/DeInit IRQ callbacks publish lifecycle epoch without WebUSB initialization. Service clears session/Core, initializes WebUSB, then applies interfaces and acknowledges unchanged epoch. Old class state is visible to EP0 status before service, while session acquisition refuses commands/responses."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/class/webusb/webusb.c",
+      "sha256": "3f6b93223ef0b7c055153bcc76cd02b2001d31c0ec081a334bb7b7eec74ecadf",
+      "observed": "Init sets IDLE; SetupAborted only clears RECVING/SENT_RESP, so ready-response/Hold persist across global deferred transition until Service. Command/response acquisition still enforces readiness. E55 runs actual control stages with retained state."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "src/device.c",
+      "sha256": "e375e3f61ef1c5559c462094dfe5231c5e37cefe3762b8a2cd74db51f3a9f8bb",
+      "observed": "Main-loop device_applet_session_clear resets applet context/owners and releases USB buffers. Only historical clear/init hunk mapped here, not surrounding CAS/sentinel/lifecycle functions."
+    }
+  ],
+  "rust_sources": [
+    {
+      "path": "crates/ffi/src/transport/webusb.rs",
+      "sha256": "24caa206c4a0875a3865dd9252bbbbaa0f1fd1bed8e477b6c6b35ebd5f47265c"
+    },
+    {
+      "path": "crates/ffi/src/transport/usb.rs",
+      "sha256": "71ac8e3e8168b446254176647e1599b7c38f288bfc835611706ddea5be69232c"
+    },
+    {
+      "path": "crates/ffi/src/transport/usb/tests.rs",
+      "sha256": "0aae91a300e050726ad449492b4d1beabc8a277e39b3cb281c9c22bdfd307172"
+    },
+    {
+      "path": "crates/ffi/src/transport/usb/tests/web.rs",
+      "sha256": "03a83a9af7bf815cd5a7ffc06cc37d90470b73c0c7222eb19bfc194fe8336cfa"
+    },
+    {
+      "path": "crates/ffi/src/composition.rs",
+      "sha256": "c576579760ab71e7aa71407ece6383edbc80b428f034f4534a12e2f0a54c85da"
+    },
+    {
+      "path": "crates/ffi/src/composition/core.rs",
+      "sha256": "2104a20ad50db056e466b6310bfae0ea8c1b5abbf175e66b42e691aeda97fd0c"
+    },
+    {
+      "path": "crates/core/src/runtime/engine.rs",
+      "sha256": "e5ee7484a82f7b1ed29195907c9cc3731a329ed80eff31be39e2083ced9f8fa2"
+    },
+    {
+      "path": "crates/core/src/runtime/registry.rs",
+      "sha256": "39e2af4eddb93a96430763a7ba304f61b8b960b00ee4e5056ed882c31f899b0d"
+    }
+  ],
+  "regressions": [
+    "tests/fixtures/c312-webusb-retained/vectors.json",
+    "tests/fixtures/c312-usb-lifecycle/vectors.json",
+    "crates/ffi/src/transport/usb/tests/web.rs"
+  ],
+  "remaining": [
+    "Other retained/executing/endpoint-failure/IRQ schedules.",
+    "Physical USB/RF/WTX and CIU call-path stack/PKE acceptance.",
+    "Adjacent reservation/CAS/lifecycle source hunks."
+  ]
+}

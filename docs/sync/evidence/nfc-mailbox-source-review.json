@@ -1,0 +1,290 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Pending/claimed pre-execution NFC input drains overlapping FIFO traffic without replacing the original frame or PKE append. Four local-FIFO hunks per parent reviewed; mixed turn/execution hunk57 remains unreviewed.",
+  "deltas": [
+    {
+      "commit": "836a50a50c2a77d03f4673e79a03213138023145",
+      "parent": "c07ad675546049fddd732b6bef1305eff8f799c5",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 53,
+          "sha256": "c9d458a906c5dc6b812d36a4b7489aec0c1561d35e338e390dbf84eb8e0fb036",
+          "source": "@@ -401 +551,2 @@ void nfc_handler(void) {\n-    if (fm_read_regs(FM_REG_FIFO_WORDCNT, &rx_frame_size, 1) != FM_STATUS_OK) {\n+    uint8_t frame_size, frame[sizeof(rx_frame_buf)];\n+    if (fm_read_regs(FM_REG_FIFO_WORDCNT, &frame_size, 1) != FM_STATUS_OK) {\n"
+        },
+        {
+          "ordinal": 54,
+          "sha256": "387ee94f64394c727bcb0887d1a5009805ce8ab71f1911478768c6147fb4c2be",
+          "source": "@@ -405 +556 @@ void nfc_handler(void) {\n-    if (rx_frame_size == 0) {\n+    if (frame_size == 0) {\n"
+        },
+        {
+          "ordinal": 55,
+          "sha256": "c29c680a1046afd7db847a6aeb9f8126070a546f6b8d98657a457ac63705d9ec",
+          "source": "@@ -408 +559 @@ void nfc_handler(void) {\n-    } else if (rx_frame_size > sizeof(rx_frame_buf)) {\n+    } else if (frame_size > sizeof(frame)) {\n"
+        },
+        {
+          "ordinal": 56,
+          "sha256": "1098e40d0e2f64942dd6552f278a5e0fc9082c5b0378a8b2f574f80f5eec7d61",
+          "source": "@@ -411 +562 @@ void nfc_handler(void) {\n-    } else if (fm_read_fifo(rx_frame_buf, rx_frame_size) != FM_STATUS_OK) {\n+    } else if (fm_read_fifo(frame, frame_size) != FM_STATUS_OK) {\n"
+        }
+      ],
+      "mixed_unreviewed_hunk57": "@@ -415,3 +566,7 @@ void nfc_handler(void) {\n-      DBG_MSG(\"RX: \");\n-      PRINT_HEX(rx_frame_buf, rx_frame_size);\n-      if (next_state == TO_SEND) DBG_MSG(\"Wrong State!\\n\");\n+      // The main loop may still be appending this frame to PKE. Drain a\n+      // reader retry/presence check without changing its bytes or length.\n+      if (next_state == TO_SEND) {\n+        return;\n+      }\n+      memcpy(rx_frame_buf, frame, frame_size);\n+      rx_frame_size = frame_size;\n"
+    },
+    {
+      "commit": "8fd934426f258ad4973c36eb336febacac50b8c4",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 53,
+          "sha256": "c9d458a906c5dc6b812d36a4b7489aec0c1561d35e338e390dbf84eb8e0fb036",
+          "source": "@@ -401 +551,2 @@ void nfc_handler(void) {\n-    if (fm_read_regs(FM_REG_FIFO_WORDCNT, &rx_frame_size, 1) != FM_STATUS_OK) {\n+    uint8_t frame_size, frame[sizeof(rx_frame_buf)];\n+    if (fm_read_regs(FM_REG_FIFO_WORDCNT, &frame_size, 1) != FM_STATUS_OK) {\n"
+        },
+        {
+          "ordinal": 54,
+          "sha256": "387ee94f64394c727bcb0887d1a5009805ce8ab71f1911478768c6147fb4c2be",
+          "source": "@@ -405 +556 @@ void nfc_handler(void) {\n-    if (rx_frame_size == 0) {\n+    if (frame_size == 0) {\n"
+        },
+        {
+          "ordinal": 55,
+          "sha256": "c29c680a1046afd7db847a6aeb9f8126070a546f6b8d98657a457ac63705d9ec",
+          "source": "@@ -408 +559 @@ void nfc_handler(void) {\n-    } else if (rx_frame_size > sizeof(rx_frame_buf)) {\n+    } else if (frame_size > sizeof(frame)) {\n"
+        },
+        {
+          "ordinal": 56,
+          "sha256": "1098e40d0e2f64942dd6552f278a5e0fc9082c5b0378a8b2f574f80f5eec7d61",
+          "source": "@@ -411 +562 @@ void nfc_handler(void) {\n-    } else if (fm_read_fifo(rx_frame_buf, rx_frame_size) != FM_STATUS_OK) {\n+    } else if (fm_read_fifo(frame, frame_size) != FM_STATUS_OK) {\n"
+        }
+      ],
+      "mixed_unreviewed_hunk57": "@@ -415,3 +566,7 @@ void nfc_handler(void) {\n-      DBG_MSG(\"RX: \");\n-      PRINT_HEX(rx_frame_buf, rx_frame_size);\n-      if (next_state == TO_SEND) DBG_MSG(\"Wrong State!\\n\");\n+      // The main loop may still be appending this frame to PKE. Drain a\n+      // reader retry/presence check without changing its bytes or length.\n+      if (next_state == TO_SEND) {\n+        return;\n+      }\n+      memcpy(rx_frame_buf, frame, frame_size);\n+      rx_frame_size = frame_size;\n"
+    },
+    {
+      "commit": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 53,
+          "sha256": "c9d458a906c5dc6b812d36a4b7489aec0c1561d35e338e390dbf84eb8e0fb036",
+          "source": "@@ -401 +551,2 @@ void nfc_handler(void) {\n-    if (fm_read_regs(FM_REG_FIFO_WORDCNT, &rx_frame_size, 1) != FM_STATUS_OK) {\n+    uint8_t frame_size, frame[sizeof(rx_frame_buf)];\n+    if (fm_read_regs(FM_REG_FIFO_WORDCNT, &frame_size, 1) != FM_STATUS_OK) {\n"
+        },
+        {
+          "ordinal": 54,
+          "sha256": "387ee94f64394c727bcb0887d1a5009805ce8ab71f1911478768c6147fb4c2be",
+          "source": "@@ -405 +556 @@ void nfc_handler(void) {\n-    if (rx_frame_size == 0) {\n+    if (frame_size == 0) {\n"
+        },
+        {
+          "ordinal": 55,
+          "sha256": "c29c680a1046afd7db847a6aeb9f8126070a546f6b8d98657a457ac63705d9ec",
+          "source": "@@ -408 +559 @@ void nfc_handler(void) {\n-    } else if (rx_frame_size > sizeof(rx_frame_buf)) {\n+    } else if (frame_size > sizeof(frame)) {\n"
+        },
+        {
+          "ordinal": 56,
+          "sha256": "1098e40d0e2f64942dd6552f278a5e0fc9082c5b0378a8b2f574f80f5eec7d61",
+          "source": "@@ -411 +562 @@ void nfc_handler(void) {\n-    } else if (fm_read_fifo(rx_frame_buf, rx_frame_size) != FM_STATUS_OK) {\n+    } else if (fm_read_fifo(frame, frame_size) != FM_STATUS_OK) {\n"
+        }
+      ],
+      "mixed_unreviewed_hunk57": "@@ -415,3 +566,7 @@ void nfc_handler(void) {\n-      DBG_MSG(\"RX: \");\n-      PRINT_HEX(rx_frame_buf, rx_frame_size);\n-      if (next_state == TO_SEND) DBG_MSG(\"Wrong State!\\n\");\n+      // The main loop may still be appending this frame to PKE. Drain a\n+      // reader retry/presence check without changing its bytes or length.\n+      if (next_state == TO_SEND) {\n+        return;\n+      }\n+      memcpy(rx_frame_buf, frame, frame_size);\n+      rx_frame_size = frame_size;\n"
+    },
+    {
+      "commit": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "parent": "99df44df4653051887ac6fdb9355508314a01efc",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 53,
+          "sha256": "c9d458a906c5dc6b812d36a4b7489aec0c1561d35e338e390dbf84eb8e0fb036",
+          "source": "@@ -401 +551,2 @@ void nfc_handler(void) {\n-    if (fm_read_regs(FM_REG_FIFO_WORDCNT, &rx_frame_size, 1) != FM_STATUS_OK) {\n+    uint8_t frame_size, frame[sizeof(rx_frame_buf)];\n+    if (fm_read_regs(FM_REG_FIFO_WORDCNT, &frame_size, 1) != FM_STATUS_OK) {\n"
+        },
+        {
+          "ordinal": 54,
+          "sha256": "387ee94f64394c727bcb0887d1a5009805ce8ab71f1911478768c6147fb4c2be",
+          "source": "@@ -405 +556 @@ void nfc_handler(void) {\n-    if (rx_frame_size == 0) {\n+    if (frame_size == 0) {\n"
+        },
+        {
+          "ordinal": 55,
+          "sha256": "c29c680a1046afd7db847a6aeb9f8126070a546f6b8d98657a457ac63705d9ec",
+          "source": "@@ -408 +559 @@ void nfc_handler(void) {\n-    } else if (rx_frame_size > sizeof(rx_frame_buf)) {\n+    } else if (frame_size > sizeof(frame)) {\n"
+        },
+        {
+          "ordinal": 56,
+          "sha256": "1098e40d0e2f64942dd6552f278a5e0fc9082c5b0378a8b2f574f80f5eec7d61",
+          "source": "@@ -411 +562 @@ void nfc_handler(void) {\n-    } else if (fm_read_fifo(rx_frame_buf, rx_frame_size) != FM_STATUS_OK) {\n+    } else if (fm_read_fifo(frame, frame_size) != FM_STATUS_OK) {\n"
+        }
+      ],
+      "mixed_unreviewed_hunk57": "@@ -415,3 +566,7 @@ void nfc_handler(void) {\n-      DBG_MSG(\"RX: \");\n-      PRINT_HEX(rx_frame_buf, rx_frame_size);\n-      if (next_state == TO_SEND) DBG_MSG(\"Wrong State!\\n\");\n+      // The main loop may still be appending this frame to PKE. Drain a\n+      // reader retry/presence check without changing its bytes or length.\n+      if (next_state == TO_SEND) {\n+        return;\n+      }\n+      memcpy(rx_frame_buf, frame, frame_size);\n+      rx_frame_size = frame_size;\n"
+    }
+  ],
+  "mapping": [
+    "Ordinal53 obtains FIFO length into local state; original mailbox length is retained until a new frame is admitted.",
+    "Ordinals54/55 validate nonzero FIFO length and32-byte hardware maximum independently of protocol decoding. Bounded1/2-byte late frames are drained when an original input owns the reply turn; unsolicited malformed frames still fail decode.",
+    "Ordinal56 reads the FIFO into a local32-byte window, then copies only admitted frames into the mailbox. Read failure revokes the old request and enters RF recovery.",
+    "The before-Core portion of ordinal57 is now reflected by Io::interrupt; Io::take does not release the turn while main-loop Request::append writes to PKE. Executing WTX/cancellation admission differs and is not approved by this partial mapping.",
+    "Event::Ignored releases its RF turn under the same generation lock; it never resets Core selection, authorization or response source."
+  ],
+  "remaining": [
+    "Hunk57 includes admission during live Core execution: Rust retains its existing dedicated WTX/cancellation policy; no C/Rust execution parity is claimed. WTX cache/echo and arbitrary IRQ/endpoint schedules remain open.",
+    "Mixed hunk19, physical RF/WTX, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open."
+  ],
+  "final_c_excerpts": [
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 550,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "  } else if ((irq[0] & 0x3F) && !apdu_processing) {\n    restart_idle_timeout();\n  }\n  if (irq[0] & MAIN_IRQ_RX_DONE) {\n    uint8_t frame_size, frame[sizeof(rx_frame_buf)];\n    if (fm_read_regs(FM_REG_FIFO_WORDCNT, &frame_size, 1) != FM_STATUS_OK) {\n      nfc_error_handler(-9);\n      return;\n    }\n    if (frame_size == 0) {\n      nfc_error_handler(-21);\n      return;\n    } else if (frame_size > sizeof(frame)) {\n      nfc_error_handler(-5);\n      return;\n    } else if (fm_read_fifo(frame, frame_size) != FM_STATUS_OK) {\n      nfc_error_handler(-10);\n      return;\n    } else {\n      // The main loop may still be appending this frame to PKE. Drain a\n      // reader retry/presence check without changing its bytes or length.\n      if (next_state == TO_SEND) {\n        return;\n      }\n      memcpy(rx_frame_buf, frame, frame_size);\n      rx_frame_size = frame_size;\n      next_state = TO_SEND;\n    }\n  }\n}\n"
+    },
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 468,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "    if ((rx_frame_buf[0] & R_BLOCK_MASK) == R_ACK) {\n      if ((rx_frame_buf[0] & 1) != block_number) { // continue chaining\n        // Rule 13: an ACK advances only an outgoing response chain. Ignore\n        // unsolicited ACKs without resetting selection or an incoming APDU.\n        if (!transfer_state.sending) {\n          next_state = TO_RECEIVE;\n          return;\n        }\n        block_number ^= 1;\n        if (send_apdu_buffer(0) == NFC_SEND_FAILED) nfc_error_handler(-13);"
+    },
+    {
+      "path": "test/nfc-transport.inc",
+      "line": 265,
+      "file_sha256": "b7ed1c0420de3f77103107d332ed93f0b1710eda09440d7f0e13d5bc346f68c3",
+      "source": "  // A retry/presence check must be drained without replacing that request.\n  nfc_test_fixture(true);\n  nfc_test_rx[0] = 0x02 | (block_number ^ 1);\n  memcpy(nfc_test_rx + 1, info, sizeof(info));\n  nfc_test_rx_len = sizeof(info) + 3;\n  nfc_test_irq[0] = MAIN_IRQ_RX_DONE;\n  nfc_test_handler();\n  uint8_t saved[32];\n  const uint8_t saved_len = rx_frame_size;\n  memcpy(saved, rx_frame_buf, saved_len);\n  nfc_test_rx[0] = R_NAK | block_number;\n  nfc_test_rx_len = 3;\n  nfc_test_irq[0] = MAIN_IRQ_RX_DONE;\n  nfc_test_handler();\n  assert_int_equal(rx_frame_size, saved_len);\n  assert_memory_equal(rx_frame_buf, saved, saved_len);\n  nfc_test_loop();\n  assert_true(transfer_state.sending);\n  assert_int_equal(nfc_test_tx[1], 0); // CTAP success, not a damaged request\n  set_nfc_state(0);\n  device_applet_session_clear();\n}"
+    }
+  ],
+  "targets": [
+    {
+      "path": "crates/core/src/runtime/nfc_io.rs",
+      "sha256": "0ea83647f2485be6908bc493297e25a5f33528a906269244305d66826f833a1f"
+    },
+    {
+      "path": "crates/ffi/src/transport/nfc.rs",
+      "sha256": "746dd52699de67b29f40aead64e1c29b2560911d8f24123ddf582ac46fc08142"
+    },
+    {
+      "path": "crates/core/tests/nfc.rs",
+      "sha256": "0d418d6154df902bf9f58def1df5be17f802e47cf0ae4dd9821607baabb14209"
+    },
+    {
+      "path": "tests/card/src/bin/usb_sessions/nfc_source.rs",
+      "sha256": "4256af2e39dfc174afb9f5877216d7421b39c171f1eedb174d3f931b4189abef"
+    }
+  ],
+  "literal": {
+    "suites": 14,
+    "cases": 429,
+    "events": 11905,
+    "equal_output": 412,
+    "unresolved": 17,
+    "previous_results": [
+      {
+        "path": "tests/fixtures/c312-ccid/report.json",
+        "previous_cases": 47,
+        "current_cases": 47,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-hid-admission/report.json",
+        "previous_cases": 28,
+        "current_cases": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-hid-channels/report.json",
+        "previous_cases": 40,
+        "current_cases": 40,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-hid-ownership/report.json",
+        "previous_cases": 21,
+        "current_cases": 21,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-large-blob-nfc/report.json",
+        "previous_cases": 11,
+        "current_cases": 11,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-large-blob-usb/report.json",
+        "previous_cases": 12,
+        "current_cases": 12,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-nfc/report.json",
+        "previous_cases": 96,
+        "current_cases": 124,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-control/report.json",
+        "previous_cases": 36,
+        "current_cases": 36,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-lifecycle/report.json",
+        "previous_cases": 33,
+        "current_cases": 33,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-ownership/report.json",
+        "previous_cases": 18,
+        "current_cases": 18,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-readiness/report.json",
+        "previous_cases": 9,
+        "current_cases": 9,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-webusb/report.json",
+        "previous_cases": 28,
+        "current_cases": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-webusb-readiness/report.json",
+        "previous_cases": 8,
+        "current_cases": 8,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-webusb-retained/report.json",
+        "previous_cases": 14,
+        "current_cases": 14,
+        "previous_results_unchanged": true
+      }
+    ]
+  },
+  "products": {
+    "devkit": {
+      "flash": 178528,
+      "static_ram": 8272,
+      "udf": 140,
+      "correctness_delta": 0
+    },
+    "nfcc": {
+      "flash": 187600,
+      "static_ram": 8432,
+      "udf": 146,
+      "overflow": 5840,
+      "correctness_delta": 8,
+      "diagnostic_elf_only": true
+    }
+  },
+  "source_fixture": {
+    "pke_write_retry_positions": 15,
+    "prior_source_fault_cases": 41,
+    "pending_frame_lengths": 32,
+    "pending_pcbs": 256,
+    "claimed_input_pcbs": 4,
+    "local_irq_fifo_window": 32,
+    "additional_apdu_buffers": 0,
+    "runtime_stack_acceptance": false
+  }
+}

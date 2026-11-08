@@ -16,7 +16,7 @@ pub(super) fn encode(
 ) -> Result<usize, EncodeError> {
     // Keep generated fixed limits synchronized with their owning modules.
     const {
-        assert!(MAX_REQUEST == 1024);
+        assert!(MAX_REQUEST <= u16::MAX as usize);
         assert!(credential_request::MAX_LIST == 16);
         assert!(credential::ID_BYTES == 34);
         assert!(large_blob::LIMIT == 4096);
@@ -24,7 +24,12 @@ pub(super) fn encode(
     let capacity = output.len();
     let always_uv = flags & pin::ALWAYS_UV != 0;
     let mut e = Encoder::new(output);
-    e.encoded(HEADER).array(if always_uv { 3 } else { 4 });
+    e.encoded(if flags & pin::FORCE_CHANGE != 0 {
+        HEADER_FORCE
+    } else {
+        HEADER
+    })
+    .array(if always_uv { 3 } else { 4 });
     if !always_uv {
         e.encoded(U2F);
     }
@@ -35,13 +40,17 @@ pub(super) fn encode(
         .encoded(CLIENT_PIN)
         .bool(configured)
         .encoded(OPTIONS_END)
+        .bool(!always_uv)
+        .encoded(REQUEST_LIMITS)
         .encoded(ALGORITHMS);
     if !cfg!(feature = "ctap-restrict-algorithms") {
         e.i32(sm2_algorithm);
     }
-    e.encoded(ALGORITHMS_END)
-        .bool(flags & pin::FORCE_CHANGE != 0)
-        .u8(MIN_PIN_LENGTH)
+    e.encoded(ALGORITHMS_END);
+    if flags & pin::FORCE_CHANGE != 0 {
+        e.u8(0x0c).bool(true);
+    }
+    e.u8(MIN_PIN_LENGTH)
         .u8(minimum)
         .encoded(LIMITS)
         .u8(Record::CTAP_CREDENTIALS - used)
@@ -55,8 +64,47 @@ pub(super) fn encode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    // The previous field-by-field implementation is an independent schema
-    // oracle for the generated fragments, including variable-width integers.
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/c312-getinfo/vectors.rs"
+    ));
+
+    #[test]
+    fn schema_matches_executed_pinned_c_vectors() {
+        let mut tested = 0;
+        for &(flags, configured, minimum, used, algorithm, restricted, nfc, before, after) in
+            C312_VECTORS
+        {
+            if restricted != cfg!(feature = "ctap-restrict-algorithms")
+                || nfc != cfg!(feature = "ctap-nfc")
+            {
+                continue;
+            }
+            let mut actual = [0; 527];
+            let n = encode(&mut actual, flags, configured, minimum, used, algorithm).unwrap();
+            let mut expected = [0; 527];
+            let mut e = Encoder::new(&mut expected[..]);
+            e.encoded(before)
+                .u32(crate::release::FIDO_FIRMWARE)
+                .encoded(after)
+                .finish()
+                .unwrap();
+            let expected_len = 527 - e.writer().len();
+            assert_eq!(&actual[..n], &expected[..expected_len]);
+            tested += 1;
+        }
+        assert_eq!(
+            tested,
+            if cfg!(feature = "ctap-restrict-algorithms") {
+                64
+            } else {
+                32
+            }
+        );
+    }
+
+    // Field-by-field schema follows C Core a349b268, with explicit product
+    // identity and transport capabilities. Keep array order and omissions exact.
     fn reference(
         output: &mut [u8],
         flags: u8,
@@ -73,7 +121,13 @@ mod tests {
             } else {
                 ["U2F_V2", "FIDO_2_0", "FIDO_2_1", "FIDO_2_3"].as_slice()
             };
-            e.map(22).u8(1).array(versions.len() as u64);
+            e.map(if flags & pin::FORCE_CHANGE != 0 {
+                22
+            } else {
+                21
+            })
+            .u8(1)
+            .array(versions.len() as u64);
             for version in versions {
                 e.str(version);
             }
@@ -81,13 +135,13 @@ mod tests {
                 .array(7)
                 .str("credBlob")
                 .str("credProtect")
-                .str("minPinLength")
-                .str("largeBlobKey")
                 .str("hmac-secret")
                 .str("hmac-secret-mc")
+                .str("largeBlobKey")
+                .str("minPinLength")
                 .str("thirdPartyPayment");
             e.u8(3).bytes(&provision::AAGUID);
-            e.u8(4).map(10).str("rk").bool(true).str("up").bool(true);
+            e.u8(4).map(9).str("rk").bool(true);
             e.str("alwaysUv").bool(flags & pin::ALWAYS_UV != 0);
             e.str("credMgmt").bool(true);
             e.str("authnrCfg").bool(true);
@@ -95,17 +149,22 @@ mod tests {
             e.str("largeBlobs").bool(true);
             e.str("pinUvAuthToken").bool(true);
             e.str("setMinPINLength").bool(true);
-            e.str("makeCredUvNotRqd").bool(true);
+            e.str("makeCredUvNotRqd").bool(flags & pin::ALWAYS_UV == 0);
             e.u8(5).u16(MAX_REQUEST as u16);
             e.u8(6).array(2).u8(1).u8(2);
             e.u8(7).u8(credential_request::MAX_LIST as u8);
             e.u8(8).u8(credential::ID_BYTES as u8);
-            e.u8(9).array(1).str("usb");
-            let algorithms = [-7, -8, sm2_algorithm, -49];
+            e.u8(9);
+            if cfg!(feature = "ctap-nfc") {
+                e.array(2).str("nfc").str("usb");
+            } else {
+                e.array(1).str("usb");
+            }
+            let algorithms = [-7, -8, -49, -48, sm2_algorithm];
             let algorithms = &algorithms[..if cfg!(feature = "ctap-restrict-algorithms") {
                 2
             } else {
-                4
+                5
             }];
             e.u8(10).array(algorithms.len() as u64);
             for &algorithm in algorithms {
@@ -116,7 +175,9 @@ mod tests {
                     .str("public-key");
             }
             e.u8(11).u16(large_blob::LIMIT);
-            e.u8(12).bool(flags & pin::FORCE_CHANGE != 0);
+            if flags & pin::FORCE_CHANGE != 0 {
+                e.u8(12).bool(true);
+            }
             e.u8(13).u8(minimum);
             e.u8(14).u32(crate::release::FIDO_FIRMWARE);
             e.u8(15).u8(32);

@@ -47,6 +47,12 @@ pub struct Credential {
     pub(super) bytes: [u8; super::codec::LENGTH],
 }
 impl Credential {
+    /// All-zero buffer for `Repository::load_into`; not a valid record.
+    pub(crate) const fn empty() -> Self {
+        Self {
+            bytes: [0; super::codec::LENGTH],
+        }
+    }
     pub fn new(
         name: &[u8],
         key: &[u8],
@@ -60,7 +66,8 @@ impl Credential {
             || name.len() > NAME_LIMIT
             || key.is_empty()
             || key.len() > KEY_LIMIT
-            || !(4..=8).contains(&digits)
+            || digits < 4
+            || digits > 8
         {
             return Err(Error::Invalid);
         }

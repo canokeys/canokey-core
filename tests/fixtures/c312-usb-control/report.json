@@ -1,0 +1,1272 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "dependencies": {
+    "canokey-crypto": "f9382dc23ea330521ad0874b669826702fea790b",
+    "littlefs": "6cb4e86540eca0d9ba62500a298385c9d863c8be",
+    "tinycbor": "6442e749ca811e24afad1551338a45c75e09808f"
+  },
+  "mode": "pinned-c-and-rust",
+  "scope": "Literal USB HALT/GET_STATUS and descriptor-control events through pinned C and actual Rust facades. No endpoint-register, DATA-toggle waveform, physical USB or arbitrary IRQ acceptance. Explicit C/Rust differences retain separate raw expectations.",
+  "vectors_sha256": "8c687c2ba3dabe830b16736ae0d23d1c810c5efa323a7b272dd528b8c71c9082",
+  "c_adapter_sha256": "4daf550aab2d7d074966e17c717e9d9505d21f51ae3e6e554eb5818ef0ab77b3",
+  "c_webusb_adapter_sha256": "5ed7171796f981491169d0b4c510a6bbfccb2f624f1a7a805d2819386ebd170c",
+  "rust_adapter_sha256": "88e051b445dcba34168fbb23e759604e82e6af674def81ff6340dc1cdeae7f05",
+  "rust_nfc_adapter_sha256": "d2a40b51f6f286712c97585effa149db161ce9597c76cf7847767a3512dfc1d2",
+  "rust_webusb_adapter_sha256": "7df3eb77435f1565d57543ee396f7b799305536ca1235bfad641f3c4c3668a1a",
+  "c_executable_sha256": "ce9510481e8d81fd1afd405518ff107dfa380ee8dce0815f96bd02fb718334a4",
+  "rust_executable_sha256": "30528c61c8f621ff29e0bd4abe1ee2e31094b0e087bcefbb0c98a5e95065a391",
+  "compiler": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+  "c_enum_flags": [
+    "-fshort-enums"
+  ],
+  "asserted_c_request_bytes": 1296,
+  "results": [
+    {
+      "id": "halt-status-clear-direction-02",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "0100",
+          "",
+          "",
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "0100",
+          "",
+          "",
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "halt-status-clear-direction-82",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "0100",
+          "",
+          "",
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "0100",
+          "",
+          "",
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "halt-status-clear-direction-03",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "0100",
+          "",
+          "",
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "0100",
+          "",
+          "",
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "halt-status-clear-direction-83",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "0100",
+          "",
+          "",
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "0100",
+          "",
+          "",
+          "0000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-01-rejects-ep0-out-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-01-rejects-ep0-in-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-01-rejects-unknown-out-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-01-rejects-unknown-in-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-01-rejects-high-index-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-01-rejects-reserved-index-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-01-rejects-wrong-value-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-01-rejects-nonzero-length-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-01-rejects-wrong-direction-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-03-rejects-ep0-out-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-03-rejects-ep0-in-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-03-rejects-unknown-out-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-03-rejects-unknown-in-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-03-rejects-high-index-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-03-rejects-reserved-index-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-03-rejects-wrong-value-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-03-rejects-nonzero-length-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-03-rejects-wrong-direction-and-recovers",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-01-rejects-addressed-state",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "",
+          "",
+          "STALL"
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "",
+          "",
+          "STALL"
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "feature-03-rejects-addressed-state",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "",
+          "",
+          "STALL"
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "",
+          "",
+          "STALL"
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "get-status-high-index-C-accepts-Rust-rejects",
+      "oracle_rows": [
+        "E47"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": false,
+      "difference": {
+        "id": "U3",
+        "disposition": "unresolved",
+        "reason": "Pinned C endpoint GET_STATUS ignores reserved fields/high index and sends two bytes regardless of wLength; Rust validates the exact request. Preserve Rust rejection."
+      }
+    },
+    {
+      "id": "get-status-wrong-value-C-accepts-Rust-rejects",
+      "oracle_rows": [
+        "E47"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": false,
+      "difference": {
+        "id": "U3",
+        "disposition": "unresolved",
+        "reason": "Pinned C endpoint GET_STATUS ignores reserved fields/high index and sends two bytes regardless of wLength; Rust validates the exact request. Preserve Rust rejection."
+      }
+    },
+    {
+      "id": "get-status-short-length-C-accepts-Rust-rejects",
+      "oracle_rows": [
+        "E47"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": false,
+      "difference": {
+        "id": "U3",
+        "disposition": "unresolved",
+        "reason": "Pinned C endpoint GET_STATUS ignores reserved fields/high index and sends two bytes regardless of wLength; Rust validates the exact request. Preserve Rust rejection."
+      }
+    },
+    {
+      "id": "get-status-zero-length-C-accepts-Rust-rejects",
+      "oracle_rows": [
+        "E47"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": false,
+      "difference": {
+        "id": "U3",
+        "disposition": "unresolved",
+        "reason": "Pinned C endpoint GET_STATUS ignores reserved fields/high index and sends two bytes regardless of wLength; Rust validates the exact request. Preserve Rust rejection."
+      }
+    },
+    {
+      "id": "get-status-long-length-C-accepts-Rust-rejects",
+      "oracle_rows": [
+        "E47"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "0000",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": false,
+      "difference": {
+        "id": "U3",
+        "disposition": "unresolved",
+        "reason": "Pinned C endpoint GET_STATUS ignores reserved fields/high index and sends two bytes regardless of wLength; Rust validates the exact request. Preserve Rust rejection."
+      }
+    },
+    {
+      "id": "get-status-unknown-endpoint-04",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "get-status-unknown-endpoint-84",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "get-status-unknown-endpoint-7f",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "get-status-unknown-endpoint-ff",
+      "oracle_rows": [
+        "E46"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "STALL",
+          "0000",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "idle-manufacturer-descriptor",
+      "oracle_rows": [
+        "E48"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "1a03630061006e006f006b0065007900",
+          "73002e006f0072006700",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "1a03630061006e006f006b0065007900",
+          "73002e006f0072006700",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": true
+    },
+    {
+      "id": "pending-source-manufacturer-descriptor-does-not-advance-source",
+      "oracle_rows": [
+        "E48"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "",
+          "",
+          "",
+          "5532465f56329000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "0061ff",
+          "",
+          "",
+          "1a03630061006e006f006b0065007900",
+          "",
+          "",
+          "",
+          "b561ff",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "",
+          "",
+          "",
+          "5532465f56329000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "0061ff",
+          "",
+          "",
+          "STALL",
+          "",
+          "",
+          "",
+          "b561ff",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": false,
+      "difference": {
+        "id": "U4",
+        "disposition": "unresolved",
+        "reason": "Pinned C refuses dynamic descriptors while the FIDO response owns shared IO; Rust uses separate bounded control storage. Both must retain the exact next response byte."
+      }
+    },
+    {
+      "id": "pending-source-configuration-descriptor-does-not-advance-source",
+      "oracle_rows": [
+        "E48"
+      ],
+      "rust": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "",
+          "",
+          "",
+          "5532465f56329000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "0061ff",
+          "",
+          "",
+          "09029f000401008032",
+          "",
+          "",
+          "",
+          "b561ff",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "c": {
+        "passed": true,
+        "returncode": 0,
+        "responses": [
+          "",
+          "",
+          "",
+          "5532465f56329000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "0061ff",
+          "",
+          "",
+          "STALL",
+          "",
+          "",
+          "",
+          "b561ff",
+          "",
+          ""
+        ],
+        "stderr": ""
+      },
+      "wire_equal": false,
+      "difference": {
+        "id": "U4",
+        "disposition": "unresolved",
+        "reason": "Pinned C refuses dynamic descriptors while the FIDO response owns shared IO; Rust uses separate bounded control storage. Both must retain the exact next response byte."
+      }
+    }
+  ]
+}

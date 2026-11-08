@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NFC block lifecycle. APDU storage belongs to the shared transport workspace;
-//! this state retains only one 30-byte packet for retransmission.
+//! this state retains only the last transmitted Link packet for retransmission.
 #![forbid(unsafe_code)]
+pub mod request;
 use canokey_protocol::nfc::{self, Block, Packet};
 pub const COMMAND_LIMIT: usize = canokey_protocol::apdu::SHORT_FRAME_BYTES;
 pub const MAX_RETRANSMITS: u8 = 2;
@@ -20,6 +21,7 @@ pub enum Event {
     NextResponse,
     Waiting(u8),
     Deselect,
+    Ignored,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -75,9 +77,33 @@ impl Link {
         self.retransmits += 1;
         Ok(Event::Send(packet))
     }
+    fn acknowledge(&mut self) -> Event {
+        let packet = Packet::acknowledgement(self.number);
+        // Rule11 retries the last transmitted block, including control ACKs.
+        // A control reply does not advance the response source or block number.
+        self.cached = Some(packet);
+        self.retransmits = 0;
+        Event::Send(packet)
+    }
     /// Called on the main-loop side, never while Core borrows `input`.
     /// CRC/error IRQs must be checked before presenting a FIFO frame here.
     pub fn receive(&mut self, frame: &[u8], input: &mut [u8]) -> Result<Event, Error> {
+        self.receive_with(frame, |offset, bytes| {
+            let end = offset.checked_add(bytes.len()).ok_or(Error::Overflow)?;
+            if end > COMMAND_LIMIT || end > input.len() {
+                return Err(Error::Overflow);
+            }
+            input[offset..end].copy_from_slice(bytes);
+            Ok(())
+        })
+    }
+    /// Deliver each accepted I-block exactly once. Storage/admission belongs
+    /// to the receiver; Link retains sequence and retransmission policy only.
+    pub fn receive_with(
+        &mut self,
+        frame: &[u8],
+        mut receive: impl FnMut(usize, &[u8]) -> Result<(), Error>,
+    ) -> Result<Event, Error> {
         match nfc::decode(frame).map_err(Error::Wire)? {
             Block::Waiting(m) => Ok(Event::Waiting(m)),
             Block::Deselect => {
@@ -94,8 +120,8 @@ impl Link {
                 }
                 if number == self.number {
                     // Repeated command blocks must never execute/write twice.
-                    return if self.received != 0 {
-                        Ok(Event::Send(Packet::acknowledgement(self.number)))
+                    return if self.phase == Phase::Receiving {
+                        Ok(self.acknowledge())
                     } else {
                         self.retransmit()
                     };
@@ -107,17 +133,14 @@ impl Link {
                     .received
                     .checked_add(bytes.len())
                     .ok_or(Error::Overflow)?;
-                if end > COMMAND_LIMIT || end > input.len() {
-                    return Err(Error::Overflow);
-                }
-                input[self.received..end].copy_from_slice(bytes);
+                receive(self.received, bytes)?;
                 self.received = end;
                 self.number = number;
                 self.cached = None;
                 self.retransmits = 0;
                 if chained {
                     self.phase = Phase::Receiving;
-                    Ok(Event::Send(Packet::acknowledgement(number)))
+                    Ok(self.acknowledge())
                 } else {
                     self.phase = Phase::Executing;
                     Ok(Event::Execute(end))
@@ -130,14 +153,19 @@ impl Link {
                 if number == self.number {
                     return self.retransmit();
                 }
+                if negative {
+                    // Rule12's opposite-BN NAK requests an ACK, even while
+                    // sending a response. Only a positive ACK advances it.
+                    return Ok(self.acknowledge());
+                }
                 if self.phase == Phase::Responding {
                     self.number = number;
                     self.phase = Phase::Ready;
                     Ok(Event::NextResponse)
-                } else if negative {
-                    Ok(Event::Send(Packet::acknowledgement(self.number)))
                 } else {
-                    Err(Error::Sequence)
+                    // Rule13 ignores an unsolicited ACK without abandoning an
+                    // incoming APDU, selection or an already completed response.
+                    Ok(Event::Ignored)
                 }
             }
         }
@@ -372,8 +400,8 @@ impl Recovery {
     }
 }
 
-/// The adapter reads the three IRQ registers without interpreting protocol
-/// policy. This priority matches the production error/overflow/halt ordering.
+/// Decode latched error/overflow/HALT priority. Io resolves HALT combined with
+/// a later activation using live RF_STATUS before applying this event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Irq {
     Fault,

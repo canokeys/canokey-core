@@ -28,7 +28,8 @@ pub(crate) struct RecordPin {
 impl RecordPin {
     fn valid(&self, b: &[u8; SIZE]) -> Result<(), Error> {
         if b[VERSION] != FORMAT_VERSION
-            || !(self.stored_min..=PIN_CAPACITY as u8).contains(&b[LENGTH])
+            || b[LENGTH] < self.stored_min
+            || b[LENGTH] > PIN_CAPACITY as u8
             || b[RETRY_LIMIT] == 0
             || b[REMAINING] > b[RETRY_LIMIT]
             || (b[LENGTH] == 0 && b[REMAINING] != 0)
@@ -51,6 +52,7 @@ impl RecordPin {
         }
         self.valid(b)
     }
+    #[inline(never)]
     fn with_record<T, B: crate::ports::Backends>(
         &self,
         p: &mut Platform<'_, B>,
@@ -67,7 +69,7 @@ impl RecordPin {
         limit: u8,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
-        if !(self.stored_min as usize..=PIN_CAPACITY).contains(&value.len()) {
+        if value.len() < self.stored_min as usize || value.len() > PIN_CAPACITY {
             return Err(Error::Length);
         }
         if limit == 0 || self.fixed_limit.is_some_and(|n| n != limit) {
@@ -125,6 +127,7 @@ impl RecordPin {
             })
         })
     }
+    #[inline(never)]
     pub(crate) fn verify(
         &self,
         input: &[u8],
@@ -137,7 +140,7 @@ impl RecordPin {
             if b[REMAINING] == 0 {
                 return Err(Error::Blocked);
             }
-            if !(min..=PIN_CAPACITY).contains(&input.len()) {
+            if input.len() < min || input.len() > PIN_CAPACITY {
                 return Err(Error::Length);
             }
             let length = b[LENGTH] as usize;
@@ -164,7 +167,7 @@ impl RecordPin {
         min: usize,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
-        if !(min..=PIN_CAPACITY).contains(&value.len()) {
+        if value.len() < min || value.len() > PIN_CAPACITY {
             return Err(Error::Length);
         }
         let limit = self.info(p)?.retry_limit;

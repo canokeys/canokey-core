@@ -1,0 +1,660 @@
+{
+  "schema": 1,
+  "scope": "WebUSB command admission before global USB cleanup, with status/configuration/response-fetch controls and actual post-cleanup SELECT recovery. Fresh product; event-level IN draining. Not physical USB, retained pre-reset WebUSB states or arbitrary IRQ timing.",
+  "cases": [
+    {
+      "id": "reconfigure-command",
+      "transport": "usb",
+      "oracle_rows": [
+        "E54"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Fresh configured product, no prior WebUSB command. Reconfigure or bus-reset/address/configure with service withheld. No OUT follows rejected SETUP; a status SETUP supersedes it. Event-level IN completion, no arbitrary IRQ or withheld-IN model."
+    },
+    {
+      "id": "reconfigure-response",
+      "transport": "usb",
+      "oracle_rows": [
+        "E54"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Fresh configured product, no prior WebUSB command. Reconfigure or bus-reset/address/configure with service withheld. No OUT follows rejected SETUP; a status SETUP supersedes it. Event-level IN completion, no arbitrary IRQ or withheld-IN model."
+    },
+    {
+      "id": "reconfigure-status",
+      "transport": "usb",
+      "oracle_rows": [
+        "E54"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Fresh configured product, no prior WebUSB command. Reconfigure or bus-reset/address/configure with service withheld. No OUT follows rejected SETUP; a status SETUP supersedes it. Event-level IN completion, no arbitrary IRQ or withheld-IN model."
+    },
+    {
+      "id": "reconfigure-configuration",
+      "transport": "usb",
+      "oracle_rows": [
+        "E54"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009000000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "01",
+          "service": false,
+          "setup": "8008000000000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Fresh configured product, no prior WebUSB command. Reconfigure or bus-reset/address/configure with service withheld. No OUT follows rejected SETUP; a status SETUP supersedes it. Event-level IN completion, no arbitrary IRQ or withheld-IN model."
+    },
+    {
+      "id": "bus-reset-command",
+      "transport": "usb",
+      "oracle_rows": [
+        "E54"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "service": false,
+          "reset": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0005110000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Fresh configured product, no prior WebUSB command. Reconfigure or bus-reset/address/configure with service withheld. No OUT follows rejected SETUP; a status SETUP supersedes it. Event-level IN completion, no arbitrary IRQ or withheld-IN model."
+    },
+    {
+      "id": "bus-reset-response",
+      "transport": "usb",
+      "oracle_rows": [
+        "E54"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "service": false,
+          "reset": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0005110000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "STALL",
+          "service": false,
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Fresh configured product, no prior WebUSB command. Reconfigure or bus-reset/address/configure with service withheld. No OUT follows rejected SETUP; a status SETUP supersedes it. Event-level IN completion, no arbitrary IRQ or withheld-IN model."
+    },
+    {
+      "id": "bus-reset-status",
+      "transport": "usb",
+      "oracle_rows": [
+        "E54"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "service": false,
+          "reset": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0005110000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Fresh configured product, no prior WebUSB command. Reconfigure or bus-reset/address/configure with service withheld. No OUT follows rejected SETUP; a status SETUP supersedes it. Event-level IN completion, no arbitrary IRQ or withheld-IN model."
+    },
+    {
+      "id": "bus-reset-configuration",
+      "transport": "usb",
+      "oracle_rows": [
+        "E54"
+      ],
+      "steps": [
+        {
+          "expected": "",
+          "service": false,
+          "reset": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0005110000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "setup": "0009010000000000"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "01",
+          "service": false,
+          "setup": "8008000000000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "ff",
+          "service": false,
+          "setup": "c102000001000100"
+        },
+        {
+          "expected": "",
+          "service": false,
+          "in": true
+        },
+        {
+          "expected": "",
+          "service": false,
+          "out": ""
+        },
+        {
+          "expected": "",
+          "poll": true
+        },
+        {
+          "expected": "",
+          "setup": "4100000001000a00"
+        },
+        {
+          "expected": "",
+          "out": "00a4040005f000000000"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "9000",
+          "setup": "c101000001000200"
+        },
+        {
+          "expected": "",
+          "in": true
+        },
+        {
+          "expected": "",
+          "out": ""
+        }
+      ],
+      "preconditions": "Fresh configured product, no prior WebUSB command. Reconfigure or bus-reset/address/configure with service withheld. No OUT follows rejected SETUP; a status SETUP supersedes it. Event-level IN completion, no arbitrary IRQ or withheld-IN model."
+    }
+  ]
+}

@@ -57,8 +57,10 @@ impl State {
         let pin_limit = input[PIN_LIMIT];
         let puk_limit = input[PUK_LIMIT];
         if input[VERSION] != FORMAT_VERSION
-            || !(1..=MAX_RETRIES).contains(&pin_limit)
-            || !(1..=MAX_RETRIES).contains(&puk_limit)
+            || pin_limit < 1
+            || pin_limit > MAX_RETRIES
+            || puk_limit < 1
+            || puk_limit > MAX_RETRIES
             || input[PIN_REMAINING] > pin_limit
             || input[PUK_REMAINING] > puk_limit
         {

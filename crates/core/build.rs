@@ -4,9 +4,9 @@ mod ctap;
 mod release;
 
 fn main() {
-    release::main();
+    let firmware = release::main();
     if std::env::var_os("CARGO_FEATURE_CTAP").is_some() {
-        ctap::generate_info();
+        ctap::generate_info(firmware);
         ctap::generate_response();
     }
     cfg_aliases::cfg_aliases! {

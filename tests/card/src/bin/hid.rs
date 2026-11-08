@@ -2,6 +2,7 @@
 //! Full HID framing and applet execution with direct Rust capability fakes.
 use canokey_ports::{Record, Storage};
 use canokey_protocol::ctaphid as wire;
+use canokey_protocol::response::StatusWord;
 use canokey_rust_ffi::{
     ck_hid_executing, ck_hid_packet_reset, ck_hid_progress,
     composition::{core, hid},
@@ -235,7 +236,7 @@ fn mailbox(cid: u32) {
 }
 // Extended FIDO GetInfo APDU; optional Le=0 requests the complete response.
 const MSG_INFO: &[u8] = &[0x80, 0x10, 0, 0, 0, 0, 1, 4, 0, 0];
-// Extended ISO GET RESPONSE with unlimited output.
+// Native MSG GET RESPONSE with explicit zero Lc and unlimited Le.
 const MORE: &[u8] = &[0, 0xc0, 0, 0, 0, 0, 0, 0, 0];
 fn main() {
     transport::device_hooks(|| device_get_tick(), progress);
@@ -250,7 +251,7 @@ fn main() {
     assert!(!matches!(cid, 0 | wire::BROADCAST));
     mailbox(cid);
     let data: Vec<_> = (0..SCRATCH_BYTES).map(|i| i as u8).collect();
-    for length in [192, 193, 1024, 1033, 1288, SCRATCH_BYTES] {
+    for length in [192, 193, 1024, 1033, 1288, wire::CTAP_MAX_REQUEST] {
         clear_output();
         let leases = transport::scratch(|s| s.leases);
         command(cid, wire::PING, &data[..length]);
@@ -262,7 +263,7 @@ fn main() {
     }
     clear_output();
     let leases = transport::scratch(|s| s.leases);
-    feed(&packet(cid, wire::PING, SCRATCH_BYTES + 1));
+    feed(&packet(cid, wire::PING, wire::CTAP_MAX_REQUEST + 1));
     drain();
     assert_eq!(response(cid, wire::ERROR), [3]);
     transport::scratch(|s| {
@@ -303,11 +304,14 @@ fn main() {
     assert_eq!(response(cid, wire::MSG), [&info[1..], &[0x90, 0]].concat());
     clear_output();
     command(cid, wire::MSG, MORE);
-    assert_eq!(response(cid, wire::MSG), [0x69, 0x86]);
+    assert_eq!(
+        response(cid, wire::MSG),
+        StatusWord::INS_NOT_SUPPORTED.bytes()
+    );
     clear_output();
     command(cid, wire::MSG, &limited);
     clear_output();
-    command(cid, wire::MSG, &[0x80, 0xc0, 0, 0, 17]);
+    command(cid, wire::MSG, &[0x80, 0xc0, 0, 0, 0, 0, 0, 0, 17]);
     let window = response(cid, wire::MSG);
     assert_eq!(window.len(), 19);
     assert_eq!(&window[..17], &info[1..18]);
@@ -320,21 +324,33 @@ fn main() {
         command(cid, wire::MSG, &limited);
         clear_output();
         match mode {
-            0 => command(cid, wire::CBOR, &[4]),
+            0 => {
+                command(cid, wire::CBOR, &[4]);
+                assert_eq!(response(cid, wire::ERROR), [6]);
+                clear_output();
+                command(cid, wire::MSG, MORE);
+                assert_eq!(response(cid, wire::MSG), [&info[1..], &[0x90, 0]].concat());
+            }
             1 => command(cid, wire::INIT, &nonce),
             2 => {
                 command(cid + 1, wire::MSG, MORE);
-                assert_eq!(response(cid + 1, wire::MSG), [0x69, 0x86]);
+                assert_eq!(response(cid + 1, wire::ERROR), [6]);
+                clear_output();
+                command(cid, wire::MSG, MORE);
+                assert_eq!(response(cid, wire::MSG), [&info[1..], &[0x90, 0]].concat());
             }
             3 => reset(),
             _ => {
-                command(cid, wire::MSG, &[0, 0xc0, 1, 0, 0]);
+                command(cid, wire::MSG, &[0, 0xc0, 1, 0, 0, 0, 0]);
                 assert_eq!(response(cid, wire::MSG), [0x6a, 0x86]);
             }
         }
         clear_output();
         command(cid, wire::MSG, MORE);
-        assert_eq!(response(cid, wire::MSG), [0x69, 0x86]);
+        assert_eq!(
+            response(cid, wire::MSG),
+            StatusWord::INS_NOT_SUPPORTED.bytes()
+        );
     }
     // largeBlob get: 960 bytes at offset zero, then one byte beyond its end.
     transport::records(|s| s.replace(Record::CtapLargeBlob, &data[..960]).unwrap());
@@ -346,9 +362,9 @@ fn main() {
         response(cid, wire::CBOR),
         [BLOB_PREFIX, &data[..960]].concat()
     );
-    let mut blob_msg = vec![0x80, 0x10, 0, 0, BLOB_GET.len() as u8];
+    let mut blob_msg = vec![0x80, 0x10, 0, 0, 0, 0, BLOB_GET.len() as u8];
     blob_msg.extend_from_slice(BLOB_GET);
-    blob_msg.push(53);
+    blob_msg.extend_from_slice(&[0, 53]);
     clear_output();
     command(cid, wire::MSG, &blob_msg);
     let first = response(cid, wire::MSG);

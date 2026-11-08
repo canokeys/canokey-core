@@ -14,10 +14,12 @@ pub fn take<'a>(bytes: &mut &'a [u8]) -> Result<(u8, &'a [u8]), Sw> {
     let (size, consumed) = read_prefix(&bytes[1..])
         .map_err(|_| Sw::WRONG_DATA)?
         .ok_or(Sw::WRONG_LENGTH)?;
-    let n = 1 + consumed;
+    // read_prefix consumes at most three length bytes; size fits u16.
+    let n = consumed.wrapping_add(1);
     let size = usize::from(size);
-    let value = bytes.get(n..n + size).ok_or(Sw::WRONG_LENGTH)?;
-    *bytes = &bytes[n + size..];
+    let end = n.wrapping_add(size);
+    let value = bytes.get(n..end).ok_or(Sw::WRONG_LENGTH)?;
+    *bytes = &bytes[end..];
     Ok((tag, value))
 }
 pub fn object(bytes: &[u8], tag: u8) -> Result<&[u8], Sw> {
@@ -33,7 +35,9 @@ pub fn header(out: &mut [u8], tag: &[u8], n: usize) -> Result<usize, Sw> {
         return Err(Sw::WRONG_LENGTH);
     }
     out[..tag.len()].copy_from_slice(tag);
-    Ok(tag.len() + write_length(n as u16, &mut out[tag.len()..]).map_err(|_| Sw::WRONG_LENGTH)?)
+    let length = write_length(n as u16, &mut out[tag.len()..]).map_err(|_| Sw::WRONG_LENGTH)?;
+    // Successful encoding bounds the complete header by out.len().
+    Ok(tag.len().wrapping_add(length))
 }
 pub fn tag_list(b: &[u8]) -> Result<(u32, usize), Sw> {
     if b.len() < 2 {
@@ -43,7 +47,7 @@ pub fn tag_list(b: &[u8]) -> Result<(u32, usize), Sw> {
         return Err(Sw::WRONG_DATA);
     }
     let n = b[1] as usize;
-    if !(1..=object_tlv::MAX_TAG_BYTES).contains(&n) || b.len() < 2 + n {
+    if n == 0 || n > object_tlv::MAX_TAG_BYTES || b.len() < 2 + n {
         return Err(Sw::WRONG_LENGTH);
     }
     Ok((

@@ -155,6 +155,7 @@ pub fn update(s: &mut (impl Storage + ?Sized), mask: u32, value: u32) -> Result<
         page.commit(s)
     })
 }
+#[inline(never)]
 pub fn enabled(s: &mut (impl Storage + ?Sized), mask: u32) -> bool {
     flags(s).is_ok_and(|flags| flags & mask != 0)
 }

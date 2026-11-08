@@ -1,0 +1,239 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Preserve authenticated Admin and NFC FIDO on disabled NDEF SELECT; keep USB FIDO revocation and other disabled-target selection behavior.",
+  "mapping": [
+    "C src/apdu.c distinguishes disabled_applet_response for OpenPGP/PIV/FIDO from the separate disabled-NDEF branch. NDEF calls reject_usb_fido_select only, retaining unrelated Admin or NFC FIDO. Invalid P2 precedes both branches.",
+    "Rust RegistryView::select now returns FILE_NOT_FOUND for disabled NDEF before reset_sessions. Engine::end_frame applies the existing reject_select callback, which revokes only USB FIDO. Other disabled targets retain their prior implementation.",
+    "340 literal cases configure through authenticated Admin APDUs, verify exact six-byte config, establish none/Admin/FIDO through real selection, check short Case3/4 and WebUSB/NFC extended Case3/4, and restore config before fresh FIDO recovery.",
+    "The old isolated Rust binary fails14 cases:10 Admin-retention and4 NFC FIDO-retention cases. C passes340, repaired Rust passes340, and all raw wire outputs agree. Empty unauthenticated Admin VERIFY reports63C3, preserving the retry count.",
+    "All prior714 literal result arrays remain unchanged; the current sixteen-suite total is1054 cases/34204 events with1037 equal-output and17 prior unresolved cases. This does not approve complete volatile-state/native-HID behavior after other disabled targets."
+  ],
+  "targets": [
+    {
+      "path": "crates/core/src/runtime/registry.rs",
+      "sha256": "b20ce7617f4880260f9bbc974d23bd34770361a1e118482d93aab2c75bcd7e4f"
+    },
+    {
+      "path": "crates/core/src/runtime/engine.rs",
+      "sha256": "edb5c2ef3812e83133e6b9640f210e953566107b13525ed6d485d69eacdfdb02"
+    },
+    {
+      "path": "tests/support/c312_select_config_vectors.py",
+      "sha256": "dafe60d665b2a84199308e0cd993fcdf9480d3585d8c8cec6a4acec93116b062"
+    },
+    {
+      "path": "tests/CMakeLists.txt",
+      "sha256": "462c0be333f75e213c9d6b600c283e97c09198a0627f6e0352b4dc93c8c3095d"
+    }
+  ],
+  "regression": {
+    "cases": 340,
+    "events": 17256,
+    "before_c_passed": 340,
+    "before_rust_passed": 326,
+    "old_failures": 14,
+    "final_equal": 340,
+    "admin_retention_repairs": 10,
+    "nfc_fido_retention_repairs": 4,
+    "additional_buffers": 0
+  },
+  "literal": {
+    "suites": 16,
+    "cases": 1054,
+    "events": 34204,
+    "equal_output": 1037,
+    "unresolved": 17,
+    "previous_results_unchanged": 714,
+    "summary": [
+      {
+        "name": "ccid",
+        "cases": 47,
+        "events": 454,
+        "equal": 47,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb",
+        "cases": 28,
+        "events": 576,
+        "equal": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "nfc",
+        "cases": 124,
+        "events": 2776,
+        "equal": 124,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-ownership",
+        "cases": 18,
+        "events": 408,
+        "equal": 18,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-ownership",
+        "cases": 21,
+        "events": 221,
+        "equal": 20,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-admission",
+        "cases": 28,
+        "events": 364,
+        "equal": 27,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-channels",
+        "cases": 40,
+        "events": 433,
+        "equal": 36,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-control",
+        "cases": 36,
+        "events": 228,
+        "equal": 29,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-lifecycle",
+        "cases": 33,
+        "events": 302,
+        "equal": 33,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-readiness",
+        "cases": 9,
+        "events": 75,
+        "equal": 5,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb-readiness",
+        "cases": 8,
+        "events": 126,
+        "equal": 8,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb-retained",
+        "cases": 14,
+        "events": 605,
+        "equal": 14,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "large-blob-usb",
+        "cases": 12,
+        "events": 2859,
+        "equal": 12,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "large-blob-nfc",
+        "cases": 11,
+        "events": 2478,
+        "equal": 11,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select",
+        "cases": 285,
+        "events": 5043,
+        "equal": 285,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select-config",
+        "cases": 340,
+        "events": 17256,
+        "equal": 340,
+        "previous_results_unchanged": false
+      }
+    ]
+  },
+  "source_review": {
+    "core_reviewed": 645,
+    "core_total": 2254,
+    "platform_reviewed": 142,
+    "platform_total": 373,
+    "additional_approvals": 0
+  },
+  "remaining": [
+    "Broader CLA/P1/Case2E and boundary/malformed Case4E selection coverage, configuration transitions during pending requests and physical USB/RF acceptance remain open.",
+    "Other disabled targets retain existing Rust cleanup. Complete volatile authorization/native-HID equivalence after clearing selection is not established by these APDU cases.",
+    "E63 after-WTX differences, mixed NFC cache/cleanup/TXEN source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open."
+  ],
+  "final_c_excerpts": [
+    {
+      "path": "src/apdu.c",
+      "line": 108,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "static uint8_t applet_enabled_on_transport(enum APPLET applet, apdu_transport_t transport) {\n  switch (applet) {\n  case APPLET_OPENPGP:\n    return transport == APDU_TRANSPORT_NFC ? device_config_is_openpgp_nfc_enabled()\n                                           : device_config_is_openpgp_ccid_enabled();\n  case APPLET_PIV:\n    return transport == APDU_TRANSPORT_NFC ? device_config_is_piv_nfc_enabled() : device_config_is_piv_ccid_enabled();\n  case APPLET_FIDO:\n    return device_config_is_webauthn_enabled();\n  default:\n    return 1;\n  }\n}\n\nstatic void rapdu_chaining_reset(void) {\n  memset(&rapdu_chaining, 0, sizeof(rapdu_chaining));\n  rapdu_chaining.rapdu.data = shared_io_buffer;\n}\n\nstatic void disabled_applet_response(RAPDU *rapdu) {\n  current_applet = APPLET_NULL;\n  apdu_response_source_clear();\n  rapdu_chaining_reset();\n  fido_capdu_reset();\n  LL = 0;\n  SW = SW_FILE_NOT_FOUND;\n}"
+    },
+    {
+      "path": "src/apdu.c",
+      "line": 452,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "// Rejected USB probes must not inherit a prior private FIDO selection.\nstatic void reject_usb_fido_select(apdu_transport_t transport) {\n  if ((transport == APDU_TRANSPORT_CCID || transport == APDU_TRANSPORT_WEBUSB) && current_applet == APPLET_FIDO) {\n    ctap_deselect();\n    fido_capdu_reset();\n    current_applet = APPLET_NULL;\n  }\n}"
+    },
+    {
+      "path": "src/apdu.c",
+      "line": 536,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "  if (is_select_by_aid) {\n    if (P2 != 0x00) {\n      reject_usb_fido_select(transport);\n      LL = 0;\n      SW = SW_WRONG_P1P2;\n      return;\n    }\n    uint8_t i, end = APPLET_ENUM_END;\n    for (i = APPLET_NULL + 1; i != end; ++i) {\n      if (aid_matches(i, DATA, LC, transport)) {\n        if (!applet_enabled_on_transport((enum APPLET)i, transport)) {\n          reject_usb_fido_select(transport);\n          disabled_applet_response(rapdu);\n          DBG_MSG(\"applet disabled: %d\\n\", i);\n          return;\n        }\n#if ENABLE_APPLET_NDEF\n        if (i == APPLET_NDEF && !device_config_is_ndef_enabled()) {\n          reject_usb_fido_select(transport);\n          LL = 0;\n          SW = SW_FILE_NOT_FOUND;\n          DBG_MSG(\"NDEF is disable\\n\");\n          return;\n        }\n#endif\n        if (i != current_applet) {\n          if (current_applet == APPLET_FIDO) {\n            ctap_deselect();\n          }\n          applets_poweroff();\n          fido_capdu_reset();\n        }\n        current_applet = i;\n        DBG_MSG(\"applet switched to: %d\\n\", current_applet);\n        break;\n      }\n    }\n    if (i == end) {\n      reject_usb_fido_select(transport);\n      LL = 0;\n      SW = SW_FILE_NOT_FOUND;\n      DBG_MSG(\"applet not found\\n\");\n      return;\n    }"
+    },
+    {
+      "path": "applets/admin/admin.c",
+      "line": 180,
+      "file_sha256": "6fb4f42afcb23cf38a940aad3610f43ddc5ff640219d2ff4af135826a0b4cae2",
+      "source": "static int admin_verify(const CAPDU *capdu, RAPDU *rapdu) {\n  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);\n  if (LC == 0) {\n    if (pin.is_validated) return 0;\n    const int retries = pin_get_retries(&pin);\n    if (retries < 0) return -1;\n    EXCEPT(pin_get_retry_sw((uint8_t)retries));\n  }\n  uint8_t ctr;\n  const int err = pin_verify(&pin, DATA, LC, &ctr);\n  if (err == PIN_IO_FAIL) return -1;\n  if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);\n  if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);\n  if (err == PIN_AUTH_FAIL) EXCEPT(pin_get_retry_sw(ctr));\n  return 0;"
+    },
+    {
+      "path": "applets/admin/admin.c",
+      "line": 232,
+      "file_sha256": "6fb4f42afcb23cf38a940aad3610f43ddc5ff640219d2ff4af135826a0b4cae2",
+      "source": "static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {\n  admin_device_config_t next_config = *admin_get_current_config();\n  switch (P1) {\n  case ADMIN_P1_CFG_LED_ON:\n    next_config.led_normally_on = P2 & 1;\n    break;\n  case ADMIN_P1_CFG_NDEF:\n    next_config.ndef_en = P2 & 1;\n    break;\n  case ADMIN_P1_CFG_WEBUSB_LANDING:\n    next_config.webusb_landing_en = P2 & 1;\n    break;\n  case ADMIN_P1_CFG_FEATURE:\n    if (LC != 0) EXCEPT(SW_WRONG_LENGTH);\n    if ((P2 & ~ADMIN_FEATURE_MASK) != 0) EXCEPT(SW_WRONG_P1P2);\n    next_config.pass_en = (P2 & ADMIN_FEATURE_PASS) != 0;\n    next_config.openpgp_ccid_en = (P2 & ADMIN_FEATURE_OPENPGP_CCID) != 0;\n    next_config.openpgp_nfc_en = (P2 & ADMIN_FEATURE_OPENPGP_NFC) != 0;\n    next_config.piv_ccid_en = (P2 & ADMIN_FEATURE_PIV_CCID) != 0;\n    next_config.piv_nfc_en = (P2 & ADMIN_FEATURE_PIV_NFC) != 0;\n    next_config.webauthn_en = (P2 & ADMIN_FEATURE_WEBAUTHN) != 0;\n    break;\n  default:\n    EXCEPT(SW_WRONG_P1P2);\n  }\n  const int ret = admin_platform_device_config_write(&next_config);\n  if (ret == 0) {\n    current_config = next_config;\n    current_config_valid = 1;\n  }\n  stop_blinking();\n  return ret;\n}"
+    },
+    {
+      "path": "applets/admin/admin.c",
+      "line": 266,
+      "file_sha256": "6fb4f42afcb23cf38a940aad3610f43ddc5ff640219d2ff4af135826a0b4cae2",
+      "source": "static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {\n  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);\n  if (LE < 6) EXCEPT(SW_WRONG_LENGTH);\n\n  const admin_device_config_t *cfg = admin_get_current_config();\n\n  RDATA[0] = cfg->led_normally_on;\n  RDATA[1] = 0; // reserved\n#if ENABLE_APPLET_NDEF\n  RDATA[2] = ndef_is_read_only();\n#else\n  RDATA[2] = 0;\n#endif\n  RDATA[3] = cfg->ndef_en;\n  RDATA[4] = cfg->webusb_landing_en;\n  RDATA[5] = (cfg->pass_en ? ADMIN_FEATURE_PASS : 0) | (cfg->openpgp_ccid_en ? ADMIN_FEATURE_OPENPGP_CCID : 0) |\n             (cfg->openpgp_nfc_en ? ADMIN_FEATURE_OPENPGP_NFC : 0) | (cfg->piv_ccid_en ? ADMIN_FEATURE_PIV_CCID : 0) |\n             (cfg->piv_nfc_en ? ADMIN_FEATURE_PIV_NFC : 0) | (cfg->webauthn_en ? ADMIN_FEATURE_WEBAUTHN : 0);\n  LL = 6;"
+    }
+  ],
+  "products": {
+    "devkit": {
+      "flash": 178312,
+      "static_ram": 8272,
+      "udf": 139,
+      "correctness_delta": 0,
+      "elf_sha256": "72a5912195a02e0a304b3eed009dc5734121234b96d67d9b52080e67b0558fa7"
+    },
+    "nfcc": {
+      "flash": 187408,
+      "static_ram": 8432,
+      "udf": 145,
+      "correctness_delta": 16,
+      "elf_sha256": "d381dc46399289f05d08a5ab4aab5d0cf4359c49097ec110e5be99ca48de4256",
+      "overflow": 5648,
+      "diagnostic_elf_only": true
+    }
+  },
+  "separate_execution": {
+    "equal_contract_cases": 11,
+    "unresolved_cases": 4,
+    "sides": [
+      "c",
+      "rust"
+    ],
+    "unresolved_are_parity_approvals": false
+  }
+}

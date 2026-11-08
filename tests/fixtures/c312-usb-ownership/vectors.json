@@ -1,0 +1,1887 @@
+{
+  "schema": 1,
+  "scope": "Literal interleaved CCID and WebUSB events through unchanged pinned C and Rust production facades with real applets. Reports EP0 and CCID bytes separately without normalization. Only the recorded serialized poll schedule; no HID, physical USB, arbitrary IRQ race or CIU resource acceptance.",
+  "cases": [
+    {
+      "id": "CCID-PIN-survives-aborted-WebUSB-reservation",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081009000"
+        }
+      ]
+    },
+    {
+      "id": "CCID-slot-status-remains-live-during-WebUSB-Hold",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30",
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "65000000000002000000",
+          "expected": "",
+          "expected_ccid": "81000000000002008100"
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "CCID-slot-status-remains-live-after-WebUSB-expiry",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "tick": 2001,
+          "expected": ""
+        },
+        {
+          "ccid": "65000000000002000000",
+          "expected": "",
+          "expected_ccid": "81000000000002008100"
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "foreign-GET-RESPONSE-refused-preserves-WebUSB-output",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30",
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00030000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6106"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "6f05000000000200000000c0000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081006400"
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "00c0000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "foreign-PowerOn-refused-preserves-WebUSB-output",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30",
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00030000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6106"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000002000000",
+          "expected": "",
+          "expected_ccid": "8000000000000240e000"
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "00c0000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "CCID-XfrBlock-refused-during-WebUSB-RX",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "6f0500000000020000000003000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081006400"
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "CCID-owner-denied-buffer-during-WebUSB-reservation",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f0b00000000030000000020000006313233343536",
+          "expected": "",
+          "expected_ccid": "800200000000030081009000"
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000400000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000040081006400"
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "6f04000000000500000000200000",
+          "expected": "",
+          "expected_ccid": "800200000000050081009000"
+        }
+      ]
+    },
+    {
+      "id": "CCID-status-does-not-clobber-unfetched-WebUSB-response",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "ccid": "65000000000002000000",
+          "expected": "",
+          "expected_ccid": "81000000000002008100"
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "CCID-parameters-live-during-WebUSB-RX",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "6c000000000002000000",
+          "expected": "",
+          "expected_ccid": "820700000000020081011110001500fe00"
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "completed-WebUSB-context-preempted-only-on-real-CCID-command",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30",
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "6f0a000000000200000000a4040005f000000000",
+          "expected": "",
+          "expected_ccid": "800200000000020081009000"
+        },
+        {
+          "ccid": "6f04000000000300000000200000",
+          "expected": "",
+          "expected_ccid": "8002000000000300810063c3"
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6a82"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "invalid-PowerOn-does-not-revoke-WebUSB-PIN",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30",
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000002010000",
+          "expected": "",
+          "expected_ccid": "80000000000002400700"
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "invalid-slot-precedes-foreign-buffer-refusal",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "6f0500000001020000000003000000",
+          "expected": "",
+          "expected_ccid": "80000000000102420500"
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "invalid-status-RFU-preserves-WebUSB-PIN",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E30",
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "65000000000002000100",
+          "expected": "",
+          "expected_ccid": "81000000000002400700"
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "oversized-XfrBlock-preserves-WebUSB-PIN",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E03",
+        "E30",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "6f060100000002000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": "",
+          "expected_ccid": "80000000000002400100"
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "oversized-XfrBlock-drains-during-WebUSB-RX",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E03",
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "6f060100000002000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": "",
+          "expected_ccid": "80000000000002400100"
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "refusal-latched-after-WebUSB-reservation-abort",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "6f780000000002000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "aaaa",
+          "expected": "",
+          "expected_ccid": "800200000000020081006400"
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "refused-multi-packet-body-has-no-gap-deadline",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E04",
+        "E31",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000d00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040008f043414e4f464944",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001001400",
+          "expected": ""
+        },
+        {
+          "out": "000300000faaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "6f780000000002000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "tick": 2501,
+          "expected": ""
+        },
+        {
+          "ccid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": ""
+        },
+        {
+          "ccid": "aaaa",
+          "expected": "",
+          "expected_ccid": "800200000000020081006400"
+        },
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000500",
+          "expected": ""
+        },
+        {
+          "out": "0003000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "5532465f56329000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "truncated-first-header-preserves-WebUSB-PIN",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E01",
+        "E30",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "6f00000000",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ]
+    }
+  ]
+}

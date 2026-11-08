@@ -45,8 +45,10 @@ pub(super) fn load(
             if n >= RP_HASHES
                 && record[RETRIES] <= MAX_RETRIES
                 && (record[PIN_LENGTH] == 0
-                    || (MIN_CODE_POINTS..=MAX_PIN_BYTES).contains(&record[PIN_LENGTH]))
-                && (MIN_CODE_POINTS..=MAX_PIN_BYTES).contains(&record[MIN_PIN_LENGTH])
+                    || (record[PIN_LENGTH] >= MIN_CODE_POINTS
+                        && record[PIN_LENGTH] <= MAX_PIN_BYTES))
+                && (record[MIN_PIN_LENGTH] >= MIN_CODE_POINTS
+                    && record[MIN_PIN_LENGTH] <= MAX_PIN_BYTES)
                 && record[FLAGS] >> RP_HASH_COUNT_SHIFT <= 4
                 && n == RP_HASHES + usize::from(record[FLAGS] >> RP_HASH_COUNT_SHIFT) * 32
             {

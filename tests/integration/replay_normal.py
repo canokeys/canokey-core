@@ -17,7 +17,7 @@ commands = [
     '0020000006313233343536',
     '0043000000',
     '!UNKNOWN',
-    '00a4040008a0000006472f000100',
+    '00a4040008f043414e4f46494400',
     '80100000010400',
     '00c0000000',
 ]
@@ -41,8 +41,8 @@ print('Rust replay: parser recovery, authorization reset, retained records and c
 
 # clientPIN getKeyAgreement: CTAP command 0x06, CBOR {1: protocol 1, 2: getKeyAgreement}.
 agreement = '801000000606a201010202'
-lifecycle = ['00a4040008a0000006472f0001', agreement, '!POWEROFF', agreement,
-             '!RESET', '00a4040008a0000006472f0001', agreement,
+lifecycle = ['00a4040008f043414e4f464944', agreement, '!POWEROFF', agreement,
+             '!RESET', '00a4040008f043414e4f464944', agreement,
              '00a4040005f000000000', '!POWEROFF', '0043000000',
              '!RESET', '!FAIL_READ 4', '00a4040006d27600012401',
              '00a4040006d27600012401']

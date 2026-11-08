@@ -9,6 +9,8 @@ pub use applet::Applet;
 pub mod apdu;
 mod attestation;
 mod authentication;
+#[cfg(test)]
+mod cbor_skip_tests;
 mod client_pin;
 mod config;
 mod credential;
@@ -27,6 +29,8 @@ pub(crate) mod pq;
 pub(crate) mod provision;
 mod request_decoder;
 mod resident;
+#[cfg(test)]
+mod response_tests;
 pub(crate) mod settings;
 pub mod u2f;
 mod wire;
@@ -43,6 +47,10 @@ const SELECTION: u8 = 0x0b;
 const RESET: u8 = 0x07;
 const CONFIG: u8 = 0x0d;
 pub const MAX_REQUEST: usize = canokey_protocol::ctaphid::CTAP_MAX_REQUEST;
+// C's source-backed APDU output uses250 bytes, independently of the short
+// buffer's256-byte capacity. Native HID can send a complete source directly.
+const APDU_STREAM_CHUNK: usize = 250;
+const APDU_BUFFER_BYTES: usize = 256;
 /// Response bytes are either immutable or in the sole session workspace.
 /// Encoding happens once; transport retries only read the prepared result.
 pub enum Response {
@@ -50,6 +58,9 @@ pub enum Response {
     Pending(pq::Pending),
     Stream(usize),
     Authentication {
+        // U2F ISO registration permits partial certificate progress; generic
+        // CTAP segments and native HID still require exact reads.
+        registration: bool,
         prefix: usize,
         auth: usize,
         certificate: Option<(usize, usize)>,
@@ -57,6 +68,7 @@ pub enum Response {
     },
     Constant(&'static [u8]),
     Prepared(usize),
+    MemoryStream(usize),
     Blob {
         offset: u32,
         length: usize,
@@ -64,6 +76,7 @@ pub enum Response {
     },
 }
 impl Response {
+    #[inline(never)]
     pub fn len(&self) -> usize {
         match self {
             Self::Error(_) => 1,
@@ -71,8 +84,32 @@ impl Response {
             Self::Stream(n) => *n,
             Self::Authentication { total, .. } => *total,
             Self::Constant(bytes) => bytes.len(),
-            Self::Prepared(n) => *n,
+            Self::Prepared(n) | Self::MemoryStream(n) => *n,
             Self::Blob { length, prefix, .. } => length + prefix,
+        }
+    }
+    // Share this decision across ISO/native output; outlining saves product ROM.
+    #[inline(never)]
+    fn source_backed(&self) -> bool {
+        // Ordinary CBOR becomes a memory source above the short buffer limit.
+        // Attested MC and U2F REGISTER use a source even when they fit it.
+        match self {
+            Self::MemoryStream(_) | Self::Stream(_) | Self::Blob { .. } => true,
+            Self::Authentication {
+                certificate: Some(_),
+                ..
+            } => true,
+            Self::Authentication { total, .. } | Self::Prepared(total) => {
+                *total > APDU_BUFFER_BYTES
+            }
+            _ => false,
+        }
+    }
+    fn apdu_chunk(&self, length: usize) -> usize {
+        if self.source_backed() {
+            length.min(APDU_STREAM_CHUNK)
+        } else {
+            length
         }
     }
     pub fn read(
@@ -82,8 +119,20 @@ impl Response {
         out: &mut [u8],
         storage: &mut (impl crate::ports::Storage + ?Sized),
     ) -> Result<(), canokey_protocol::response::StatusWord> {
+        self.read_window(workspace, offset, out, storage, false)
+            .map(|_| ())
+    }
+    fn read_window(
+        &self,
+        workspace: &crate::runtime::workspace::Workspace,
+        offset: usize,
+        out: &mut [u8],
+        storage: &mut (impl crate::ports::Storage + ?Sized),
+        partial: bool,
+    ) -> Result<usize, canokey_protocol::response::StatusWord> {
         use canokey_protocol::response::StatusWord as Sw;
         if let Self::Authentication {
+            registration,
             prefix,
             auth,
             certificate,
@@ -104,20 +153,38 @@ impl Response {
                 &workspace.output[split..output_len],
             ];
             let mut window = canokey_protocol::response::ReadWindow::new(offset, out);
+            let mut copied = 0;
             for (index, segment) in segments.iter().enumerate() {
                 let length = if index == 3 { cert_len } else { segment.len() };
                 let (start, dest) = window.take(length);
                 if !dest.is_empty() {
                     if index == 3 {
-                        storage
-                            .read_at(crate::ports::Record::CtapCertificate, start as u32, dest)
-                            .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+                        if partial && registration {
+                            let n = storage
+                                .read_some_at(
+                                    crate::ports::Record::CtapCertificate,
+                                    start as u32,
+                                    dest,
+                                )
+                                .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+                            if n > dest.len() {
+                                return Err(Sw::UNABLE_TO_PROCESS);
+                            }
+                            if n < dest.len() {
+                                return Ok(copied + n);
+                            }
+                        } else {
+                            storage
+                                .read_at(crate::ports::Record::CtapCertificate, start as u32, dest)
+                                .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+                        }
                     } else {
                         dest.copy_from_slice(&segment[start..start + dest.len()]);
                     }
                 }
+                copied += dest.len();
             }
-            return Ok(());
+            return Ok(copied);
         }
         if let Self::Blob {
             offset: start,
@@ -141,7 +208,7 @@ impl Response {
                     )
                     .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             }
-            return Ok(());
+            return Ok(out.len());
         }
         let status;
         let bytes = match self {
@@ -150,13 +217,13 @@ impl Response {
                 &status[..]
             }
             Self::Constant(bytes) => bytes,
-            Self::Prepared(n) => &workspace.output[..*n],
+            Self::Prepared(n) | Self::MemoryStream(n) => &workspace.output[..*n],
             Self::Blob { .. }
             | Self::Authentication { .. }
             | Self::Pending(_)
             | Self::Stream(_) => unreachable!(),
         };
-        crate::applets::read_response_chunk(bytes, bytes.len(), offset, out)
+        crate::applets::read_response_chunk(bytes, bytes.len(), offset, out).map(|()| out.len())
     }
 }
 
@@ -264,17 +331,14 @@ impl Session {
                         .find_map(|id| match *id {
                             wire::cose::ES256 => Some(crate::ports::alg::P256),
                             wire::cose::EDDSA => Some(crate::ports::alg::ED25519),
-                            wire::cose::MLDSA65
-                                if credential::permitted(crate::ports::alg::MLDSA65) =>
-                            {
-                                Some(crate::ports::alg::MLDSA65)
-                            }
                             n if n == self.sm2.algorithm
                                 && credential::permitted(crate::ports::alg::SM2) =>
                             {
                                 Some(crate::ports::alg::SM2)
                             }
-                            _ => None,
+                            n => crate::ports::mldsa::from_cose(n)
+                                .filter(|p| credential::permitted(p.algorithm))
+                                .map(|p| p.algorithm),
                         });
                 self.credential(Some(params), workspace, p)
             }
@@ -373,7 +437,7 @@ impl Session {
         let policy = pin::policy(p)?;
         w.output[0] = 0;
         let used = resident::count(w.input, p)?;
-        info::encode(
+        let n = info::encode(
             &mut w.output[1..],
             policy.flags,
             policy.pin_length != 0,
@@ -382,7 +446,9 @@ impl Session {
             self.sm2.algorithm,
         )
         .map(|n| n + 1)
-        .map_err(|_| Status::Other)
+        .map_err(|_| Status::Other)?;
+        self.auth_response = Some(Response::MemoryStream(n));
+        Ok(n)
     }
 
     fn key_agreement(
@@ -625,16 +691,30 @@ pub(super) fn is_cbor_container(event: &canokey_protocol::cbor::Event<'_>) -> bo
 /// Consume one event while ignoring an unsupported CBOR value. The decoder
 /// emits container starts and a matching End, so all extension parsers can use
 /// the same depth transition rules.
-pub(super) fn skip_cbor_event(depth: &mut u8, event: &canokey_protocol::cbor::Event<'_>) -> bool {
+pub(super) fn skip_cbor_event(
+    depth: &mut u8,
+    event: &canokey_protocol::cbor::Event<'_>,
+) -> Result<bool, Status> {
     if *depth == 0 {
-        return false;
+        return Ok(false);
+    }
+    // Pinned C TinyCBOR skips each unknown value with at most four nested
+    // maps/arrays. Known schema nesting keeps the decoder's separate budget.
+    // Strings have matching End events but cannot contain another container.
+    const MAX_UNKNOWN_CONTAINERS: u8 = 4;
+    if matches!(
+        event,
+        canokey_protocol::cbor::Event::Map(_) | canokey_protocol::cbor::Event::Array(_)
+    ) && *depth >= MAX_UNKNOWN_CONTAINERS
+    {
+        return Err(Status::InvalidCbor);
     }
     if is_cbor_container(event) {
         *depth = depth.saturating_add(1);
     } else if matches!(event, canokey_protocol::cbor::Event::End) {
         *depth -= 1;
     }
-    true
+    Ok(true)
 }
 
 pub(super) fn consume_cbor_body(

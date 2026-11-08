@@ -1,0 +1,67 @@
+UpdateCTestConfiguration  from :/Users/dangfan/.codex/worktrees/rust-resident-fixes/canokey-ciu/build/host-core/DartConfiguration.tcl
+Parse Config file:/Users/dangfan/.codex/worktrees/rust-resident-fixes/canokey-ciu/build/host-core/DartConfiguration.tcl
+Test project /Users/dangfan/.codex/worktrees/rust-resident-fixes/canokey-ciu/build/host-core
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 20
+    Start 20: nfc-source-faults
+
+20: Test command: /Users/dangfan/.codex/worktrees/rust-resident-fixes/canokey-ciu/build/host-core/tests/nfc-wire "--nfc-source-faults"
+20: Working Directory: /Users/dangfan/.codex/worktrees/rust-resident-fixes/canokey-ciu/build/host-core/tests
+20: Environment variables: 
+20:  UBSAN_OPTIONS=halt_on_error=1
+20: Test timeout computed to be: 30
+20: NFC_SOURCE_CASE deselect=false fault=Clear reads=5 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Release reads=5 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Read(1) reads=1 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Before(1) reads=1 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=After(1) reads=1 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Read(2) reads=2 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Before(2) reads=2 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=After(2) reads=2 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Read(3) reads=3 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Before(3) reads=3 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=After(3) reads=3 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Read(4) reads=4 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Before(4) reads=4 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=After(4) reads=4 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Read(5) reads=5 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Before(5) reads=5 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=After(5) reads=5 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Wipe(1) reads=1 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Wipe(2) reads=1 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Wipe(3) reads=2 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Wipe(4) reads=3 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Wipe(5) reads=4 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=false fault=Wipe(6) reads=5 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Clear reads=5 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Release reads=5 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Before(1) reads=1 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=After(1) reads=1 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Before(2) reads=2 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=After(2) reads=2 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Before(3) reads=3 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=After(3) reads=3 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Before(4) reads=4 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=After(4) reads=4 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Before(5) reads=5 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=After(5) reads=5 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Wipe(1) reads=1 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Wipe(2) reads=1 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Wipe(3) reads=2 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Wipe(4) reads=3 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Wipe(5) reads=4 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_CASE deselect=true fault=Wipe(6) reads=5 clear=1 release=1 keys_before_dispatch=0 recovery=pass
+20: NFC_SOURCE_FAULTS reads=5 consumer_wipes=6 cases=41 passed
+1/1 Test #20: nfc-source-faults ................   Passed    0.88 sec
+
+The following tests passed:
+	nfc-source-faults
+
+100% tests passed out of 1
+
+Total Test time (real) =   0.89 sec

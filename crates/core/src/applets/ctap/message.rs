@@ -44,6 +44,16 @@ impl Applet {
         (limit, sw)
     }
     pub(super) fn message_window(&mut self, limit: u32, final_sw: Sw) -> usize {
+        // Native MSG sends buffered responses directly, independently of Le.
+        // Sources send the full remainder when it fits Le; otherwise they use
+        // the same bounded source chunk as CCID/WebUSB/NFC.
+        let limit = if !self.response.source_backed() {
+            u32::MAX
+        } else if self.response.len() - self.message_offset > limit as usize {
+            self.response.apdu_chunk(limit as usize) as u32
+        } else {
+            limit
+        };
         let plan = canokey_protocol::response::ResponsePlan::new(
             self.response.len() as u32,
             self.message_offset as u32,
@@ -76,29 +86,26 @@ impl Applet {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Option<usize> {
-        if bytes.len() < 2 || !matches!(bytes[0], 0 | 0x80) || bytes[1] != 0xc0 {
+        // Without retained output, native MSG routes C0 like any unsupported
+        // instruction. The generic APDU GET RESPONSE policy is separate.
+        if !self.pending_message()
+            || bytes.len() < 2
+            || !matches!(bytes[0], 0 | 0x80)
+            || bytes[1] != 0xc0
+        {
             return None;
         }
-        // GET RESPONSE has no body. Decode only its bounded header shapes,
-        // including the legacy nine-byte empty-Lc form, without constructing
-        // the shared request parser over live response bytes.
+        // GET RESPONSE has no body. Native MSG always carries Lc16, and its
+        // fifth header byte is ignored. Avoid parsing over live response bytes.
         let result = match bytes {
-            [_, _, 0, 0] => Ok(256),
-            [_, _, 0, 0, le] => Ok(if *le == 0 { 256 } else { u32::from(*le) }),
-            [_, _, 0, 0, 0, hi, lo] | [_, _, 0, 0, 0, 0, 0, hi, lo] => {
+            [_, _, 0, 0, _, 0, 0] => Ok(65536),
+            [_, _, 0, 0, _, 0, 0, hi, lo] => {
                 let le = u16::from_be_bytes([*hi, *lo]);
                 Ok(if le == 0 { 65536 } else { u32::from(le) })
             }
             [_, _, p1, p2, ..] if *p1 != 0 || *p2 != 0 => Err(Sw::WRONG_P1P2),
             _ => Err(Sw::WRONG_LENGTH),
-        }
-        .and_then(|limit| {
-            if self.pending_message() {
-                Ok(limit)
-            } else {
-                Err(Sw::COMMAND_NOT_ALLOWED)
-            }
-        });
+        };
         Some(match result {
             Ok(limit) => self.message_window(limit, Sw::SUCCESS),
             Err(sw) => {
@@ -129,7 +136,7 @@ enum MessageInput {
 impl MessageParser {
     pub fn new(length: usize) -> Self {
         Self {
-            decoder: canokey_protocol::apdu::FrameDecoder::new(length).ok(),
+            decoder: canokey_protocol::apdu::FrameDecoder::native_message(length).ok(),
             request: MessageInput::Empty,
         }
     }
@@ -195,7 +202,7 @@ impl MessageParser {
 
 #[cfg(test)]
 mod message_parameters_tests {
-    use super::super::apdu::allows_extended;
+    use super::super::apdu::valid_message_parameters;
     use super::*;
     use canokey_protocol::apdu::Header;
     #[test]
@@ -209,10 +216,9 @@ mod message_parameters_tests {
                     p1,
                     p2,
                 };
-                assert_eq!(allows_extended(header), valid);
-                let short = [0x80, 0x10, p1, p2, 1, 4];
+                assert_eq!(valid_message_parameters(header), valid);
                 let extended = [0x80, 0x10, p1, p2, 0, 0, 1, 4];
-                for frame in [short.as_slice(), extended.as_slice()] {
+                for frame in [extended.as_slice()] {
                     let mut parser = MessageParser::new(frame.len());
                     for chunk in frame.chunks(2) {
                         parser.consume(chunk);

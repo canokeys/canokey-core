@@ -1,0 +1,123 @@
+{
+  "scope": "41 explicitly reviewed source units in seven parent/file diffs; E49-E51 serialized lifecycle/native-dispatch comparisons. Source review is separate from unproven IRQ/physical acceptance.",
+  "reviews": [
+    {
+      "commit": "ac0f1cd41ff7e55dba6dfbab1ea50fae76b432a4",
+      "parent": "9b0b1bc204d0cb57f0445ba0651be6d3efbd8d08",
+      "path": "interfaces/USB/core/inc/usbd_def.h",
+      "reviewed_units": 2,
+      "behaviors": [
+        "U1"
+      ],
+      "assessment": "Directional configured-endpoint masks are installed/cleared with class configuration. Rust derives installed endpoint directions from Configuration; feature matrix covers absent endpoints. No physical toggle/IRQ assertion."
+    },
+    {
+      "commit": "ac0f1cd41ff7e55dba6dfbab1ea50fae76b432a4",
+      "parent": "9b0b1bc204d0cb57f0445ba0651be6d3efbd8d08",
+      "path": "interfaces/USB/device/usbd_canokey.c",
+      "reviewed_units": 6,
+      "behaviors": [
+        "U1"
+      ],
+      "assessment": "Directional configured-endpoint masks are installed/cleared with class configuration. Rust derives installed endpoint directions from Configuration; feature matrix covers absent endpoints. No physical toggle/IRQ assertion."
+    },
+    {
+      "commit": "abe88223dbc387a12c85720459b351c659692e5c",
+      "parent": "d4c591579cc1166047d3b9254efb0853ea388dd8",
+      "path": "interfaces/USB/core/inc/usbd_def.h",
+      "reviewed_units": 2,
+      "behaviors": [
+        "U1"
+      ],
+      "assessment": "Directional configured-endpoint masks are installed/cleared with class configuration. Rust derives installed endpoint directions from Configuration; feature matrix covers absent endpoints. No physical toggle/IRQ assertion."
+    },
+    {
+      "commit": "abe88223dbc387a12c85720459b351c659692e5c",
+      "parent": "d4c591579cc1166047d3b9254efb0853ea388dd8",
+      "path": "interfaces/USB/device/usbd_canokey.c",
+      "reviewed_units": 6,
+      "behaviors": [
+        "U1"
+      ],
+      "assessment": "Directional configured-endpoint masks are installed/cleared with class configuration. Rust derives installed endpoint directions from Configuration; feature matrix covers absent endpoints. No physical toggle/IRQ assertion."
+    },
+    {
+      "commit": "8a166672d63b2b19a71f8bfaf8e883d079c26d8a",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "interfaces/USB/device/usbd_canokey.c",
+      "reviewed_units": 11,
+      "behaviors": [
+        "L3"
+      ],
+      "assessment": "IRQ callbacks publish lifecycle epoch/configured state; main-loop Service clears applet and TX state, applies class initialization and marks ready only if epoch is unchanged. Optional device wrappers preserve initial permissive fixtures. Rust retains its generation/mailbox/main-loop architecture. E50 tests actual reset and reconfiguration; callback gating and epoch interruption remain open."
+    },
+    {
+      "commit": "2ba7149d80aeaa6e5d357b66c1bdce8a24cd2c72",
+      "parent": "20f8ed046e99de738d63fc061b202c8b5bb53f27",
+      "path": "interfaces/USB/device/usbd_canokey.c",
+      "reviewed_units": 3,
+      "behaviors": [
+        "L3"
+      ],
+      "assessment": "IRQ callbacks publish lifecycle epoch/configured state; main-loop Service clears applet and TX state, applies class initialization and marks ready only if epoch is unchanged. Optional device wrappers preserve initial permissive fixtures. Rust retains its generation/mailbox/main-loop architecture. E50 tests actual reset and reconfiguration; callback gating and epoch interruption remain open."
+    },
+    {
+      "commit": "cba7ea34c893eb6405620e9f2b562de0c441b1d6",
+      "parent": "abe88223dbc387a12c85720459b351c659692e5c",
+      "path": "interfaces/USB/device/usbd_canokey.c",
+      "reviewed_units": 11,
+      "behaviors": [
+        "L3"
+      ],
+      "assessment": "IRQ callbacks publish lifecycle epoch/configured state; main-loop Service clears applet and TX state, applies class initialization and marks ready only if epoch is unchanged. Optional device wrappers preserve initial permissive fixtures. Rust retains its generation/mailbox/main-loop architecture. E50 tests actual reset and reconfiguration; callback gating and epoch interruption remain open."
+    }
+  ],
+  "source_review": [
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/core/src/usbd_ctlreq.c",
+      "sha256": "740bc4162533fe017eb732fbecc4a729853694b1e00e7d4bb41a1982578486e2",
+      "observed": "USBD_SetConfig acknowledges unchanged cfgidx without class init/deinit; E49 preserves HALT/auth/RX/output."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/device/usbd_canokey.c",
+      "sha256": "673236df9e96765674ea6ae91e4974dc9ccbf72b83003efe843ac0d6aeeba8fe",
+      "observed": "Reviewed lifecycle main-loop service and readiness/epoch policy; actual device_loop used by adapter."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/core/inc/usbd_def.h",
+      "sha256": "e6eb26259730c4d6f6428788d5067876630833d7b60d2f8ee249ef6ecbfb16f6",
+      "observed": "Directional endpoint masks; feature-scoped Rust descriptor/configuration tests."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "interfaces/USB/class/ctaphid/ctaphid.c",
+      "sha256": "51143d315423af4f620209d12275867cb10982a530033c404ebbdb095517d6a6",
+      "observed": "CTAPHID_Execute_Msg validates native envelope before CTAP dispatch. An absent response source leaves unsupported INS status intact."
+    },
+    {
+      "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+      "path": "applets/ctap/ctap.c",
+      "sha256": "d6c32d99aacebb0017def6ef232c6c1fc6674f766a201c3160a5bcd9ede21e0d",
+      "observed": "ctap_process_apdu_source_with_src routes CLA00/80 INS C0 to unsupported instruction when no response source exists. Generic APDU GET RESPONSE is a separate route."
+    }
+  ],
+  "targets": [
+    "crates/core/src/runtime/usb/mod.rs",
+    "crates/core/src/applets/ctap/message.rs",
+    "crates/ffi/src/transport/usb.rs"
+  ],
+  "evidence": [
+    "tests/fixtures/c312-usb-lifecycle/report.json",
+    "crates/core/tests/usb.rs",
+    "crates/ffi/src/transport/usb/tests.rs",
+    "tests/card/src/bin/hid.rs"
+  ],
+  "remaining": [
+    "Actual class callback readiness and reset/configuration IRQ during deferred service are not exercised by direct OUT injections.",
+    "Withheld IN, suspended transfer/reset permutations, physical USB/RF and CIU runtime stack/PKE remain open.",
+    "Pending-native GET RESPONSE parameter/body precedence needs separate C comparison; empty-source vectors do not establish it."
+  ]
+}

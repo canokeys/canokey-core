@@ -52,7 +52,8 @@ plans and the old C guide; historical APIs there are not implementation guidance
   optimization and LTO settings when moving build inputs.
 - Stream large APDU bodies, key imports, certificates, public-key encodings and
   responses. Do not increase short APDU buffers to avoid streaming. The bounded
-  standalone extended FIDO-over-CCID path does not authorize general extended APDUs.
+  standalone extended FIDO-over-NFC path does not authorize general extended APDUs;
+  CCID uses short APDUs and chaining.
 - PKE memory is transient staging, not durable request state. Fully parse staged
   bytes before crypto, progress callbacks, keepalive, presence waits or session
   yield can clobber them. Preserve only necessary bounded semantic fields.

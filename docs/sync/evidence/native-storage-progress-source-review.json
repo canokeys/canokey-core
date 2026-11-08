@@ -1,0 +1,79 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Correct a native count-propagation gap below prior mock tests; focused definitions and executed regression, not new source-unit approval.",
+  "c_functions": [
+    {
+      "path": "src/fs.c",
+      "line": 82,
+      "file_sha256": "e776130e478311807b43878424362cd2b504a64624a60ad300b17784229f02a0",
+      "source": "static int close_file_result(lfs_file_t *file, int result) {\n  const int close_result = lfs_file_close(&lfs, file);\n  if (result < 0) return result;\n  return close_result < 0 ? close_result : result;\n}"
+    },
+    {
+      "path": "src/fs.c",
+      "line": 88,
+      "file_sha256": "e776130e478311807b43878424362cd2b504a64624a60ad300b17784229f02a0",
+      "source": "static int seek_and_read(lfs_file_t *f, lfs_soff_t off, void *buf, lfs_size_t len) {\n  const int err = lfs_file_seek(&lfs, f, off, LFS_SEEK_SET);\n  return err < 0 ? err : lfs_file_read(&lfs, f, buf, len);\n}"
+    },
+    {
+      "path": "src/fs.c",
+      "line": 93,
+      "file_sha256": "e776130e478311807b43878424362cd2b504a64624a60ad300b17784229f02a0",
+      "source": "int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {\n  int err = cache_acquire(read_file);\n  if (err < 0) return err;\n  lfs_file_t f;\n  err = lfs_file_opencfg(&lfs, &f, path, LFS_O_RDONLY, &file_config);\n  if (err >= 0) {\n    err = seek_and_read(&f, off, buf, len);\n    err = close_file_result(&f, err);\n  }\n  cache_release(read_file);\n  return err;\n}"
+    }
+  ],
+  "platform_sources": [
+    {
+      "repository": "canokey-ciu",
+      "path": "platform/rust-core/services.c",
+      "sha256": "891ae8afc8641caa82894cd3060c894c3a20c51b4cfc809c5779dbaa74054f0c"
+    },
+    {
+      "repository": "canokey-ciu",
+      "path": "platform/storage-transactions/src/engine.rs",
+      "sha256": "c968cbdf39c8dab19a1fdde1f8a71a02b2256546a5e586370872edd5ca2863d3"
+    },
+    {
+      "repository": "canokey-ciu",
+      "path": "platform/rust-core/src/storage.rs",
+      "sha256": "d963c1cb2ef9cc11a270631b6211cb17ca16435b65f4bf5e704c1b28295afbc9"
+    },
+    {
+      "repository": "canokey-ciu",
+      "path": "tests/host/rust_storage_applet.c",
+      "sha256": "7b7112aef6edbd21488cf280e0007dd5bb26b34104b63c78e152f470a00fb03f"
+    }
+  ],
+  "core_sources": [
+    {
+      "path": "crates/ffi/src/platform/storage.rs",
+      "sha256": "9fcb85d3f52b6bbd96f98d1b6a438f014995c6869abf86b756edbf0729fe0502"
+    },
+    {
+      "path": "tests/card/src/bin/storage.rs",
+      "sha256": "9fe0059236d9ab092229be8a3bbb8d4940daedc3eaf1a60f934028a65d083da8"
+    },
+    {
+      "path": "tests/support/c312_native_storage_faults.py",
+      "sha256": "84fc969b546d322f8afc7143f282e35fbb0aed7c785701061dd5c82275f200a1"
+    },
+    {
+      "path": "tests/support/c312_storage_faults.py",
+      "sha256": "ebd47dfb3d11e9af51c7c9613eb398ffe558d9ad90c28ab51d1d639b654536cb"
+    },
+    {
+      "path": "tests/CMakeLists.txt",
+      "sha256": "ae31c8b39e7bb33c4d5a259c796e169e12a30fe9cf787a74b6f6000064103193"
+    }
+  ],
+  "mapping": [
+    "Pinned C preserves successful prefix counts after closing a file; failed close or negative reads remain errors.",
+    "The preceding CIU C service rejected every short read before Rust read_some_at could see its count; injecting above it missed that regression.",
+    "Production ck_lfs_read now returns a bounded nonnegative count only after successful close and cache erasure. read_at remains exact in both Rust adapters.",
+    "Engine::read separately rejects short/excessive whole-record loads, preserving prior complete-record semantics.",
+    "The real native composition uses the FFI StorageBackend, actual transaction engine and production C service with LittleFS over modeled flash. Its file-read seam supplies only the requested prefix, poisoning the unreported suffix.",
+    "All30 response/fault/recovery cases execute actual Core routing, ordinary presence and independent registration/attestation verification. The fixture asserts service file-cache erasure on every read."
+  ],
+  "remaining": [
+    "Direct MCU execution of the CIU Rust adapter, physical flash/USB/RF, open/seek/close fault breadth, cancellations/IRQ schedules, runtime resources, Linux sanitizer result and full source audit remain open."
+  ]
+}

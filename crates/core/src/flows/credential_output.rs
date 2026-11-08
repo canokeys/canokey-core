@@ -16,12 +16,14 @@ pub fn touch(
         let mut store = crate::applets::oath::repository::Store::new(p.storage, p.memory);
         let mut mac = crate::applets::oath::repository::Mac::new(p.crypto, p.memory);
         // The physical gesture authorizes this output, independently of the OATH session.
-        let mut result = service::calculate(
+        let mut result = service::Digest::new();
+        service::calculate_into(
             &mut store,
             &mut mac,
             service::CredentialId(id),
             &[],
             service::Presence::Confirmed,
+            &mut result,
         )
         .map_err(Error::Oath)?;
         let digits = usize::from(result.digits());

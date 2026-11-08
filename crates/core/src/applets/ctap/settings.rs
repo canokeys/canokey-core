@@ -31,7 +31,10 @@ impl Sm2 {
             algorithm: i32::from_be_bytes(wire[4..].try_into().ok()?),
         };
         // Same reserved COSE identifiers as the C profile.
-        if matches!(value.curve, 0..=8 | 256..=259) || matches!(value.algorithm, -7 | -8 | -49) {
+        if matches!(value.curve, 0..=8 | 256..=259)
+            || matches!(value.algorithm, -7 | -8)
+            || crate::ports::mldsa::from_cose(value.algorithm).is_some()
+        {
             return None;
         }
         Some(value)

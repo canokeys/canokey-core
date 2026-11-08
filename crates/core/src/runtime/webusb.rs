@@ -4,7 +4,9 @@
 #![forbid(unsafe_code)]
 use canokey_protocol::usb::Setup;
 
-pub const COMMAND_LIMIT: usize = canokey_protocol::apdu::SHORT_FRAME_BYTES;
+pub const COMMAND_LIMIT: usize = 288;
+// Completed transport reservation lifetime; retained applet context does not expire.
+pub const HOLD_TIMEOUT_MS: u32 = 2000;
 pub const RESPONSE_LIMIT: usize = canokey_protocol::apdu::SHORT_REPLY_BYTES;
 // CanoKey vendor/interface requests: submit APDU, fetch response, read state.
 pub const REQUEST_COMMAND: u8 = 0x00;
@@ -16,7 +18,6 @@ pub const STATUS_PROCESSING: u8 = 0x01;
 pub const STATUS_RESPONSE: u8 = 0x00;
 pub const STATUS_SENDING: u8 = 0x02;
 pub const STATUS_HOLD: u8 = 0x04;
-pub const SESSION_TIMEOUT: u32 = 2000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Request {
@@ -63,7 +64,7 @@ pub struct Transport {
     phase: Phase,
     length: usize,
     received: usize,
-    last_activity: u32,
+    last_setup: u32,
 }
 impl Default for Transport {
     fn default() -> Self {
@@ -76,7 +77,7 @@ impl Transport {
             phase: Phase::Idle,
             length: 0,
             received: 0,
-            last_activity: 0,
+            last_setup: 0,
         }
     }
     pub fn status(&self) -> u8 {
@@ -97,7 +98,13 @@ impl Transport {
         }
     }
     pub fn completed_transaction(&self) -> bool {
-        self.phase == Phase::Hold
+        matches!(self.phase, Phase::Idle | Phase::Hold)
+    }
+    /// Release only a completed transport reservation, never an APDU context.
+    pub fn expire(&mut self, now: u32) {
+        if self.phase == Phase::Hold && now.wrapping_sub(self.last_setup) > HOLD_TIMEOUT_MS {
+            self.phase = Phase::Idle;
+        }
     }
     pub fn busy(&self) -> bool {
         self.phase != Phase::Idle
@@ -111,7 +118,7 @@ impl Transport {
         }
         self.length = length;
         self.received = 0;
-        self.last_activity = now;
+        self.last_setup = now;
         self.phase = if length == 0 {
             Phase::Queued
         } else {
@@ -121,7 +128,7 @@ impl Transport {
     }
     /// Validate before copying a FIFO packet into the shared input buffer.
     /// A short packet before wLength is exhausted is malformed, not an APDU.
-    pub fn receive(&mut self, length: usize, now: u32) -> Option<usize> {
+    pub fn receive(&mut self, length: usize, _now: u32) -> Option<usize> {
         if self.phase != Phase::Receiving
             || length > canokey_protocol::usb::EP0_PACKET_BYTES
             || length == 0
@@ -133,13 +140,15 @@ impl Transport {
         }
         let offset = self.received;
         self.received += length;
-        self.last_activity = now;
         if self.received == self.length {
             self.phase = Phase::Queued;
         }
         Some(offset)
     }
     /// Return a command length once; no state borrow crosses Core execution.
+    pub fn input_length(&self) -> usize {
+        self.length
+    }
     pub fn execute(&mut self) -> Option<usize> {
         if self.phase != Phase::Queued {
             return None;
@@ -149,7 +158,7 @@ impl Transport {
     }
     /// Publish only after the input borrow has ended and Core has written the
     /// response. False means reset/abort invalidated this command's result.
-    pub fn finish(&mut self, length: usize, now: u32) -> bool {
+    pub fn finish(&mut self, length: usize, _now: u32) -> bool {
         if self.phase == Phase::Discarding {
             *self = Self::new();
             return false;
@@ -157,12 +166,11 @@ impl Transport {
         if self.phase != Phase::Executing {
             return false;
         }
-        if !(2..=RESPONSE_LIMIT).contains(&length) {
+        if length < 2 || length > RESPONSE_LIMIT {
             *self = Self::new();
             return false;
         }
         self.length = length;
-        self.last_activity = now;
         self.phase = Phase::Response;
         true
     }
@@ -171,26 +179,21 @@ impl Transport {
             return None;
         }
         self.phase = Phase::Sending;
-        self.last_activity = now;
+        self.last_setup = now;
         Some(self.length.min(requested))
     }
     /// Called only on actual endpoint completion, never on elapsed time.
-    pub fn completed(&mut self, now: u32) {
+    pub fn completed(&mut self, _now: u32) {
         if self.phase == Phase::Sending {
             self.phase = Phase::Hold;
-            self.last_activity = now;
         }
     }
     pub fn keepalive(&mut self, now: u32) {
-        self.last_activity = now;
-    }
-    /// Only an idle session expires. Receiving/executing/transmitting retain
-    /// buffer ownership until explicit abort and hardware quiescence.
-    pub fn expired(&self, now: u32) -> bool {
-        self.phase == Phase::Hold && now.wrapping_sub(self.last_activity) >= SESSION_TIMEOUT
+        self.last_setup = now;
     }
     /// Requires hardware quiescence. The facade separately resets Core in the
     /// main loop, after any running call returns, before admitting another owner.
+    #[inline(never)]
     pub fn reset(&mut self) {
         if matches!(self.phase, Phase::Executing | Phase::Discarding) {
             self.phase = Phase::Discarding;

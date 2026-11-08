@@ -131,62 +131,52 @@ enum Field {
     HmacSecretMc,
     Enterprise,
 }
-// Each entry is (context, wire key, destination, makeCredential only).
-// Keep schema matching data-driven rather than expanding a string match tree.
+// Compact records carry a byte length instead of a fat slice pointer. Build
+// names and lengths from the same literals so the two arrays cannot drift.
 fn text_field(context: Context, key: &[u8], make: bool) -> Field {
-    const FIELDS: &[(Context, &[u8], Field, bool)] = &[
-        (Context::Rp, b"id", Field::Rp, false),
-        (Context::Rp, b"name", Field::TextOnly, false),
-        (Context::Rp, b"icon", Field::TextOnly, false),
-        (Context::User, b"id", Field::UserId, false),
-        (Context::User, b"name", Field::Name, false),
-        (Context::User, b"displayName", Field::Display, false),
-        (Context::Algorithm, b"alg", Field::Algorithm, false),
-        (Context::Algorithm, b"type", Field::Type, false),
-        (Context::Descriptor, b"type", Field::Type, false),
-        (Context::Descriptor, b"id", Field::DescriptorId, false),
-        (Context::Options, b"rk", Field::Resident, false),
-        (Context::Options, b"uv", Field::Uv, false),
-        (Context::Options, b"up", Field::Up, false),
-        (
-            Context::Extensions,
-            b"thirdPartyPayment",
-            Field::ThirdPartyPayment,
-            false,
-        ),
-        (
-            Context::Extensions,
-            b"hmac-secret",
-            Field::HmacSecret,
-            false,
-        ),
-        (
-            Context::Extensions,
-            b"hmac-secret-mc",
-            Field::HmacSecretMc,
-            true,
-        ),
-        (Context::Extensions, b"credBlob", Field::CredBlob, false),
-        (
-            Context::Extensions,
-            b"largeBlobKey",
-            Field::LargeBlobKey,
-            true,
-        ),
-        (
-            Context::Extensions,
-            b"minPinLength",
-            Field::MinPinLength,
-            true,
-        ),
-        (Context::Extensions, b"credProtect", Field::Protection, true),
+    macro_rules! fields {
+        ($(($scope:ident, $name:literal, $field:ident, $make_only:literal)),* $(,)?) => {
+            const NAMES: &[u8] = concat!($($name),*).as_bytes();
+            const FIELDS: &[(Context, u8, Field, bool)] = &[$(
+                (Context::$scope, const {
+                    assert!($name.len() <= u8::MAX as usize);
+                    $name.len() as u8
+                }, Field::$field, $make_only),
+            )*];
+        };
+    }
+    // Each entry is (context, wire key, destination, makeCredential only).
+    fields![
+        (Rp, "id", Rp, false),
+        (Rp, "name", TextOnly, false),
+        (Rp, "icon", TextOnly, false),
+        (User, "id", UserId, false),
+        (User, "name", Name, false),
+        (User, "displayName", Display, false),
+        (Algorithm, "alg", Algorithm, false),
+        (Algorithm, "type", Type, false),
+        (Descriptor, "type", Type, false),
+        (Descriptor, "id", DescriptorId, false),
+        (Options, "rk", Resident, false),
+        (Options, "uv", Uv, false),
+        (Options, "up", Up, false),
+        (Extensions, "thirdPartyPayment", ThirdPartyPayment, false),
+        (Extensions, "hmac-secret", HmacSecret, false),
+        (Extensions, "hmac-secret-mc", HmacSecretMc, true),
+        (Extensions, "credBlob", CredBlob, false),
+        (Extensions, "largeBlobKey", LargeBlobKey, true),
+        (Extensions, "minPinLength", MinPinLength, true),
+        (Extensions, "credProtect", Protection, true),
     ];
-    FIELDS
-        .iter()
-        .find(|(scope, name, _, make_only)| {
-            *scope == context && *name == key && (!make_only || make)
-        })
-        .map_or(Field::Ignore, |(_, _, field, _)| *field)
+    let mut names = NAMES;
+    for &(scope, length, field, make_only) in FIELDS {
+        let (name, rest) = names.split_at(usize::from(length));
+        names = rest;
+        if scope == context && name == key && (!make_only || make) {
+            return field;
+        }
+    }
+    Field::Ignore
 }
 
 #[repr(C)]
@@ -344,14 +334,7 @@ impl Fields {
             }
             return Ok(());
         }
-        if self.skip != 0 {
-            match *event {
-                Event::Map(_) | Event::Array(_) | Event::Bytes(_) | Event::Text(_) => {
-                    self.skip += 1
-                }
-                Event::End => self.skip -= 1,
-                _ => (),
-            }
+        if super::skip_cbor_event(&mut self.skip, event)? {
             return Ok(());
         }
         if let Some((field, pos)) = self.body {
@@ -377,8 +360,9 @@ impl Fields {
                         }
                     };
                     if let Some(tail) = out.get_mut(pos..) {
-                        let copied = bytes.len().min(tail.len());
-                        tail[..copied].copy_from_slice(&bytes[..copied]);
+                        for (out, byte) in tail.iter_mut().zip(bytes) {
+                            *out = *byte;
+                        }
                     }
                     self.body = Some((field, pos + bytes.len()));
                 }
@@ -483,12 +467,11 @@ impl Fields {
             });
         } else {
             match *event {
-                Event::Text(n) if n <= 32 => {
+                Event::Text(n) => {
                     self.key_len = usize::from(n);
                     self.key_body = true;
                     self.body = Some((Field::Ignore, 0));
                 }
-                Event::Text(_) => return Err(Status::InvalidCbor),
                 _ => return Err(Status::UnexpectedType),
             }
         }
@@ -496,24 +479,47 @@ impl Fields {
     }
     #[inline(never)]
     fn text_key(&mut self) -> Result<(), Status> {
-        let key = &self.key[..self.key_len];
+        let bounded = self.key_len <= self.key.len();
+        let key = &self.key[..self.key_len.min(self.key.len())];
         let map = &mut self.maps[self.level];
         if map.seen_text
-            && (self.key_len, key) <= (map.previous_len, &map.previous_text[..map.previous_len])
+            && (self.key_len < map.previous_len
+                || (bounded
+                    && self.key_len == map.previous_len
+                    && key <= &map.previous_text[..map.previous_len]))
         {
             return Err(Status::InvalidCbor);
         }
         map.previous_len = self.key_len;
-        map.previous_text[..self.key_len].copy_from_slice(key);
+        map.previous_text[..key.len()].copy_from_slice(key);
         map.seen_text = true;
-        map.field = Some(text_field(map.context, key, self.params.make));
+        // All recognized labels fit the key window. Like pinned C, consume
+        // longer unknown labels without retaining their full spelling or
+        // comparing equal-length unknown names. The decoder still validates
+        // their complete UTF-8 body; bounded labels retain exact ordering.
+        map.field = Some(if bounded {
+            text_field(map.context, key, self.params.make)
+        } else {
+            Field::Ignore
+        });
         Ok(())
     }
+    #[inline(never)]
     fn push(&mut self, context: Context) {
         self.level += 1;
         self.maps[self.level] = Map::new(context);
     }
     fn value(&mut self, field: Field, event: &Event<'_>) -> Result<(), Status> {
+        // C validates these map-wide value types even for unknown labels.
+        if matches!(field, Field::Ignore)
+            && match self.maps[self.level].context {
+                Context::Rp => !matches!(event, Event::Text(_)),
+                Context::Options => !matches!(event, Event::Bool(_)),
+                _ => false,
+            }
+        {
+            return Err(Status::UnexpectedType);
+        }
         match field {
             Field::ClientHash => {
                 self.bytes(field, event, 32, 32)?;

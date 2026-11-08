@@ -1,0 +1,235 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Eight exact per-parent source units: live RF state resolves coalesced HALT/ACTIVE; active-high MAIN IRQ mask during silence.",
+  "deltas": [
+    {
+      "commit": "836a50a50c2a77d03f4673e79a03213138023145",
+      "parent": "c07ad675546049fddd732b6bef1305eff8f799c5",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 34,
+          "sha256": "9968359b8a2fd9c5188499270fa5ba25cfa033375364967380e17c3253ffdfa9",
+          "source": "@@ -257 +371 @@ void nfc_loop(void) {\n-      const uint8_t irq_off = 0;\n+      const uint8_t irq_off = 0xFF; // FM11NT masks are active-high.\n"
+        },
+        {
+          "ordinal": 51,
+          "sha256": "88b0e1250b14745885fca06b3465b3044d0aca72a29d5001e091dceab1dc09bc",
+          "source": "@@ -388,3 +528,15 @@ void nfc_handler(void) {\n-    idle_recovery_state = NFC_RECOVERY_NONE;\n-    reset_nfc_session();\n-    return;\n+    // HALT and a later activation can both latch while the RF-powered MCU\n+    // boots. Use live NFC_STATE (FM11NT082C section 3.3.3.12), not IRQ\n+    // priority, to avoid discarding RX_DONE from the new activation.\n+    uint8_t rf_status = 0;\n+    if ((irq[0] & MAIN_IRQ_ACTIVE) &&\n+        fm_read_regs(FM_REG_RF_STATUS, &rf_status, 1) != FM_STATUS_OK) {\n+      nfc_error_handler(-23);\n+      return;\n+    }\n+    const uint8_t rf_state = rf_status >> 4;\n+    if (rf_state != 9 && rf_state != 10) { // not after RATS/PPS\n+      idle_recovery_state = NFC_RECOVERY_NONE;\n+      reset_nfc_session();\n+      return;\n+    }\n"
+        }
+      ]
+    },
+    {
+      "commit": "8fd934426f258ad4973c36eb336febacac50b8c4",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 34,
+          "sha256": "9968359b8a2fd9c5188499270fa5ba25cfa033375364967380e17c3253ffdfa9",
+          "source": "@@ -257 +371 @@ void nfc_loop(void) {\n-      const uint8_t irq_off = 0;\n+      const uint8_t irq_off = 0xFF; // FM11NT masks are active-high.\n"
+        },
+        {
+          "ordinal": 51,
+          "sha256": "88b0e1250b14745885fca06b3465b3044d0aca72a29d5001e091dceab1dc09bc",
+          "source": "@@ -388,3 +528,15 @@ void nfc_handler(void) {\n-    idle_recovery_state = NFC_RECOVERY_NONE;\n-    reset_nfc_session();\n-    return;\n+    // HALT and a later activation can both latch while the RF-powered MCU\n+    // boots. Use live NFC_STATE (FM11NT082C section 3.3.3.12), not IRQ\n+    // priority, to avoid discarding RX_DONE from the new activation.\n+    uint8_t rf_status = 0;\n+    if ((irq[0] & MAIN_IRQ_ACTIVE) &&\n+        fm_read_regs(FM_REG_RF_STATUS, &rf_status, 1) != FM_STATUS_OK) {\n+      nfc_error_handler(-23);\n+      return;\n+    }\n+    const uint8_t rf_state = rf_status >> 4;\n+    if (rf_state != 9 && rf_state != 10) { // not after RATS/PPS\n+      idle_recovery_state = NFC_RECOVERY_NONE;\n+      reset_nfc_session();\n+      return;\n+    }\n"
+        }
+      ]
+    },
+    {
+      "commit": "08ff82228c05e85dbf9f11abe3522e428348fde8",
+      "parent": "205e03f86f2ed46e34449ef3ab7525dc13f6716e",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 34,
+          "sha256": "9968359b8a2fd9c5188499270fa5ba25cfa033375364967380e17c3253ffdfa9",
+          "source": "@@ -257 +371 @@ void nfc_loop(void) {\n-      const uint8_t irq_off = 0;\n+      const uint8_t irq_off = 0xFF; // FM11NT masks are active-high.\n"
+        },
+        {
+          "ordinal": 51,
+          "sha256": "88b0e1250b14745885fca06b3465b3044d0aca72a29d5001e091dceab1dc09bc",
+          "source": "@@ -388,3 +528,15 @@ void nfc_handler(void) {\n-    idle_recovery_state = NFC_RECOVERY_NONE;\n-    reset_nfc_session();\n-    return;\n+    // HALT and a later activation can both latch while the RF-powered MCU\n+    // boots. Use live NFC_STATE (FM11NT082C section 3.3.3.12), not IRQ\n+    // priority, to avoid discarding RX_DONE from the new activation.\n+    uint8_t rf_status = 0;\n+    if ((irq[0] & MAIN_IRQ_ACTIVE) &&\n+        fm_read_regs(FM_REG_RF_STATUS, &rf_status, 1) != FM_STATUS_OK) {\n+      nfc_error_handler(-23);\n+      return;\n+    }\n+    const uint8_t rf_state = rf_status >> 4;\n+    if (rf_state != 9 && rf_state != 10) { // not after RATS/PPS\n+      idle_recovery_state = NFC_RECOVERY_NONE;\n+      reset_nfc_session();\n+      return;\n+    }\n"
+        }
+      ]
+    },
+    {
+      "commit": "803a1ac03c43774d55b9b467639d343fe7984154",
+      "parent": "99df44df4653051887ac6fdb9355508314a01efc",
+      "path": "interfaces/NFC/nfc.c",
+      "patch_sha256": "1a3ff4dbf08a68042acfdcf9104cb72d9f918be5715753beabf61318d36b6636",
+      "reviewed": [
+        {
+          "ordinal": 34,
+          "sha256": "9968359b8a2fd9c5188499270fa5ba25cfa033375364967380e17c3253ffdfa9",
+          "source": "@@ -257 +371 @@ void nfc_loop(void) {\n-      const uint8_t irq_off = 0;\n+      const uint8_t irq_off = 0xFF; // FM11NT masks are active-high.\n"
+        },
+        {
+          "ordinal": 51,
+          "sha256": "88b0e1250b14745885fca06b3465b3044d0aca72a29d5001e091dceab1dc09bc",
+          "source": "@@ -388,3 +528,15 @@ void nfc_handler(void) {\n-    idle_recovery_state = NFC_RECOVERY_NONE;\n-    reset_nfc_session();\n-    return;\n+    // HALT and a later activation can both latch while the RF-powered MCU\n+    // boots. Use live NFC_STATE (FM11NT082C section 3.3.3.12), not IRQ\n+    // priority, to avoid discarding RX_DONE from the new activation.\n+    uint8_t rf_status = 0;\n+    if ((irq[0] & MAIN_IRQ_ACTIVE) &&\n+        fm_read_regs(FM_REG_RF_STATUS, &rf_status, 1) != FM_STATUS_OK) {\n+      nfc_error_handler(-23);\n+      return;\n+    }\n+    const uint8_t rf_state = rf_status >> 4;\n+    if (rf_state != 9 && rf_state != 10) { // not after RATS/PPS\n+      idle_recovery_state = NFC_RECOVERY_NONE;\n+      reset_nfc_session();\n+      return;\n+    }\n"
+        }
+      ]
+    }
+  ],
+  "mapping": [
+    "Ordinal34 writes 0xFF, disabling every active-high MAIN IRQ source during forced RF silence. Rust Io::poll restores runtime mask only after unsilence; failed mask writes retain drain-only recovery.",
+    "Ordinal51 reads RF_STATUS only on coalesced HALT/ACTIVE after IRQ errors/overflow are excluded. States9/10 supersede old HALT; activation cancels previous execution, revokes authorization and preserves newly received FIFO bytes.",
+    "Rust rejects RF_STATUS read failure without FIFO publication. Exhaustive256-byte register tests cover high-nibble state classification and low-nibble independence."
+  ],
+  "remaining": [
+    "Mixed WTX/cache/TXEN hunk19, physical RF/WTX, CIU resources and the remaining source audit are not approved here."
+  ],
+  "final_c_excerpts": [
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 368,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "      idle_recovery_state = NFC_RECOVERY_SILENCED;\n      idle_recovery_forced = 0; // one-shot: cleared only once the silence actually took effect\n      // Mask FM11NT interrupts at the chip for the silent period: the level GPIO IRQ then\n      // cannot storm the CPU, and no IRQ flag needs in-ISR draining. The mask is restored\n      // via irq_config_pending after the unsilence. Best-effort: if this write fails, the\n      // drain fallback in nfc_handler() still covers the interrupt source.\n      const uint8_t irq_off = 0xFF; // FM11NT masks are active-high.\n      fm_write_regs(FM_REG_MAIN_IRQ_MASK, &irq_off, 1);"
+    },
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 524,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "    return;\n  }\n  if (irq[1] & FIFO_IRQ_OVERFLOW) {\n    nfc_error_handler(-20);\n    return;\n  }\n  if (irq[2] & AUX_IRQ_HALT) {\n    // HALT and a later activation can both latch while the RF-powered MCU\n    // boots. Use live NFC_STATE (FM11NT082C section 3.3.3.12), not IRQ\n    // priority, to avoid discarding RX_DONE from the new activation.\n    uint8_t rf_status = 0;\n    if ((irq[0] & MAIN_IRQ_ACTIVE) &&\n        fm_read_regs(FM_REG_RF_STATUS, &rf_status, 1) != FM_STATUS_OK) {\n      nfc_error_handler(-23);\n      return;\n    }\n    const uint8_t rf_state = rf_status >> 4;\n    if (rf_state != 9 && rf_state != 10) { // not after RATS/PPS\n      idle_recovery_state = NFC_RECOVERY_NONE;\n      reset_nfc_session();\n      return;\n    }\n  }\n  if (irq[0] & MAIN_IRQ_ACTIVE) {\n    reset_nfc_session();\n    restart_idle_timeout();\n  } else if ((irq[0] & 0x3F) && !apdu_processing) {"
+    },
+    {
+      "path": "include/nfc.h",
+      "line": 20,
+      "file_sha256": "059ea2902c834618f21b8ca861b6c28deec601f35b18c84c8f7411f682f2f6a1",
+      "source": "#define FM_REG_FIFO_ACCESS   0xFFF0\n#define FM_REG_FIFO_FLUSH    0xFFF1\n#define FM_REG_FIFO_WORDCNT  0xFFF2\n#define FM_REG_RF_STATUS     0xFFF3\n#define FM_REG_RF_TXEN       0xFFF4\n#define FM_REG_RF_CFG        0xFFF5\n#define FM_REG_RF_RATS       0xFFF6\n#define FM_REG_MAIN_IRQ      0xFFF7\n#define FM_REG_FIFO_IRQ      0xFFF8\n#define FM_REG_AUX_IRQ       0xFFF9\n#define FM_REG_MAIN_IRQ_MASK 0xFFFA\n#define FM_REG_FIFO_IRQ_MASK 0xFFFB\n#define FM_REG_AUX_IRQ_MASK  0xFFFC\n\n#define FM_EEPROM_SN         0x0000\n#define FM_EEPROM_USER_CFG0  0x0390\n#define FM_EEPROM_USER_CFG1  0x0391\n#define FM_EEPROM_USER_CFG2  0x0392\n#define FM_EEPROM_ATS        0x03B0\n#define FM_EEPROM_ATQA       0x03BC\n#define FM_EEPROM_CRC8       0x03BB\n// clang-format on\n\n#define MAIN_IRQ_AUX (1 << 0)\n#define MAIN_IRQ_FIFO (1 << 1)\n#define MAIN_IRQ_ARBIT (1 << 2)\n#define MAIN_IRQ_TX_DONE (1 << 3)\n#define MAIN_IRQ_RX_DONE (1 << 4)\n#define MAIN_IRQ_RX_START (1 << 5)\n#define MAIN_IRQ_ACTIVE (1 << 6)\n#define MAIN_IRQ_RF_ON (1 << 7)"
+    },
+    {
+      "path": "test/nfc-transport.inc",
+      "line": 435,
+      "file_sha256": "b7ed1c0420de3f77103107d332ed93f0b1710eda09440d7f0e13d5bc346f68c3",
+      "source": "static void test_nfc_coalesced_activation(void **unused) {\n  (void)unused;\n  const uint8_t select[] = {0, 0xA4, 4, 0, 8, 0xA0, 0, 0, 6, 0x47, 0x2F, 0, 1, 0};\n  // The same latched event set can describe either ordering. Live state\n  // distinguishes an old HALT followed by RATS/PPS from a current HALT.\n  for (unsigned state = 0; state < 16; ++state) {\n    nfc_test_fixture(true);\n    nfc_test_rf_status = (state << 4) | 4;\n    nfc_test_rx[0] = 0x02;\n    memcpy(nfc_test_rx + 1, select, sizeof(select));\n    nfc_test_rx_len = sizeof(select) + 3;\n    nfc_test_tx_len = 0;\n    nfc_test_irq[0] = MAIN_IRQ_ACTIVE | MAIN_IRQ_RX_DONE;\n    nfc_test_irq[2] = AUX_IRQ_HALT;\n    nfc_test_handler();\n    nfc_test_loop();\n    if (state == 9 || state == 10) {\n      assert_int_equal(nfc_test_tx_len, 9);\n      assert_memory_equal(nfc_test_tx + 1, \"U2F_V2\\x90\\x00\", 8);\n    } else {\n      assert_int_equal(nfc_test_tx_len, 0);\n      assert_int_equal(next_state, TO_RECEIVE);\n    }\n  }\n  // Without a new activation, HALT must still cancel a queued RX frame.\n  nfc_test_fixture(true);\n  nfc_test_rf_status = 0x90;\n  nfc_test_irq[0] = MAIN_IRQ_RX_DONE;\n  nfc_test_irq[2] = AUX_IRQ_HALT;\n  nfc_test_tx_len = 0;\n  nfc_test_handler();\n  nfc_test_loop();\n  assert_int_equal(nfc_test_tx_len, 0);\n  set_nfc_state(0);\n  device_applet_session_clear();\n}\n\nstatic void test_nfc_extended_envelope_and_recovery(void **unused) {\n  (void)unused;\n  uint8_t body[PKE_BUFFER_SIZE + 1], cmd[PKE_BUFFER_SIZE + 12], out[2048], reference[2048];\n  memset(body, 0, sizeof(body));"
+    }
+  ],
+  "targets": [
+    {
+      "path": "crates/core/src/runtime/nfc_io.rs",
+      "sha256": "bfb7ca61cf2670c475979268edef71af9bbe0c0df88b72218947972ee7861424"
+    },
+    {
+      "path": "crates/protocol/src/nfc.rs",
+      "sha256": "77f019e7f0c2598dcd57c35719ff2dd4ae0570cf965a595cca03bd9c283a7f89"
+    },
+    {
+      "path": "crates/core/tests/nfc.rs",
+      "sha256": "4d462cc1590d65a52bfac95132ebb637f7fc7dff8d0a1a35ff1884cdb7f97f17"
+    }
+  ],
+  "literal": {
+    "suites": 14,
+    "cases": 401,
+    "events": 11800,
+    "equal_output": 384,
+    "unresolved": 17,
+    "previous_results": [
+      {
+        "path": "tests/fixtures/c312-ccid/report.json",
+        "previous_cases": 47,
+        "current_cases": 47,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-hid-admission/report.json",
+        "previous_cases": 28,
+        "current_cases": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-hid-channels/report.json",
+        "previous_cases": 40,
+        "current_cases": 40,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-hid-ownership/report.json",
+        "previous_cases": 21,
+        "current_cases": 21,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-large-blob-nfc/report.json",
+        "previous_cases": 11,
+        "current_cases": 11,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-large-blob-usb/report.json",
+        "previous_cases": 12,
+        "current_cases": 12,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-nfc/report.json",
+        "previous_cases": 65,
+        "current_cases": 96,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-control/report.json",
+        "previous_cases": 36,
+        "current_cases": 36,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-lifecycle/report.json",
+        "previous_cases": 33,
+        "current_cases": 33,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-ownership/report.json",
+        "previous_cases": 18,
+        "current_cases": 18,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-usb-readiness/report.json",
+        "previous_cases": 9,
+        "current_cases": 9,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-webusb/report.json",
+        "previous_cases": 28,
+        "current_cases": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-webusb-readiness/report.json",
+        "previous_cases": 8,
+        "current_cases": 8,
+        "previous_results_unchanged": true
+      },
+      {
+        "path": "tests/fixtures/c312-webusb-retained/report.json",
+        "previous_cases": 14,
+        "current_cases": 14,
+        "previous_results_unchanged": true
+      }
+    ]
+  },
+  "products": {
+    "devkit": {
+      "flash": 178528,
+      "static_ram": 8272,
+      "udf": 140,
+      "correctness_delta": 0
+    },
+    "nfcc": {
+      "flash": 187592,
+      "static_ram": 8432,
+      "udf": 147,
+      "overflow": 5832,
+      "correctness_delta": 148,
+      "diagnostic_elf_only": true
+    }
+  }
+}

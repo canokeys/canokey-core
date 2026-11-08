@@ -133,7 +133,7 @@ pub fn keyboard_usage<P: Provider>(ch: u8) -> i32 {
 ///     with_core::<P, _>(|_, _| ());
 /// }
 /// ```
-#[cfg(feature = "ctap")]
+#[cfg(any(feature = "ctap", feature = "nfc", feature = "usb-webusb"))]
 pub unsafe fn with_core<P: Provider, T>(
     run: impl FnOnce(&mut Core, &mut canokey_ports::Platform<'_, P::Backends>) -> T,
 ) -> T {

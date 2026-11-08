@@ -78,13 +78,14 @@ impl Repository for Store {
             .find(|(_, row)| row.is_some())
             .map(|(i, _)| CredentialId(i as u32 + 1)))
     }
-    fn load(&mut self, id: CredentialId) -> Result<Credential, Error> {
-        codec::decode(
+    fn load_into(&mut self, id: CredentialId, out: &mut Credential) -> Result<(), Error> {
+        *out = codec::decode(
             self.rows
                 .get(id.0 as usize - 1)
                 .and_then(Option::as_ref)
                 .ok_or(Error::Missing)?,
-        )
+        )?;
+        Ok(())
     }
     fn insert(&mut self, value: &Credential) -> Result<CredentialId, Error> {
         let mut bytes = [0; codec::LENGTH];
@@ -118,11 +119,11 @@ impl Repository for Store {
 #[derive(Default)]
 struct AuthStore(Option<Vec<u8>>);
 impl auth::Repository for AuthStore {
-    fn load(&mut self) -> Result<Option<auth::Metadata>, Error> {
-        self.0
-            .as_ref()
-            .map(|b| auth::Metadata::decode(b))
-            .transpose()
+    fn load_into(&mut self, out: &mut auth::Metadata) -> Result<bool, Error> {
+        match &self.0 {
+            Some(bytes) => out.decode_into(bytes).map(|()| true),
+            None => Ok(false),
+        }
     }
     fn replace(&mut self, value: &auth::Metadata) -> Result<(), Error> {
         let mut bytes = [0; auth::METADATA_LENGTH];

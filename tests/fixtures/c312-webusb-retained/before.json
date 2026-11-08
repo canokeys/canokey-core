@@ -1,0 +1,5502 @@
+{
+  "scope": "Exploratory before-fix observations; placeholder expected/pass flags are not acceptance. Valid EP0 schedules abort/supersede before reset and never send OUT following a rejected setup. Actual virtual product and deferred lifecycle callbacks; event-level IN completions.",
+  "executables": {
+    "c": "3cf47f1747ab498c92308a23abb615e7ab2d1bab8a1e5518e35a15d17d73a2d6",
+    "rust": "00edd928596c19d8e9c83df529ee0266e9d0ecb193fb6bdb9323d96d5ee7cdbd"
+  },
+  "results": [
+    {
+      "case": {
+        "id": "reconfigure-waiting",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001001500"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "reconfigure-receiving",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "setup": "4100000001001500"
+          },
+          {
+            "expected": "",
+            "out": "00a40400100000000000000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "reconfigure-response",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "00",
+            "",
+            "",
+            "STALL",
+            "00",
+            "",
+            "",
+            "STALL",
+            "00",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "reconfigure-sending",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "reconfigure-hold",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "04",
+            "",
+            "",
+            "STALL",
+            "04",
+            "",
+            "",
+            "STALL",
+            "04",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "reconfigure-pin-hold",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000b00"
+          },
+          {
+            "expected": "",
+            "out": "0020000006313233343536"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "04",
+            "",
+            "",
+            "STALL",
+            "04",
+            "",
+            "",
+            "STALL",
+            "04",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "reconfigure-fido-hold",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "setup": "4100000001000d00",
+            "expected": ""
+          },
+          {
+            "out": "00a4040008f043414e4f464944",
+            "expected": ""
+          },
+          {
+            "in": true,
+            "expected": ""
+          },
+          {
+            "setup": "c101000001000001",
+            "expected": "5532465f56329000"
+          },
+          {
+            "in": true,
+            "expected": ""
+          },
+          {
+            "out": "",
+            "expected": ""
+          },
+          {
+            "setup": "4100000001000700",
+            "expected": ""
+          },
+          {
+            "out": "80100000010401",
+            "expected": ""
+          },
+          {
+            "in": true,
+            "expected": ""
+          },
+          {
+            "setup": "c101000001000001",
+            "expected": "0061ff"
+          },
+          {
+            "in": true,
+            "expected": ""
+          },
+          {
+            "out": "",
+            "expected": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "5532465f56329000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "0061ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "04",
+            "",
+            "",
+            "STALL",
+            "04",
+            "",
+            "",
+            "STALL",
+            "04",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "5532465f56329000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "0061ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "bus-reset-waiting",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001001500"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "reset": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0005110000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "bus-reset-receiving",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "setup": "4100000001001500"
+          },
+          {
+            "expected": "",
+            "out": "00a40400100000000000000000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "reset": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0005110000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "bus-reset-response",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "reset": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0005110000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "00",
+            "",
+            "",
+            "STALL",
+            "00",
+            "",
+            "",
+            "STALL",
+            "00",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "bus-reset-sending",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "reset": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0005110000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "bus-reset-hold",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "reset": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0005110000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "04",
+            "",
+            "",
+            "STALL",
+            "04",
+            "",
+            "",
+            "STALL",
+            "04",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "bus-reset-pin-hold",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000b00"
+          },
+          {
+            "expected": "",
+            "out": "0020000006313233343536"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "reset": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0005110000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "04",
+            "",
+            "",
+            "STALL",
+            "04",
+            "",
+            "",
+            "STALL",
+            "04",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "id": "bus-reset-fido-hold",
+        "transport": "usb",
+        "oracle_rows": [
+          "E55"
+        ],
+        "steps": [
+          {
+            "setup": "4100000001000d00",
+            "expected": ""
+          },
+          {
+            "out": "00a4040008f043414e4f464944",
+            "expected": ""
+          },
+          {
+            "in": true,
+            "expected": ""
+          },
+          {
+            "setup": "c101000001000001",
+            "expected": "5532465f56329000"
+          },
+          {
+            "in": true,
+            "expected": ""
+          },
+          {
+            "out": "",
+            "expected": ""
+          },
+          {
+            "setup": "4100000001000700",
+            "expected": ""
+          },
+          {
+            "out": "80100000010401",
+            "expected": ""
+          },
+          {
+            "in": true,
+            "expected": ""
+          },
+          {
+            "setup": "c101000001000001",
+            "expected": "0061ff"
+          },
+          {
+            "in": true,
+            "expected": ""
+          },
+          {
+            "out": "",
+            "expected": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "reset": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0005110000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "0009010000000000"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c101000001000200"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "service": false,
+            "in": true
+          },
+          {
+            "expected": "",
+            "service": false,
+            "out": ""
+          },
+          {
+            "expected": "",
+            "poll": true
+          },
+          {
+            "expected": "",
+            "setup": "c102000001000100"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000500"
+          },
+          {
+            "expected": "",
+            "out": "00c0000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000a00"
+          },
+          {
+            "expected": "",
+            "out": "00a4040005f000000000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          },
+          {
+            "expected": "",
+            "setup": "4100000001000400"
+          },
+          {
+            "expected": "",
+            "out": "00200000"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "setup": "c101000001000001"
+          },
+          {
+            "expected": "",
+            "in": true
+          },
+          {
+            "expected": "",
+            "out": ""
+          }
+        ]
+      },
+      "results": {
+        "c": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "5532465f56329000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "0061ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "04",
+            "",
+            "",
+            "STALL",
+            "04",
+            "",
+            "",
+            "STALL",
+            "04",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "rust": {
+          "passed": false,
+          "returncode": 0,
+          "responses": [
+            "",
+            "",
+            "",
+            "5532465f56329000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "0061ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "STALL",
+            "ff",
+            "",
+            "",
+            "",
+            "ff",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6986",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "9000",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "63c3",
+            "",
+            ""
+          ],
+          "stderr": "",
+          "hid_reports": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "disposition": "removed intentional difference",
+  "core_revision": "15d2b3bac17c6db238a9c12da1c0a02cc736e430",
+  "platform_revision": "d99bae8759017ff3047406ee6ee80a8d41556c8d",
+  "introduced_by": "85a2b1a8500460c11d552573c0376ce85580434e",
+  "assets": [
+    {
+      "path": "crates/core/tests/ccid.rs",
+      "blob": "830ffe32f2ae08d09310f8c35f811064f3692a26",
+      "sha256": "80e90ec8c856cc21003c0117a8a8035116e42cdd8eba523738031eae13a2cf5f",
+      "repository": "core"
+    },
+    {
+      "path": "crates/core/tests/streaming.rs",
+      "blob": "dd9c8f2d5b5eef4f59122b9765b853ca72a07b0e",
+      "sha256": "b1a14a69179a7046ee282cae67f20eb3d75ceecef08c830e804e4f4101864dfc",
+      "repository": "core"
+    },
+    {
+      "path": "crates/core/src/runtime/ccid.rs",
+      "blob": "a7132153ce1033a24d982e54427bc5a9ead0bb4b",
+      "sha256": "c88c10af0cae45488f31b03ff0390324fddf14245d38812cff34e74b4305d962",
+      "repository": "core"
+    },
+    {
+      "path": "crates/ffi/src/transport/ccid/mod.rs",
+      "blob": "fc90650c4a56363b6211b6d1e70657826bbf6ea8",
+      "sha256": "5512b69d913dfaae7af14ade90afd97d3f350965d0d6d72b74e4bcdea27da6af",
+      "repository": "core"
+    },
+    {
+      "path": "tests/card/src/bin/usb_sessions.rs",
+      "blob": "09e128ebe0c173f5e439566906819e8a1cf1d103",
+      "sha256": "9cd7b2a14f6e575ee512569fbdd6cf40d0c7a4dd4441a85a0ea9476db9bb2b21",
+      "repository": "core"
+    },
+    {
+      "path": "tests/pcsc/test_fido_pcsc_selection.py",
+      "blob": "45d8f4480ab0f5b4cc0d7dca466ef4f4ed48d638",
+      "sha256": "e5c095b1de3e4c32e8e6129f0f0f6f46121e6bf4e4a95969897400cb5eb54225",
+      "repository": "core"
+    },
+    {
+      "repository": "core",
+      "path": "crates/ffi/src/transport/usb/tests.rs",
+      "blob": "54c1b1fe7001a40f7d8ce8510da0f00def04395b",
+      "sha256": "2b88acb286c2f3523f6429168a52c098e4b4c0cf1fea9af316c307a8b33c5ba9"
+    },
+    {
+      "repository": "core",
+      "path": "crates/core/src/runtime/usb/descriptors.rs",
+      "blob": "1230c902da15012833f6404a0400e6ac64cbfceb",
+      "sha256": "aed22a040b6416a1a45d14fbe37dee0cb3bc99b642b5d50bf1c092fc8683afb7"
+    },
+    {
+      "repository": "core",
+      "path": "crates/core/tests/usb.rs",
+      "blob": "d6de330997d2c6ff189e671a5219a9c079eb2fae",
+      "sha256": "e2fcc92ef90be268b09040865c44554325fabe9a04d31c7540185c9a0d60899d"
+    },
+    {
+      "repository": "core",
+      "path": "tests/test_rust_transports.py",
+      "blob": "c953a6e30ddc78d9c55d8b907cdcc608e27c0ab6",
+      "sha256": "be95e43802108a8dae4cd7779fdb63d60050817fbc1fa77635422923f1329cc8"
+    },
+    {
+      "repository": "platform",
+      "path": "tools/hil/rust_ctap_smoke.py",
+      "blob": "bda262d369f21f427988221021d7c8f936df8981",
+      "sha256": "ec5bc424a2e68a41801cfcf7c57ac6682b3126a4321196312cbe1f2e1e12df4d"
+    }
+  ],
+  "replacement_oracle": "c-3.1.2-extended-apdu-oracle.md"
+}

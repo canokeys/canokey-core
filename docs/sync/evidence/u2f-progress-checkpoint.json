@@ -1,0 +1,58 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Align ISO U2F certificate prefix progress; preserve exact generic CTAP/native HID reads. Host contract evidence, not whole release acceptance.",
+  "report": {
+    "path": "tests/fixtures/c312-storage-response/report.json",
+    "sha256": "676b22e6e15786589f080b98336055ce142455bdb2d2bf879ea048d3d3f4ab39"
+  },
+  "proof": {
+    "path": "docs/sync/evidence/u2f-progress-source-review.json",
+    "sha256": "6f0f0355285d2b175b90d30c4d9dfb06a62059967e48b30ee5182f94150e59ba"
+  },
+  "fixed_cases": [
+    "u2f-register-skip0-return0",
+    "u2f-register-skip0-return1",
+    "u2f-register-skip1-return1"
+  ],
+  "checks": {
+    "c": 114,
+    "rust": 144
+  },
+  "validation": {
+    "host_ctest": "45/45",
+    "core": "143 unit plus full-feature integrations",
+    "ffi": "8 unit plus compile-fail doctest",
+    "clippy": "Both exact CI commands pass",
+    "literal": "365 cases /11695 events; 348 equal-output and unchanged17 prior unresolved cases",
+    "preserved_auth": {
+      "c": 156,
+      "rust": 180
+    },
+    "preserved_session": {
+      "c": 150,
+      "rust": 150
+    }
+  },
+  "products": {
+    "devkit_flash": 179308,
+    "nfcc_flash": 188024,
+    "nfcc_overflow": 6264,
+    "devkit_delta": 144,
+    "nfcc_delta": 208,
+    "static_ram_unchanged": true
+  },
+  "source_review": {
+    "new_units": 0,
+    "core": "601/2254",
+    "platform": "142/373"
+  },
+  "platform_archive": "docs/evidence/c312-u2f-progress-checkpoint/report.json",
+  "remaining": [
+    "native-backend fault injection, extended NFC fault aggregation, arbitrary cancellation/IRQ/withheld endpoint schedules, physical USB/RF/WTX, CIU stack/PKE, Linux sanitizer, prior five unresolved wire behaviors and full source audit."
+  ],
+  "usb_u2f_polling_preservation": "Current paired report rerun after host-only Polling fixture support. Production measurements and initial acceptance are historical in the immutable platform archive; see usb-u2f-polling-checkpoint.json for current host coverage.",
+  "initial_checks": {
+    "c": 96,
+    "rust": 126
+  }
+}

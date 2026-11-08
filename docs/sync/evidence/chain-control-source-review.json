@@ -1,0 +1,268 @@
+{
+  "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+  "scope": "Preserve C3.1.2 FIDO input chains across response polls/rejected NFC SELECT; reject malformed WebUSB before routing; return6700 for empty CBOR APDUs.",
+  "mapping": [
+    "C global GET RESPONSE returns6986 before new-command cleanup when no output exists. Rust now changes only the frame route, retaining the ISO command metadata and semantic parser. Extended GET RESPONSE/SELECT on WebUSB/NFC bypass only the new-command active-chain restriction. Registry still rejects every PIV extended command, including GET RESPONSE, and admits the unselected global GET RESPONSE route; CCID remains short-only.",
+    "Only an active NFC FIDO chain defers SELECT input cancellation until the routing result. Rejected unknown AID/invalid P2/disabled NDEF retains it. Successful same-FIDO SELECT closes workspace in ctap.select, other successful targets reset sessions, and the engine clears chain metadata. USB SELECT rejection and malformed NFC still cancel. Other applet SELECT lifecycle behavior is unchanged.",
+    "WebUSB validates its complete bounded envelope with the existing structural parser before entering Core, like C and short CCID. A malformed command publishes6700 without beginning or aborting a Core frame. The existing PREPARE reset on a new WebUSB session is retained. No extra APDU buffer or request parser is introduced.",
+    "The CTAP APDU boundary checks its existing command-presence field before Request.finish. Empty messages return6700; native HID CBOR still uses the unchanged Request.finish/CTAP InvalidLength path. Unsupported INS still precedes CBOR dispatch.",
+    "The WebUSB controller unit fixture now sends a valid261-byte Case4S envelope instead of arbitrary bytes and explicitly checks malformed-envelope rejection without Core execution or same-session reset. Initial failed unit runs exposed missing test setup/response consumption; the final fixture establishes a retained session and completes its TX before testing rejection. Those logs are retained.",
+    "E67 independent literal expectations cover719 cases and170 partial-schema continuations, plus36 PIV/unselected control guards. Fresh real Admin APDUs disable NDEF, then real SELECT and ISO fragments establish input. Default largeBlob byte80 provides a successful predictable result; unknown/wrong-type/empty messages and recovery are also checked. C719, old Rust265, repaired Rust719;454 old failures repaired. All1672 prior literal result arrays remain unchanged. No source audit unit is newly approved."
+  ],
+  "targets": [
+    {
+      "path": "crates/core/src/runtime/engine.rs",
+      "sha256": "e223f7c13140061ea3bfdf44853813355387c4fd2d265ccf435ee60995da451c"
+    },
+    {
+      "path": "crates/core/src/runtime/registry.rs",
+      "sha256": "c40c2e6f912088a8e4b1ff230e307d426256c2701a02a8332ed10e780eea0c07"
+    },
+    {
+      "path": "crates/core/src/applets/ctap/apdu.rs",
+      "sha256": "5e6f1f3c9e1ecae2c432ab28f4d93fd5656e0c99cb1000edfd66f39c1756e9dc"
+    },
+    {
+      "path": "crates/ffi/src/transport/webusb.rs",
+      "sha256": "168e9fd6890fd60f1b0bdd65637c6bb669146e7b2e74eb062ff8fd8eedcea622"
+    },
+    {
+      "path": "crates/ffi/src/transport/usb/tests/web.rs",
+      "sha256": "c30d9ee49dbb8910ca2cb7ce85fffbada10308ef60e0dd699184341f2e9b1667"
+    },
+    {
+      "path": "tests/support/c312_chain_control_vectors.py",
+      "sha256": "381e9eb438f00c21beca90f22be328ad52085d7fed849de50697eb018ade6d85"
+    },
+    {
+      "path": "tests/CMakeLists.txt",
+      "sha256": "ee31886d0b0f84396e14fb6a39710807c42652e0da788af949ddc595156d0f05"
+    }
+  ],
+  "regression": {
+    "cases": 719,
+    "partial_schema_cases": 170,
+    "events": 21927,
+    "before_c_passed": 719,
+    "before_rust_passed": 265,
+    "old_failures": 454,
+    "final_equal": 719,
+    "additional_buffers": 0
+  },
+  "literal": {
+    "suites": 18,
+    "cases": 2391,
+    "events": 84063,
+    "equal_output": 2374,
+    "unresolved": 17,
+    "previous_results_unchanged": 1672,
+    "summary": [
+      {
+        "name": "ccid",
+        "cases": 47,
+        "events": 454,
+        "equal": 47,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb",
+        "cases": 28,
+        "events": 576,
+        "equal": 28,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "nfc",
+        "cases": 124,
+        "events": 2776,
+        "equal": 124,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-ownership",
+        "cases": 18,
+        "events": 408,
+        "equal": 18,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-ownership",
+        "cases": 21,
+        "events": 221,
+        "equal": 20,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-admission",
+        "cases": 28,
+        "events": 364,
+        "equal": 27,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "hid-channels",
+        "cases": 40,
+        "events": 433,
+        "equal": 36,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-control",
+        "cases": 36,
+        "events": 228,
+        "equal": 29,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-lifecycle",
+        "cases": 33,
+        "events": 302,
+        "equal": 33,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "usb-readiness",
+        "cases": 9,
+        "events": 75,
+        "equal": 5,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb-readiness",
+        "cases": 8,
+        "events": 126,
+        "equal": 8,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "webusb-retained",
+        "cases": 14,
+        "events": 605,
+        "equal": 14,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "large-blob-usb",
+        "cases": 12,
+        "events": 2859,
+        "equal": 12,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "large-blob-nfc",
+        "cases": 11,
+        "events": 2478,
+        "equal": 11,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select",
+        "cases": 285,
+        "events": 5043,
+        "equal": 285,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select-config",
+        "cases": 340,
+        "events": 17256,
+        "equal": 340,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "select-header",
+        "cases": 618,
+        "events": 27932,
+        "equal": 618,
+        "previous_results_unchanged": true
+      },
+      {
+        "name": "chain-control",
+        "cases": 719,
+        "events": 21927,
+        "equal": 719,
+        "previous_results_unchanged": false
+      }
+    ]
+  },
+  "source_review": {
+    "core_reviewed": 645,
+    "core_total": 2254,
+    "platform_reviewed": 142,
+    "platform_total": 373,
+    "additional_approvals": 0
+  },
+  "remaining": [
+    "Further pending CTAP/configuration transitions, inline-size/header/body mutations and complete volatile native-HID equivalence remain open.",
+    "Physical USB/RF/WTX, total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open.",
+    "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 and the17 prior unequal literal cases remain unresolved."
+  ],
+  "final_c_excerpts": [
+    {
+      "path": "src/apdu.c",
+      "line": 508,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "      ndef_process_apdu_message(&rapdu_chaining, capdu, rapdu);\n      return;\n    }\n#endif\n  }\n  const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0;\n  if (!is_get_response) {\n    apdu_response_source_clear();\n    response_tail_reset();\n  }\n  LE = MIN(LE, APDU_BUFFER_SIZE);\n  if (is_get_response) { // GET RESPONSE\n    if (!apdu_response_source_active() && rapdu_chaining.sent >= rapdu_chaining.rapdu.len) {\n      LL = 0;\n      SW = SW_COMMAND_NOT_ALLOWED;\n      return;\n    }\n    rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);\n    apdu_output(&rapdu_chaining, rapdu);\n    return;\n  }\n  // A new command abandons any pending response chain (ISO 7816-4): clear the\n  // stale length as well as the offset, otherwise a later GET RESPONSE would\n  // serve leftover buffer contents from an unfinished previous response\n  // (handlers like OATH/ADMIN write only the transport RAPDU and never touch\n  // rapdu_chaining.rapdu.len). Chaining handlers re-establish rapdu.len below.\n  rapdu_chaining.sent = 0;\n  rapdu_chaining.rapdu.len = 0;\n  if (is_select_by_aid) {\n    if (P2 != 0x00) {\n      reject_usb_fido_select(transport);\n      LL = 0;\n      SW = SW_WRONG_P1P2;\n      return;\n    }\n    uint8_t i, end = APPLET_ENUM_END;\n    for (i = APPLET_NULL + 1; i != end; ++i) {\n      if (aid_matches(i, DATA, LC, transport)) {\n        if (!applet_enabled_on_transport((enum APPLET)i, transport)) {\n          reject_usb_fido_select(transport);\n          disabled_applet_response(rapdu);\n          DBG_MSG(\"applet disabled: %d\\n\", i);\n          return;\n        }\n#if ENABLE_APPLET_NDEF\n        if (i == APPLET_NDEF && !device_config_is_ndef_enabled()) {\n          reject_usb_fido_select(transport);\n          LL = 0;\n          SW = SW_FILE_NOT_FOUND;\n          DBG_MSG(\"NDEF is disable\\n\");\n          return;\n        }\n#endif\n        if (i != current_applet) {\n          if (current_applet == APPLET_FIDO) {\n            ctap_deselect();\n          }\n          applets_poweroff();\n          fido_capdu_reset();\n        }\n        current_applet = i;\n        DBG_MSG(\"applet switched to: %d\\n\", current_applet);\n        break;\n      }\n    }\n    if (i == end) {\n      reject_usb_fido_select(transport);"
+    },
+    {
+      "path": "src/apdu.c",
+      "line": 259,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "  if (fido_capdu_chaining.in_chaining && previous_header != incoming_header) fido_capdu_reset();\n  if (!fido_capdu_chaining.in_chaining) {\n    *cmd = *sh;\n    cmd->cla &= 0xEF;\n    cmd->lc = 0;\n    cmd->data = shared_io_buffer;\n  }\n  const uint32_t new_len = (uint32_t)cmd->lc + sh->lc;\n  if (new_len > CTAP_MAX_REQUEST_SIZE) return APDU_CHAINING_OVERFLOW;\n  // This helper is entered only for command chaining. Stage the very first\n  // fragment: receiving the next APDU will overwrite the shared input buffer.\n  if (!fido_capdu_pke_owner) {\n    if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return APDU_CHAINING_ERROR;\n    fido_capdu_pke_owner = 1;\n  }\n  if (pke_buffer_write(cmd->lc, sh->data, sh->lc) < 0) return APDU_CHAINING_ERROR;\n  cmd->lc = (uint16_t)new_len;\n  fido_capdu_chaining.in_chaining = (sh->cla & 0x10) != 0;\n  if (fido_capdu_chaining.in_chaining) return APDU_CHAINING_NOT_LAST_BLOCK;\n  cmd->le = sh->le;\n  return APDU_CHAINING_LAST_BLOCK;\n}\n\nint apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {\n  if (response_source.view.read) {\n    uint32_t remaining = response_source.view.total_len - response_source.view.offset;\n    uint16_t to_send = (uint16_t)MIN(remaining, sh->len);"
+    },
+    {
+      "path": "src/apdu.c",
+      "line": 662,
+      "file_sha256": "4d044a4aaea18e9dfe72c3b43c54d609485051c57cd328d1f326bbdf0e88af64",
+      "source": "        SW = SW_UNABLE_TO_PROCESS;\n        break;\n      }\n      if (chaining == APDU_CHAINING_NOT_LAST_BLOCK) {\n        LL = 0;\n        SW = SW_NO_ERROR;\n        break;\n      }\n      capdu = &fido_capdu_chaining.capdu;\n    }\n    const apdu_request_source_t chained_source = {\n        .read = apdu_request_read_pke, .close = fido_capdu_release_request, .len = LC};"
+    },
+    {
+      "path": "interfaces/USB/class/webusb/webusb.c",
+      "line": 108,
+      "file_sha256": "3f6b93223ef0b7c055153bcc76cd02b2001d31c0ec081a334bb7b7eec74ecadf",
+      "source": "  }\n  if (state != STATE_PROCESS) return;\n\n  DBG_MSG(\"C: \");\n  PRINT_HEX(shared_io_buffer, apdu_buffer_size);\n\n  CAPDU *capdu = &apdu_cmd;\n  RAPDU *rapdu = &apdu_resp;\n\n  device_applet_session_prepare(DEVICE_APPLET_SESSION_WEBUSB);\n  if (build_capdu(&apdu_cmd, shared_io_buffer, apdu_buffer_size) < 0) {\n    // abandon malformed apdu\n    LL = 0;\n    SW = SW_WRONG_LENGTH;\n  } else if (device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB) != 0) {\n    LL = 0;\n    SW = SW_CONDITIONS_NOT_SATISFIED;\n  } else {\n    device_applet_session_touch(DEVICE_APPLET_SESSION_WEBUSB);\n    process_apdu_from(capdu, rapdu, APDU_TRANSPORT_WEBUSB);\n  }\n\n  apdu_buffer_size = LL + 2;\n  shared_io_buffer[LL] = HI(SW);\n  shared_io_buffer[LL + 1] = LO(SW);"
+    },
+    {
+      "path": "interfaces/NFC/nfc.c",
+      "line": 424,
+      "file_sha256": "a19df3a57d459f061323d9c4387b071bdf08ac1295103a9645fdb5647f511d2d",
+      "source": "      RAPDU *rapdu = &apdu_resp;\n\n      int malformed = transfer_state.rx_mode == RX_MALFORMED;\n      if (transfer_state.rx_mode == RX_PKE || transfer_state.rx_mode == RX_DISCARD) {\n        const uint32_t end = 7u + capdu->lc;\n        malformed = apdu_buffer_rx_size != end && apdu_buffer_rx_size != end + 2;\n        capdu->le = 0x10000;\n        if (apdu_buffer_rx_size == end + 2) {\n          const uint16_t le = ((uint16_t)shared_io_buffer[0] << 8) | shared_io_buffer[1];\n          if (le) capdu->le = le;\n        }\n      } else if (!malformed) {\n        malformed = build_capdu(capdu, shared_io_buffer, apdu_buffer_rx_size) < 0;\n      }\n      LL = 0;\n      if (malformed) {\n        close_rx_request(NULL);\n        apdu_fido_chain_reset();\n        apdu_response_source_clear();\n        apdu_rapdu_chain_reset();\n        SW = SW_WRONG_LENGTH;\n      } else if (transfer_state.rx_mode != RX_DISCARD) {\n        CAPDU command = *capdu; // dispatch clamps Le; preserve the NFC response budget\n        if (process_nfc_apdu(&command, rapdu) < 0) return;\n      }\n      if (!malformed && transfer_state.rx_mode == RX_DISCARD && SW == SW_NO_ERROR) {\n        shared_io_buffer[0] = 0x39; // CTAP2_ERR_REQUEST_TOO_LARGE\n        LL = 1;"
+    },
+    {
+      "path": "applets/ctap/ctap.c",
+      "line": 1100,
+      "file_sha256": "d6c32d99aacebb0017def6ef232c6c1fc6674f766a201c3160a5bcd9ede21e0d",
+      "source": "  if (write_file(MIN_PIN_RPIDS_FILE, NULL, 0, 0, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;\n  random_buffer(kh_key, sizeof(kh_key));\n  if (write_attr(CTAP_CERT_FILE, KH_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;\n  random_buffer(kh_key, sizeof(kh_key));\n  if (write_attr(CTAP_CERT_FILE, HE_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;\n  memcpy(\n      kh_key,\n      (uint8_t[]){0x80, 0x76, 0xbe, 0x8b, 0x52, 0x8d, 0x00, 0x75, 0xf7, 0xaa, 0xe9, 0x8d, 0x6f, 0xa5, 0x7a, 0x6d, 0x3c},\n      17);\n  if (write_file(LB_FILE, kh_key, 0, 17, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;\n  if (!has_sm2_config) {\n    ctap_sm2_config_set_default();"
+    },
+    {
+      "path": "applets/ctap/ctap.c",
+      "line": 3866,
+      "file_sha256": "d6c32d99aacebb0017def6ef232c6c1fc6674f766a201c3160a5bcd9ede21e0d",
+      "source": "static int __attribute__((noinline)) ctap_process_apdu_cbor_message(uint8_t *req, size_t req_len, RAPDU *rapdu) {\n  if (req_len == 0) {\n    rapdu->sw = SW_WRONG_LENGTH;\n    return 0;\n  }\n\n  uint8_t cmd;\n  if (current_req_src.read) {\n    if (ctap_req_read_payload_bytes(0, &cmd, sizeof(cmd)) < 0) {\n      rapdu->sw = SW_UNABLE_TO_PROCESS;\n      ctap_req_lifetime_end();\n      return 0;\n    }\n  } else {\n    cmd = *req;\n  }\n"
+    },
+    {
+      "path": "applets/piv/piv.c",
+      "line": 3144,
+      "file_sha256": "bbbdd4ede2595733f730c0ef46a8b3e3f5d33b29cf0aa7832480432b0d25c562",
+      "source": "int piv_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu) {\n  uint8_t applet_get_response = 0;\n\n  if (capdu->extended) {\n    piv_abort_chained_state();\n    LL = 0;\n    SW = SW_WRONG_LENGTH;\n    return 0;\n  }\n\n  if (INS == PIV_INS_GET_DATA) {\n    piv_state = PIV_STATE_GET_DATA;\n    applet_get_response = 1;\n  } else if ((piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE) && INS == 0xC0) {\n    piv_state = PIV_STATE_GET_DATA_RESPONSE;\n    applet_get_response = 1;\n  } else {\n    piv_state = PIV_STATE_OTHER;\n  }\n\n  return apdu_process_streaming_message(rapdu_chaining, capdu, rapdu,\n                                        apdu_is_get_response(capdu) && !applet_get_response, APDU_BUFFER_SIZE,\n                                        piv_process_apdu);\n}\n\n// for testing without authentication\n#ifdef TEST"
+    }
+  ],
+  "products": {
+    "devkit": {
+      "flash": 178776,
+      "static_ram": 8272,
+      "udf": 140,
+      "correctness_delta": 312,
+      "elf_sha256": "034736436f4eb3768999ddfee1cce01368e379c76866c3bf4648d1716bb730ed"
+    },
+    "nfcc": {
+      "flash": 187920,
+      "static_ram": 8432,
+      "udf": 146,
+      "correctness_delta": 312,
+      "elf_sha256": "c75f0b1ecdabb37714b277b91e649b91a84b19c2ab11a8c8f7cb2b993d9be151",
+      "overflow": 6160,
+      "diagnostic_elf_only": true
+    }
+  }
+}

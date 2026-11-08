@@ -3,13 +3,27 @@
 import datetime
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, mldsa
 from cryptography.x509.oid import NameOID, ObjectIdentifier
 
 AAGUID = bytes.fromhex("244eb29ee0904e4981fe1f20f8d3b8f4")
 AAGUID_OID = ObjectIdentifier("1.3.6.1.4.1.45724.1.1.4")
 # Keep the certificate larger than one short response to exercise streaming.
 CERTIFICATE_PADDING_BYTES = 384
+
+
+def padded_request(command, parameters, length):
+    """Valid CTAP request padded by an unknown byte-string parameter.
+
+    The requested size includes the command byte, not transport framing.
+    Known fields still execute and are checked with independent crypto oracles.
+    """
+    from fido2 import cbor
+    for padding in range(length):
+        encoded = bytes([command]) + cbor.encode(parameters | {127: bytes(padding)})
+        if len(encoded) == length:
+            return encoded
+    raise AssertionError((command, length, "request cannot fit"))
 
 
 def provision(card):
@@ -43,6 +57,20 @@ def provision(card):
     return verify
 
 
+
+def verify_credential(key, message, signature):
+    """Verify the selected COSE key with an independent crypto implementation."""
+    if key[3] in (-49, -48):
+        public_type, public_bytes, signature_bytes = {
+            -49: (mldsa.MLDSA65PublicKey, 1952, 3309),
+            -48: (mldsa.MLDSA44PublicKey, 1312, 2420),
+        }[key[3]]
+        assert set(key) == {1, 3, -1} and key[1] == 7 and len(key[-1]) == public_bytes
+        assert len(signature) == signature_bytes
+        public_type.from_public_bytes(key[-1]).verify(signature, message)
+    else:
+        key.verify(message, signature)
+
 def mixed_management(call, verify_attestation, curve=9, algorithm=-54, cycle=lambda: None):
     """Full public keys across mixed streamed responses, using a fresh CTAP store."""
     import hashlib
@@ -53,7 +81,7 @@ def mixed_management(call, verify_attestation, curve=9, algorithm=-54, cycle=lam
     rp = "otherprotocol://myfidousingwebsite.hostingprovider.net"
     challenge = hashlib.sha256(b"mixed management").digest()
     expected = []
-    for i, alg in enumerate([algorithm, -49, -7, -49, -8, algorithm]):
+    for i, alg in enumerate([algorithm, -49, -7, -48, -8, algorithm]):
         result = call(1, {1: challenge, 2: {"id": rp}, 3: {"id": bytes([i])},
                           4: [{"type": "public-key", "alg": alg}],
                           6: {"thirdPartyPayment": True} | ({"largeBlobKey": True} if i < 3 else {}),
@@ -62,13 +90,13 @@ def mixed_management(call, verify_attestation, curve=9, algorithm=-54, cycle=lam
         credential = AuthenticatorData(result[2]).credential_data
         key = credential.public_key
         assert key[3] == alg
-        assert key[1] == (7 if alg == -49 else 1 if alg == -8 else 2)
-        if alg == -49:
-            assert set(key) == {1, 3, -1} and len(key[-1]) == 1952
+        assert key[1] == (7 if alg in (-49, -48) else 1 if alg == -8 else 2)
+        if alg in (-49, -48):
+            assert set(key) == {1, 3, -1} and len(key[-1]) == (1952 if alg == -49 else 1312)
         else:
             assert key[-1] == (6 if alg == -8 else 1 if alg == -7 else curve)
             assert len(key[-2]) == 32
-        if alg not in (-49, -8):
+        if alg not in (-49, -48, -8):
             assert len(key[-3]) == 32
         blob_key = result.get(5)
         assert (blob_key is not None) == (i < 3)
@@ -84,8 +112,8 @@ def mixed_management(call, verify_attestation, curve=9, algorithm=-54, cycle=lam
             assert answer[1] == descriptor and answer[4] == {"id": bytes([i])}
             assert answer.get(5) == (6 if position == 0 else None)
             assert answer.get(7) == blob_key
-            if key[3] in (-7, -8):
-                key.verify(answer[2] + challenge, answer[3])
+            if key[3] in (-7, -8, -49, -48):
+                verify_credential(key, answer[2] + challenge, answer[3])
     call(2, {1: rp, 2: challenge, 3: [{"id": b"unknown", "type": "public-key"}]}, status=0x2e)
     protocol = PinProtocolV1()
     public, secret = protocol.encapsulate(call(6, {1: 1, 2: 2})[1])

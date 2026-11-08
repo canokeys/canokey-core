@@ -5,11 +5,13 @@ use crate::{
     ports::{DigestOperation, HashState, Platform, Record, StorageError},
     runtime::workspace::Workspace,
 };
-use canokey_ports::{Crypto as _, Storage as _};
+use canokey_ports::{Crypto as _, Device as _, Storage as _};
 use canokey_protocol::cbor::{Encoder, Event};
 
 pub(super) const LIMIT: u16 = 4096;
 const FRAGMENT: usize = super::MAX_REQUEST - 64;
+// Parsed offsets fit u16 and fragments fit FRAGMENT, even before LIMIT checks.
+const _: () = assert!(FRAGMENT <= usize::MAX - u16::MAX as usize);
 // Canonical empty serialized array plus its SHA-256 prefix.
 const EMPTY: [u8; 17] = [
     0x80, 0x76, 0xbe, 0x8b, 0x52, 0x8d, 0x00, 0x75, 0xf7, 0xaa, 0xe9, 0x8d, 0x6f, 0xa5, 0x7a, 0x6d,
@@ -123,7 +125,7 @@ impl Fields {
             self.started = true;
             return Ok(());
         }
-        if super::skip_cbor_event(&mut self.skip, event) {
+        if super::skip_cbor_event(&mut self.skip, event)? {
             return Ok(());
         }
         if let Some((key, _)) = self.body {
@@ -265,6 +267,7 @@ impl Session {
                 return Err(Status::InvalidParameter);
             }
             let n = usize::from(get).min(total - offset);
+            processing(p);
             w.output[0] = 0;
             let mut e = Encoder::new(&mut w.output[1..]);
             e.map(1)
@@ -330,10 +333,14 @@ impl Session {
                 .digest(DigestOperation::Init, &mut self.upload.hash, &[], &mut [])
                 .map_err(|_| Status::Other)?;
         }
-        if offset + n > usize::from(self.upload.length) {
+        // The parser and the static bound above prove this sum cannot wrap.
+        let end = offset.wrapping_add(n);
+        if end > usize::from(self.upload.length) {
             return Err(Status::InvalidParameter);
         }
-        let data_end = usize::from(self.upload.length) - 16;
+        processing(p);
+        // An active upload retains a parsed length in 17..=LIMIT.
+        let data_end = usize::from(self.upload.length.wrapping_sub(16));
         let hashed = n.min(data_end.saturating_sub(offset));
         p.crypto
             .digest(
@@ -344,15 +351,18 @@ impl Session {
             )
             .map_err(|_| Status::Other)?;
         if hashed < n {
-            let start = offset + hashed - data_end;
-            self.upload.checksum[start..start + n - hashed]
-                .copy_from_slice(&params.bytes[hashed..n]);
+            // A fragment crossing data_end starts the checksum at zero;
+            // fragments already in the checksum retain their relative offset.
+            let start = offset.saturating_sub(data_end);
+            let tail = &params.bytes[hashed..n];
+            self.upload.checksum[start..][..tail.len()].copy_from_slice(tail);
         }
         // This is the requested durable blob, written only after authentication.
         p.storage
             .stage_append(&params.bytes[..n])
             .map_err(|_| Status::Other)?;
-        self.upload.next += n as u16;
+        // Offset equals the old cursor (or zero); end was bounded by length.
+        self.upload.next = end as u16;
         if self.upload.next == self.upload.length {
             let mut digest = [0; 32];
             p.crypto
@@ -373,5 +383,14 @@ impl Session {
         }
         w.output[0] = 0;
         Ok(1)
+    }
+}
+
+fn processing(p: &mut Platform<'_, impl crate::ports::Backends>) {
+    if !p.device.contactless() {
+        p.device.keepalive(false);
+        // Match C's best-effort KEEPALIVE point after validation. The transport
+        // observes lifecycle cancellation; this callback cannot borrow Core.
+        let _ = p.device.progress();
     }
 }

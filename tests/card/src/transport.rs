@@ -9,6 +9,8 @@ thread_local! {
     static RECORDS: RefCell<Records> = RefCell::new(Records::new());
     static NOW: Cell<fn() -> u32> = Cell::new(|| 0);
     static PROGRESS: Cell<fn() -> bool> = Cell::new(|| false);
+    static TOUCH: Cell<fn() -> bool> = Cell::new(|| false);
+    static PRESENCE: RefCell<canokey_ports::Polling> = const { RefCell::new(canokey_ports::Polling::new()) };
     static SCRATCH: RefCell<Scratch> = const { RefCell::new(Scratch {
         bytes: [0; SCRATCH_BYTES], owner: 0, leases: 0, clears: 0,
     }) };
@@ -20,6 +22,18 @@ pub fn device_hooks(now: fn() -> u32, progress: fn() -> bool) {
     NOW.set(now);
     PROGRESS.set(progress);
 }
+pub fn touch_hook(touched: fn() -> bool) {
+    TOUCH.set(touched);
+}
+/// Match the product's serialized main-loop raw sensor sampling, outside Core.
+pub fn presence_sample() {
+    if !Clock.contactless() {
+        PRESENCE.with(|poll| {
+            poll.borrow_mut()
+                .sample(TOUCH.with(|f| f.get()()), NOW.with(|f| f.get()()))
+        });
+    }
+}
 pub struct Clock;
 impl Device for Clock {
     fn serial(&mut self, out: &mut [u8; 4]) {
@@ -29,6 +43,22 @@ impl Device for Clock {
         NOW.with(|f| f.get()())
     }
     fn touched(&mut self) -> bool {
+        PRESENCE.with(|poll| poll.borrow_mut().clear());
+        TOUCH.with(|f| f.get()())
+    }
+    fn poll_presence(&mut self) -> bool {
+        PRESENCE.with(|poll| poll.borrow_mut().take(self.now()))
+    }
+    fn wink(&mut self) {
+        PRESENCE.with(|poll| poll.borrow_mut().wink(self.now()));
+    }
+    fn contactless(&mut self) -> bool {
+        #[cfg(feature = "transport-nfc")]
+        {
+            // Observe the facade's actual RF mode, as the product Device does.
+            unsafe { canokey_rust_ffi::composition::nfc::mode() != 0 }
+        }
+        #[cfg(not(feature = "transport-nfc"))]
         false
     }
     fn progress(&mut self) -> bool {

@@ -393,8 +393,9 @@ impl State {
         } else {
             Presence::NotConfirmed
         };
-        let mut result =
-            service::calculate(&mut store, &mut mac, id, input, presence).map_err(status)?;
+        let mut result = service::Digest::new();
+        service::calculate_into(&mut store, &mut mac, id, input, presence, &mut result)
+            .map_err(status)?;
         self.emit_digest(&result, h.p2 != 0x00);
         result.clear(&mut mac);
         Ok(())
@@ -410,7 +411,7 @@ impl State {
         // P1=1/2 selects a PASS slot (one-based); P2=0/1 controls
         // the trailing Enter key. NAME binds an HOTP credential.
         let pass = pass.ok_or(Sw::INS_NOT_SUPPORTED)?;
-        if !(0x01..=0x02).contains(&h.p1) || h.p2 > 0x01 {
+        if (h.p1 < 0x01 || h.p1 > 0x02) || h.p2 > 0x01 {
             return Err(Sw::WRONG_P1P2);
         }
         let name = name(&mut c)?;

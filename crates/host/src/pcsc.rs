@@ -257,7 +257,12 @@ pub(super) unsafe fn ck_pcsc_transmit(
         return SMALL;
     }
     let request = unsafe { input(tx, n) };
-    host(|h| h.nfc = contactless());
+    let nfc = contactless();
+    if host(|h| h.nfc) != nfc {
+        // Switching the simulated reader transport is a new activation.
+        unsafe { core::reset::<HostProvider>() };
+        host(|h| h.nfc = nfc);
+    }
     presence_sample();
     if let Some(response) = test_control(request) {
         return match response {

@@ -22,8 +22,10 @@ pub(super) const COUNTER_OFFSET: usize = KEY_OFFSET + KEY_LIMIT;
 pub fn length(header: &[u8]) -> Result<usize, Error> {
     if header.len() < HEADER_BYTES
         || header[VERSION] != FORMAT_VERSION
-        || !(1..=NAME_LIMIT as u8).contains(&header[NAME_LENGTH])
-        || !(1..=KEY_LIMIT as u8).contains(&header[KEY_LENGTH])
+        || header[NAME_LENGTH] < 1
+        || header[NAME_LENGTH] > NAME_LIMIT as u8
+        || header[KEY_LENGTH] < 1
+        || header[KEY_LENGTH] > KEY_LIMIT as u8
     {
         return Err(Error::Invalid);
     }
@@ -50,7 +52,7 @@ pub(super) fn fields(bytes: &[u8; HEADER_BYTES]) -> Result<Header, Error> {
         digits: bytes[DIGITS],
         properties: Properties::new(bytes[PROPERTIES])?,
     };
-    if !(4..=8).contains(&header.digits) {
+    if header.digits < 4 || header.digits > 8 {
         return Err(Error::Invalid);
     }
     Ok(header)

@@ -145,6 +145,7 @@ impl Response {
     }
     // Preserve the concrete source through the lifecycle calls. Firmware has
     // one routed source; callers with a trait object remain supported.
+    #[inline(never)]
     pub fn clear(&mut self, source: &mut (impl Source + ?Sized)) {
         if self.pending.take().is_some() {
             source.close();

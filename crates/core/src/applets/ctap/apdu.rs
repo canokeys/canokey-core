@@ -4,8 +4,6 @@ use super::{Applet, Request, Response};
 use crate::{ports::Platform, runtime::workspace::SessionWorkspace};
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 
-// FIDO Alliance RID A000000647, FIDO application suffix 2F0001.
-pub const AID: &[u8] = &canokey_protocol::apdu::FIDO_AID;
 // Preserve the legacy six-byte SELECT reply; CTAP2 capabilities use GetInfo.
 const VERSION: &[u8] = b"U2F_V2";
 pub(super) const INS_MSG: u8 = 0x10;
@@ -15,13 +13,6 @@ pub(super) fn valid_message_parameters(header: Header) -> bool {
     // synchronous engine, we may finish the command directly with 9000; the
     // hint must not make standards-compliant NFC clients fail discovery.
     header.p1 & 0x7f == 0 && header.p2 == 0
-}
-
-pub fn allows_extended(header: Header) -> bool {
-    // Let U2F classify unknown instructions after valid extended framing, just
-    // as for short APDUs. Runtime ownership and command-size limits still apply.
-    header.cla == 0
-        || (header.cla == 0x80 && header.ins == INS_MSG && valid_message_parameters(header))
 }
 
 impl Applet {
@@ -51,6 +42,11 @@ impl Applet {
         w.wipe_active(p.memory);
         *w = SessionWorkspace::CtapRequest(Request::new());
         if header.ins != INS_MSG {
+            // C acknowledges intermediate proprietary fragments before INS
+            // dispatch. The completed command is checked in finish().
+            if header.chained() {
+                return Ok(());
+            }
             return Err(Sw::INS_NOT_SUPPORTED);
         }
         if !valid_message_parameters(header) {
@@ -69,9 +65,13 @@ impl Applet {
     }
     pub fn finish(
         &mut self,
+        header: Header,
         w: &mut SessionWorkspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
+        if header.cla != 0 && header.ins != INS_MSG {
+            return Err(Sw::INS_NOT_SUPPORTED);
+        }
         self.finish_apdu_command(w, p)?;
         Ok(self.complete(w, p, None) as u32)
     }
@@ -88,7 +88,13 @@ impl Applet {
                 .session
                 .u2f(&request, &mut w.classic_with(p.memory), p)?;
         } else {
-            let mut command = w.ctap_request_with(p.memory).finish();
+            let request = w.ctap_request_with(p.memory);
+            // The APDU envelope rejects an empty CBOR message with6700.
+            // Native HID keeps the CTAP InvalidLength status from finish().
+            if request.command.is_none() {
+                return Err(Sw::WRONG_LENGTH);
+            }
+            let mut command = request.finish();
             self.dispatch(&mut command, w, p);
         }
         Ok(())

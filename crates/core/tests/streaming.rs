@@ -147,6 +147,7 @@ impl Router for Fixture {
     fn select(
         &mut self,
         aid: &[u8],
+        _: canokey_protocol::apdu::Transport,
         _: &mut Platform<'_, impl canokey_ports::Backends>,
     ) -> Result<u32, Sw> {
         assert_eq!(aid, [1]);
@@ -236,7 +237,7 @@ impl Router for Fixture {
     fn finish(
         &mut self,
         h: Header,
-        _: Option<u32>,
+        _: u32,
         p: &mut Platform<'_, impl canokey_ports::Backends>,
     ) -> Result<(u32, Sw), Sw> {
         self.events.push("finish");
@@ -313,6 +314,7 @@ impl Router for Fixture {
 struct FrameSource<'a> {
     remaining: &'a [u8],
     closes: usize,
+    close_error: Option<Sw>,
 }
 impl canokey_rust_core::runtime::engine::InputSource for FrameSource<'_> {
     fn read(&mut self, output: &mut [u8]) -> Result<usize, Sw> {
@@ -321,8 +323,9 @@ impl canokey_rust_core::runtime::engine::InputSource for FrameSource<'_> {
         self.remaining = &self.remaining[n..];
         Ok(n)
     }
-    fn close(&mut self) {
+    fn close(&mut self) -> Result<(), Sw> {
         self.closes += 1;
+        self.close_error.map_or(Ok(()), Err)
     }
 }
 fn frame(
@@ -334,6 +337,7 @@ fn frame(
         let mut source = FrameSource {
             remaining: bytes,
             closes: 0,
+            close_error: None,
         };
         let reply = runtime.receive_source(1, bytes.len(), &mut source, p);
         assert_eq!(source.closes, 1);
@@ -515,67 +519,150 @@ fn frame_decoder_owns_select_parameters_and_final_command_header() {
 #[test]
 fn fido_chain_exact_limit_overflow_and_recovery() {
     use canokey_rust_core::Core;
-    for owner in [1, 4] {
-        for overflow in [false, true] {
-            let (mut storage, mut crypto, mut device) =
-                (StorageBackend::default(), CryptoBackend, DeviceBackend);
-            let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
-                storage: &mut storage,
-                crypto: &mut crypto,
-                device: &mut device,
-                memory: &MemoryBackend,
-            };
-            let mut core = Core::new();
-            let mut out = [0; 258];
-            let select = [0, 0xa4, 4, 0, 8, 0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1];
-            let reply = core.receive(owner, &select, &mut p);
-            core.transmit(reply, &mut out, &mut p).unwrap();
-            // getPinRetries plus an ignored 1015-byte extension: exactly 1024.
-            let mut request = vec![6, 0xa2, 2, 1, 0x18, 99, 0x59, 3, 0xf7];
-            request.extend_from_slice(&[0x37; 1015]);
-            for (index, bytes) in request.chunks(255).enumerate() {
-                let final_chunk = index == 4 && !overflow;
-                let mut frame = vec![
-                    if final_chunk { 0x80 } else { 0x90 },
-                    0x10,
-                    0,
-                    0,
-                    bytes.len() as u8,
-                ];
-                frame.extend_from_slice(bytes);
-                let reply = core.receive(owner, &frame, &mut p);
-                let n = core.transmit(reply, &mut out, &mut p).unwrap();
-                assert_eq!(
-                    &out[..n],
-                    if final_chunk {
-                        &[0, 0xa1, 3, 8, 0x90, 0][..]
-                    } else {
-                        &[0x90, 0][..]
+    for owner in [1, 3, 4] {
+        for length in [1023, 1024, 1025, 1295, 1296] {
+            for overflow in [false, true] {
+                let (mut storage, mut crypto, mut device) =
+                    (StorageBackend::default(), CryptoBackend, DeviceBackend);
+                let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                    storage: &mut storage,
+                    crypto: &mut crypto,
+                    device: &mut device,
+                    memory: &MemoryBackend,
+                };
+                let mut core = Core::new();
+                let mut out = [0; 258];
+                let mut select = [0, 0xa4, 4, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0];
+                select[5..].copy_from_slice(if owner == 4 {
+                    &canokey_protocol::apdu::FIDO_AID
+                } else {
+                    &canokey_protocol::apdu::FIDO_USB_AID
+                });
+                let reply = core.receive(owner, &select, &mut p);
+                core.transmit(reply, &mut out, &mut p).unwrap();
+                // getPinRetries plus an ignored byte string at each capacity boundary.
+                let padding = length - 9;
+                let mut request = vec![6, 0xa2, 2, 1, 0x18, 99, 0x59];
+                request.extend_from_slice(&(padding as u16).to_be_bytes());
+                request.resize(length, 0x37);
+                for (index, bytes) in request.chunks(255).enumerate() {
+                    let final_chunk = (index + 1) * 255 >= length && !overflow;
+                    let mut frame = vec![
+                        if final_chunk { 0x80 } else { 0x90 },
+                        0x10,
+                        0,
+                        0,
+                        bytes.len() as u8,
+                    ];
+                    frame.extend_from_slice(bytes);
+                    let reply = core.receive(owner, &frame, &mut p);
+                    let n = core.transmit(reply, &mut out, &mut p).unwrap();
+                    assert_eq!(
+                        &out[..n],
+                        if final_chunk {
+                            &[0, 0xa1, 3, 8, 0x90, 0][..]
+                        } else {
+                            &[0x90, 0][..]
+                        }
+                    );
+                    assert_eq!(core.can_preempt(), final_chunk);
+                }
+                if overflow {
+                    // Complete the chain budget, then exceed it by one byte.
+                    let remaining = canokey_protocol::ctaphid::CTAP_MAX_REQUEST - length;
+                    for bytes in vec![0; remaining].chunks(255) {
+                        let mut frame = vec![0x90, 0x10, 0, 0, bytes.len() as u8];
+                        frame.extend_from_slice(bytes);
+                        let reply = core.receive(owner, &frame, &mut p);
+                        let n = core.transmit(reply, &mut out, &mut p).unwrap();
+                        assert_eq!(&out[..n], &[0x90, 0]);
                     }
-                );
-                assert_eq!(core.can_preempt(), final_chunk);
-            }
-            if overflow {
-                let reply = core.receive(owner, &[0x90, 0x10, 0, 0, 1, 0], &mut p);
+                    let reply = core.receive(owner, &[0x90, 0x10, 0, 0, 1, 0], &mut p);
+                    let n = core.transmit(reply, &mut out, &mut p).unwrap();
+                    assert_eq!(&out[..n], &[0x67, 0]);
+                    assert!(core.can_preempt());
+                }
+                let reply = core.receive(owner, &[0x80, 0x10, 0, 0, 4, 6, 0xa1, 2, 1], &mut p);
                 let n = core.transmit(reply, &mut out, &mut p).unwrap();
-                assert_eq!(&out[..n], &[0x67, 0]);
+                assert_eq!(&out[..n], &[0, 0xa1, 3, 8, 0x90, 0]);
                 assert!(core.can_preempt());
             }
-            let reply = core.receive(owner, &[0x80, 0x10, 0, 0, 4, 6, 0xa1, 2, 1], &mut p);
-            let n = core.transmit(reply, &mut out, &mut p).unwrap();
-            assert_eq!(&out[..n], &[0, 0xa1, 3, 8, 0x90, 0]);
-            assert!(core.can_preempt());
         }
     }
 }
 
 #[cfg(feature = "ctap")]
 #[test]
-fn extended_fido_source_is_bounded_and_ccid_only() {
+fn extended_nfc_source_is_bounded_releases_before_crypto_and_resets_old_chain() {
     use canokey_rust_core::{Core, runtime::engine::InputSource};
+    use std::{cell::Cell, rc::Rc};
+    struct Probe(Rc<Cell<bool>>, usize);
+    impl Crypto for Probe {
+        fn key_operation(
+            &mut self,
+            op: KeyOperation,
+            _: u8,
+            key: &mut KeyMaterial,
+            _: &[u8],
+            out: &mut [u8],
+        ) -> Result<usize, CryptoError> {
+            assert!(
+                !self.0.get(),
+                "crypto must not run while NFC PKE input is live"
+            );
+            self.1 += 1;
+            match op {
+                KeyOperation::Generate => {
+                    key.bytes[..32].fill(7);
+                    Ok(0)
+                }
+                KeyOperation::Public => {
+                    out[..64].fill(8);
+                    Ok(64)
+                }
+                _ => Err(CryptoError::Failure),
+            }
+        }
+        fn mac(&mut self, _: u8, _: &[u8], _: &[u8], _: &mut [u8; 64]) -> Result<(), CryptoError> {
+            Err(CryptoError::Failure)
+        }
+        fn random(&mut self, out: &mut [u8]) -> Result<(), CryptoError> {
+            assert!(!self.0.get());
+            out.fill(9);
+            Ok(())
+        }
+        fn hmac_sha1(&mut self, _: &[u8; 20], _: &[u8], _: &mut [u8; 20]) {
+            unreachable!()
+        }
+    }
+    struct Source {
+        bytes: Vec<u8>,
+        offset: usize,
+        held: Rc<Cell<bool>>,
+        closes: usize,
+        fail: bool,
+    }
+    impl InputSource for Source {
+        fn read(&mut self, out: &mut [u8]) -> Result<usize, Sw> {
+            assert!(self.held.get());
+            if self.fail {
+                return Err(Sw::UNABLE_TO_PROCESS);
+            }
+            out.copy_from_slice(&self.bytes[self.offset..self.offset + out.len()]);
+            self.offset += out.len();
+            Ok(out.len())
+        }
+        fn close(&mut self) -> Result<(), Sw> {
+            assert!(self.held.replace(false));
+            self.bytes.fill(0);
+            self.closes += 1;
+            Ok(())
+        }
+    }
+    let held = Rc::new(Cell::new(false));
     let (mut storage, mut crypto, mut device, memory) = (
         StorageBackend::default(),
-        CryptoBackend,
+        Probe(held.clone(), 0),
         DeviceBackend,
         MemoryBackend,
     );
@@ -587,68 +674,55 @@ fn extended_fido_source_is_bounded_and_ccid_only() {
     };
     let mut core = Core::new();
     let mut out = [0; 258];
-    let prefix = [0x80, 0x10, 0, 0, 0, 1, 0x23]; // Lc=291, BE
-    assert_eq!(
-        core.prepare_extended(1, &prefix, 300, &mut p),
-        Err(Sw::FILE_NOT_FOUND)
-    );
-    let select = [0, 0xa4, 4, 0, 8, 0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1, 0];
-    for (owner, head, total) in [
-        (2, prefix, 300),
-        (1, [0x90, 0x10, 0, 0, 0, 1, 0x23], 300),
-        (1, [0x81, 0xda, 0, 0, 0, 1, 0x23], 300),
-        (1, prefix, 299),
-        (1, [0x80, 0x10, 0, 0, 0, 4, 1], 1034),
+    let prefix = [0x80, 0x10, 0, 0, 0, 1, 0x23]; // Lc=291, BE.
+    assert_eq!(core.prepare_nfc(&prefix, &mut p), Err(Sw::FILE_NOT_FOUND));
+    let select = b"\x00\xa4\x04\x00\x08\xa0\x00\x00\x06\x47\x2f\x00\x01\x00";
+    let reply = core.receive(4, select, &mut p);
+    assert_eq!(core.transmit(reply, &mut out, &mut p).unwrap(), 8);
+    for (head, expected) in [
+        ([0x90, 0x10, 0, 0, 0, 1, 0x23], Sw::WRONG_LENGTH),
+        ([0x81, 0xda, 0, 0, 0, 1, 0x23], Sw::WRONG_LENGTH),
+        ([0x80, 0x10, 1, 0, 0, 1, 0x23], Sw::WRONG_P1P2),
+        ([0x80, 0x10, 0, 1, 0, 1, 0x23], Sw::WRONG_P1P2),
     ] {
-        let reply = core.receive(1, &select, &mut p);
-        core.transmit(reply, &mut out, &mut p).unwrap();
-        assert_eq!(
-            core.prepare_extended(owner, &head, total, &mut p),
-            Err(Sw::WRONG_LENGTH)
-        );
+        assert_eq!(core.prepare_nfc(&head, &mut p), Err(expected));
     }
-    let reply = core.receive(1, &select, &mut p);
-    core.transmit(reply, &mut out, &mut p).unwrap();
-    assert_eq!(core.prepare_extended(1, &prefix, 300, &mut p), Ok(291));
-    let mut data = Vec::from(prefix);
-    // getPinRetries plus a skipped extension forces PKE-backed CBOR parsing.
-    data.extend_from_slice(&[6, 0xa2, 2, 1, 0x18, 99, 0x59, 1, 0x1a]);
-    data.extend_from_slice(&[0x37; 282]);
-    data.extend_from_slice(&[1, 0x23]); // Le=291, not a native-endian word
-    let mut source = FrameSource {
-        remaining: &data,
-        closes: 0,
-    };
-    let reply = core.receive_source(1, data.len(), &mut source, &mut p);
-    assert_eq!(source.closes, 1);
-    let n = core.transmit(reply, &mut out, &mut p).unwrap();
-    assert_eq!(&out[..n], &[0, 0xa1, 3, 8, 0x90, 0]);
-
-    // An extended command cannot finish an existing ISO input chain.
-    let reply = core.receive(1, &[0x90, 0x10, 0, 0, 1, 4], &mut p);
+    // An NFC standalone command abandons an unfinished ISO command chain.
+    let reply = core.receive(4, &[0x90, 0x10, 0, 0, 1, 6], &mut p);
     assert_eq!(core.transmit(reply, &mut out, &mut p).unwrap(), 2);
     assert_eq!(
-        core.prepare_extended(1, &prefix, 300, &mut p),
-        Err(Sw::WRONG_LENGTH)
+        core.prepare_nfc(&prefix, &mut p),
+        Ok(canokey_protocol::ctaphid::CTAP_MAX_REQUEST as u32)
     );
-    core.reset(&mut p);
-    let reply = core.receive(1, &select, &mut p);
-    core.transmit(reply, &mut out, &mut p).unwrap();
-    assert_eq!(core.prepare_extended(1, &prefix, 300, &mut p), Ok(291));
-    struct Failed {
-        closes: usize,
-    }
-    impl InputSource for Failed {
-        fn read(&mut self, _: &mut [u8]) -> Result<usize, Sw> {
-            Err(Sw::UNABLE_TO_PROCESS)
-        }
-        fn close(&mut self) {
-            self.closes += 1;
-        }
-    }
-    let mut failed = Failed { closes: 0 };
-    let reply = core.receive_source(1, 300, &mut failed, &mut p);
-    assert_eq!(failed.closes, 1);
+    let mut data = Vec::from(prefix);
+    // getKeyAgreement plus a 280-byte ignored CBOR string, total CTAP body291.
+    data.extend_from_slice(&[6, 0xa3, 1, 1, 2, 2, 0x18, 99, 0x59, 1, 0x18]);
+    data.extend_from_slice(&[0x37; 280]);
+    data.extend_from_slice(&[1, 0x23]);
+    held.set(true);
+    let mut source = Source {
+        bytes: data,
+        offset: 0,
+        held: held.clone(),
+        closes: 0,
+        fail: false,
+    };
+    let (reply, info) = core.receive_source_with_info(4, source.bytes.len(), &mut source, &mut p);
+    assert_eq!(source.closes, 1);
+    assert!(source.bytes.iter().all(|b| *b == 0));
+    assert_eq!(info.unwrap().le, Some(291));
+    let n = core.transmit(reply, &mut out, &mut p).unwrap();
+    assert_eq!(out[0], 0);
+    assert_eq!(&out[n - 2..n], &[0x90, 0]);
+    assert_eq!(p.crypto.1, 2);
+    assert_eq!(
+        core.prepare_nfc(&prefix, &mut p),
+        Ok(canokey_protocol::ctaphid::CTAP_MAX_REQUEST as u32)
+    );
+    held.set(true);
+    source.fail = true;
+    let reply = core.receive_source(4, 300, &mut source, &mut p);
+    assert_eq!(source.closes, 2);
     let n = core.transmit(reply, &mut out, &mut p).unwrap();
     assert_eq!(&out[..n], &[0x69, 0]);
 }
@@ -658,7 +732,8 @@ fn extended_fido_source_is_bounded_and_ccid_only() {
 fn fido_requires_select_after_startup_and_slot_reset() {
     use canokey_rust_core::Core;
     // FIDO AID, CBOR getPinRetries, U2F VERSION and an ISO-chained CBOR fragment.
-    const SELECT: &[u8] = &[0, 0xa4, 4, 0, 8, 0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1, 0];
+    const SELECT_USB: &[u8] = b"\x00\xa4\x04\x00\x08\xf0CANOFID\x00";
+    const SELECT_NFC: &[u8] = b"\x00\xa4\x04\x00\x08\xa0\x00\x00\x06\x47\x2f\x00\x01\x00";
     const RETRIES: &[u8] = &[0x80, 0x10, 0, 0, 4, 6, 0xa1, 2, 1];
     const VERSION: &[u8] = &[0, 3, 0, 0, 0];
     const CHAIN: &[u8] = &[0x90, 0x10, 0, 0, 1, 6];
@@ -682,13 +757,134 @@ fn fido_requires_select_after_startup_and_slot_reset() {
                 let n = core.transmit(reply, &mut out, &mut p).unwrap();
                 assert_eq!(&out[..n], &[0x6a, 0x82]);
             }
-            let reply = core.receive(owner, SELECT, &mut p);
+            let reply = core.receive(
+                owner,
+                if owner == 4 { SELECT_NFC } else { SELECT_USB },
+                &mut p,
+            );
             let n = core.transmit(reply, &mut out, &mut p).unwrap();
             assert_eq!(&out[..n], b"U2F_V2\x90\x00");
             let reply = core.receive(owner, RETRIES, &mut p);
             let n = core.transmit(reply, &mut out, &mut p).unwrap();
             assert_eq!(&out[..n], &[0, 0xa1, 3, 8, 0x90, 0]);
             core.slot_power(&mut p);
+        }
+    }
+}
+
+#[cfg(feature = "ctap")]
+#[test]
+fn long_select_aids_defer_p2_and_deselect_until_complete_input() {
+    use canokey_protocol::apdu::{FIDO_AID, FIDO_USB_AID};
+    use canokey_rust_core::Core;
+    const VERSION: &[u8] = &[0, 3, 0, 0, 0];
+    for owner in [1, 3, 4] {
+        for length in [16, 17, 255] {
+            for p2 in 0..=u8::MAX {
+                let mut storage = StorageBackend::default();
+                let mut crypto = CryptoBackend;
+                let mut device = DeviceBackend;
+                let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                    storage: &mut storage,
+                    crypto: &mut crypto,
+                    device: &mut device,
+                    memory: &MemoryBackend,
+                };
+                let mut core = Core::new();
+                let mut out = [0; 258];
+                let mut select = vec![0, 0xa4, 4, 0, 8];
+                select.extend_from_slice(if owner == 4 { &FIDO_AID } else { &FIDO_USB_AID });
+                let reply = core.receive(owner, &select, &mut p);
+                let n = core.transmit(reply, &mut out, &mut p).unwrap();
+                assert_eq!(&out[..n], b"U2F_V2\x90\x00");
+                let mut probe = vec![0, 0xa4, 4, p2, length];
+                probe.resize(5 + usize::from(length), 0x5a);
+                let reply = core.receive(owner, &probe, &mut p);
+                let n = core.transmit(reply, &mut out, &mut p).unwrap();
+                let sw = if p2 == 0 {
+                    Sw::FILE_NOT_FOUND
+                } else {
+                    Sw::WRONG_P1P2
+                };
+                assert_eq!(&out[..n], sw.bytes(), "owner={owner} len={length} p2={p2}");
+                let reply = core.receive(owner, VERSION, &mut p);
+                let n = core.transmit(reply, &mut out, &mut p).unwrap();
+                let absent = Sw::FILE_NOT_FOUND.bytes();
+                assert_eq!(
+                    &out[..n],
+                    if owner == 4 {
+                        &b"U2F_V2\x90\x00"[..]
+                    } else {
+                        &absent[..]
+                    },
+                    "owner={owner} len={length} p2={p2}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "ctap")]
+#[test]
+fn long_select_fragmentation_distinguishes_rejected_and_truncated_commands() {
+    use canokey_protocol::apdu::{FIDO_AID, FIDO_USB_AID};
+    use canokey_rust_core::{Core, runtime::engine::Reply};
+    for owner in [1, 3, 4] {
+        for length in [17, 255] {
+            for chunk in [1, 16, 64] {
+                for complete in [false, true] {
+                    for p2 in [0, 0xff] {
+                        let mut storage = StorageBackend::default();
+                        let mut crypto = CryptoBackend;
+                        let mut device = DeviceBackend;
+                        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                            storage: &mut storage,
+                            crypto: &mut crypto,
+                            device: &mut device,
+                            memory: &MemoryBackend,
+                        };
+                        let mut core = Core::new();
+                        let mut exchange = |core: &mut Core, request: &[u8]| {
+                            core.begin_frame(owner, request.len(), &mut p).unwrap();
+                            let mut failure = None;
+                            for bytes in request.chunks(chunk) {
+                                if let Err(sw) = core.feed_frame(bytes, &mut p) {
+                                    failure = Some(Reply::Status(sw));
+                                    break;
+                                }
+                            }
+                            let reply = failure.unwrap_or_else(|| core.end_frame(&mut p));
+                            let mut out = [0; 258];
+                            let n = core.transmit(reply, &mut out, &mut p).unwrap();
+                            out[..n].to_vec()
+                        };
+                        let mut select = vec![0, 0xa4, 4, 0, 8];
+                        select.extend_from_slice(if owner == 4 {
+                            &FIDO_AID
+                        } else {
+                            &FIDO_USB_AID
+                        });
+                        assert_eq!(exchange(&mut core, &select), b"U2F_V2\x90\x00");
+                        let mut probe = vec![0, 0xa4, 4, p2, length];
+                        probe.resize(5 + usize::from(length) - usize::from(!complete), 0x5a);
+                        let sw = if !complete {
+                            Sw::WRONG_LENGTH
+                        } else if p2 != 0 {
+                            Sw::WRONG_P1P2
+                        } else {
+                            Sw::FILE_NOT_FOUND
+                        };
+                        assert_eq!(exchange(&mut core, &probe), sw.bytes());
+                        let absent = Sw::FILE_NOT_FOUND.bytes();
+                        let expected = if !complete || owner == 4 {
+                            &b"U2F_V2\x90\x00"[..]
+                        } else {
+                            &absent[..]
+                        };
+                        assert_eq!(exchange(&mut core, &[0, 3, 0, 0, 0]), expected);
+                    }
+                }
+            }
         }
     }
 }
@@ -756,5 +952,40 @@ fn failed_frame_execution_and_read_preserve_cleanup_order_and_release_ownership(
                 .count(),
             reads
         );
+    }
+}
+
+#[test]
+fn source_close_failure_blocks_commit_even_after_complete_input_and_overrides_parse_error() {
+    // The second command declares two bytes but supplies only one. Closing a
+    // cancelled source must also win over this earlier framing error.
+    for bytes in [&[0, 3, 0, 0, 2, 0xaa, 0xbb][..], &[0, 3, 0, 0, 2, 0xaa][..]] {
+        let (mut storage, mut crypto, mut device) =
+            (StorageBackend::default(), CryptoBackend, DeviceBackend);
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+            storage: &mut storage,
+            crypto: &mut crypto,
+            device: &mut device,
+            memory: &MemoryBackend,
+        };
+        let mut runtime = Runtime::with_router(Fixture::new());
+        assert_eq!(
+            frame(&mut runtime, &[0, 0xa4, 4, 0, 1, 1], &mut p),
+            [0x90, 0]
+        );
+        let mut source = FrameSource {
+            remaining: bytes,
+            closes: 0,
+            close_error: Some(Sw::UNABLE_TO_PROCESS),
+        };
+        let reply = runtime.receive_source(1, bytes.len(), &mut source, &mut p);
+        let mut out = [0; 258];
+        let n = runtime.transmit(reply, &mut out, &mut p).unwrap();
+        assert_eq!(&out[..n], &[0x69, 0]);
+        assert_eq!(source.closes, 1);
+        assert_eq!(runtime.router().finishes, 0);
+        assert_eq!(p.storage.commits, 0);
+        assert!(p.storage.object.is_empty());
+        assert!(runtime.can_preempt());
     }
 }

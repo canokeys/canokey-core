@@ -144,6 +144,10 @@ impl Admin {
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         let _ = (&h, &grants, &p);
+        // Exact SELECT-by-name belongs to the global AID router.
+        if h.ins == canokey_protocol::apdu::INS_SELECT {
+            return Err(Sw::WRONG_P1P2);
+        }
         #[cfg(feature = "ctap")]
         if h.ins == INS_PROVISION_ATTESTATION {
             if !grants.admin {
@@ -517,7 +521,7 @@ impl Admin {
                 if h.p1 != 0x00 {
                     return Err(Sw::WRONG_P1P2);
                 }
-                if !(auth::MIN_LENGTH..=auth::MAX_LENGTH).contains(&self.used) {
+                if self.used < auth::MIN_LENGTH || self.used > auth::MAX_LENGTH {
                     return Err(Sw::WRONG_LENGTH);
                 }
                 grants.admin = false;

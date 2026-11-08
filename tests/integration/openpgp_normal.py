@@ -56,6 +56,10 @@ class Card(ApduCard):
         return self.cmd(f"get_{tag:04x}", 0xCA, tag >> 8, tag & 255)
 
     def put(self, tag, b):
+        # Ordinary objects fit one short APDU; only certificate PUT DATA may
+        # use CLA10. Keep the generic client's193-byte fragmentation for it.
+        if tag != 0x7F21 and len(b) <= 0xFF:
+            return self.raw(f"put_{tag:04x}", 0xDA, tag >> 8, tag & 255, b)
         return self.cmd(f"put_{tag:04x}", 0xDA, tag >> 8, tag & 255, b, le=None)
 
     def reset(self):
@@ -207,9 +211,16 @@ def extended_key_regressions(c, wire):
             assert hi * 256 + lo == status, (hex(hi * 256 + lo), hex(status))
             return answer
 
-    assert public(0x81, 0x6a88) == b""
-    generated = public(0x80)
-    assert public(0x81) == generated
+    # This fixture is USB CCID: even bounded extended encoding is rejected
+    # before OpenPGP dispatch. The NFC Link/Request fixture retains the same
+    # extended key-generation/read vectors with applet-level success checks.
+    assert public(0x81, 0x6700) == b""
+    assert public(0x80, 0x6700) == b""
+    generated = c.cmd("short_generate_after_extended_rejection", 0x47, 0x80,
+                      data=bytes.fromhex("b600"))
+    assert public(0x81, 0x6700) == b""
+    assert c.cmd("short_public_after_extended_rejection", 0x47, 0x81,
+                 data=bytes.fromhex("b600")) == generated
     exercise(c, 5, 0, pubkey(5, fields(generated)[0x7f49]))
     c.reset()
 
