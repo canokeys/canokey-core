@@ -18,6 +18,13 @@ product applications. Firmware uses `no_std` without the `schema` feature.
 - `provision`, `settings`: attestation read admission, certificate publication
   latch, and the eight-byte SM2 settings codec. Capabilities address only their
   own material; product ADMIN authority and installation policy stay outside.
+- `credential`: canonical 34-byte authenticated handle layout, scheme
+  discriminators, policy bits and typed HMAC domains. Borrowed transcripts bind
+  the ID prefix plus RP and optional SM2 settings for tag/seed derivation, or
+  the full ID plus RP for extension keys. Software MACs stream the parts;
+  native MACs lend their existing contiguous input buffer. Root provisioning,
+  tag/seed validation order, scalar rejection/retry, key lifetime/erasure and
+  product algorithm support stay with adapters during R06 migration.
 - `resident`: borrowed CTG1 member decoding, bounded field encoding, UTF-8
   truncation and RP display. `resident::group` validates CTG1 headers and plans
   member offsets/replacement lengths without IO. `group::update` shares no-op,

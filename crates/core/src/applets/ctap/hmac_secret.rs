@@ -203,7 +203,17 @@ impl Prepared {
     ) -> Result<usize, Status> {
         let mut random = [0; 32];
         let result = (|| {
-            credential::extension_key(if uv { 4 } else { 3 }, id, rp, &mut random, p)?;
+            credential::extension_key(
+                if uv {
+                    canokey_ctap::credential::ExtensionDomain::HmacSecretWithUv
+                } else {
+                    canokey_ctap::credential::ExtensionDomain::HmacSecretWithoutUv
+                },
+                id,
+                rp,
+                &mut random,
+                p,
+            )?;
             let iv_len = if self.protocol == wire::V2 {
                 wire::AES_BLOCK_BYTES
             } else {

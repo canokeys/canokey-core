@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 pub mod config;
+pub mod credential;
 pub mod ports;
 pub mod presence;
 pub mod provision;

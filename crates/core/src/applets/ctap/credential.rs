@@ -7,21 +7,28 @@ use super::{
 use crate::ports::{KeyMaterial, Platform, Record, StorageError, alg};
 use canokey_ports::{Crypto as _, Memory as _, Storage as _};
 
-// Algorithm, policy flags, random nonce, truncated HMAC. The RP hash is bound
-// cryptographically rather than repeated in every credential ID.
-pub(super) const THIRD_PARTY_PAYMENT: u8 = 0x10;
-pub(super) const CRED_PROTECT_MASK: u8 = 0x03;
-// Credential-ID algorithm discriminator; distinct from native algorithm IDs.
-mod scheme {
-    pub const P256: u8 = 0x00;
-    pub const ED25519: u8 = 0x01;
-    pub const SM2: u8 = 0x02;
-    pub const MLDSA65: u8 = 0x03;
-    pub const MLDSA44: u8 = 0x04;
+use canokey_ctap::credential::{self as shared, ExtensionDomain, HandleDomain, Scheme};
+pub(super) use canokey_ctap::credential::{CRED_PROTECT_MASK, ID_BYTES, Id, THIRD_PARTY_PAYMENT};
+use shared::{NONCE_OFFSET, TAG_BYTES, TAG_OFFSET};
+
+// The native primitive accepts contiguous input. Lend the original bounded
+// transcript buffer; no root/key or transcript borrow survives a MAC call.
+struct CredentialMac<'a, 'p, B: crate::ports::Backends> {
+    message: &'a mut [u8],
+    platform: &'a mut Platform<'p, B>,
 }
-pub(super) use canokey_ctap::resident::ID_BYTES;
-pub(super) type Id = [u8; ID_BYTES];
-const TAG: usize = 18;
+impl<B: crate::ports::Backends> shared::Mac for CredentialMac<'_, '_, B> {
+    type Error = Status;
+    fn hmac_sha256(
+        &mut self,
+        root: &[u8; shared::KEY_BYTES],
+        transcript: &shared::Transcript<'_>,
+        out: &mut [u8; shared::KEY_BYTES],
+    ) -> Result<(), Status> {
+        let length = transcript.copy_to(self.message).ok_or(Status::Other)?;
+        mac(root, &self.message[..length], out, self.platform)
+    }
+}
 
 fn master(
     create: bool,
@@ -50,13 +57,13 @@ fn master(
 }
 
 pub(super) fn algorithm(id: &Id) -> Result<u8, Status> {
-    match id[0] {
-        scheme::P256 => Ok(alg::P256),
-        scheme::ED25519 => Ok(alg::ED25519),
-        scheme::SM2 => Ok(alg::SM2),
-        scheme::MLDSA65 => Ok(alg::MLDSA65),
-        scheme::MLDSA44 => Ok(alg::MLDSA44),
-        _ => Err(Status::NoCredentials),
+    match Scheme::decode(id[shared::ALGORITHM_OFFSET]) {
+        Some(Scheme::P256) => Ok(alg::P256),
+        Some(Scheme::Ed25519) => Ok(alg::ED25519),
+        Some(Scheme::Sm2) => Ok(alg::SM2),
+        Some(Scheme::MlDsa65) => Ok(alg::MLDSA65),
+        Some(Scheme::MlDsa44) => Ok(alg::MLDSA44),
+        None => Err(Status::NoCredentials),
     }
 }
 
@@ -68,23 +75,31 @@ fn derive(
     key: &mut KeyMaterial,
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<[u8; 32], Status> {
-    let mut message = [0; 1 + TAG + 32 + 8];
-    message[1..1 + TAG].copy_from_slice(&id[..TAG]);
-    message[1 + TAG..1 + TAG + 32].copy_from_slice(rp);
-    let length = if id[0] == scheme::SM2 {
-        message[1 + TAG + 32..].copy_from_slice(&sm2.encode());
-        message.len()
-    } else {
-        1 + TAG + 32
+    let mut message = [0x00; shared::HANDLE_TRANSCRIPT_MAX_BYTES];
+    let settings = sm2.encode();
+    let settings = (id[shared::ALGORITHM_OFFSET] == Scheme::Sm2 as u8).then_some(&settings);
+    let mut mac = CredentialMac {
+        message: &mut message,
+        platform: p,
     };
-    let mut tag = [0; 32];
-    mac(master, &message[..length], &mut tag, p)?;
-    message[0] = 1; // Domain separation: public authenticator tag vs private key.
-    if let Err(error) = mac(
+    let mut tag = [0x00; shared::KEY_BYTES];
+    shared::derive_handle(
         master,
-        &message[..length],
-        (&mut key.bytes[..32]).try_into().unwrap(),
-        p,
+        id,
+        rp,
+        HandleDomain::Tag,
+        settings,
+        &mut tag,
+        &mut mac,
+    )?;
+    if let Err(error) = shared::derive_handle(
+        master,
+        id,
+        rp,
+        HandleDomain::Seed,
+        settings,
+        (&mut key.bytes[..shared::KEY_BYTES]).try_into().unwrap(),
+        &mut mac,
     ) {
         p.memory.wipe(&mut tag);
         return Err(error);
@@ -103,23 +118,23 @@ pub(super) fn create(
     let mut master = master(true, p)?;
     let result = (|| {
         let mut id = [0; ID_BYTES];
-        id[0] = match algorithm {
-            alg::P256 => scheme::P256,
-            alg::ED25519 => scheme::ED25519,
-            alg::SM2 => scheme::SM2,
-            alg::MLDSA65 => scheme::MLDSA65,
-            alg::MLDSA44 => scheme::MLDSA44,
+        id[shared::ALGORITHM_OFFSET] = match algorithm {
+            alg::P256 => Scheme::P256 as u8,
+            alg::ED25519 => Scheme::Ed25519 as u8,
+            alg::SM2 => Scheme::Sm2 as u8,
+            alg::MLDSA65 => Scheme::MlDsa65 as u8,
+            alg::MLDSA44 => Scheme::MlDsa44 as u8,
             _ => return Err(Status::UnsupportedAlgorithm),
         };
-        id[1] = flags;
+        id[shared::POLICY_OFFSET] = flags;
         // HMAC output is not necessarily a valid P-256/SM2 scalar. Retry with
         // a fresh nonce, without biased modular reduction.
         loop {
             p.crypto
-                .random(&mut id[2..TAG])
+                .random(&mut id[NONCE_OFFSET..TAG_OFFSET])
                 .map_err(|_| Status::Other)?;
             let mut tag = derive(&id, rp, &master, sm2, key, p)?;
-            id[TAG..].copy_from_slice(&tag[..16]);
+            id[TAG_OFFSET..].copy_from_slice(&tag[..TAG_BYTES]);
             p.memory.wipe(&mut tag);
             if matches!(algorithm, alg::P256 | alg::SM2)
                 && !valid_scalar(algorithm, &key.bytes[..32])
@@ -165,7 +180,7 @@ pub(super) fn open(
     let result = derive(id, rp, &master, sm2, key, p);
     p.memory.wipe(&mut master);
     let mut tag = result?;
-    let valid = equal(&id[TAG..], &tag[..16]);
+    let valid = equal(&id[TAG_OFFSET..], &tag[..TAG_BYTES]);
     p.memory.wipe(&mut tag);
     if !valid {
         p.memory.wipe(&mut key.bytes);
@@ -197,18 +212,25 @@ pub(super) fn counter(
 /// Extension domains are separate from handle tags (0) and signing keys (1).
 /// Domain 2 is largeBlobKey; 3/4 are hmac-secret without/with UV.
 pub(super) fn extension_key(
-    domain: u8,
+    domain: ExtensionDomain,
     id: &Id,
     rp: &[u8; 32],
     out: &mut [u8; 32],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
     let mut master = master(false, p)?;
-    let mut message = [0; 1 + ID_BYTES + 32];
-    message[0] = domain;
-    message[1..1 + ID_BYTES].copy_from_slice(id);
-    message[1 + ID_BYTES..].copy_from_slice(rp);
-    let result = mac(&master, &message, out, p);
+    let mut message = [0x00; shared::EXTENSION_TRANSCRIPT_BYTES];
+    let result = shared::derive_extension(
+        &master,
+        id,
+        rp,
+        domain,
+        out,
+        &mut CredentialMac {
+            message: &mut message,
+            platform: p,
+        },
+    );
     p.memory.wipe(&mut master);
     result
 }
@@ -219,7 +241,7 @@ pub(super) fn large_blob_key(
     out: &mut [u8; 32],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
-    extension_key(2, id, rp, out, p)
+    extension_key(ExtensionDomain::LargeBlobKey, id, rp, out, p)
 }
 
 // Keep credential decoding available to management even when authentication is restricted.

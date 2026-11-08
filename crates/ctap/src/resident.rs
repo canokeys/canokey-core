@@ -3,8 +3,7 @@
 
 pub mod group;
 
-pub const ID_BYTES: usize = 34;
-pub const RESIDENT: u8 = 0x04;
+pub use crate::credential::{ID_BYTES, RESIDENT};
 pub const RP_HASH_BYTES: usize = 32;
 pub const RP_DISPLAY_BYTES: usize = 32;
 pub const USER_ID_BYTES: usize = 64;
