@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Product-independent CTAP contracts; applications own storage and backing.
+#![no_std]
+#![forbid(unsafe_code)]
+
+pub mod config;
+pub mod ports;
+pub mod request;
+pub mod status;

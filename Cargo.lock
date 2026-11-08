@@ -18,6 +18,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "canokey-ctap"
+version = "0.1.0"
+dependencies = [
+ "canokey-ports",
+]
+
+[[package]]
 name = "canokey-native-crypto"
 version = "0.1.0"
 dependencies = [
@@ -39,6 +46,7 @@ dependencies = [
 name = "canokey-rust-core"
 version = "0.1.0"
 dependencies = [
+ "canokey-ctap",
  "canokey-ports",
  "canokey-protocol",
  "canokey-transport-runtime",

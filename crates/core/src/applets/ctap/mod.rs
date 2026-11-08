@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
+mod adapter;
 mod agreement;
 mod applet;
 pub use applet::Applet;
@@ -35,17 +36,16 @@ pub(crate) mod settings;
 pub mod u2f;
 mod wire;
 
-const MAKE_CREDENTIAL: u8 = 0x01;
-const GET_ASSERTION: u8 = 0x02;
-const NEXT_ASSERTION: u8 = 0x08;
-const CREDENTIAL_MANAGEMENT: u8 = 0x0a;
-const LEGACY_CREDENTIAL_MANAGEMENT: u8 = 0x41;
-const LARGE_BLOBS: u8 = 0x0c;
-const GET_INFO: u8 = 0x04;
-const CLIENT_PIN: u8 = 0x06;
-const SELECTION: u8 = 0x0b;
-const RESET: u8 = 0x07;
-const CONFIG: u8 = 0x0d;
+const MAKE_CREDENTIAL: u8 = canokey_ctap::config::Command::MakeCredential as u8;
+const GET_ASSERTION: u8 = canokey_ctap::config::Command::GetAssertion as u8;
+const CREDENTIAL_MANAGEMENT: u8 = canokey_ctap::config::Command::CredentialManagement as u8;
+const LEGACY_CREDENTIAL_MANAGEMENT: u8 =
+    canokey_ctap::config::Command::LegacyCredentialManagement as u8;
+const LARGE_BLOBS: u8 = canokey_ctap::config::Command::LargeBlobs as u8;
+#[cfg(test)]
+const GET_INFO: u8 = canokey_ctap::config::Command::GetInfo as u8;
+const CLIENT_PIN: u8 = canokey_ctap::config::Command::ClientPin as u8;
+const CONFIG: u8 = canokey_ctap::config::Command::Config as u8;
 pub const MAX_REQUEST: usize = crate::config::CTAP_MAX_REQUEST;
 // C's source-backed APDU output uses250 bytes, independently of the short
 // buffer's256-byte capacity. Native HID can send a complete source directly.
@@ -499,36 +499,36 @@ pub enum Command {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Status {
-    LargeBlobFull = 0x18,
-    IntegrityFailure = 0x3d,
-    InvalidSequence = 0x04,
-    UnsupportedAlgorithm = 0x26,
-    NoCredentials = 0x2e,
-    UnsupportedOption = 0x2b,
-    InvalidOption = 0x2c,
-    CredentialExcluded = 0x19,
-    OperationDenied = 0x27,
-    LimitExceeded = 0x15,
-    PuatRequired = 0x36,
-    KeyStoreFull = 0x28,
-    NotAllowed = 0x30,
-    Cancelled = 0x2d,
-    UserActionTimeout = 0x2f,
-    UnauthorizedPermission = 0x40,
-    PinInvalid = 0x31,
-    PinBlocked = 0x32,
-    PinAuthInvalid = 0x33,
-    PinAuthBlocked = 0x34,
-    PinNotSet = 0x35,
-    PinPolicy = 0x37,
-    Other = 0x7f,
-    InvalidCommand = 0x01,
-    InvalidParameter = 0x02,
-    InvalidLength = 0x03,
-    UnexpectedType = 0x11,
-    InvalidCbor = 0x12,
-    MissingParameter = 0x14,
-    InvalidSubcommand = 0x3e,
+    LargeBlobFull = canokey_ctap::status::Status::LargeBlobFull as u8,
+    IntegrityFailure = canokey_ctap::status::Status::IntegrityFailure as u8,
+    InvalidSequence = canokey_ctap::status::Status::InvalidSequence as u8,
+    UnsupportedAlgorithm = canokey_ctap::status::Status::UnsupportedAlgorithm as u8,
+    NoCredentials = canokey_ctap::status::Status::NoCredentials as u8,
+    UnsupportedOption = canokey_ctap::status::Status::UnsupportedOption as u8,
+    InvalidOption = canokey_ctap::status::Status::InvalidOption as u8,
+    CredentialExcluded = canokey_ctap::status::Status::CredentialExcluded as u8,
+    OperationDenied = canokey_ctap::status::Status::OperationDenied as u8,
+    LimitExceeded = canokey_ctap::status::Status::LimitExceeded as u8,
+    PuatRequired = canokey_ctap::status::Status::PuatRequired as u8,
+    KeyStoreFull = canokey_ctap::status::Status::NoSpace as u8,
+    NotAllowed = canokey_ctap::status::Status::NotAllowed as u8,
+    Cancelled = canokey_ctap::status::Status::KeepaliveCancel as u8,
+    UserActionTimeout = canokey_ctap::status::Status::UserActionTimeout as u8,
+    UnauthorizedPermission = canokey_ctap::status::Status::UnauthorizedPermission as u8,
+    PinInvalid = canokey_ctap::status::Status::PinInvalid as u8,
+    PinBlocked = canokey_ctap::status::Status::PinBlocked as u8,
+    PinAuthInvalid = canokey_ctap::status::Status::PinAuthInvalid as u8,
+    PinAuthBlocked = canokey_ctap::status::Status::PinAuthBlocked as u8,
+    PinNotSet = canokey_ctap::status::Status::PinNotSet as u8,
+    PinPolicy = canokey_ctap::status::Status::PinPolicyViolation as u8,
+    Other = canokey_ctap::status::Status::Internal as u8,
+    InvalidCommand = canokey_ctap::status::Status::InvalidCommand as u8,
+    InvalidParameter = canokey_ctap::status::Status::InvalidParameter as u8,
+    InvalidLength = canokey_ctap::status::Status::InvalidLength as u8,
+    UnexpectedType = canokey_ctap::status::Status::CborUnexpectedType as u8,
+    InvalidCbor = canokey_ctap::status::Status::InvalidCbor as u8,
+    MissingParameter = canokey_ctap::status::Status::MissingParameter as u8,
+    InvalidSubcommand = canokey_ctap::status::Status::InvalidSubcommand as u8,
     UnhandledRequest = 0xf1,
 }
 
@@ -573,16 +573,11 @@ impl Request {
     }
     #[inline(never)]
     pub fn finish(&mut self) -> Result<Command, Status> {
-        match self.command.take() {
-            None => Err(Status::InvalidLength),
-            Some(NEXT_ASSERTION) if !self.extra => Ok(Command::NextAssertion),
-            Some(NEXT_ASSERTION) => Err(Status::InvalidLength),
-            Some(RESET) if !self.extra => Ok(Command::Reset),
-            Some(RESET) => Err(Status::InvalidLength),
-            Some(SELECTION) if !self.extra => Ok(Command::Selection),
-            Some(SELECTION) => Err(Status::InvalidLength),
-            Some(GET_INFO) if !self.extra => Ok(Command::GetInfo),
-            Some(GET_INFO) => Err(Status::InvalidLength),
+        let code = self.command.take();
+        if let Some(command) = adapter::parameterless(code, self.extra)? {
+            return Ok(command);
+        }
+        match code {
             Some(
                 MAKE_CREDENTIAL
                 | GET_ASSERTION

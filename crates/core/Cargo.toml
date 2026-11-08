@@ -7,6 +7,7 @@ license = "Apache-2.0"
 publish = false
 build = "build.rs"
 [dependencies]
+canokey-ctap = { path = "../ctap" }
 canokey-transport-runtime = { path = "../transport-runtime" }
 canokey-ports = { path = "../ports", default-features = false }
 canokey-protocol = { path = "../protocol" }
