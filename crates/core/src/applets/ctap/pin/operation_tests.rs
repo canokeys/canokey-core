@@ -16,6 +16,8 @@ struct Backend {
     fail_mac: bool,
     fail_read: bool,
     fail_patch: bool,
+    fail_patch_at: usize,
+    fail_patch_durable: bool,
     fail_decrypt: bool,
     fail_encrypt: bool,
     fail_random_at: usize,
@@ -44,7 +46,10 @@ impl Storage for Backend {
         assert_eq!(offset, RETRIES as u32);
         assert_eq!(input.len(), 1);
         self.retries_written.push(input[0]);
-        if self.fail_patch {
+        if self.fail_patch || self.retries_written.len() == self.fail_patch_at {
+            if self.fail_patch_durable {
+                self.record.as_mut().unwrap()[RETRIES] = input[0];
+            }
             return Err(StorageError::Unavailable);
         }
         self.record.as_mut().unwrap()[RETRIES] = input[0];
@@ -360,6 +365,10 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
     enum Fault {
         None,
         Charge,
+        ChargeDurable,
+        Restore,
+        RestoreDurable,
+        WrongPin,
         Decrypt,
         TokenRandom,
         IvRandom,
@@ -369,6 +378,10 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
         for fault in [
             Fault::None,
             Fault::Charge,
+            Fault::ChargeDurable,
+            Fault::Restore,
+            Fault::RestoreDurable,
+            Fault::WrongPin,
             Fault::Decrypt,
             Fault::TokenRandom,
             Fault::IvRandom,
@@ -379,9 +392,17 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
             }
             let mut record = vec![0x42; RP_HASHES];
             record[RETRIES..RP_HASHES].copy_from_slice(&[8, 4, 4, 0x00]);
+            if fault == Fault::WrongPin {
+                record[0] ^= 0x01;
+            }
             let mut storage = Backend {
                 record: Some(record),
-                fail_patch: fault == Fault::Charge,
+                fail_patch_at: match fault {
+                    Fault::Charge | Fault::ChargeDurable => 1,
+                    Fault::Restore | Fault::RestoreDurable => 2,
+                    _ => 0,
+                },
+                fail_patch_durable: matches!(fault, Fault::ChargeDurable | Fault::RestoreDurable),
                 ..Backend::default()
             };
             let mut crypto = Backend {
@@ -432,12 +453,30 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
                 assert_eq!(session.token, [0x55; 32]);
                 assert_eq!(session.permissions, wire::PERMISSION_CREDENTIALS);
             } else {
-                assert!(matches!(
-                    response,
-                    super::super::Response::Error(Status::Other)
-                ));
-                assert_eq!(session.token, [0x00; 32]);
-                assert_eq!(session.permissions, 0x00);
+                let expected = if fault == Fault::WrongPin {
+                    Status::PinInvalid
+                } else {
+                    Status::Other
+                };
+                assert!(
+                    matches!(response, super::super::Response::Error(status) if status == expected)
+                );
+                // A wrong proof charges attempts and invalidates agreement,
+                // while Other also resets prior token authority in execute.
+                let retained = fault == Fault::WrongPin;
+                assert_eq!(session.token, [if retained { 0x99 } else { 0x00 }; 32]);
+                assert_eq!(
+                    session.permissions,
+                    if retained { PERMISSION_CONFIG } else { 0x00 }
+                );
+                assert_eq!(
+                    session.pin_attempts,
+                    if retained {
+                        SESSION_ATTEMPTS - 1
+                    } else {
+                        SESSION_ATTEMPTS
+                    }
+                );
                 assert_eq!(session.agreement, [0x00; 32]);
                 assert!(!session.agreement_ready);
                 assert!(w.output.iter().all(|&byte| byte == 0x00));
@@ -462,21 +501,32 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
             drop(p);
             let expected_retries = match fault {
                 Fault::Charge => 8,
-                Fault::Decrypt => 7,
+                Fault::ChargeDurable | Fault::Decrypt | Fault::WrongPin | Fault::Restore => 7,
                 _ => 8,
             };
             assert_eq!(storage.record.as_ref().unwrap()[RETRIES], expected_retries);
             assert_eq!(
                 storage.retries_written,
-                if matches!(fault, Fault::Charge | Fault::Decrypt) {
+                if matches!(
+                    fault,
+                    Fault::Charge | Fault::ChargeDurable | Fault::Decrypt | Fault::WrongPin
+                ) {
                     vec![7]
                 } else {
                     vec![7, 8]
                 }
             );
-            assert_eq!(crypto.decrypt_calls, usize::from(fault != Fault::Charge));
+            assert_eq!(
+                crypto.decrypt_calls,
+                usize::from(!matches!(fault, Fault::Charge | Fault::ChargeDurable))
+            );
             let random_calls = match fault {
-                Fault::Charge | Fault::Decrypt => 0,
+                Fault::Charge
+                | Fault::ChargeDurable
+                | Fault::Restore
+                | Fault::RestoreDurable
+                | Fault::WrongPin
+                | Fault::Decrypt => 0,
                 Fault::TokenRandom => 1,
                 _ if protocol == wire::V1 => 1,
                 _ => 2,

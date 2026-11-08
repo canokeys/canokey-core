@@ -13,7 +13,7 @@ use crate::{
     ports::{KeyOperation, Platform, Record, alg},
     runtime::workspace::Workspace,
 };
-use canokey_ctap::client_pin::{self as shared_pin, token};
+use canokey_ctap::client_pin::{self as shared_pin, retry, token};
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 
 pub(super) struct PinCrypto<'a, 'p, B: crate::ports::Backends>(pub(super) &'a mut Platform<'p, B>);
@@ -176,6 +176,59 @@ pub(super) fn decrypt(
         .map(|_| ())
         .map_err(cipher_error)
 }
+// This loan spans only the durable charge and current-PIN comparison. The
+// caller retains successful refund/policy/token publication and final erasure.
+struct CurrentPin<'a, 'p, B: crate::ports::Backends> {
+    session: &'a mut Session,
+    parameters: &'a mut Parameters,
+    record: &'a mut [u8; RECORD_BYTES],
+    aes_key: &'a [u8; 32],
+    platform: &'a mut Platform<'p, B>,
+}
+impl<B: crate::ports::Backends> retry::Verification for CurrentPin<'_, '_, B> {
+    type Error = Status;
+    fn remaining(&self) -> u8 {
+        self.record[RETRIES]
+    }
+    fn blocked(&self) -> Status {
+        Status::PinBlocked
+    }
+    fn charge(&mut self, remaining: u8) -> Result<(), Status> {
+        self.record[RETRIES] = remaining;
+        self.platform
+            .storage
+            .replace_at(
+                Record::CtapPin,
+                RETRIES as u32,
+                &self.record[RETRIES..RETRIES + 1],
+            )
+            .map_err(|_| Status::Other)
+    }
+    fn compare(&mut self) -> Result<bool, Status> {
+        let hash_len = wire::auth_bytes(self.parameters.protocol);
+        decrypt(
+            self.parameters.protocol,
+            self.aes_key,
+            &mut self.parameters.pin_hash[..hash_len],
+            self.platform,
+        )?;
+        Ok(equal(
+            &self.record[..PIN_HASH_BYTES],
+            &self.parameters.pin_hash[..PIN_HASH_BYTES],
+        ))
+    }
+    fn rejected(&mut self) -> Status {
+        self.session.pin_attempts -= 1;
+        self.session.agreement_ready = false;
+        self.platform.memory.wipe(&mut self.session.agreement);
+        match retry::rejection(self.record[RETRIES], self.session.pin_attempts) {
+            retry::Rejection::Blocked => Status::PinBlocked,
+            retry::Rejection::PowerCycleBlocked => Status::PinAuthBlocked,
+            retry::Rejection::Invalid => Status::PinInvalid,
+        }
+    }
+}
+
 impl Session {
     // Both callers own workspace cleanup and Session::execute invalidates
     // authorization after a primitive failure. Only public replies export COSE.
@@ -285,28 +338,13 @@ impl Session {
             }
             let aes_key: &[u8; 32] = shared[32..].try_into().unwrap();
             if cp.subcommand != wire::SET_PIN {
-                // Charge before decrypt/compare. Failed writes never authorize.
-                record[RETRIES] -= 1;
-                p.storage
-                    .replace_at(
-                        Record::CtapPin,
-                        RETRIES as u32,
-                        &record[RETRIES..RETRIES + 1],
-                    )
-                    .map_err(|_| Status::Other)?;
-                decrypt(cp.protocol, aes_key, &mut cp.pin_hash[..hash_len], p)?;
-                if !equal(&record[..PIN_HASH_BYTES], &cp.pin_hash[..PIN_HASH_BYTES]) {
-                    self.pin_attempts -= 1;
-                    self.agreement_ready = false;
-                    p.memory.wipe(&mut self.agreement);
-                    return Err(if record[RETRIES] == 0 {
-                        Status::PinBlocked
-                    } else if self.pin_attempts == 0 {
-                        Status::PinAuthBlocked
-                    } else {
-                        Status::PinInvalid
-                    });
-                }
+                retry::verify(&mut CurrentPin {
+                    session: self,
+                    parameters: cp,
+                    record: &mut record,
+                    aes_key,
+                    platform: p,
+                })?;
                 self.pin_attempts = SESSION_ATTEMPTS;
                 // Correct current PIN restores retries even if the new PIN
                 // subsequently fails policy validation.

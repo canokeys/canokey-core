@@ -65,6 +65,12 @@ product applications. Firmware uses `no_std` without the `schema` feature.
   source close/erasure remain with their owners. General response cursors and
   segmented reads use `canokey-protocol::response`.
 
+`client_pin::authentication` verifies a selected SHA-256 prefix using the
+owner's existing digest scratch, erasing the complete primitive output before
+propagating errors. `client_pin::retry` sequences durable charge before current
+PIN comparison and classifies rejection without owning records, secrets or
+storage. Product adapters retain restore/policy/deadline and grant commit points.
+
 `client_pin::token` checks permission/RP scope in explicit product-selected MAC
 order and provides wrapping lifetime windows and successful-UP permission
 retention. It stores no token/secret/session and does not commit usage, RP binding

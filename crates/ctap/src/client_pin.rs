@@ -2,8 +2,10 @@
 //! PIN/UV protocol key derivation and PIN text rules, without session policy.
 
 pub mod agreement;
+pub mod authentication;
 pub mod cipher;
 pub mod request;
+pub mod retry;
 pub mod token;
 
 pub const KEY_BYTES: usize = 32;

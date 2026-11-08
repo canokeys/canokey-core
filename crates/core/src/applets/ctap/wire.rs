@@ -27,8 +27,8 @@ pub(super) mod pin_protocol {
     pub const NEW_PIN_V2_BYTES: usize = AES_BLOCK_BYTES + PADDED_PIN_BYTES;
     pub const MIN_CODE_POINTS: u8 = 0x04;
     pub const MAX_PIN_BYTES: u8 = 63;
-    pub const MAX_RETRIES: u8 = 8;
-    pub const SESSION_ATTEMPTS: u8 = 0x03; // Reboot required after three bad PIN proofs.
+    pub const MAX_RETRIES: u8 = canokey_ctap::client_pin::retry::MAX_RETRIES;
+    pub const SESSION_ATTEMPTS: u8 = canokey_ctap::client_pin::retry::POWER_CYCLE_ATTEMPTS;
     pub const GET_RETRIES: u8 = Command::Retries as u8;
     pub const GET_AGREEMENT: u8 = Command::Agreement as u8;
     pub const SET_PIN: u8 = Command::Set as u8;

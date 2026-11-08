@@ -34,13 +34,20 @@ pub(super) fn verify_mac(
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
     let mut full = [0; 64];
-    let result = p
-        .crypto
-        .mac(HMAC_SHA256, key, input, &mut full)
-        .map_err(|_| Status::Other);
-    let valid = equal(auth, &full[..32][..auth.len()]);
-    p.memory.wipe(&mut full);
-    result?;
+    let crypto = &mut p.crypto;
+    let memory = p.memory;
+    let valid = canokey_ctap::client_pin::authentication::verify(
+        auth,
+        auth.len(),
+        &mut full,
+        |output| {
+            crypto
+                .mac(HMAC_SHA256, key, input, output.try_into().unwrap())
+                .map_err(|_| Status::Other)
+        },
+        equal,
+        |output| memory.wipe(output),
+    )?;
     if valid {
         Ok(())
     } else {
