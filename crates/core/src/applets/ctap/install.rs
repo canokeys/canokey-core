@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Boot validation is distinct from command-time validation and reader power.
-use super::{Session, Status, provision, settings::Sm2};
+use super::{
+    Session, Status, provision,
+    settings::{RECORD_BYTES, Sm2},
+};
 use crate::ports::{Platform, Record, StorageError};
 use canokey_ports::{Memory as _, Storage as _};
 
@@ -35,10 +38,10 @@ impl Session {
                 Err(_) => return Err(Status::Other),
             }
         }
-        let sm2 = if size(Record::CtapSm2, p)? == Some(8) {
-            let mut wire = [0; 8];
+        let sm2 = if size(Record::CtapSm2, p)? == Some(RECORD_BYTES as u32) {
+            let mut wire = [0x00; RECORD_BYTES];
             match p.storage.load(Record::CtapSm2, &mut wire) {
-                Ok(8) => Sm2::decode(&wire),
+                Ok(RECORD_BYTES) => Sm2::decode(&wire),
                 Ok(_) | Err(StorageError::Missing) => None,
                 Err(_) => return Err(Status::Other),
             }

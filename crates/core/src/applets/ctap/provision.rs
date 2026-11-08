@@ -36,7 +36,7 @@ pub(crate) fn install_key(
         p.storage
             .replace(Record::CtapAttestationKey, &w.key.bytes[..32])
             .map_err(|_| Error::Storage)?;
-        super::settings::Sm2::save(&super::settings::Sm2::DEFAULT.encode(), p)
+        super::settings::save(&super::settings::Sm2::DEFAULT.encode(), p)
     })();
     w.clear(p.memory);
     result

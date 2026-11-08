@@ -2,6 +2,16 @@
 //! Existing static product budgets; no dependency on a product Platform.
 pub use canokey_ports::RequestLimits;
 
+/// Access only the provisioned SM2 identifier record. This synchronous borrow
+/// exposes neither general storage nor authorization/session/application state.
+pub trait Sm2Settings {
+    fn load(
+        &mut self,
+        out: &mut [u8; crate::settings::RECORD_BYTES],
+    ) -> Result<usize, canokey_ports::StorageError>;
+    fn replace(&mut self, wire: &[u8]) -> Result<(), canokey_ports::StorageError>;
+}
+
 /// Presence can service only transport progress and device indications. It
 /// cannot borrow request/response backing, storage, crypto or an application.
 /// Calls are synchronous on the main loop; IRQs publish mailbox state only.

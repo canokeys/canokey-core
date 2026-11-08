@@ -306,7 +306,7 @@ impl Session {
             self.abort_blob(p);
         }
         if policy & SM2 != 0 {
-            match settings::Sm2::load(p) {
+            match settings::load(p) {
                 Ok(config) => self.sm2 = config,
                 Err(error) => {
                     self.reset(p.memory);

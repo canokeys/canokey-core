@@ -464,18 +464,18 @@ impl Admin {
             if !grants.admin {
                 return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
             }
-            use crate::applets::ctap::settings::Sm2;
+            use crate::applets::ctap::settings;
             if h.ins == INS_WRITE_CTAP_SM2 {
-                Sm2::save(&w.input[..self.used], p).map_err(provision_error)?;
+                settings::save(&w.input[..self.used], p).map_err(provision_error)?;
                 return Ok(0);
             }
             if self.used != 0 {
                 return Err(Sw::WRONG_LENGTH);
             }
-            let config = Sm2::load(p).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-            w.output[..8].copy_from_slice(&config.encode());
-            self.response_len = 8;
-            return Ok(8);
+            let config = settings::load(p).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+            w.output[..settings::RECORD_BYTES].copy_from_slice(&config.encode());
+            self.response_len = settings::RECORD_BYTES;
+            return Ok(settings::RECORD_BYTES as u32);
         }
         // Preserve legacy authentication precedence for unknown instructions.
         if !matches!(

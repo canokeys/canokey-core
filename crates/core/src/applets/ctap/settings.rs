@@ -1,63 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Provisioned COSE identifiers survive credential reset. The record is two BE32s.
+//! Product record binding and error policy for provisioned COSE identifiers.
 use super::Status;
 #[cfg(feature = "admin")]
 use super::provision::Error;
-use crate::ports::{Platform, Record, StorageError};
-use canokey_ports::Storage as _;
+use crate::ports::Platform;
+pub(crate) use canokey_ctap::settings::{RECORD_BYTES, Sm2};
 
-#[derive(Clone, Copy)]
-pub(crate) struct Sm2 {
-    pub curve: i32,
-    pub algorithm: i32,
+pub(crate) fn load(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<Sm2, Status> {
+    canokey_ctap::settings::load(&mut super::adapter::Settings(p.storage))
+        .map_err(|_| Status::Other)
 }
-impl Sm2 {
-    pub const DEFAULT: Self = Self {
-        curve: 9,       // CanoKey private COSE curve identifier for SM2.
-        algorithm: -54, // CanoKey private COSE algorithm identifier for SM2.
-    };
-    pub fn encode(self) -> [u8; 8] {
-        let mut wire = [0; 8];
-        wire[..4].copy_from_slice(&self.curve.to_be_bytes());
-        wire[4..].copy_from_slice(&self.algorithm.to_be_bytes());
-        wire
-    }
-    pub(super) fn decode(wire: &[u8]) -> Option<Self> {
-        if wire.len() != 8 {
-            return None;
+#[cfg(feature = "admin")]
+pub(crate) fn save(
+    wire: &[u8],
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Error> {
+    use canokey_ctap::settings::WriteError;
+    canokey_ctap::settings::save(wire, &mut super::adapter::Settings(p.storage)).map_err(|error| {
+        match error {
+            WriteError::Length => Error::Length,
+            WriteError::Invalid => Error::Invalid,
+            WriteError::Storage => Error::Storage,
         }
-        let value = Self {
-            curve: i32::from_be_bytes(wire[..4].try_into().ok()?),
-            algorithm: i32::from_be_bytes(wire[4..].try_into().ok()?),
-        };
-        // Same reserved COSE identifiers as the C profile.
-        if matches!(value.curve, 0..=8 | 256..=259)
-            || matches!(value.algorithm, -7 | -8)
-            || crate::ports::mldsa::from_cose(value.algorithm).is_some()
-        {
-            return None;
-        }
-        Some(value)
-    }
-    pub fn load(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<Self, Status> {
-        let mut wire = [0; 8];
-        match p.storage.load(Record::CtapSm2, &mut wire) {
-            Err(StorageError::Missing) => Ok(Self::DEFAULT),
-            Ok(8) => Self::decode(&wire).ok_or(Status::Other),
-            _ => Err(Status::Other),
-        }
-    }
-    #[cfg(feature = "admin")]
-    pub fn save(
-        wire: &[u8],
-        p: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Error> {
-        if wire.len() != 8 {
-            return Err(Error::Length);
-        }
-        Self::decode(wire).ok_or(Error::Invalid)?;
-        p.storage
-            .replace(Record::CtapSm2, wire)
-            .map_err(|_| Error::Storage)
-    }
+    })
 }
