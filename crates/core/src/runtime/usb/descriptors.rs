@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Wire descriptors; all multibyte fields are explicitly little-endian.
 use canokey_protocol::{apdu, ccid, usb::*};
+use canokey_transport_runtime::usb::descriptors as common;
 pub use canokey_transport_runtime::usb::{CTAP_HID, CTAP_REPORT, LANGUAGE};
 // Report 1: modifiers, reserved byte, five keys and five LED bits.
 // Report 2: relative Consumer usage 0x01AE (AL Keyboard Layout), retained
@@ -94,28 +95,14 @@ pub const KEYBOARD_REPORT: &[u8] = &[
     0x06,
     0xc0, // Usage01AE, Data/Variable/Relative.
 ];
-pub const DEVICE: &[u8] = &[
-    // USB 2.00, per-interface classes, EP0 MPS; VID20A0/PID42D4;
-    // Configured bcdDevice, manufacturer/product, no serial, one configuration.
-    0x12,
-    0x01,
-    0x00,
-    0x02,
-    0x00,
-    0x00,
-    0x00,
+pub const DEVICE: &[u8] = &common::device(
+    0x20a0,
+    0x42d4,
+    crate::release::USB_BCD_DEVICE,
     EP0_PACKET_BYTES as u8,
-    0xa0,
-    0x20,
-    0xd4,
-    0x42,
-    crate::release::USB_BCD_DEVICE as u8,
-    (crate::release::USB_BCD_DEVICE >> 8) as u8,
-    STRING_MANUFACTURER,
-    STRING_PRODUCT,
     0x00,
-    0x01,
-];
+);
+
 pub const KEYBOARD_HID: &[u8] = &[9, 0x21, 0x11, 1, 0, 1, 0x22, KEYBOARD_REPORT.len() as u8, 0];
 
 #[derive(Clone, Copy)]
@@ -126,17 +113,18 @@ pub struct Interfaces {
 }
 impl Interfaces {
     pub const fn count(self) -> u8 {
-        1 + self.hid as u8 + self.keyboard as u8 + self.webusb as u8
+        self.composition().count()
     }
     pub const fn ccid(self) -> u8 {
-        self.hid as u8 + self.webusb as u8
+        self.composition().ccid()
     }
     pub const fn webusb(self) -> u8 {
-        self.hid as u8
+        self.composition().webusb()
     }
     pub const fn keyboard(self) -> u8 {
-        self.ccid() + 1
+        self.composition().keyboard()
     }
+
     pub fn endpoint(self, address: u16) -> bool {
         address & !u16::from(ENDPOINT_ADDRESS_MASK) == 0
             && match address & u16::from(ENDPOINT_NUMBER_MASK) {
@@ -156,6 +144,42 @@ impl Interfaces {
             None
         }
     }
+    const fn composition(self) -> common::Composition {
+        common::Composition {
+            ctap: if self.hid {
+                Some(common::Endpoints {
+                    input: EP_HID_IN,
+                    output: EP_HID,
+                    packet_bytes: DATA_PACKET_BYTES as u16,
+                })
+            } else {
+                None
+            },
+            webusb_string: if self.webusb {
+                Some(STRING_WEBUSB)
+            } else {
+                None
+            },
+            ccid: common::Endpoints {
+                input: EP_CCID_IN,
+                output: EP_CCID,
+                packet_bytes: DATA_PACKET_BYTES as u16,
+            },
+            maximum_ccid_message_bytes: (ccid::HEADER + apdu::SHORT_FRAME_BYTES) as u16,
+            keyboard: if self.keyboard {
+                Some(common::Hid {
+                    descriptor: KEYBOARD_HID,
+                    endpoints: common::Endpoints {
+                        input: EP_KEYBOARD_IN,
+                        output: EP_KEYBOARD,
+                        packet_bytes: KEYBOARD_PACKET_BYTES as u16,
+                    },
+                })
+            } else {
+                None
+            },
+        }
+    }
     pub fn configuration(self, out: &mut [u8; CONTROL_BUFFER_BYTES]) -> usize {
         Configuration::new(self).copy_into(out)
     }
@@ -164,176 +188,23 @@ impl Interfaces {
 /// request handling only reads it and never rebuilds wire descriptors.
 pub struct Configuration {
     interfaces: Interfaces,
-    bytes: [u8; CONTROL_BUFFER_BYTES],
-    length: usize,
+    descriptor: common::Configuration<CONTROL_BUFFER_BYTES>,
 }
 impl Configuration {
     pub const fn interfaces(&self) -> Interfaces {
         self.interfaces
     }
     pub const fn new(interfaces: Interfaces) -> Self {
-        // Configuration9 + CCID interface9 + class54 + two endpoints7.
-        const BASE_BYTES: usize = 9 + 9 + 54 + 2 * 7;
-        // HID interface9 + HID9 + two endpoints7; WebUSB has one interface9.
-        const HID_BYTES: usize = 9 + 9 + 2 * 7;
-        const WEBUSB_BYTES: usize = 9;
-        let length = BASE_BYTES
-            + HID_BYTES * (interfaces.hid as usize + interfaces.keyboard as usize)
-            + WEBUSB_BYTES * interfaces.webusb as usize;
-        let mut descriptor = Self {
+        Self {
             interfaces,
-            bytes: [0; CONTROL_BUFFER_BYTES],
-            length: 0,
-        };
-        // Bus-powered, bMaxPower=50 units of 2 mA (100 mA).
-        descriptor.append(&[9, 2, length as u8, 0, interfaces.count(), 1, 0, 0x80, 50]);
-        if interfaces.hid {
-            // HID interface, two interrupt endpoints: MPS64, interval5 ms.
-            descriptor.append(&[9, 4, 0, 0, 2, 3, 0, 0, 0]);
-            descriptor.append(CTAP_HID);
-            descriptor.append(&[
-                7,
-                5,
-                EP_HID_IN,
-                3,
-                DATA_PACKET_BYTES as u8,
-                0,
-                5,
-                7,
-                5,
-                EP_HID,
-                3,
-                DATA_PACKET_BYTES as u8,
-                0,
-                5,
-            ]);
-        }
-        if interfaces.webusb {
-            // Vendor class/subclass/protocol FF; no non-control endpoint.
-            descriptor.append(&[
-                9,
-                4,
-                interfaces.webusb(),
-                0,
-                0,
-                0xff,
-                0xff,
-                0xff,
-                STRING_WEBUSB,
-            ]);
-        }
-        descriptor.append(&[9, 4, interfaces.ccid(), 0, 2, 0x0b, 0, 0, 0]);
-        let max = (ccid::HEADER + apdu::SHORT_FRAME_BYTES) as u16;
-        // CCID1.10, short APDU exchange on every composition; IFSD254.
-        descriptor.append(&[
-            0x36,
-            0x21,
-            0x10,
-            0x01, // Length54, CCID type, bcdCCID1.10.
-            0x00,
-            0x07, // Max slot0; 5V/3V/1.8V supported.
-            0x02,
-            0x00,
-            0x00,
-            0x00, // dwProtocols: T=1.
-            0xa0,
-            0x0f,
-            0x00,
-            0x00, // Default clock4000 kHz.
-            0xa0,
-            0x0f,
-            0x00,
-            0x00, // Maximum clock4000 kHz.
-            0x00, // No explicit supported-clock table.
-            0x00,
-            0xb0,
-            0x04,
-            0x00, // Default data rate307200 bps.
-            0x00,
-            0xb0,
-            0x04,
-            0x00, // Maximum data rate307200 bps.
-            0x00, // No explicit supported-data-rate table.
-            0xfe,
-            0x00,
-            0x00,
-            0x00, // dwMaxIFSD254.
-            0x00,
-            0x00,
-            0x00,
-            0x00, // No synchronous protocols.
-            0x00,
-            0x00,
-            0x00,
-            0x00, // No mechanical features.
-            0xfe,
-            0x00,
-            0x02,
-            0x00, // dwFeatures.
-            max as u8,
-            (max >> 8) as u8,
-            0x00,
-            0x00, // dwMaxCCIDMessageLength.
-            0xff,
-            0xff, // bClassGetResponse / bClassEnvelope.
-            0x00,
-            0x00, // wLcdLayout: no display.
-            0x00,
-            0x01, // No PIN-pad verification; one busy slot.
-        ]);
-        // CCID bulk IN/OUT, MPS64; bInterval unused for bulk endpoints.
-        descriptor.append(&[
-            7,
-            5,
-            EP_CCID_IN,
-            2,
-            DATA_PACKET_BYTES as u8,
-            0,
-            0,
-            7,
-            5,
-            EP_CCID,
-            2,
-            DATA_PACKET_BYTES as u8,
-            0,
-            0,
-        ]);
-        if interfaces.keyboard {
-            descriptor.append(&[9, 4, interfaces.keyboard(), 0, 2, 3, 0, 0, 0]);
-            descriptor.append(KEYBOARD_HID);
-            descriptor.append(&[
-                7,
-                5,
-                EP_KEYBOARD_IN,
-                3,
-                KEYBOARD_PACKET_BYTES as u8,
-                0,
-                5,
-                7,
-                5,
-                EP_KEYBOARD,
-                3,
-                KEYBOARD_PACKET_BYTES as u8,
-                0,
-                5,
-            ]);
-        }
-        assert!(descriptor.length == length);
-        descriptor
-    }
-    const fn append(&mut self, bytes: &[u8]) {
-        let mut index = 0;
-        while index < bytes.len() {
-            self.bytes[self.length] = bytes[index];
-            self.length += 1;
-            index += 1;
+            descriptor: common::Configuration::new(interfaces.composition()),
         }
     }
     pub fn copy_into(&self, out: &mut [u8; CONTROL_BUFFER_BYTES]) -> usize {
-        out[..self.length].copy_from_slice(&self.bytes[..self.length]);
-        self.length
+        self.descriptor.copy_into(out)
     }
 }
+
 pub fn string(text: &[u8], out: &mut [u8; CONTROL_BUFFER_BYTES]) -> usize {
     canokey_transport_runtime::usb::string(text, out)
 }

@@ -2,6 +2,7 @@
 //! USB control policy. IRQ-local USB state never borrows applet or session state.
 #![forbid(unsafe_code)]
 use canokey_protocol::usb::*;
+pub mod descriptors;
 
 // USB 2.0 chapter 9 and HID 1.11 descriptor types and fixed request fields.
 const DESCRIPTOR_DEVICE: u8 = 0x01;
