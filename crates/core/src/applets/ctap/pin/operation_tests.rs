@@ -13,6 +13,14 @@ struct Backend {
     fail_generate: bool,
     fail_mac: bool,
     fail_read: bool,
+    fail_patch: bool,
+    fail_decrypt: bool,
+    fail_encrypt: bool,
+    fail_random_at: usize,
+    random_calls: usize,
+    decrypt_calls: usize,
+    encrypt_calls: usize,
+    retries_written: Vec<u8>,
     record: Option<Vec<u8>>,
     wiped: RefCell<Vec<Vec<u8>>>,
 }
@@ -28,6 +36,17 @@ impl Storage for Backend {
         } else {
             Ok(record.len())
         }
+    }
+    fn replace_at(&mut self, id: Record, offset: u32, input: &[u8]) -> Result<(), StorageError> {
+        assert_eq!(id, Record::CtapPin);
+        assert_eq!(offset, RETRIES as u32);
+        assert_eq!(input.len(), 1);
+        self.retries_written.push(input[0]);
+        if self.fail_patch {
+            return Err(StorageError::Unavailable);
+        }
+        self.record.as_mut().unwrap()[RETRIES] = input[0];
+        Ok(())
     }
     fn replace(&mut self, _: Record, _: &[u8]) -> Result<(), StorageError> {
         unreachable!()
@@ -89,8 +108,36 @@ impl Crypto for Backend {
             Ok(())
         }
     }
-    fn random(&mut self, _: &mut [u8]) -> Result<(), CryptoError> {
-        unreachable!()
+    fn random(&mut self, out: &mut [u8]) -> Result<(), CryptoError> {
+        self.random_calls += 1;
+        out.fill(0x55);
+        if self.random_calls == self.fail_random_at {
+            Err(CryptoError::Failure)
+        } else {
+            Ok(())
+        }
+    }
+    fn aes256_cbc(
+        &mut self,
+        encrypt: bool,
+        _: &[u8; 32],
+        _: &[u8; 16],
+        data: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        if encrypt {
+            self.encrypt_calls += 1;
+            data.fill(0x66);
+            if self.fail_encrypt {
+                return Err(CryptoError::Failure);
+            }
+        } else {
+            self.decrypt_calls += 1;
+            data.fill(0x42);
+            if self.fail_decrypt {
+                return Err(CryptoError::Failure);
+            }
+        }
+        Ok(())
     }
     fn hmac_sha1(&mut self, _: &[u8; 20], _: &[u8], _: &mut [u8; 20]) {
         unreachable!()
@@ -302,4 +349,140 @@ fn policy_reads_validate_the_full_record_and_never_cache_flags() {
             .iter()
             .all(|bytes| bytes.len() == RECORD_BYTES)
     );
+}
+
+#[test]
+fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Fault {
+        None,
+        Charge,
+        Decrypt,
+        TokenRandom,
+        IvRandom,
+        Encrypt,
+    }
+    for protocol in [wire::V1, wire::V2] {
+        for fault in [
+            Fault::None,
+            Fault::Charge,
+            Fault::Decrypt,
+            Fault::TokenRandom,
+            Fault::IvRandom,
+            Fault::Encrypt,
+        ] {
+            if protocol == wire::V1 && fault == Fault::IvRandom {
+                continue;
+            }
+            let mut record = vec![0x42; RP_HASHES];
+            record[RETRIES..RP_HASHES].copy_from_slice(&[8, 4, 4, 0x00]);
+            let mut storage = Backend {
+                record: Some(record),
+                fail_patch: fault == Fault::Charge,
+                ..Backend::default()
+            };
+            let mut crypto = Backend {
+                fail_decrypt: fault == Fault::Decrypt,
+                fail_encrypt: fault == Fault::Encrypt,
+                fail_random_at: if fault == Fault::TokenRandom {
+                    1
+                } else if fault == Fault::IvRandom {
+                    2
+                } else {
+                    0
+                },
+                ..Backend::default()
+            };
+            let memory = Backend::default();
+            let mut device = Backend::default();
+            let mut session = Session::new();
+            session.token.fill(0x99);
+            session.permissions = PERMISSION_CONFIG;
+            let mut backing = SessionWorkspace::new();
+            let mut w = backing.classic_with(&memory);
+            w.output.fill(0xee);
+            let mut command = Ok(super::super::Command::ClientPin(Parameters {
+                protocol,
+                subcommand: wire::GET_TOKEN_PERMISSIONS,
+                agreement: [0x05; 64],
+                auth: [0x3a; 32],
+                new_pin: [0xaa; 80],
+                pin_hash: [0xbb; 32],
+                permissions: wire::PERMISSION_CREDENTIALS,
+                rp: [0x00; 254],
+                rp_len: 0,
+            }));
+            let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                storage: &mut storage,
+                crypto: &mut crypto,
+                device: &mut device,
+                memory: &memory,
+            };
+            let response = session.execute(&mut command, &mut w, &mut p);
+            if fault == Fault::None {
+                let length = if protocol == wire::V1 { 32 } else { 48 };
+                assert!(matches!(response, super::super::Response::Prepared(n) if n == 5 + length));
+                assert_eq!(&w.output[..5], &[0x00, 0xa1, 0x02, 0x58, length as u8]);
+                let prefix = if protocol == wire::V1 { 0 } else { 16 };
+                assert_eq!(&w.output[5..5 + prefix], &[0x55; 16][..prefix]);
+                assert_eq!(&w.output[5 + prefix..5 + length], &[0x66; 32]);
+                assert_eq!(session.token, [0x55; 32]);
+                assert_eq!(session.permissions, wire::PERMISSION_CREDENTIALS);
+            } else {
+                assert!(matches!(
+                    response,
+                    super::super::Response::Error(Status::Other)
+                ));
+                assert_eq!(session.token, [0x00; 32]);
+                assert_eq!(session.permissions, 0x00);
+                assert_eq!(session.agreement, [0x00; 32]);
+                assert!(!session.agreement_ready);
+                assert!(w.output.iter().all(|&byte| byte == 0x00));
+            }
+            assert!(
+                w.key
+                    .bytes
+                    .iter()
+                    .chain(w.input.iter())
+                    .all(|&byte| byte == 0x00)
+            );
+            let Ok(super::super::Command::ClientPin(cp)) = command else {
+                panic!()
+            };
+            assert!(
+                cp.auth
+                    .iter()
+                    .chain(cp.new_pin.iter())
+                    .chain(cp.pin_hash.iter())
+                    .all(|&byte| byte == 0x00)
+            );
+            drop(p);
+            let expected_retries = match fault {
+                Fault::Charge => 8,
+                Fault::Decrypt => 7,
+                _ => 8,
+            };
+            assert_eq!(storage.record.as_ref().unwrap()[RETRIES], expected_retries);
+            assert_eq!(
+                storage.retries_written,
+                if matches!(fault, Fault::Charge | Fault::Decrypt) {
+                    vec![7]
+                } else {
+                    vec![7, 8]
+                }
+            );
+            assert_eq!(crypto.decrypt_calls, usize::from(fault != Fault::Charge));
+            let random_calls = match fault {
+                Fault::Charge | Fault::Decrypt => 0,
+                Fault::TokenRandom => 1,
+                _ if protocol == wire::V1 => 1,
+                _ => 2,
+            };
+            assert_eq!(crypto.random_calls, random_calls);
+            assert_eq!(
+                crypto.encrypt_calls,
+                usize::from(matches!(fault, Fault::None | Fault::Encrypt))
+            );
+        }
+    }
 }

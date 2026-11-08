@@ -7,7 +7,7 @@ use super::{
     pin,
 };
 use crate::{ports::Platform, runtime::workspace::Workspace};
-use canokey_ports::{Crypto as _, Memory as _};
+use canokey_ports::Memory as _;
 use canokey_protocol::cbor::Event;
 // One/two SHA-256 salts, optionally preceded by the v2 AES IV.
 const SALT_BYTES: usize = 32;
@@ -214,31 +214,25 @@ impl Prepared {
                 &mut random,
                 p,
             )?;
-            let iv_len = if self.protocol == wire::V2 {
-                wire::AES_BLOCK_BYTES
-            } else {
-                0
-            };
-            let mut iv = [0; wire::AES_BLOCK_BYTES];
-            if iv_len != 0 {
-                p.crypto.random(&mut iv).map_err(|_| Status::Other)?;
-                out[..wire::AES_BLOCK_BYTES].copy_from_slice(&iv);
-            }
+            let mut encryption = canokey_ctap::client_pin::cipher::prepare(
+                pin::cipher_protocol(self.protocol),
+                self.length,
+                out,
+                &mut pin::PinCrypto(p),
+            )
+            .map_err(pin::cipher_error)?;
             for (salt, output) in self.secrets[..PREPARED_SALT_BYTES][..self.length]
                 .chunks_exact(32)
-                .zip(out[iv_len..iv_len + self.length].chunks_exact_mut(32))
+                .zip(encryption.body_mut().chunks_exact_mut(32))
             {
                 mac(&random, salt, output.try_into().unwrap(), p)?;
             }
-            p.crypto
-                .aes256_cbc(
-                    true,
+            encryption
+                .finish(
                     self.secrets[PREPARED_SALT_BYTES..].try_into().unwrap(),
-                    &iv,
-                    &mut out[iv_len..iv_len + self.length],
+                    &mut pin::PinCrypto(p),
                 )
-                .map_err(|_| Status::Other)?;
-            Ok(iv_len + self.length)
+                .map_err(pin::cipher_error)
         })();
         p.memory.wipe(&mut random);
         if result.is_err() {

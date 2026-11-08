@@ -18,15 +18,13 @@ pub(super) mod pin_protocol {
     };
     pub const V1: u8 = Protocol::One as u8;
     pub const V2: u8 = Protocol::Two as u8;
-    pub const AES_BLOCK_BYTES: usize = 16;
+    pub const AES_BLOCK_BYTES: usize = canokey_ctap::client_pin::cipher::BLOCK_BYTES;
     pub const AUTH_V1_BYTES: usize = Protocol::One.auth_bytes();
     pub const AUTH_V2_BYTES: usize = Protocol::Two.auth_bytes();
     pub const PIN_HASH_BYTES: usize = request::PIN_HASH_BYTES; // left(SHA-256(PIN),16).
     pub const PADDED_PIN_BYTES: usize = request::PADDED_PIN_BYTES;
     pub const NEW_PIN_V1_BYTES: usize = PADDED_PIN_BYTES;
     pub const NEW_PIN_V2_BYTES: usize = AES_BLOCK_BYTES + PADDED_PIN_BYTES;
-    pub const TOKEN_V1_BYTES: usize = 32;
-    pub const TOKEN_V2_BYTES: usize = AES_BLOCK_BYTES + TOKEN_V1_BYTES;
     pub const MIN_CODE_POINTS: u8 = 0x04;
     pub const MAX_PIN_BYTES: u8 = 63;
     pub const MAX_RETRIES: u8 = 8;
@@ -65,13 +63,6 @@ pub(super) mod pin_protocol {
             NEW_PIN_V1_BYTES
         } else {
             NEW_PIN_V2_BYTES
-        }
-    }
-    pub const fn token_bytes(protocol: u8) -> usize {
-        if protocol == V1 {
-            TOKEN_V1_BYTES
-        } else {
-            TOKEN_V2_BYTES
         }
     }
 }

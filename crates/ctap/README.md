@@ -15,8 +15,13 @@ product applications. Firmware uses `no_std` without the `schema` feature.
   gesture mechanisms. Reset policy and transport ownership stay in adapters.
 - `client_pin`: PIN/UV protocols 1/2 key derivation over borrowed SHA/HMAC
   capabilities, extraction-key erasure on every return, and unpadded UTF-8 PIN
-  validation by byte and Unicode scalar limits. Products retain ECDH, CBC,
-  encrypted-field padding, durable retry order and token lifecycle.
+  validation by byte and Unicode scalar limits, including encrypted PIN padding
+  removal. `client_pin::cipher` shares CBC zero/random-IV framing, borrowed and
+  in-place decryption, and prepared output encryption. Products lend existing
+  backing and own partial-output erasure on failure. Prepared output permits
+  hmac-secret to preserve RNG-before-MAC order without another plaintext array.
+  Products retain ECDH, primitive capabilities, durable retry order and token
+  lifecycle.
   `client_pin::request` owns ClientPIN command requirements, legacy/scoped token
   admission, permission filtering over explicit product profiles, and exact
   encrypted-field lengths. Adapters select required-first versus scope-first

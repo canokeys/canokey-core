@@ -2,6 +2,7 @@
 //! PIN/UV protocol key derivation and PIN text rules, without session policy.
 
 pub mod agreement;
+pub mod cipher;
 pub mod request;
 
 pub const KEY_BYTES: usize = 32;
@@ -90,6 +91,16 @@ pub fn validate_pin(bytes: &[u8], minimum: usize) -> Option<&str> {
         return None;
     }
     Some(text)
+}
+
+/// CTAP newPinEnc is 64 bytes with trailing zero padding. Only this encrypted
+/// field removes padding; validate_pin still rejects NUL inside the PIN.
+pub fn unpad_pin(padded: &[u8; request::PADDED_PIN_BYTES]) -> &[u8] {
+    let length = padded
+        .iter()
+        .rposition(|byte| *byte != 0x00)
+        .map_or(0, |index| index + 1);
+    &padded[..length]
 }
 
 #[cfg(test)]

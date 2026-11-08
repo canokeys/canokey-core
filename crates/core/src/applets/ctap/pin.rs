@@ -16,8 +16,8 @@ use crate::{
 use canokey_ctap::client_pin as shared_pin;
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 
-struct PinDerivation<'a, 'p, B: crate::ports::Backends>(&'a mut Platform<'p, B>);
-impl<B: crate::ports::Backends> shared_pin::Derivation for PinDerivation<'_, '_, B> {
+pub(super) struct PinCrypto<'a, 'p, B: crate::ports::Backends>(pub(super) &'a mut Platform<'p, B>);
+impl<B: crate::ports::Backends> shared_pin::Derivation for PinCrypto<'_, '_, B> {
     type Error = Status;
     fn sha256(&mut self, input: &[u8], out: &mut [u8; 32]) -> Result<(), Status> {
         self.0.crypto.sha256(input, out).map_err(|_| Status::Other)
@@ -34,6 +34,51 @@ impl<B: crate::ports::Backends> shared_pin::Derivation for PinDerivation<'_, '_,
         self.0.memory.wipe(bytes);
     }
 }
+
+impl<B: crate::ports::Backends> shared_pin::cipher::Cbc for PinCrypto<'_, '_, B> {
+    type Error = Status;
+    fn aes256_cbc(
+        &mut self,
+        direction: shared_pin::cipher::Direction,
+        key: &[u8; 32],
+        iv: &[u8; shared_pin::cipher::BLOCK_BYTES],
+        bytes: &mut [u8],
+    ) -> Result<(), Status> {
+        self.0
+            .crypto
+            .aes256_cbc(
+                matches!(direction, shared_pin::cipher::Direction::Encrypt),
+                key,
+                iv,
+                bytes,
+            )
+            .map_err(|_| Status::Other)
+    }
+}
+impl<B: crate::ports::Backends> shared_pin::cipher::Encryption for PinCrypto<'_, '_, B> {
+    fn random_iv(&mut self, iv: &mut [u8; shared_pin::cipher::BLOCK_BYTES]) -> Result<(), Status> {
+        self.0.crypto.random(iv).map_err(|_| Status::Other)
+    }
+}
+pub(super) fn cipher_error(error: shared_pin::cipher::Error<Status>) -> Status {
+    match error {
+        shared_pin::cipher::Error::InvalidLength => Status::InvalidLength,
+        shared_pin::cipher::Error::Primitive(error) => error,
+    }
+}
+// Existing internal CBC callers have already admitted the protocol. Preserve
+// their zero-IV fallback while keeping the shared framing API typed.
+pub(super) fn cipher_protocol(protocol: u8) -> shared_pin::Protocol {
+    if protocol == wire::V2 {
+        shared_pin::Protocol::Two
+    } else {
+        shared_pin::Protocol::One
+    }
+}
+
+// CTAP reply prefix: success status, one-entry map, token key, byte-string
+// additional-info 0x18, then the encoded token length in bytes.
+const TOKEN_RESPONSE_HEADER_BYTES: usize = 5;
 
 // PIN hash, retries, code-point count, minimum length, flags/RP count,
 // followed by at most four RP hashes. One atomic record; no padding or prefix.
@@ -125,23 +170,9 @@ pub(super) fn decrypt(
     bytes: &mut [u8],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
-    if protocol == wire::V2 && bytes.len() < wire::AES_BLOCK_BYTES {
-        return Err(Status::InvalidLength);
-    }
-    if bytes.len() % wire::AES_BLOCK_BYTES != 0 {
-        return Err(Status::InvalidLength);
-    }
-    let mut iv = [0; wire::AES_BLOCK_BYTES];
-    let n = if protocol == wire::V2 {
-        iv.copy_from_slice(&bytes[..wire::AES_BLOCK_BYTES]);
-        bytes.copy_within(wire::AES_BLOCK_BYTES.., 0);
-        bytes.len() - wire::AES_BLOCK_BYTES
-    } else {
-        bytes.len()
-    };
-    p.crypto
-        .aes256_cbc(false, key, &iv, &mut bytes[..n])
-        .map_err(|_| Status::Other)
+    shared_pin::cipher::decrypt_in_place(cipher_protocol(protocol), key, bytes, &mut PinCrypto(p))
+        .map(|_| ())
+        .map_err(cipher_error)
 }
 impl Session {
     // Both callers own workspace cleanup and Session::execute invalidates
@@ -198,7 +229,7 @@ impl Session {
             (&w.input[..shared_pin::KEY_BYTES]).try_into().unwrap(),
             mac_key.try_into().unwrap(),
             aes_key.try_into().unwrap(),
-            &mut PinDerivation(p),
+            &mut PinCrypto(p),
         )?;
         Ok(())
     }
@@ -298,23 +329,21 @@ impl Session {
                 p.crypto
                     .random(&mut self.token)
                     .map_err(|_| Status::Other)?;
-                w.input[..32].copy_from_slice(&self.token);
-                let mut iv = [0; wire::AES_BLOCK_BYTES];
-                if cp.protocol == wire::V2 {
-                    p.crypto.random(&mut iv).map_err(|_| Status::Other)?;
-                }
-                p.crypto
-                    .aes256_cbc(true, aes_key, &iv, &mut w.input[..32])
-                    .map_err(|_| Status::Other)?;
-                let n = wire::token_bytes(cp.protocol) as u8;
-                w.output[..5].copy_from_slice(&[0, 0xa1, wire::RESPONSE_TOKEN, 0x58, n]);
-                let offset = if cp.protocol == wire::V2 {
-                    w.output[5..21].copy_from_slice(&iv);
-                    21
-                } else {
-                    5
-                };
-                w.output[offset..offset + 32].copy_from_slice(&w.input[..32]);
+                let n = shared_pin::cipher::encrypt(
+                    cipher_protocol(cp.protocol),
+                    aes_key,
+                    &self.token,
+                    &mut w.output[TOKEN_RESPONSE_HEADER_BYTES..],
+                    &mut PinCrypto(p),
+                )
+                .map_err(cipher_error)?;
+                w.output[..TOKEN_RESPONSE_HEADER_BYTES].copy_from_slice(&[
+                    0x00,
+                    0xa1,
+                    wire::RESPONSE_TOKEN,
+                    0x58,
+                    n as u8,
+                ]);
                 self.token_started = p.device.now();
                 self.token_used = self.token_started;
                 if cp.subcommand == wire::GET_TOKEN_PERMISSIONS && cp.rp_len != 0 {
@@ -328,16 +357,13 @@ impl Session {
                 } else {
                     cp.permissions
                 };
-                return Ok(offset + 32);
+                return Ok(TOKEN_RESPONSE_HEADER_BYTES + n);
             }
             decrypt(cp.protocol, aes_key, &mut cp.new_pin[..new_len], p)?;
-            let n = cp.new_pin[..wire::PADDED_PIN_BYTES]
-                .iter()
-                .rposition(|b| *b != 0)
-                .map_or(0, |i| i + 1);
-            let pin =
-                shared_pin::validate_pin(&cp.new_pin[..n], usize::from(record[MIN_PIN_LENGTH]))
-                    .ok_or(Status::PinPolicy)?;
+            let unpadded =
+                shared_pin::unpad_pin((&cp.new_pin[..wire::PADDED_PIN_BYTES]).try_into().unwrap());
+            let pin = shared_pin::validate_pin(unpadded, usize::from(record[MIN_PIN_LENGTH]))
+                .ok_or(Status::PinPolicy)?;
             let count = pin.chars().count();
             let mut digest = [0; 32];
             let hash = p
