@@ -548,7 +548,7 @@ pub unsafe fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8 {
                     }
                 }
                 Phase::Led if length == 2 && *bytes == KEYBOARD_REPORT_ID => {
-                    DEVICE.leds = *bytes.add(1) & KEYBOARD_LED_MASK;
+                    DEVICE.policy.leds = *bytes.add(1) & KEYBOARD_LED_MASK;
                     status(Phase::StatusIn);
                 }
                 _ => stall(),
@@ -568,7 +568,7 @@ pub unsafe fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8 {
             EP_KEYBOARD
                 if usize::from(length) == CONSUMER_REPORT_BYTES && *bytes == KEYBOARD_REPORT_ID =>
             {
-                DEVICE.leds = *bytes.add(1) & KEYBOARD_LED_MASK;
+                DEVICE.policy.leds = *bytes.add(1) & KEYBOARD_LED_MASK;
                 1
             }
             _ => 1, // Ignore malformed interrupt reports; never parse stale tail.
@@ -641,6 +641,6 @@ pub unsafe fn progress<P: crate::composition::Provider>() -> u8 {
 /// changed; an in-flight descriptor keeps its captured immutable variant.
 pub unsafe extern "C" fn ck_usb_set_landing(enabled: u8) {
     usb_locked(|| unsafe {
-        DEVICE.landing = enabled != 0;
+        DEVICE.policy.landing = enabled != 0;
     });
 }

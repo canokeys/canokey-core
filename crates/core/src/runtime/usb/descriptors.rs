@@ -1,19 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Wire descriptors; all multibyte fields are explicitly little-endian.
 use canokey_protocol::{apdu, ccid, usb::*};
-// FIDO page 0xF1D0: 64-byte Input(0x20)/Output(0x21), no report ID.
-pub const CTAP_REPORT: &[u8] = &[
-    0x06, 0xd0, 0xf1, // Usage Page: FIDO Alliance.
-    0x09, 0x01, 0xa1, 0x01, // Usage: authenticator; Application collection.
-    0x09, 0x20, // Input report usage.
-    0x15, 0x00, 0x26, 0xff, 0x00, // Logical range: 0..255.
-    0x75, 0x08, 0x95, 0x40, // 64 eight-bit fields.
-    0x81, 0x02, // Input: Data, Variable, Absolute.
-    0x09, 0x21, // Output report usage.
-    0x15, 0x00, 0x26, 0xff, 0x00, // Logical range: 0..255.
-    0x75, 0x08, 0x95, 0x40, // 64 eight-bit fields.
-    0x91, 0x02, 0xc0, // Output: Data, Variable, Absolute; End Collection.
-];
+pub use canokey_transport_runtime::usb::{CTAP_HID, CTAP_REPORT, LANGUAGE};
 // Report 1: modifiers, reserved byte, five keys and five LED bits.
 // Report 2: relative Consumer usage 0x01AE (AL Keyboard Layout), retained
 // from the original descriptor. Runtime's eject report uses usage 0xB8.
@@ -128,8 +116,6 @@ pub const DEVICE: &[u8] = &[
     0x00,
     0x01,
 ];
-pub const LANGUAGE: &[u8] = &[0x04, 0x03, 0x09, 0x04]; // LANGID 0x0409 (English US).
-pub const CTAP_HID: &[u8] = &[9, 0x21, 0x11, 1, 0, 1, 0x22, CTAP_REPORT.len() as u8, 0];
 pub const KEYBOARD_HID: &[u8] = &[9, 0x21, 0x11, 1, 0, 1, 0x22, KEYBOARD_REPORT.len() as u8, 0];
 
 #[derive(Clone, Copy)]
@@ -349,12 +335,5 @@ impl Configuration {
     }
 }
 pub fn string(text: &[u8], out: &mut [u8; CONTROL_BUFFER_BYTES]) -> usize {
-    let n = text.len().min((CONTROL_BUFFER_BYTES - 2) / 2);
-    out[0] = (2 + 2 * n) as u8;
-    out[1] = 3;
-    for (i, ch) in text[..n].iter().enumerate() {
-        out[2 + 2 * i] = *ch;
-        out[3 + 2 * i] = 0;
-    }
-    2 + 2 * n
+    canokey_transport_runtime::usb::string(text, out)
 }

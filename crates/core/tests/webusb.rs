@@ -244,7 +244,7 @@ fn landing_setting_changes_only_bos_index_and_survives_usb_reset() {
     else {
         panic!()
     };
-    device.landing = false;
+    device.policy.landing = false;
     device.reset();
     let Reply::Descriptor(second) = device.setup(&configuration, request, false, &mut scratch)
     else {
