@@ -6,7 +6,13 @@ edition = "2024"
 license = "Apache-2.0"
 publish = false
 
+[features]
+default = []
+schema = ["dep:minicbor"]
+
 [dependencies]
+canokey-protocol = { path = "../protocol", default-features = false }
+minicbor = { version = "=2.3.0", path = "../../third_party/minicbor/minicbor", default-features = false, features = ["std"], optional = true }
 canokey-ports = { path = "../ports", default-features = false }
 
 [lints]

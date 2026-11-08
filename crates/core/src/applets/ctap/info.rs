@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! GetInfo's fixed schema lives in Flash; only card state is encoded at runtime.
-// authenticatorGetInfo response member: minPINLength.
-const MIN_PIN_LENGTH: u8 = 0x0d;
 use super::{MAX_REQUEST, credential, credential_request, large_blob, pin, provision};
 use crate::ports::Record;
 use canokey_protocol::cbor::{EncodeError, Encoder};
@@ -22,43 +20,23 @@ pub(super) fn encode(
         assert!(large_blob::LIMIT == 4096);
     }
     let capacity = output.len();
-    let always_uv = flags & pin::ALWAYS_UV != 0;
-    let mut e = Encoder::new(output);
-    e.encoded(if flags & pin::FORCE_CHANGE != 0 {
-        HEADER_FORCE
-    } else {
-        HEADER
-    })
-    .array(if always_uv { 3 } else { 4 });
-    if !always_uv {
-        e.encoded(U2F);
-    }
-    e.encoded(VERSIONS_EXTENSIONS)
-        .bytes(&provision::AAGUID)
-        .encoded(OPTIONS)
-        .bool(always_uv)
-        .encoded(CLIENT_PIN)
-        .bool(configured)
-        .encoded(OPTIONS_END)
-        .bool(!always_uv)
-        .encoded(REQUEST_LIMITS)
-        .encoded(ALGORITHMS);
-    if !cfg!(feature = "ctap-restrict-algorithms") {
-        e.i32(sm2_algorithm);
-    }
-    e.encoded(ALGORITHMS_END);
-    if flags & pin::FORCE_CHANGE != 0 {
-        e.u8(0x0c).bool(true);
-    }
-    e.u8(MIN_PIN_LENGTH)
-        .u8(minimum)
-        .encoded(LIMITS)
-        .u8(Record::CTAP_CREDENTIALS - used)
-        .encoded(RESET)
-        .bool(flags & pin::LONG_RESET != 0)
-        .encoded(END);
-    e.finish()?;
-    Ok(capacity - e.writer().len())
+    let mut encoder = Encoder::new(output);
+    canokey_ctap::info::encode(
+        INFO,
+        &canokey_ctap::info::State {
+            aaguid: &provision::AAGUID,
+            always_uv: flags & pin::ALWAYS_UV != 0,
+            client_pin: configured,
+            force_change: flags & pin::FORCE_CHANGE != 0,
+            minimum_pin_length: minimum,
+            remaining_credentials: Record::CTAP_CREDENTIALS - used,
+            long_reset: flags & pin::LONG_RESET != 0,
+            nfc: cfg!(feature = "ctap-nfc"),
+            algorithm: sm2_algorithm,
+        },
+        &mut encoder,
+    )?;
+    Ok(capacity - encoder.writer().len())
 }
 
 #[cfg(test)]

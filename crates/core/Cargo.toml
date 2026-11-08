@@ -12,6 +12,7 @@ canokey-transport-runtime = { path = "../transport-runtime" }
 canokey-ports = { path = "../ports", default-features = false }
 canokey-protocol = { path = "../protocol" }
 [build-dependencies]
+canokey-ctap = { path = "../ctap", features = ["schema"] }
 canokey-ports = { path = "../ports", default-features = false }
 canokey-protocol = { path = "../protocol" }
 cfg_aliases = "0.2.1"

@@ -7,3 +7,9 @@ pub mod config;
 pub mod ports;
 pub mod request;
 pub mod status;
+
+pub mod info;
+#[cfg(feature = "schema")]
+extern crate std;
+#[cfg(feature = "schema")]
+pub mod schema;

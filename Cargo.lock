@@ -22,6 +22,8 @@ name = "canokey-ctap"
 version = "0.1.0"
 dependencies = [
  "canokey-ports",
+ "canokey-protocol",
+ "minicbor",
 ]
 
 [[package]]
