@@ -7,7 +7,7 @@ use crate::{
     runtime::workspace::Workspace,
 };
 use canokey_ctap::session::Boundary;
-use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
+use canokey_ports::{Crypto as _, Device as _, Memory as _};
 // Two 33-byte positive INTEGERs plus DER tags/lengths.
 const MAX_ECDSA_SIGNATURE_BYTES: usize = 72;
 use canokey_protocol::{cbor::Encoder, der::der_signature};
@@ -388,14 +388,14 @@ fn respond(
     }
     let mut self_attest = false;
     let cert_len = if request.make {
-        let certificate = p.storage.size(crate::ports::Record::CtapCertificate);
+        let certificate = canokey_ctap::ports::Attestation::certificate_length(
+            &mut super::adapter::Attestation(p.storage),
+        );
         let mut attestation_key = [0; 32];
         let key = super::attestation::key(&mut attestation_key, p);
         let result = (|| {
             let cert_len = match (key, certificate) {
-                (Ok(()), Ok(n)) if n != 0 && (n as usize) <= super::provision::CERT_LIMIT => {
-                    n as usize
-                }
+                (Ok(()), Ok(n)) if n != 0 && n <= super::provision::CERT_LIMIT => n,
                 (
                     Ok(()) | Err(crate::ports::StorageError::Missing),
                     Err(crate::ports::StorageError::Missing),

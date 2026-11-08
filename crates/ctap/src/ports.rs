@@ -2,6 +2,18 @@
 //! Existing static product budgets; no dependency on a product Platform.
 pub use canokey_ports::RequestLimits;
 
+/// Read only provisioned attestation key bytes and certificate metadata. Product
+/// adapters authenticate their own records and retain error/missing semantics.
+/// This synchronous capability cannot sign, install, write or retain a secret.
+pub trait Attestation {
+    type Error;
+    fn key(
+        &mut self,
+        out: &mut [u8; crate::provision::PRIVATE_KEY_BYTES],
+    ) -> Result<usize, Self::Error>;
+    fn certificate_length(&mut self) -> Result<usize, Self::Error>;
+}
+
 /// Access only the provisioned SM2 identifier record. This synchronous borrow
 /// exposes neither general storage nor authorization/session/application state.
 pub trait Sm2Settings {

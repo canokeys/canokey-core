@@ -6,6 +6,7 @@
 pub mod config;
 pub mod ports;
 pub mod presence;
+pub mod provision;
 pub mod request;
 pub mod session;
 pub mod settings;

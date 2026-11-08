@@ -3,6 +3,23 @@
 use super::{Command, Status};
 use canokey_ctap::request::{self, Parameterless};
 
+/// The reader cannot access product records outside FIDO attestation material.
+pub(super) struct Attestation<'a, S: ?Sized>(pub &'a mut S);
+impl<S: canokey_ports::Storage + ?Sized> canokey_ctap::ports::Attestation for Attestation<'_, S> {
+    type Error = canokey_ports::StorageError;
+    fn key(
+        &mut self,
+        out: &mut [u8; canokey_ctap::provision::PRIVATE_KEY_BYTES],
+    ) -> Result<usize, Self::Error> {
+        self.0.load(crate::ports::Record::CtapAttestationKey, out)
+    }
+    fn certificate_length(&mut self) -> Result<usize, Self::Error> {
+        self.0
+            .size(crate::ports::Record::CtapCertificate)
+            .map(|length| length as usize)
+    }
+}
+
 /// The portable settings code can address only this product's SM2 record.
 pub(super) struct Settings<'a, S: ?Sized>(pub &'a mut S);
 impl<S: canokey_ports::Storage + ?Sized> canokey_ctap::ports::Sm2Settings for Settings<'_, S> {
