@@ -7,6 +7,7 @@ pub mod config;
 pub mod ports;
 pub mod presence;
 pub mod request;
+pub mod session;
 pub mod status;
 pub mod workspace;
 

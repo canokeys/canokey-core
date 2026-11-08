@@ -434,7 +434,7 @@ pub(super) struct Assertion {
     pub get_cred_blob: bool,
     pub third_party_payment: bool,
     pub hmac: super::hmac_secret::Prepared,
-    pub started: u32,
+    pub continuation: canokey_ctap::session::IdleWindow<()>,
 }
 impl Assertion {
     pub const fn new() -> Self {
@@ -448,7 +448,7 @@ impl Assertion {
             get_cred_blob: false,
             third_party_payment: false,
             hmac: super::hmac_secret::Prepared::new(),
-            started: 0,
+            continuation: canokey_ctap::session::IdleWindow::new(()),
         }
     }
 }

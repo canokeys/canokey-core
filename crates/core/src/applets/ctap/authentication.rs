@@ -6,9 +6,8 @@ use crate::{
     ports::{KeyOperation, Platform, alg},
     runtime::workspace::Workspace,
 };
+use canokey_ctap::session::Boundary;
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
-// getNextAssertion continuation lifetime, in milliseconds.
-const ASSERTION_WINDOW_MS: u32 = 30_000;
 // Two 33-byte positive INTEGERs plus DER tags/lengths.
 const MAX_ECDSA_SIGNATURE_BYTES: usize = 72;
 use canokey_protocol::{cbor::Encoder, der::der_signature};
@@ -252,7 +251,10 @@ impl Session {
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         if self.assertion.remaining == 0
-            || p.device.now().wrapping_sub(self.assertion.started) > ASSERTION_WINDOW_MS
+            || !self
+                .assertion
+                .continuation
+                .accepts(&(), p.device.now(), Boundary::AfterLimit)
         {
             return Err(Status::NotAllowed);
         }
@@ -279,7 +281,7 @@ impl Session {
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let algorithm = credential::open(id, self.sm2, &self.assertion.rp, w.key, p)?;
-        self.assertion.started = p.device.now();
+        self.assertion.continuation.refresh((), p.device.now());
         respond(
             &Signing {
                 id,
