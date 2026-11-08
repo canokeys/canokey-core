@@ -2,6 +2,17 @@
 //! Existing static product budgets; no dependency on a product Platform.
 pub use canokey_ports::RequestLimits;
 
+/// Stage only a provisioned certificate. The product grants authority before
+/// borrowing this capability and fixes the destination record in its adapter.
+/// Each operation returns before another application or transport can run.
+pub trait CertificateStage {
+    type Error;
+    fn begin(&mut self) -> Result<(), Self::Error>;
+    fn append(&mut self, bytes: &[u8]) -> Result<(), Self::Error>;
+    fn commit(&mut self) -> Result<(), Self::Error>;
+    fn abort(&mut self);
+}
+
 /// Read only the provisioned certificate. No source handle or output borrow
 /// escapes this call. Products retain validation, backing and close ownership;
 /// exact and partial modes preserve distinct backend error/short-read behavior.

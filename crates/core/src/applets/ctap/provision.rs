@@ -43,24 +43,31 @@ pub(crate) fn install_key(
 }
 
 #[cfg(feature = "admin")]
-pub(crate) struct Certificate {
-    active: bool,
+pub(crate) struct Certificate(canokey_ctap::provision::Certificate);
+#[cfg(feature = "admin")]
+fn stage_error(error: canokey_ctap::provision::StageError<crate::ports::StorageError>) -> Error {
+    use canokey_ctap::provision::StageError;
+    match error {
+        StageError::Source(_) => Error::Storage,
+        StageError::Length => Error::Length,
+        StageError::NotActive => Error::NotActive,
+    }
 }
 #[cfg(feature = "admin")]
 impl Certificate {
     pub const fn new() -> Self {
-        Self { active: false }
+        Self(canokey_ctap::provision::Certificate::new())
     }
     pub fn active(&self) -> bool {
-        self.active
+        self.0.active()
     }
     pub fn begin(
         &mut self,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
-        p.storage.stage_begin().map_err(|_| Error::Storage)?;
-        self.active = true;
-        Ok(())
+        self.0
+            .begin(&mut super::adapter::CertificateStage(p.storage))
+            .map_err(stage_error)
     }
     pub fn append(
         &mut self,
@@ -68,29 +75,25 @@ impl Certificate {
         bytes: &[u8],
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
-        *used = used
-            .checked_add(bytes.len())
-            .filter(|n| *n <= CERT_LIMIT)
-            .ok_or(Error::Length)?;
-        p.storage.stage_append(bytes).map_err(|_| Error::Storage)
+        self.0
+            .append(
+                used,
+                bytes,
+                CERT_LIMIT,
+                &mut super::adapter::CertificateStage(p.storage),
+            )
+            .map_err(stage_error)
     }
     pub fn commit(
         &mut self,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
-        if !self.active {
-            return Err(Error::NotActive);
-        }
-        p.storage
-            .stage_commit(Record::CtapCertificate)
-            .map_err(|_| Error::Storage)?;
-        self.active = false;
-        Ok(())
+        self.0
+            .commit(&mut super::adapter::CertificateStage(p.storage))
+            .map_err(stage_error)
     }
     pub fn abort(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
-        if self.active {
-            p.storage.stage_abort();
-            self.active = false;
-        }
+        self.0
+            .abort(&mut super::adapter::CertificateStage(p.storage));
     }
 }

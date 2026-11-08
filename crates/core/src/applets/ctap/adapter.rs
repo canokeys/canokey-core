@@ -3,6 +3,29 @@
 use super::{Command, Status};
 use canokey_ctap::request::{self, Parameterless};
 
+/// ADMIN retains authorization and cancellation. This adapter fixes commit to
+/// CtapCertificate and exposes neither unrelated records nor general storage.
+#[cfg(feature = "admin")]
+pub(super) struct CertificateStage<'a, S: ?Sized>(pub &'a mut S);
+#[cfg(feature = "admin")]
+impl<S: canokey_ports::Storage + ?Sized> canokey_ctap::ports::CertificateStage
+    for CertificateStage<'_, S>
+{
+    type Error = canokey_ports::StorageError;
+    fn begin(&mut self) -> Result<(), Self::Error> {
+        self.0.stage_begin()
+    }
+    fn append(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+        self.0.stage_append(bytes)
+    }
+    fn commit(&mut self) -> Result<(), Self::Error> {
+        self.0.stage_commit(crate::ports::Record::CtapCertificate)
+    }
+    fn abort(&mut self) {
+        self.0.stage_abort();
+    }
+}
+
 /// Each window reborrows the existing certificate record; no open handle or
 /// payload is retained across transport chunks or workspace replacement.
 pub(super) struct Certificate<'a, S: ?Sized>(pub &'a mut S);
