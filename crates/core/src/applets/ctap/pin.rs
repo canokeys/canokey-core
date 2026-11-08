@@ -13,7 +13,7 @@ use crate::{
     ports::{KeyOperation, Platform, Record, alg},
     runtime::workspace::Workspace,
 };
-use canokey_ctap::client_pin as shared_pin;
+use canokey_ctap::client_pin::{self as shared_pin, token};
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 
 pub(super) struct PinCrypto<'a, 'p, B: crate::ports::Backends>(pub(super) &'a mut Platform<'p, B>);
@@ -79,6 +79,8 @@ pub(super) fn cipher_protocol(protocol: u8) -> shared_pin::Protocol {
 // CTAP reply prefix: success status, one-entry map, token key, byte-string
 // additional-info 0x18, then the encoded token length in bytes.
 const TOKEN_RESPONSE_HEADER_BYTES: usize = 5;
+const TOKEN_IDLE_MS: u32 = 30_000;
+const TOKEN_LIFETIME_MS: u32 = 600_000;
 
 // PIN hash, retries, code-point count, minimum length, flags/RP count,
 // followed by at most four RP hashes. One atomic record; no padding or prefix.
@@ -408,23 +410,35 @@ impl Session {
         if self.pin_attempts == 0 {
             return Err(Status::PinAuthBlocked);
         }
-        if !matches!(protocol, wire::V1 | wire::V2)
-            || auth.len() != wire::auth_bytes(protocol)
-            || self.permissions & permission != permission
-            || rp.is_some_and(|rp| self.rp_bound && !equal(rp, &self.rp_binding))
-        {
+        if !matches!(protocol, wire::V1 | wire::V2) || auth.len() != wire::auth_bytes(protocol) {
             return Err(Status::PinAuthInvalid);
         }
-        verify_mac(&self.token, auth, message, p)?;
+        token::authorize(
+            token::Scope {
+                granted: u16::from(self.permissions),
+                required: u16::from(permission),
+                permission_match: token::PermissionMatch::All,
+                bound_rp: self.rp_bound.then_some(&self.rp_binding),
+                requested_rp: rp,
+                missing_rp: token::MissingRp::Allow,
+            },
+            token::Order::ScopeThenMac,
+            || verify_mac(&self.token, auth, message, p),
+            equal,
+        )
+        .map_err(|error| match error {
+            token::Error::Scope => Status::PinAuthInvalid,
+            token::Error::Mac(status) => status,
+        })?;
         self.token_used = p.device.now();
         Ok(())
     }
     pub(super) fn expire_token(&mut self, now: u32, memory: &(impl crate::ports::Memory + ?Sized)) {
-        // Match C: 30 seconds without successful authentication, at most ten
-        // minutes from issuance. Unauthenticated requests never refresh either.
+        // Successful authorization refreshes the idle window only. Issuance
+        // fixes the absolute lifetime; unauthenticated requests refresh neither.
         if self.permissions != 0
-            && (now.wrapping_sub(self.token_used) >= 30_000
-                || now.wrapping_sub(self.token_started) >= 600_000)
+            && (token::remaining_ms(now, self.token_used, TOKEN_IDLE_MS).is_none()
+                || token::remaining_ms(now, self.token_started, TOKEN_LIFETIME_MS).is_none())
         {
             self.clear_token(memory);
         }

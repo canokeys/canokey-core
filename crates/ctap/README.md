@@ -65,6 +65,12 @@ product applications. Firmware uses `no_std` without the `schema` feature.
   source close/erasure remain with their owners. General response cursors and
   segmented reads use `canokey-protocol::response`.
 
+`client_pin::token` checks permission/RP scope in explicit product-selected MAC
+order and provides wrapping lifetime windows and successful-UP permission
+retention. It stores no token/secret/session and does not commit usage, RP binding
+or cleanup. Products retain expiry origins/limits, error mapping, protocol
+admission and the original publication/authority transition points.
+
 No capability retains a product storage/application/transport borrow across
 calls. IRQs publish mailbox state; only the serialized owner enters applet code.
 The crate adds no complete RX/TX backing or firmware heap. Products need not

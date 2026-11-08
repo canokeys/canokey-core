@@ -150,7 +150,10 @@ impl Session {
             self.credential_presence(w, p)?;
             // Presence consumes permissions except LBW. Silent assertions
             // retain authorization for subsequent interactive assertions.
-            self.permissions &= pin::PERMISSION_LARGE_BLOB_WRITE;
+            self.permissions = canokey_ctap::client_pin::token::after_presence(
+                u16::from(self.permissions),
+                u16::from(pin::PERMISSION_LARGE_BLOB_WRITE),
+            ) as u8;
             if self.permissions == 0 {
                 self.clear_token(p.memory);
             }

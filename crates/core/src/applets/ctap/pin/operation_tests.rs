@@ -7,6 +7,8 @@ use std::{cell::RefCell, vec, vec::Vec};
 
 #[derive(Default)]
 struct Backend {
+    now: u32,
+    mac_calls: usize,
     generated: usize,
     exported: usize,
     agreed: usize,
@@ -100,7 +102,8 @@ impl Crypto for Backend {
         _: &[u8],
         out: &mut [u8; 64],
     ) -> Result<(), CryptoError> {
-        assert_eq!(algorithm, 2);
+        assert_eq!(algorithm, 0x02);
+        self.mac_calls += 1;
         out.fill(0x3a);
         if self.fail_mac {
             Err(CryptoError::Failure)
@@ -145,7 +148,7 @@ impl Crypto for Backend {
 }
 impl Device for Backend {
     fn now(&mut self) -> u32 {
-        0
+        self.now
     }
     fn serial(&mut self, _: &mut [u8; 4]) {
         unreachable!()
@@ -483,6 +486,75 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
                 crypto.encrypt_calls,
                 usize::from(matches!(fault, Fault::None | Fault::Encrypt))
             );
+        }
+    }
+}
+
+#[test]
+fn token_admission_preserves_primitive_order_and_refreshes_only_successful_use() {
+    let memory = Backend::default();
+    let rp = [0x51; 32];
+    for protocol in [0x00, wire::V1, wire::V2, 0x03] {
+        for length in [15, 16, 31, 32, 33] {
+            for granted in [0x00, 0x01, 0x02, 0x03] {
+                for required in [0x00, 0x01, 0x03] {
+                    for bound in [None, Some(rp), Some([0x52; 32])] {
+                        for fail_mac in [false, true] {
+                            let mut session = Session::new();
+                            session.pin_attempts = 3;
+                            session.token.fill(0x61);
+                            session.permissions = granted;
+                            session.token_started = 0;
+                            session.token_used = 1;
+                            if let Some(bound) = bound {
+                                session.rp_bound = true;
+                                session.rp_binding = bound;
+                            }
+                            let mut crypto = Backend {
+                                fail_mac,
+                                ..Backend::default()
+                            };
+                            let mut device = Backend {
+                                now: 7,
+                                ..Backend::default()
+                            };
+                            let mut storage = Backend::default();
+                            let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                                storage: &mut storage,
+                                crypto: &mut crypto,
+                                device: &mut device,
+                                memory: &memory,
+                            };
+                            let admitted = matches!(protocol, wire::V1 | wire::V2)
+                                && length == wire::auth_bytes(protocol)
+                                && granted & required == required
+                                && bound.is_none_or(|bound| bound == rp);
+                            let expected = if !admitted {
+                                Err(Status::PinAuthInvalid)
+                            } else if fail_mac {
+                                Err(Status::Other)
+                            } else {
+                                Ok(())
+                            };
+                            assert_eq!(
+                                session.authorize(
+                                    protocol,
+                                    &[0x3a; 33][..length],
+                                    b"message",
+                                    required,
+                                    Some(&rp),
+                                    &mut platform
+                                ),
+                                expected
+                            );
+                            assert_eq!(crypto.mac_calls, usize::from(admitted));
+                            assert_eq!(session.token_used, if expected.is_ok() { 7 } else { 1 });
+                            assert_eq!(session.rp_bound, bound.is_some());
+                            assert_eq!(session.permissions, granted);
+                        }
+                    }
+                }
+            }
         }
     }
 }

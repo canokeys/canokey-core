@@ -4,6 +4,7 @@
 pub mod agreement;
 pub mod cipher;
 pub mod request;
+pub mod token;
 
 pub const KEY_BYTES: usize = 32;
 pub const MAX_PIN_BYTES: usize = 63;
