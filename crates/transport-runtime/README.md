@@ -43,3 +43,13 @@ lease. `Polling<P>` handles asynchronous status/cancel with only a five-byte
 prefix and cannot borrow a backend. Header progress and remaining u32 payload
 are separate counters, so UINT32_MAX payloads cannot overflow header addition.
 Neither ingress strategy admits extended APDUs; NFC admission is independent.
+
+
+`ctaphid::Session<P>` owns channel allocation, framing, receipt timestamps,
+sequence checks, response splitting and final endpoint completion. Static
+profiles retain channel registration/wrap, CANCEL and timeout boundary policy.
+`Backend` borrows the product input owner synchronously; `Response` and
+`Completion` are separate capabilities so transmit and final acknowledgement
+cannot acquire an application or request parser. CanoKey keeps its existing
+192-byte inline/PKE staging and native continuation owner; vLEI borrows its
+existing request/response arrays. No payload storage is allocated by Session.
