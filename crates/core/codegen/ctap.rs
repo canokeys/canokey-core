@@ -62,7 +62,7 @@ pub fn generate_info(firmware: u32) {
     });
     fragment(&mut out, "REQUEST_LIMITS", |e| {
         e.u8(5)?
-            .u16(canokey_protocol::ctaphid::CTAP_MAX_REQUEST as u16)?
+            .u16(crate::config::CTAP_MAX_REQUEST as u16)?
             .u8(6)?
             .array(2)?
             .u8(1)?

@@ -30,7 +30,7 @@ const APDU_RESPONSE_BYTES: usize = 256 + 2;
 // CCID header plus a maximum short APDU response and its two-byte status word.
 const RESPONSE_BYTES: usize = ccid_wire::HEADER + APDU_RESPONSE_BYTES;
 // Extended APDU header and Le surround the bounded standalone CTAP body.
-const EXTENDED_APDU_BYTES: usize = 7 + hid_wire::CTAP_MAX_REQUEST + 2;
+const EXTENDED_APDU_BYTES: usize = 7 + canokey_rust_core::config::CTAP_MAX_REQUEST + 2;
 // Delays exceed the removed session expiry and exercise wrapping ticks.
 const IDLE_GAP_MS: u32 = 3000;
 // SELECT ADMIN, verify factory PIN, query authorization and a one-byte config window.
@@ -380,7 +380,7 @@ fn hid_packet(cid: u32, command: u8, length: usize) -> [u8; PACKET_BYTES] {
     report
 }
 fn hid_send(cid: u32, command: u8, body: &[u8]) {
-    assert!(body.len() <= hid_wire::CTAP_MAX_REQUEST);
+    assert!(body.len() <= canokey_rust_core::config::CTAP_MAX_REQUEST);
     let mut report = hid_packet(cid, command, body.len());
     let first = body
         .len()

@@ -35,6 +35,7 @@ struct RequestScratch<P>(core::marker::PhantomData<P>);
 #[cfg_attr(target_os = "none", unsafe(link_section = ".bss.ck_hid_pke_lease"))]
 static mut PKE_LEASE: PkeLease = PkeLease::new();
 impl<P: Provider> Scratch for RequestScratch<P> {
+    type Limits = canokey_rust_core::config::CanoKeyLimits;
     fn webauthn_enabled(&mut self) -> bool {
         P::with_platform(|p| {
             canokey_rust_core::runtime::config::enabled(

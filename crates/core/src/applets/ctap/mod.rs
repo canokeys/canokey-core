@@ -46,7 +46,7 @@ const CLIENT_PIN: u8 = 0x06;
 const SELECTION: u8 = 0x0b;
 const RESET: u8 = 0x07;
 const CONFIG: u8 = 0x0d;
-pub const MAX_REQUEST: usize = canokey_protocol::ctaphid::CTAP_MAX_REQUEST;
+pub const MAX_REQUEST: usize = crate::config::CTAP_MAX_REQUEST;
 // C's source-backed APDU output uses250 bytes, independently of the short
 // buffer's256-byte capacity. Native HID can send a complete source directly.
 const APDU_STREAM_CHUNK: usize = 250;

@@ -251,7 +251,14 @@ fn main() {
     assert!(!matches!(cid, 0 | wire::BROADCAST));
     mailbox(cid);
     let data: Vec<_> = (0..SCRATCH_BYTES).map(|i| i as u8).collect();
-    for length in [192, 193, 1024, 1033, 1288, wire::CTAP_MAX_REQUEST] {
+    for length in [
+        192,
+        193,
+        1024,
+        1033,
+        1288,
+        canokey_rust_core::config::CTAP_MAX_REQUEST,
+    ] {
         clear_output();
         let leases = transport::scratch(|s| s.leases);
         command(cid, wire::PING, &data[..length]);
@@ -263,7 +270,11 @@ fn main() {
     }
     clear_output();
     let leases = transport::scratch(|s| s.leases);
-    feed(&packet(cid, wire::PING, wire::CTAP_MAX_REQUEST + 1));
+    feed(&packet(
+        cid,
+        wire::PING,
+        canokey_rust_core::config::CTAP_MAX_REQUEST + 1,
+    ));
     drain();
     assert_eq!(response(cid, wire::ERROR), [3]);
     transport::scratch(|s| {

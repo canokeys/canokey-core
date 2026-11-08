@@ -6,9 +6,6 @@ pub const CONTINUATION_HEADER_BYTES: usize = 5;
 pub const CONTINUATION_COUNT: usize = 128; // SEQ 0x00..=0x7F.
 pub const MAX_MESSAGE: usize = REPORT_SIZE - INITIAL_HEADER_BYTES
     + CONTINUATION_COUNT * (REPORT_SIZE - CONTINUATION_HEADER_BYTES);
-/// Logical CTAP request bytes, including the command byte. APDU envelope
-/// limits are transport-specific and do not include this logical budget.
-pub const CTAP_MAX_REQUEST: usize = 1296;
 pub const INIT_NONCE_BYTES: usize = 8;
 pub const INIT_RESPONSE_BYTES: usize = INIT_NONCE_BYTES + 4 + 1 + 3 + 1;
 pub const CMD_INIT_BIT: u8 = 0x80;

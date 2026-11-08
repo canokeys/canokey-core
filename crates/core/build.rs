@@ -3,7 +3,12 @@ mod ctap;
 #[path = "codegen/release.rs"]
 mod release;
 
+#[path = "src/config.rs"]
+#[allow(dead_code)]
+mod config;
+
 fn main() {
+    println!("cargo:rerun-if-changed=src/config.rs");
     let firmware = release::main();
     if std::env::var_os("CARGO_FEATURE_CTAP").is_some() {
         ctap::generate_info(firmware);

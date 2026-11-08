@@ -8,6 +8,7 @@ pub(crate) mod release {
     include!(concat!(env!("OUT_DIR"), "/release_versions.rs"));
 }
 pub mod applets;
+pub mod config;
 pub mod ports;
 pub mod runtime;
 pub use ports::Platform;

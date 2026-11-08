@@ -130,3 +130,17 @@ crate. The FFI
 device/storage fixture adapters compile only for `native-platform`
 or unit-test substitution. Host and test-card compositions select their own
 native crypto capability without routing through a ports adapter.
+
+## Product request limits
+
+`canokey-ports::RequestLimits` carries static logical CTAP and native HID MSG
+budgets. CanoKey defines its 1296-byte profile in `crates/core/src/config.rs`;
+GetInfo code generation, CTAP parsing, PC/SC admission and transport fixtures
+consume that profile. HID scratch adapters select a profile through an associated
+type; available staging capacity is checked separately. This allocates no extra
+request buffers. The shared protocol crate retains only wire framing limits.
+
+A different product may implement a 2048-byte profile without changing HID wire
+code. That does not establish its parser/staging capacity or authorize CCID
+extended APDUs. Response, NFC inline storage and application-specific chaining
+budgets remain separate and are not inferred from this request contract.

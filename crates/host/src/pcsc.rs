@@ -251,7 +251,7 @@ pub(super) unsafe fn ck_pcsc_transmit(
     if tx.is_null() || rx.is_null() || n == 0 {
         return COMM;
     }
-    if n > canokey_protocol::ctaphid::CTAP_MAX_REQUEST + apdu_wire::EXTENDED_OVERHEAD_BYTES
+    if n > canokey_rust_core::config::CTAP_MAX_REQUEST + apdu_wire::EXTENDED_OVERHEAD_BYTES
         || cap < apdu_wire::STATUS_BYTES
     {
         return SMALL;

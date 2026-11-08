@@ -569,7 +569,7 @@ fn fido_chain_exact_limit_overflow_and_recovery() {
                 }
                 if overflow {
                     // Complete the chain budget, then exceed it by one byte.
-                    let remaining = canokey_protocol::ctaphid::CTAP_MAX_REQUEST - length;
+                    let remaining = canokey_rust_core::config::CTAP_MAX_REQUEST - length;
                     for bytes in vec![0; remaining].chunks(255) {
                         let mut frame = vec![0x90, 0x10, 0, 0, bytes.len() as u8];
                         frame.extend_from_slice(bytes);
@@ -692,7 +692,7 @@ fn extended_nfc_source_is_bounded_releases_before_crypto_and_resets_old_chain() 
     assert_eq!(core.transmit(reply, &mut out, &mut p).unwrap(), 2);
     assert_eq!(
         core.prepare_nfc(&prefix, &mut p),
-        Ok(canokey_protocol::ctaphid::CTAP_MAX_REQUEST as u32)
+        Ok(canokey_rust_core::config::CTAP_MAX_REQUEST as u32)
     );
     let mut data = Vec::from(prefix);
     // getKeyAgreement plus a 280-byte ignored CBOR string, total CTAP body291.
@@ -717,7 +717,7 @@ fn extended_nfc_source_is_bounded_releases_before_crypto_and_resets_old_chain() 
     assert_eq!(p.crypto.1, 2);
     assert_eq!(
         core.prepare_nfc(&prefix, &mut p),
-        Ok(canokey_protocol::ctaphid::CTAP_MAX_REQUEST as u32)
+        Ok(canokey_rust_core::config::CTAP_MAX_REQUEST as u32)
     );
     held.set(true);
     source.fail = true;

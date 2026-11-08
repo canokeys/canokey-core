@@ -167,7 +167,7 @@ pub(super) fn capacity(cid: u32) {
     unsafe { core::reset::<Fake>() };
     for length in SIZES {
         let body = request(length);
-        if length <= hid_wire::CTAP_MAX_REQUEST {
+        if length <= canokey_rust_core::config::CTAP_MAX_REQUEST {
             hid_send(cid, hid_wire::CBOR, &body);
             assert_eq!(hid_read(cid, hid_wire::CBOR), RETRIES);
         } else {
@@ -200,7 +200,7 @@ pub(super) fn capacity(cid: u32) {
                 let mut apdu = vec![if last { 0x80 } else { 0x90 }, 0x10, 0, 0, part.len() as u8];
                 apdu.extend_from_slice(part);
                 let reply = exchange(&apdu);
-                if last && length > hid_wire::CTAP_MAX_REQUEST {
+                if last && length > canokey_rust_core::config::CTAP_MAX_REQUEST {
                     sw(&reply, 0x6700);
                 } else if last {
                     assert_eq!(&reply[..reply.len() - 2], RETRIES);
@@ -226,7 +226,7 @@ pub(super) fn capacity(cid: u32) {
             let reply = nfc_receive(&extended([0x80, 0x10, 0, 0], &request(length), le), true);
             assert_eq!(
                 reply,
-                if length <= hid_wire::CTAP_MAX_REQUEST {
+                if length <= canokey_rust_core::config::CTAP_MAX_REQUEST {
                     vec![0, 0xa1, 3, 8, 0x90, 0]
                 } else {
                     vec![0x39, 0x90, 0]
@@ -238,8 +238,10 @@ pub(super) fn capacity(cid: u32) {
     // At maximum size the key-agreement command invokes native crypto after
     // the Link/Request path has drained, wiped and released its body lease.
     let mut agreement = vec![6, 0xa3, 1, 1, 2, 2, 0x18, 99, 0x59];
-    agreement.extend_from_slice(&((hid_wire::CTAP_MAX_REQUEST - 11) as u16).to_be_bytes());
-    agreement.resize(hid_wire::CTAP_MAX_REQUEST, 0x5a);
+    agreement.extend_from_slice(
+        &((canokey_rust_core::config::CTAP_MAX_REQUEST - 11) as u16).to_be_bytes(),
+    );
+    agreement.resize(canokey_rust_core::config::CTAP_MAX_REQUEST, 0x5a);
     let reply = nfc_receive(&extended([0x80, 0x10, 0, 0], &agreement, None), true);
     assert_eq!(reply[0], 0);
     sw(&reply, 0x9000);

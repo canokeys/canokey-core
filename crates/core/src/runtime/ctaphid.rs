@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Main-loop CTAPHID transactions. Endpoint retries retain the C-owned report;
 //! they never repeat a source read or command execution.
+use canokey_ports::RequestLimits;
 use canokey_protocol::ctaphid::{self as wire, Error, REPORT_SIZE, Report};
 
 // Three HID packet windows stay inline; larger requests use PKE staging.
@@ -21,6 +22,7 @@ const TIMEOUT_MS: u32 = 800;
 /// close releases request storage, not the transport transaction. The caller
 /// must exclude all other core/crypto entrypoints while Transport::active().
 pub trait Scratch {
+    type Limits: RequestLimits;
     fn webauthn_enabled(&mut self) -> bool {
         true
     }
@@ -168,12 +170,12 @@ impl Transport {
     }
     /// Process queued packets before checking the clock: deadlines use receipt
     /// timestamps, not the time the main loop happens to service a packet.
-    pub fn receive(
+    pub fn receive<S: Scratch>(
         &mut self,
         bytes: &[u8; REPORT_SIZE],
         tick: u32,
         out: &mut [u8; REPORT_SIZE],
-        scratch: &mut impl Scratch,
+        scratch: &mut S,
     ) -> bool {
         let frame = Report::decode(bytes);
         if frame.cid == 0 || (frame.cid == wire::BROADCAST && frame.tag != wire::INIT) {
@@ -207,7 +209,12 @@ impl Transport {
             };
             // C bounds the entire HID message, including native MSG's APDU
             // header/trailer. Extra hardware scratch is not a wire capability.
-            if length > wire::CTAP_MAX_REQUEST || (length > INLINE && length > scratch.capacity()) {
+            let limit = if frame.tag == wire::MSG {
+                S::Limits::NATIVE_MSG_MAX_BYTES
+            } else {
+                S::Limits::CTAP_REQUEST_MAX_BYTES
+            };
+            if length > limit || (length > INLINE && length > scratch.capacity()) {
                 return Self::error(out, frame.cid, Error::Length);
             }
             if frame.tag != wire::PING

@@ -15,13 +15,13 @@ const FIDO_EXTENDED: [u8; 11] = [
     0x03, 0x80, 0x10, 0x00, 0x00, 0x00, 0x00, 0x01, 0x04, 0x00, 0x00,
 ];
 struct Stage {
-    bytes: [u8; canokey_protocol::ctaphid::CTAP_MAX_REQUEST],
+    bytes: [u8; canokey_rust_core::config::CTAP_MAX_REQUEST],
     held: bool,
     writes: usize,
     closes: usize,
 }
 static mut STAGE: Stage = Stage {
-    bytes: [0; canokey_protocol::ctaphid::CTAP_MAX_REQUEST],
+    bytes: [0; canokey_rust_core::config::CTAP_MAX_REQUEST],
     held: false,
     writes: 0,
     closes: 0,

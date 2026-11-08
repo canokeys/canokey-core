@@ -4,8 +4,11 @@ use canokey_protocol::ctaphid::{self as wire, Error};
 use canokey_rust_core::runtime::ctaphid::{Scratch, Transport};
 mod support;
 
+type Memory = ProfileMemory<canokey_rust_core::config::CanoKeyLimits>;
+
 #[derive(Default)]
-struct Memory {
+struct ProfileMemory<L> {
+    limits: core::marker::PhantomData<L>,
     disabled: bool,
     bytes: Vec<u8>,
     response: Vec<u8>,
@@ -21,7 +24,8 @@ struct Memory {
     request: Option<canokey_rust_core::applets::ctap::Request>,
     message: Option<canokey_rust_core::applets::ctap::message::MessageParser>,
 }
-impl Scratch for Memory {
+impl<L: canokey_ports::RequestLimits> Scratch for ProfileMemory<L> {
+    type Limits = L;
     fn capacity(&self) -> usize {
         3072
     }
@@ -121,7 +125,7 @@ fn continuation(cid: u32, seq: u8, data: &[u8]) -> [u8; 64] {
     frame[5..5 + data.len()].copy_from_slice(data);
     frame
 }
-fn request(hid: &mut Transport, memory: &mut Memory, command: u8, body: &[u8]) {
+fn request(hid: &mut Transport, memory: &mut impl Scratch, command: u8, body: &[u8]) {
     let mut out = [0; 64];
     let first = body.len().min(57);
     assert!(!hid.receive(
@@ -477,7 +481,7 @@ fn polling_prompt_deadlines_survive_repeated_requests_and_clock_wrap() {
     }
 }
 
-impl Memory {
+impl<L: canokey_ports::RequestLimits> ProfileMemory<L> {
     fn override_response(&mut self) -> Option<usize> {
         let length = self.response_length?;
         self.response = (0..length.min(wire::MAX_MESSAGE))
@@ -657,12 +661,59 @@ fn total_message_limit_applies_before_staging_for_all_commands() {
     let mut mem = Memory::default();
     let mut out = [0; 64];
     for (command, length) in [
-        (wire::PING, wire::CTAP_MAX_REQUEST + 1),
-        (wire::CBOR, wire::CTAP_MAX_REQUEST + 1),
-        (wire::MSG, wire::CTAP_MAX_REQUEST + 1),
+        (wire::PING, canokey_rust_core::config::CTAP_MAX_REQUEST + 1),
+        (wire::CBOR, canokey_rust_core::config::CTAP_MAX_REQUEST + 1),
+        (wire::MSG, canokey_rust_core::config::CTAP_MAX_REQUEST + 1),
     ] {
         assert!(hid.receive(&initial(1, command, length, &[]), 0, &mut out, &mut mem));
         assert_eq!(&out[4..8], &[wire::ERROR, 0, 1, Error::Length as u8]);
         assert!(!hid.active() && !mem.leased);
+    }
+}
+
+#[derive(Default)]
+struct LargeRequests;
+impl canokey_ports::RequestLimits for LargeRequests {
+    const CTAP_REQUEST_MAX_BYTES: usize = 2048;
+    const NATIVE_MSG_MAX_BYTES: usize = 1536;
+}
+
+#[test]
+fn product_profile_controls_admission_independently_of_backing_capacity() {
+    // The same 3072-byte backing must not determine either protocol limit.
+    for (command, limit) in [(wire::CBOR, 2048), (wire::MSG, 1536)] {
+        for length in [limit - 1, limit, limit + 1] {
+            let mut hid = Transport::new();
+            let mut memory = ProfileMemory::<LargeRequests>::default();
+            let mut out = [0; 64];
+            let rejected = hid.receive(
+                &initial(1, command, length, &[0xa5; 57]),
+                0,
+                &mut out,
+                &mut memory,
+            );
+            assert_eq!(rejected, length > limit);
+            assert_eq!(memory.leased, length <= limit);
+            if rejected {
+                assert_eq!(out[7], Error::Length as u8);
+            }
+            hid.reset(&mut memory);
+        }
+    }
+    for length in [2047, 2048] {
+        let mut hid = Transport::new();
+        let mut memory = ProfileMemory::<LargeRequests>::default();
+        let body = vec![0xa5; length];
+        request(&mut hid, &mut memory, wire::PING, &body);
+        let mut out = [0; 64];
+        let mut received = Vec::new();
+        while hid.transmit(&mut out, &mut memory) {
+            let report = wire::Report::decode(&out);
+            let count = report.data.len().min(length - received.len());
+            received.extend_from_slice(&report.data[..count]);
+        }
+        assert_eq!(received, body);
+        hid.completed(&mut memory);
+        assert!(!memory.leased);
     }
 }
