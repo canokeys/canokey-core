@@ -10,10 +10,10 @@ use super::{
     crypto::{equal, mac, verify_mac},
 };
 use crate::{
-    ports::{KeyOperation, Platform, Record, alg},
+    ports::{KeyMaterial, KeyOperation, Platform, Record, alg},
     runtime::workspace::Workspace,
 };
-use canokey_ctap::client_pin::{self as shared_pin, retry, token};
+use canokey_ctap::client_pin::{self as shared_pin, agreement, retry, token};
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 
 pub(super) struct PinCrypto<'a, 'p, B: crate::ports::Backends>(pub(super) &'a mut Platform<'p, B>);
@@ -176,6 +176,73 @@ pub(super) fn decrypt(
         .map(|_| ())
         .map_err(cipher_error)
 }
+struct KeyGeneration<'a, 'p, B: crate::ports::Backends> {
+    session: &'a mut Session,
+    key: &'a mut KeyMaterial,
+    input: &'a mut [u8],
+    platform: &'a mut Platform<'p, B>,
+}
+impl<B: crate::ports::Backends> agreement::Generation for KeyGeneration<'_, '_, B> {
+    type Error = Status;
+    type Output = ();
+    fn ready(&self) -> bool {
+        self.session.agreement_ready
+    }
+    fn generate(&mut self) -> Result<bool, Status> {
+        self.platform
+            .crypto
+            .key_operation(KeyOperation::Generate, alg::P256, self.key, &[], self.input)
+            .map_err(|_| Status::Other)?;
+        // The native generator performs scalar rejection before returning.
+        Ok(true)
+    }
+    fn commit(&mut self) -> Result<(), Status> {
+        self.session
+            .agreement
+            .copy_from_slice(&self.key.bytes[..32]);
+        self.session.agreement_ready = true;
+        Ok(())
+    }
+    fn restore(&mut self) -> Result<(), Status> {
+        self.key.bytes[..32].copy_from_slice(&self.session.agreement);
+        Ok(())
+    }
+}
+struct AgreementCrypto<'a, 'p, B: crate::ports::Backends> {
+    key: &'a mut KeyMaterial,
+    platform: &'a mut Platform<'p, B>,
+}
+impl<B: crate::ports::Backends> shared_pin::Derivation for AgreementCrypto<'_, '_, B> {
+    type Error = Status;
+    fn sha256(&mut self, input: &[u8], out: &mut [u8; 32]) -> Result<(), Status> {
+        shared_pin::Derivation::sha256(&mut PinCrypto(self.platform), input, out)
+    }
+    fn hmac_sha256(
+        &mut self,
+        key: &[u8; 32],
+        input: &[u8],
+        out: &mut [u8; 32],
+    ) -> Result<(), Status> {
+        shared_pin::Derivation::hmac_sha256(&mut PinCrypto(self.platform), key, input, out)
+    }
+    fn wipe(&mut self, bytes: &mut [u8]) {
+        self.platform.memory.wipe(bytes);
+    }
+}
+impl<B: crate::ports::Backends> agreement::Exchange for AgreementCrypto<'_, '_, B> {
+    fn agree(&mut self, peer: &[u8; 64], output: &mut [u8]) -> Result<(), Status> {
+        let length = self
+            .platform
+            .crypto
+            .key_operation(KeyOperation::Agree, alg::P256, self.key, peer, output)
+            .map_err(|_| Status::InvalidParameter)?;
+        if length != shared_pin::KEY_BYTES {
+            return Err(Status::Other);
+        }
+        Ok(())
+    }
+}
+
 // This loan spans only the durable charge and current-PIN comparison. The
 // caller retains successful refund/policy/token publication and final erasure.
 struct CurrentPin<'a, 'p, B: crate::ports::Backends> {
@@ -238,16 +305,12 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
-        if !self.agreement_ready {
-            p.crypto
-                .key_operation(KeyOperation::Generate, alg::P256, &mut w.key, &[], w.input)
-                .map_err(|_| Status::Other)?;
-            self.agreement.copy_from_slice(&w.key.bytes[..32]);
-            self.agreement_ready = true;
-        } else {
-            w.key.bytes[..32].copy_from_slice(&self.agreement);
-        }
-        Ok(())
+        agreement::establish(&mut KeyGeneration {
+            session: self,
+            key: w.key,
+            input: w.input,
+            platform: p,
+        })
     }
     pub(super) fn decapsulate(
         &mut self,
@@ -263,30 +326,18 @@ impl Session {
             w.clear(p.memory);
         }
         self.agreement_key(w, p)?;
-        let n = p
-            .crypto
-            .key_operation(
-                KeyOperation::Agree,
-                alg::P256,
-                &mut w.key,
-                agreement,
-                w.input,
-            )
-            .map_err(|_| Status::InvalidParameter)?;
-        if n != 32 {
-            return Err(Status::Other);
-        }
-        let protocol =
-            shared_pin::Protocol::decode(u64::from(protocol)).ok_or(Status::InvalidParameter)?;
         let (mac_key, aes_key) = shared.split_at_mut(shared_pin::KEY_BYTES);
-        shared_pin::derive(
-            protocol,
-            (&w.input[..shared_pin::KEY_BYTES]).try_into().unwrap(),
+        agreement::decapsulate(
+            || shared_pin::Protocol::decode(u64::from(protocol)).ok_or(Status::InvalidParameter),
+            agreement,
+            w.input,
             mac_key.try_into().unwrap(),
             aes_key.try_into().unwrap(),
-            &mut PinCrypto(p),
-        )?;
-        Ok(())
+            &mut AgreementCrypto {
+                key: w.key,
+                platform: p,
+            },
+        )
     }
     pub(super) fn retries(
         &mut self,

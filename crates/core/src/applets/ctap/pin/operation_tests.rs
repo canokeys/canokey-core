@@ -13,6 +13,10 @@ struct Backend {
     exported: usize,
     agreed: usize,
     fail_generate: bool,
+    fail_export: bool,
+    fail_agree: bool,
+    agreed_bytes: Option<usize>,
+    sha_calls: usize,
     fail_mac: bool,
     fail_read: bool,
     fail_patch: bool,
@@ -84,19 +88,28 @@ impl Crypto for Backend {
                 assert_eq!(&key.bytes[..32], &[7; 32]);
                 out[..32].fill(8);
                 out[32..64].fill(9);
-                Ok(64)
+                if self.fail_export {
+                    Err(CryptoError::Failure)
+                } else {
+                    Ok(64)
+                }
             }
             KeyOperation::Agree => {
                 self.agreed += 1;
                 assert_eq!(&key.bytes[..32], &[7; 32]);
                 assert_eq!(input, [5; 64]);
                 out[..32].fill(0x17);
-                Ok(32)
+                if self.fail_agree {
+                    Err(CryptoError::Failure)
+                } else {
+                    Ok(self.agreed_bytes.unwrap_or(32))
+                }
             }
             _ => unreachable!(),
         }
     }
     fn sha256(&mut self, input: &[u8], out: &mut [u8; 32]) -> Result<(), CryptoError> {
+        self.sha_calls += 1;
         out.copy_from_slice(&Sha256::digest(input));
         Ok(())
     }
@@ -605,6 +618,153 @@ fn token_admission_preserves_primitive_order_and_refreshes_only_successful_use()
                     }
                 }
             }
+        }
+    }
+}
+
+#[test]
+fn public_generation_and_export_failures_do_not_publish_or_retain_authority() {
+    for fail_generate in [false, true] {
+        for fail_export in [false, true] {
+            let memory = Backend::default();
+            let mut crypto = Backend {
+                fail_generate,
+                fail_export,
+                ..Backend::default()
+            };
+            let mut storage = Backend::default();
+            let mut device = Backend::default();
+            let mut session = Session::new();
+            session.token.fill(0x99);
+            session.permissions = PERMISSION_CONFIG;
+            let mut backing = SessionWorkspace::new();
+            let mut workspace = backing.classic_with(&memory);
+            workspace.output.fill(0xee);
+            let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                storage: &mut storage,
+                crypto: &mut crypto,
+                device: &mut device,
+                memory: &memory,
+            };
+            let response = session.execute(
+                &mut Ok(super::super::Command::GetKeyAgreement),
+                &mut workspace,
+                &mut platform,
+            );
+            let failed = fail_generate || fail_export;
+            if failed {
+                assert!(matches!(
+                    response,
+                    super::super::Response::Error(Status::Other)
+                ));
+                assert_eq!(session.token, [0x00; 32]);
+                assert_eq!(session.permissions, 0x00);
+                assert!(workspace.output.iter().all(|byte| *byte == 0x00));
+            } else {
+                assert!(matches!(response, super::super::Response::Prepared(81)));
+                assert_eq!(session.token, [0x99; 32]);
+                assert_eq!(session.permissions, PERMISSION_CONFIG);
+            }
+            assert_eq!(session.agreement_ready, !failed);
+            assert!(
+                workspace
+                    .key
+                    .bytes
+                    .iter()
+                    .chain(workspace.input.iter())
+                    .all(|byte| *byte == 0x00)
+            );
+            assert_eq!(crypto.generated, 1);
+            assert_eq!(crypto.exported, usize::from(!fail_generate));
+        }
+    }
+}
+
+#[test]
+fn ecdh_failure_and_short_output_precede_internal_protocol_admission_and_kdf() {
+    for fail_agree in [false, true] {
+        for agreed_bytes in [31, 32, 33] {
+            let memory = Backend::default();
+            let mut crypto = Backend {
+                fail_agree,
+                agreed_bytes: Some(agreed_bytes),
+                ..Backend::default()
+            };
+            let mut record = vec![0x42; RP_HASHES];
+            record[RETRIES..RP_HASHES].copy_from_slice(&[8, 4, 4, 0x00]);
+            let mut storage = Backend {
+                record: Some(record),
+                ..Backend::default()
+            };
+            let mut device = Backend::default();
+            let mut session = Session::new();
+            session.token.fill(0x99);
+            session.permissions = PERMISSION_CONFIG;
+            let mut backing = SessionWorkspace::new();
+            let mut workspace = backing.classic_with(&memory);
+            workspace.output.fill(0xee);
+            let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                storage: &mut storage,
+                crypto: &mut crypto,
+                device: &mut device,
+                memory: &memory,
+            };
+            // Internal construction bypasses wire admission to observe the
+            // established first-error order after validated peer exchange.
+            let mut command = Ok(super::super::Command::ClientPin(Parameters {
+                protocol: 0x03,
+                subcommand: wire::GET_TOKEN_PERMISSIONS,
+                agreement: [0x05; 64],
+                auth: [0x3a; 32],
+                new_pin: [0xaa; 80],
+                pin_hash: [0xbb; 32],
+                permissions: wire::PERMISSION_CREDENTIALS,
+                rp: [0x00; 254],
+                rp_len: 0,
+            }));
+            let response = session.execute(&mut command, &mut workspace, &mut platform);
+            let reset = !fail_agree && agreed_bytes != 32;
+            let expected = if reset {
+                Status::Other
+            } else {
+                Status::InvalidParameter
+            };
+            assert!(
+                matches!(response, super::super::Response::Error(status) if status == expected)
+            );
+            assert_eq!(session.agreement_ready, !reset);
+            assert_eq!(session.token, [if reset { 0x00 } else { 0x99 }; 32]);
+            assert_eq!(
+                session.permissions,
+                if reset { 0x00 } else { PERMISSION_CONFIG }
+            );
+            assert!(
+                workspace
+                    .key
+                    .bytes
+                    .iter()
+                    .chain(workspace.input.iter())
+                    .chain(workspace.output.iter())
+                    .all(|byte| *byte == 0x00)
+            );
+            let Ok(super::super::Command::ClientPin(parameters)) = command else {
+                panic!()
+            };
+            assert!(
+                parameters
+                    .auth
+                    .iter()
+                    .chain(parameters.new_pin.iter())
+                    .chain(parameters.pin_hash.iter())
+                    .all(|byte| *byte == 0x00)
+            );
+            assert_eq!(crypto.generated, 1);
+            assert_eq!(crypto.agreed, 1);
+            assert_eq!(crypto.exported, 0);
+            assert_eq!(crypto.sha_calls, 0);
+            assert_eq!(crypto.mac_calls, 0);
+            assert!(storage.retries_written.is_empty());
+            assert_eq!(storage.record.as_ref().unwrap()[RETRIES], 8);
         }
     }
 }

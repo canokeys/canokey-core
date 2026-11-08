@@ -65,6 +65,11 @@ product applications. Firmware uses `no_std` without the `schema` feature.
   source close/erasure remain with their owners. General response cursors and
   segmented reads use `canokey-protocol::response`.
 
+`client_pin::agreement` also owns eager/cached generation sequencing and the
+validated ECDH-to-protocol-KDF pipeline. Generation candidates and x-coordinate
+scratch remain in existing owner buffers; products keep private-key cache,
+readiness/publication points, primitive validation/errors and zeroization.
+
 `client_pin::authentication` verifies a selected SHA-256 prefix using the
 owner's existing digest scratch, erasing the complete primitive output before
 propagating errors. `client_pin::retry` sequences durable charge before current

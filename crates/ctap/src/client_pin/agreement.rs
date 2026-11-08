@@ -93,3 +93,61 @@ pub fn read_strict<R: Reader>(
     }
     Ok(())
 }
+
+/// Private candidates remain in existing owner storage. Generation may reject a
+/// raw random candidate and redraw; validated native generators return true.
+/// Cached owners restore existing key scratch without exporting a public key.
+/// commit publishes only product key metadata/public output, never token grants.
+/// All operations are synchronous; products erase partial private/output state
+/// on failure and retain their eager/lazy policy and readiness publication point.
+pub trait Generation {
+    type Error;
+    type Output;
+    fn ready(&self) -> bool;
+    fn generate(&mut self) -> Result<bool, Self::Error>;
+    fn commit(&mut self) -> Result<Self::Output, Self::Error>;
+    fn restore(&mut self) -> Result<Self::Output, Self::Error>;
+}
+
+#[inline]
+pub fn establish<G: Generation>(backend: &mut G) -> Result<G::Output, G::Error> {
+    if backend.ready() {
+        return backend.restore();
+    }
+    while !backend.generate()? {}
+    backend.commit()
+}
+
+/// Peer validation belongs to the P-256 primitive. Output borrows existing
+/// product scratch and starts with the 32-byte ECDH x coordinate on success.
+/// The adapter owns primitive scratch erasure; the caller erases this output on
+/// every completion/failure. No private key or secret output is retained here.
+pub trait Exchange: super::Derivation {
+    fn agree(&mut self, peer: &[u8; POINT_BYTES], output: &mut [u8]) -> Result<(), Self::Error>;
+}
+
+/// ECDH precedes protocol admission and KDF. This preserves incremental products
+/// that report primitive/length failures before an unsupported internal protocol.
+/// Products lend the same x-coordinate and output-key buffers used by derive.
+#[inline]
+pub fn decapsulate<X: Exchange>(
+    protocol: impl FnOnce() -> Result<super::Protocol, X::Error>,
+    peer: &[u8; POINT_BYTES],
+    scratch: &mut [u8],
+    mac_key: &mut [u8; super::KEY_BYTES],
+    aes_key: &mut [u8; super::KEY_BYTES],
+    backend: &mut X,
+) -> Result<(), X::Error> {
+    // The product installs at least one x-coordinate worth of scratch. Slice
+    // shape is an internal capability contract, not untrusted request length.
+    assert!(scratch.len() >= super::KEY_BYTES);
+    backend.agree(peer, scratch)?;
+    let protocol = protocol()?;
+    super::derive(
+        protocol,
+        (&scratch[..super::KEY_BYTES]).try_into().unwrap(),
+        mac_key,
+        aes_key,
+        backend,
+    )
+}
