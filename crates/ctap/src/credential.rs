@@ -136,3 +136,79 @@ pub fn derive_extension<M: Mac>(
     };
     mac.hmac_sha256(root, &transcript, out)
 }
+
+/// Synchronous candidate preparation and acceptance. The product owns root/key
+/// storage, error cleanup and scratch; only a fresh nonce is drawn on rejection.
+pub trait Creation {
+    type Error;
+    type Credential;
+    fn random_nonce(&mut self, nonce: &mut [u8]) -> Result<(), Self::Error>;
+    fn prepare(&mut self, id: &Id) -> Result<[u8; KEY_BYTES], Self::Error>;
+    fn clear_tag(&mut self, tag: &mut [u8; KEY_BYTES]);
+    fn accept(&mut self, id: &Id) -> Option<Self::Credential>;
+}
+
+/// Prepare/verify/accept keeps product ordering explicit: Core prepares tag and
+/// seed and erases its loaded root before comparison; VLEI prepares only the tag
+/// and derives its seed on acceptance. equal must compare in constant time.
+/// Preparation errors own their cleanup; reject handles an invalid tag only.
+pub trait Opening {
+    type Error;
+    type Credential;
+    fn prepare(&mut self, id: &Id) -> Result<[u8; KEY_BYTES], Self::Error>;
+    fn equal(&self, expected: &[u8], computed: &[u8]) -> bool;
+    fn clear_tag(&mut self, tag: &mut [u8; KEY_BYTES]);
+    fn reject(&mut self);
+    fn accept(&mut self, id: &Id) -> Option<Self::Credential>;
+}
+
+pub fn create<C: Creation>(
+    scheme: Scheme,
+    flags: u8,
+    backend: &mut C,
+) -> Result<C::Credential, C::Error> {
+    let mut id = [0x00; ID_BYTES];
+    id[ALGORITHM_OFFSET] = scheme as u8;
+    id[POLICY_OFFSET] = flags;
+    loop {
+        backend.random_nonce(&mut id[NONCE_OFFSET..TAG_OFFSET])?;
+        let mut tag = backend.prepare(&id)?;
+        id[TAG_OFFSET..].copy_from_slice(&tag[..TAG_BYTES]);
+        backend.clear_tag(&mut tag);
+        if let Some(credential) = backend.accept(&id) {
+            return Ok(credential);
+        }
+    }
+}
+pub fn open<O: Opening>(id: &Id, backend: &mut O) -> Result<Option<O::Credential>, O::Error> {
+    let mut tag = backend.prepare(id)?;
+    let valid = backend.equal(&id[TAG_OFFSET..], &tag[..TAG_BYTES]);
+    backend.clear_tag(&mut tag);
+    if !valid {
+        backend.reject();
+        return Ok(None);
+    }
+    Ok(backend.accept(id))
+}
+
+/// SEC 2 secp256r1 order n in big endian. SM2 additionally excludes n-1 because
+/// signing requires the inverse of 1+d. Non-scalar seed schemes admit all bytes.
+/// This preserves the products' existing rejection comparison, not reduction.
+pub fn valid_signing_seed(scheme: Scheme, seed: &[u8; KEY_BYTES]) -> bool {
+    const P256_ORDER: [u8; KEY_BYTES] = [
+        0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xbc, 0xe6, 0xfa, 0xad, 0xa7, 0x17, 0x9e, 0x84, 0xf3, 0xb9, 0xca, 0xc2, 0xfc, 0x63,
+        0x25, 0x51,
+    ];
+    const SM2_LIMIT: [u8; KEY_BYTES] = [
+        0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0x72, 0x03, 0xdf, 0x6b, 0x21, 0xc6, 0x05, 0x2b, 0x53, 0xbb, 0xf4, 0x09, 0x39, 0xd5,
+        0x41, 0x22,
+    ];
+    let limit = match scheme {
+        Scheme::P256 => &P256_ORDER,
+        Scheme::Sm2 => &SM2_LIMIT,
+        Scheme::Ed25519 | Scheme::MlDsa65 | Scheme::MlDsa44 => return true,
+    };
+    seed.iter().any(|byte| *byte != 0x00) && seed < limit
+}

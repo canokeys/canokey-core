@@ -22,9 +22,12 @@ product applications. Firmware uses `no_std` without the `schema` feature.
   discriminators, policy bits and typed HMAC domains. Borrowed transcripts bind
   the ID prefix plus RP and optional SM2 settings for tag/seed derivation, or
   the full ID plus RP for extension keys. Software MACs stream the parts;
-  native MACs lend their existing contiguous input buffer. Root provisioning,
-  tag/seed validation order, scalar rejection/retry, key lifetime/erasure and
-  product algorithm support stay with adapters during R06 migration.
+  native MACs lend their existing contiguous input buffer. Root provisioning
+  and product algorithm support stay with adapters. `Creation`/`Opening`
+  share fresh-nonce retries and prepare/compare/cleanup/accept ordering while
+  adapters retain seed-before-verify versus verify-before-seed behavior and
+  key lifetime/erasure. P-256/SM2 signing seed rejection bounds are shared;
+  products decide where the check applies to existing handles.
 - `resident`: borrowed CTG1 member decoding, bounded field encoding, UTF-8
   truncation and RP display. `resident::group` validates CTG1 headers and plans
   member offsets/replacement lengths without IO. `group::update` shares no-op,

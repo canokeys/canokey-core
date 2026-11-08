@@ -9,7 +9,6 @@ use canokey_ports::{Crypto as _, Memory as _, Storage as _};
 
 use canokey_ctap::credential::{self as shared, ExtensionDomain, HandleDomain, Scheme};
 pub(super) use canokey_ctap::credential::{CRED_PROTECT_MASK, ID_BYTES, Id, THIRD_PARTY_PAYMENT};
-use shared::{NONCE_OFFSET, TAG_BYTES, TAG_OFFSET};
 
 // The native primitive accepts contiguous input. Lend the original bounded
 // transcript buffer; no root/key or transcript borrow survives a MAC call.
@@ -117,55 +116,91 @@ pub(super) fn create(
 ) -> Result<Id, Status> {
     let mut master = master(true, p)?;
     let result = (|| {
-        let mut id = [0; ID_BYTES];
-        id[shared::ALGORITHM_OFFSET] = match algorithm {
-            alg::P256 => Scheme::P256 as u8,
-            alg::ED25519 => Scheme::Ed25519 as u8,
-            alg::SM2 => Scheme::Sm2 as u8,
-            alg::MLDSA65 => Scheme::MlDsa65 as u8,
-            alg::MLDSA44 => Scheme::MlDsa44 as u8,
+        let scheme = match algorithm {
+            alg::P256 => Scheme::P256,
+            alg::ED25519 => Scheme::Ed25519,
+            alg::SM2 => Scheme::Sm2,
+            alg::MLDSA65 => Scheme::MlDsa65,
+            alg::MLDSA44 => Scheme::MlDsa44,
             _ => return Err(Status::UnsupportedAlgorithm),
         };
-        id[shared::POLICY_OFFSET] = flags;
-        // HMAC output is not necessarily a valid P-256/SM2 scalar. Retry with
-        // a fresh nonce, without biased modular reduction.
-        loop {
-            p.crypto
-                .random(&mut id[NONCE_OFFSET..TAG_OFFSET])
-                .map_err(|_| Status::Other)?;
-            let mut tag = derive(&id, rp, &master, sm2, key, p)?;
-            id[TAG_OFFSET..].copy_from_slice(&tag[..TAG_BYTES]);
-            p.memory.wipe(&mut tag);
-            if matches!(algorithm, alg::P256 | alg::SM2)
-                && !valid_scalar(algorithm, &key.bytes[..32])
-            {
-                continue;
-            }
-            return Ok(id);
-        }
+        shared::create(
+            scheme,
+            flags,
+            &mut CreateCredential {
+                master: &master,
+                rp,
+                sm2,
+                scheme,
+                key,
+                platform: p,
+            },
+        )
     })();
     p.memory.wipe(&mut master);
     result
 }
 
-fn valid_scalar(algorithm: u8, scalar: &[u8]) -> bool {
-    // SEC 2 secp256r1 group order n, big-endian; valid scalars satisfy 0 < d < n.
-    const ORDER: [u8; 32] = [
-        0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xbc,
-        0xe6, 0xfa, 0xad, 0xa7, 0x17, 0x9e, 0x84, 0xf3, 0xb9, 0xca, 0xc2, 0xfc, 0x63, 0x25, 0x51,
-    ];
-    // SM2 excludes n-1 as well: signing needs the inverse of 1+d.
-    const SM2_LIMIT: [u8; 32] = [
-        0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0x72, 0x03, 0xdf, 0x6b, 0x21, 0xc6, 0x05, 0x2b, 0x53, 0xbb, 0xf4, 0x09, 0x39, 0xd5,
-        0x41, 0x22,
-    ];
-    let limit = if algorithm == alg::SM2 {
-        &SM2_LIMIT
-    } else {
-        &ORDER
-    };
-    scalar.iter().any(|b| *b != 0) && scalar < limit.as_slice()
+struct CreateCredential<'a, 'p, B: crate::ports::Backends> {
+    master: &'a [u8; shared::KEY_BYTES],
+    rp: &'a [u8; shared::RP_HASH_BYTES],
+    sm2: super::settings::Sm2,
+    scheme: Scheme,
+    key: &'a mut KeyMaterial,
+    platform: &'a mut Platform<'p, B>,
+}
+impl<B: crate::ports::Backends> shared::Creation for CreateCredential<'_, '_, B> {
+    type Error = Status;
+    type Credential = Id;
+    fn random_nonce(&mut self, nonce: &mut [u8]) -> Result<(), Status> {
+        self.platform
+            .crypto
+            .random(nonce)
+            .map_err(|_| Status::Other)
+    }
+    fn prepare(&mut self, id: &Id) -> Result<[u8; shared::KEY_BYTES], Status> {
+        derive(id, self.rp, self.master, self.sm2, self.key, self.platform)
+    }
+    fn clear_tag(&mut self, tag: &mut [u8; shared::KEY_BYTES]) {
+        self.platform.memory.wipe(tag);
+    }
+    fn accept(&mut self, id: &Id) -> Option<Id> {
+        shared::valid_signing_seed(
+            self.scheme,
+            (&self.key.bytes[..shared::KEY_BYTES]).try_into().unwrap(),
+        )
+        .then_some(*id)
+    }
+}
+struct OpenCredential<'a, 'p, B: crate::ports::Backends> {
+    master: &'a mut [u8; shared::KEY_BYTES],
+    rp: &'a [u8; shared::RP_HASH_BYTES],
+    sm2: super::settings::Sm2,
+    algorithm: u8,
+    key: &'a mut KeyMaterial,
+    platform: &'a mut Platform<'p, B>,
+}
+impl<B: crate::ports::Backends> shared::Opening for OpenCredential<'_, '_, B> {
+    type Error = Status;
+    type Credential = u8;
+    fn prepare(&mut self, id: &Id) -> Result<[u8; shared::KEY_BYTES], Status> {
+        let result = derive(id, self.rp, self.master, self.sm2, self.key, self.platform);
+        // Root erasure precedes comparison even when derivation fails.
+        self.platform.memory.wipe(self.master);
+        result
+    }
+    fn equal(&self, expected: &[u8], computed: &[u8]) -> bool {
+        equal(expected, computed)
+    }
+    fn clear_tag(&mut self, tag: &mut [u8; shared::KEY_BYTES]) {
+        self.platform.memory.wipe(tag);
+    }
+    fn reject(&mut self) {
+        self.platform.memory.wipe(&mut self.key.bytes);
+    }
+    fn accept(&mut self, _: &Id) -> Option<u8> {
+        Some(self.algorithm)
+    }
 }
 
 pub(super) fn open(
@@ -177,16 +212,18 @@ pub(super) fn open(
 ) -> Result<u8, Status> {
     let algorithm = algorithm(id)?;
     let mut master = master(false, p)?;
-    let result = derive(id, rp, &master, sm2, key, p);
-    p.memory.wipe(&mut master);
-    let mut tag = result?;
-    let valid = equal(&id[TAG_OFFSET..], &tag[..TAG_BYTES]);
-    p.memory.wipe(&mut tag);
-    if !valid {
-        p.memory.wipe(&mut key.bytes);
-        return Err(Status::NoCredentials);
-    }
-    Ok(algorithm)
+    shared::open(
+        id,
+        &mut OpenCredential {
+            master: &mut master,
+            rp,
+            sm2,
+            algorithm,
+            key,
+            platform: p,
+        },
+    )?
+    .ok_or(Status::NoCredentials)
 }
 
 pub(super) fn counter(
