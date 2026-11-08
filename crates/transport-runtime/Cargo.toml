@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "canokey-transport-runtime"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+canokey-protocol = { path = "../protocol", default-features = false }
+
+[lints]
+workspace = true

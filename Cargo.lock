@@ -41,6 +41,7 @@ version = "0.1.0"
 dependencies = [
  "canokey-ports",
  "canokey-protocol",
+ "canokey-transport-runtime",
  "cfg_aliases",
  "minicbor",
  "sha2",
@@ -78,6 +79,13 @@ dependencies = [
  "canokey-rust-ffi",
  "libc",
  "libfuzzer-sys",
+]
+
+[[package]]
+name = "canokey-transport-runtime"
+version = "0.1.0"
+dependencies = [
+ "canokey-protocol",
 ]
 
 [[package]]

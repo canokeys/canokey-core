@@ -4,10 +4,7 @@
 #![forbid(unsafe_code)]
 use super::nfc::{self, Execution, HardwareAction, Irq, Recovery};
 use canokey_protocol::nfc::{self as wire, Block, Packet};
-pub trait Chip {
-    fn read(&mut self, address: u16, out: &mut [u8]) -> bool;
-    fn write(&mut self, address: u16, bytes: &[u8]) -> bool;
-}
+pub use canokey_transport_runtime::nfc_io::Chip;
 pub struct Io {
     recovery: Recovery,
     execution: Execution,
