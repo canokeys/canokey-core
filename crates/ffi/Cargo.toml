@@ -6,6 +6,7 @@ edition = "2024"
 license = "Apache-2.0"
 publish = false
 [dependencies]
+canokey-transport-runtime = { path = "../transport-runtime" }
 canokey-native-crypto = { path = "../native-crypto", optional = true }
 canokey-ports = { path = "../ports" }
 canokey-protocol = { path = "../protocol" }

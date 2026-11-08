@@ -53,3 +53,12 @@ profiles retain channel registration/wrap, CANCEL and timeout boundary policy.
 cannot acquire an application or request parser. CanoKey keeps its existing
 192-byte inline/PKE staging and native continuation owner; vLEI borrows its
 existing request/response arrays. No payload storage is allocated by Session.
+
+`ctaphid::Execution<P>` holds execution CID/generation, cancellation,
+abandonment and keepalive timestamps. It classifies only a borrowed report or
+peeked header and cannot call applications or IO. INIT retention and CANCEL
+latching are shared; a static policy preserves malformed-INIT error selection.
+CanoKey records keepalive publication after synchronous send; vLEI uses the
+existing pre-submit timestamp. Endpoint busy/timeout, mailbox consumption and
+main-loop cleanup remain in product facades. Ending execution invalidates its
+CID while retaining abandonment until suppressed output is released.

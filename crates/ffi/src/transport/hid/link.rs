@@ -3,8 +3,13 @@
 //! state. Core execution may call progress, so no state borrow crosses a poll.
 use crate::composition::Provider;
 use canokey_protocol::ctaphid::{self as wire, Error};
+use canokey_transport_runtime::ctaphid::{Execution as SharedExecution, ExecutionPolicy, Incoming};
+struct CanoKey;
+impl ExecutionPolicy for CanoKey {
+    const MALFORMED_INIT_ERROR: Error = Error::Length;
+}
+type Execution = SharedExecution<CanoKey>;
 
-const KEEPALIVE_INTERVAL_MS: u32 = 100;
 const TX_TIMEOUT_MS: u32 = 1000;
 #[cfg(not(all(test, not(feature = "usb-device"))))]
 use super::command::{poll as ck_hid_poll, reset as ck_hid_reset};
@@ -26,12 +31,7 @@ struct Link {
     active: bool,
     retained: bool,
     transmitting: bool,
-    executing_cid: u32,
-    execution_epoch: u32,
-    keepalive_at: u32,
-    executing: bool,
-    cancelled: bool,
-    abandon: bool,
+    execution: Execution,
     keepalive_status: u8,
 }
 impl Link {
@@ -41,18 +41,17 @@ impl Link {
             active: false,
             retained: false,
             transmitting: false,
-            executing_cid: 0,
-            execution_epoch: 0,
-            keepalive_at: 0,
-            executing: false,
-            cancelled: false,
-            abandon: false,
+            execution: Execution::inactive(),
             // Execution begin supplies the wire status before any keepalive.
             keepalive_status: 0,
         }
     }
 }
 static mut LINK: Link = Link::new();
+// Serialized main-loop/progress state, never borrowed across mailbox or IO calls.
+unsafe fn execution() -> &'static mut Execution {
+    unsafe { &mut *core::ptr::addr_of_mut!(LINK.execution) }
+}
 unsafe fn peek_header(epoch: u32) -> Option<(u32, u8, u16)> {
     let mut header = [0; 7];
     let mut received = 0;
@@ -73,15 +72,6 @@ unsafe fn peek_header(epoch: u32) -> Option<(u32, u8, u16)> {
         u16::from_be_bytes([header[5], header[6]]),
     ))
 }
-fn classify_error(cid: u32, command: u8, executing: Option<u32>) -> Error {
-    if cid == 0 || (cid == wire::BROADCAST && command != wire::INIT) {
-        Error::Channel
-    } else if executing == Some(cid) && command == wire::INIT {
-        Error::Length
-    } else {
-        Error::Busy
-    }
-}
 pub unsafe extern "C" fn ck_hid_active() -> u8 {
     unsafe { u8::from(LINK.active) }
 }
@@ -90,18 +80,14 @@ pub unsafe extern "C" fn ck_hid_busy() -> u8 {
     unsafe { u8::from(LINK.active || LINK.retained || LINK.transmitting) }
 }
 pub unsafe fn ck_hid_executing() -> u8 {
-    unsafe { u8::from(LINK.executing) }
+    unsafe { u8::from(execution().executing()) }
 }
+/// Command admission supplies a nonzero CID; reserved CID zero marks inactivity.
 pub unsafe fn ck_hid_execution_begin(cid: u32) {
     unsafe {
-        LINK.executing_cid = cid;
-        LINK.execution_epoch = ck_hid_io_epoch();
-        LINK.executing = true;
+        LINK.execution = Execution::new(cid, ck_hid_io_epoch(), device_get_tick());
         LINK.active = true;
-        LINK.cancelled = false;
-        LINK.abandon = false;
         LINK.keepalive_status = wire::STATUS_PROCESSING;
-        LINK.keepalive_at = device_get_tick().wrapping_sub(KEEPALIVE_INTERVAL_MS) /* First keepalive is immediately due. */;
     }
 }
 pub unsafe fn ck_hid_keepalive(waiting: u8) {
@@ -118,7 +104,7 @@ unsafe fn send_control(cid: u32, command: u8, value: u8, epoch: u32) {
         let report = &mut *core::ptr::addr_of_mut!(CONTROL);
         wire::header(report, cid, command, 1)[0] = value;
         if ck_hid_io_send(report.as_ptr(), epoch) == 0 {
-            LINK.abandon = true;
+            execution().abandon();
             return;
         }
         LINK.sent_at = device_get_tick();
@@ -131,7 +117,7 @@ unsafe fn send_control(cid: u32, command: u8, value: u8, epoch: u32) {
 #[cfg_attr(all(test, feature = "usb-device"), allow(dead_code))]
 pub unsafe fn ck_hid_foreign_progress() {
     unsafe {
-        if LINK.executing
+        if execution().executing()
             || ck_hid_io_reset_pending() != 0
             || ck_hid_io_configured() == 0
             || ck_hid_io_idle() == 0
@@ -144,8 +130,9 @@ pub unsafe fn ck_hid_foreign_progress() {
         };
         // CANCEL belongs to its HID operation, never to the unrelated APDU.
         // Continuations cannot start a new command and are silently drained.
-        if command & 0x80 != 0 && command != wire::CANCEL {
-            let error = classify_error(cid, command, None);
+        if command & wire::CMD_INIT_BIT != 0 && command != wire::CANCEL {
+            let error =
+                canokey_transport_runtime::ctaphid::classify_error::<CanoKey>(cid, command, None);
             send_control(cid, wire::ERROR, error as u8, epoch);
         }
         ck_hid_io_consume(epoch);
@@ -154,7 +141,8 @@ pub unsafe fn ck_hid_foreign_progress() {
 }
 pub unsafe fn ck_hid_progress() -> u8 {
     unsafe {
-        if !LINK.executing || ck_hid_io_reset_pending() != 0 || ck_hid_io_configured() == 0 {
+        if !execution().executing() || ck_hid_io_reset_pending() != 0 || ck_hid_io_configured() == 0
+        {
             return 0;
         }
         let mut idle = ck_hid_io_idle() != 0;
@@ -162,51 +150,60 @@ pub unsafe fn ck_hid_progress() -> u8 {
             && LINK.transmitting
             && device_get_tick().wrapping_sub(LINK.sent_at) >= TX_TIMEOUT_MS
         {
-            LINK.abandon = true;
+            execution().abandon();
         }
         // Only the initial header is needed while crypto owns the core stack.
-        if let Some((cid, command, length)) = peek_header(LINK.execution_epoch) {
-            if cid == LINK.executing_cid && command == wire::INIT && length == 8 {
-                // Keep INIT queued until the interrupted core borrow unwinds.
-                LINK.abandon = true;
-            } else if cid == LINK.executing_cid && command == wire::CANCEL && length == 0 {
-                LINK.cancelled = true;
-                ck_hid_io_consume(LINK.execution_epoch);
-            } else if idle {
-                if command & 0x80 != 0 {
-                    let error = classify_error(cid, command, Some(LINK.executing_cid)) as u8;
-                    send_control(cid, wire::ERROR, error, LINK.execution_epoch);
-                    idle = false;
+        if let Some((cid, command, length)) = peek_header(execution().epoch()) {
+            let length = (command & wire::CMD_INIT_BIT != 0).then_some(usize::from(length));
+            let incoming = execution().receive_header(cid, command, length);
+            match incoming {
+                Incoming::Retain => {}
+                Incoming::Consume => {
+                    // CANCEL is consumed even while a keepalive owns IN;
+                    // other continuations retain their mailbox until IN is idle.
+                    if idle
+                        || (cid == execution().cid()
+                            && command == wire::CANCEL
+                            && length == Some(0))
+                    {
+                        ck_hid_io_consume(execution().epoch());
+                    }
                 }
-                ck_hid_io_consume(LINK.execution_epoch);
+                Incoming::Error(error) => {
+                    if idle {
+                        send_control(cid, wire::ERROR, error as u8, execution().epoch());
+                        idle = false;
+                        ck_hid_io_consume(execution().epoch());
+                    }
+                }
             }
             ck_hid_io_receive();
         }
-        if LINK.cancelled || LINK.abandon {
+        if execution().cancelled() || execution().abandoned() {
             return 0;
         }
-        if idle && device_get_tick().wrapping_sub(LINK.keepalive_at) >= KEEPALIVE_INTERVAL_MS {
+        if idle && execution().keepalive_due(device_get_tick()) {
             send_control(
-                LINK.executing_cid,
+                execution().cid(),
                 wire::KEEPALIVE,
                 LINK.keepalive_status,
-                LINK.execution_epoch,
+                execution().epoch(),
             );
-            LINK.keepalive_at = device_get_tick();
+            execution().keepalive_sent(device_get_tick());
         }
-        u8::from(!LINK.abandon)
+        u8::from(!execution().abandoned())
     }
 }
 pub unsafe fn ck_hid_execution_end() {
     unsafe {
         while ck_hid_io_reset_pending() == 0 && ck_hid_io_idle() == 0 {
             if device_get_tick().wrapping_sub(LINK.sent_at) >= TX_TIMEOUT_MS {
-                LINK.abandon = true;
+                execution().abandon();
                 break;
             }
             device_delay(1);
         }
-        LINK.executing = false;
+        execution().end();
     }
 }
 /// Main-loop cleanup only; never dispatch a queued report during enumeration.
@@ -296,8 +293,8 @@ pub unsafe fn poll<P: Provider>() -> u8 {
         if generation != ck_hid_io_epoch() {
             return 0;
         }
-        if LINK.abandon {
-            LINK.abandon = false;
+        if execution().abandoned() {
+            execution().clear_abandonment();
             LINK.active = false;
             LINK.retained = false;
             LINK.transmitting = false;

@@ -55,6 +55,7 @@ dependencies = [
  "canokey-ports",
  "canokey-protocol",
  "canokey-rust-core",
+ "canokey-transport-runtime",
 ]
 
 [[package]]
