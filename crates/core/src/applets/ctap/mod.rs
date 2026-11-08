@@ -159,24 +159,21 @@ impl Response {
                 let (start, dest) = window.take(length);
                 if !dest.is_empty() {
                     if index == 3 {
-                        if partial && registration {
-                            let n = storage
-                                .read_some_at(
-                                    crate::ports::Record::CtapCertificate,
-                                    start as u32,
-                                    dest,
-                                )
-                                .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-                            if n > dest.len() {
-                                return Err(Sw::UNABLE_TO_PROCESS);
-                            }
-                            if n < dest.len() {
-                                return Ok(copied + n);
-                            }
+                        use canokey_ctap::response::{self, ReadMode};
+                        let mode = if partial && registration {
+                            ReadMode::Partial
                         } else {
-                            storage
-                                .read_at(crate::ports::Record::CtapCertificate, start as u32, dest)
-                                .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+                            ReadMode::Exact
+                        };
+                        let count = response::certificate(
+                            &mut adapter::Certificate(storage),
+                            start as u32,
+                            dest,
+                            mode,
+                        )
+                        .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+                        if count < dest.len() {
+                            return Ok(copied + count);
                         }
                     } else {
                         dest.copy_from_slice(&segment[start..start + dest.len()]);

@@ -5,12 +5,11 @@
 use super::Status;
 use crate::{
     ports::{
-        CryptoScratch, DigestOperation as Hash, HashState, Platform, Record, StreamOperation as Op,
-        alg,
+        CryptoScratch, DigestOperation as Hash, HashState, Platform, StreamOperation as Op, alg,
     },
     runtime::workspace::{Primitive, SessionWorkspace},
 };
-use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
+use canokey_ports::{Crypto as _, Device as _, Memory as _};
 use canokey_protocol::{cbor::Encoder, der::der_signature, response::StatusWord as Sw};
 // Bounded envelope storage, excluding streamed public key/signature/certificate.
 // transfer() checks prefix + tail + assertion authData against this workspace slice.
@@ -393,10 +392,15 @@ impl Stream<'_> {
                         return Err(Sw::UNABLE_TO_PROCESS);
                     }
                 }
-                PartSource::Certificate => p
-                    .storage
-                    .read_at(Record::CtapCertificate, at as u32, dest)
-                    .map_err(|_| Sw::UNABLE_TO_PROCESS)?,
+                PartSource::Certificate => {
+                    canokey_ctap::response::certificate(
+                        &mut super::adapter::Certificate(p.storage),
+                        at as u32,
+                        dest,
+                        canokey_ctap::response::ReadMode::Exact,
+                    )
+                    .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+                }
                 PartSource::Framing(start) => {
                     dest.copy_from_slice(&self.framing.bytes[start + at..start + at + n])
                 }

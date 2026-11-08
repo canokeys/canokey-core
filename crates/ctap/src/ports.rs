@@ -2,8 +2,21 @@
 //! Existing static product budgets; no dependency on a product Platform.
 pub use canokey_ports::RequestLimits;
 
+/// Read only the provisioned certificate. No source handle or output borrow
+/// escapes this call. Products retain validation, backing and close ownership;
+/// exact and partial modes preserve distinct backend error/short-read behavior.
+pub trait Certificate {
+    type Error;
+    fn read(
+        &mut self,
+        offset: u32,
+        output: &mut [u8],
+        mode: crate::response::ReadMode,
+    ) -> Result<usize, Self::Error>;
+}
+
 /// Read only provisioned attestation key bytes and certificate metadata. Product
-/// adapters authenticate their own records and retain error/missing semantics.
+/// adapters validate their own records and retain error/missing semantics.
 /// This synchronous capability cannot sign, install, write or retain a secret.
 pub trait Attestation {
     type Error;

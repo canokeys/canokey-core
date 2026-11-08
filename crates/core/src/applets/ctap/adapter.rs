@@ -3,6 +3,31 @@
 use super::{Command, Status};
 use canokey_ctap::request::{self, Parameterless};
 
+/// Each window reborrows the existing certificate record; no open handle or
+/// payload is retained across transport chunks or workspace replacement.
+pub(super) struct Certificate<'a, S: ?Sized>(pub &'a mut S);
+impl<S: canokey_ports::Storage + ?Sized> canokey_ctap::ports::Certificate for Certificate<'_, S> {
+    type Error = canokey_ports::StorageError;
+    fn read(
+        &mut self,
+        offset: u32,
+        output: &mut [u8],
+        mode: canokey_ctap::response::ReadMode,
+    ) -> Result<usize, Self::Error> {
+        match mode {
+            canokey_ctap::response::ReadMode::Exact => {
+                self.0
+                    .read_at(crate::ports::Record::CtapCertificate, offset, output)?;
+                Ok(output.len())
+            }
+            canokey_ctap::response::ReadMode::Partial => {
+                self.0
+                    .read_some_at(crate::ports::Record::CtapCertificate, offset, output)
+            }
+        }
+    }
+}
+
 /// The reader cannot access product records outside FIDO attestation material.
 pub(super) struct Attestation<'a, S: ?Sized>(pub &'a mut S);
 impl<S: canokey_ports::Storage + ?Sized> canokey_ctap::ports::Attestation for Attestation<'_, S> {
