@@ -10,25 +10,23 @@ use crate::ports::{Platform, Record, StorageError};
 use canokey_ports::Storage as _;
 
 pub(super) use canokey_ctap::resident::{
-    FIELD_COUNT, FIXED_BYTES, MAX_BYTES, RESIDENT, RP_DISPLAY_BYTES, RP_HASH_BYTES, USER_DISPLAY_BYTES,
+    FIXED_BYTES, MAX_BYTES, RESIDENT, RP_DISPLAY_BYTES, RP_HASH_BYTES, USER_DISPLAY_BYTES,
     USER_ID_BYTES, USER_NAME_BYTES,
 };
 pub(super) const LARGE_BLOB_KEY: u8 = 0x08;
-const GROUP_MEMBERS: usize = Record::CTAP_GROUP_MEMBERS as usize;
+#[cfg(test)]
+use canokey_ctap::resident::group::FORMAT as GROUP_FORMAT;
+use canokey_ctap::resident::group::{self, Replacement, member_length};
+use canokey_ctap::resident::group::{HEADER_BYTES as GROUP_HEADER, MEMBERS as GROUP_MEMBERS};
+const _: () = assert!(Record::CTAP_GROUP_MEMBERS as usize == GROUP_MEMBERS);
 pub(super) const COPY_BYTES: usize = (GROUP_MEMBERS - 1) * MAX_BYTES;
-const MEMBER_LENGTH_BYTES: usize = core::mem::size_of::<u16>();
-// CTG1 identifies version 1: four big-endian u16 lengths (zero is absent),
-// followed by present credential payloads in logical member order.
-const GROUP_FORMAT: &[u8; 4] = b"CTG1";
-const GROUP_HEADER: usize = GROUP_FORMAT.len() + GROUP_MEMBERS * MEMBER_LENGTH_BYTES;
 
 fn group_header(
     record: Record,
     header: &mut [u8; GROUP_HEADER],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
-    header.fill(0);
-    header[..GROUP_FORMAT.len()].copy_from_slice(GROUP_FORMAT);
+    *header = group::empty();
     let size = match p.storage.size(record) {
         Ok(n) => n,
         Err(StorageError::Missing) => return Ok(()),
@@ -37,25 +35,7 @@ fn group_header(
     p.storage
         .read_at(record, 0, header)
         .map_err(|_| Status::Other)?;
-    if &header[..GROUP_FORMAT.len()] != GROUP_FORMAT {
-        return Err(Status::Other);
-    }
-    let mut total = GROUP_HEADER as u32;
-    for member in 0..GROUP_MEMBERS {
-        let n = member_length(header, member);
-        if n > MAX_BYTES || (n != 0 && n < FIXED_BYTES + FIELD_COUNT) {
-            return Err(Status::Other);
-        }
-        total += n as u32;
-    }
-    if total != size || total == GROUP_HEADER as u32 {
-        return Err(Status::Other);
-    }
-    Ok(())
-}
-fn member_length(header: &[u8; GROUP_HEADER], member: usize) -> usize {
-    let at = GROUP_FORMAT.len() + member * MEMBER_LENGTH_BYTES;
-    usize::from(u16::from_be_bytes([header[at], header[at + 1]]))
+    group::validate(header, size as usize).map_err(|_| Status::Other)
 }
 
 /// Buffer up to three unchanged members before atomically publishing the group.
@@ -81,11 +61,11 @@ pub(super) fn replace(
         let mut header = [0; GROUP_HEADER];
         group_header(record, &mut header, p)?;
         let target = usize::from(index % Record::CTAP_GROUP_MEMBERS);
-        let before = (0..target)
-            .map(|i| member_length(&header, i))
-            .sum::<usize>();
-        let target_offset = GROUP_HEADER + before;
-        let target_length = member_length(&header, target);
+        let replacement =
+            Replacement::new(&header, target, value.len()).map_err(|_| Status::Other)?;
+        let before = replacement.offset - GROUP_HEADER;
+        let target_offset = replacement.offset;
+        let target_length = replacement.old_length;
         if target_length != 0 && target_length == value.len() {
             let bytes = &mut copy[..target_length];
             p.storage
@@ -120,9 +100,7 @@ pub(super) fn replace(
         if value.is_empty() && used == 0 {
             return p.storage.remove(record).map_err(|_| Status::Other);
         }
-        let length_offset = GROUP_FORMAT.len() + target * MEMBER_LENGTH_BYTES;
-        header[length_offset..length_offset + MEMBER_LENGTH_BYTES]
-            .copy_from_slice(&(value.len() as u16).to_be_bytes());
+        Replacement::set_length(&mut header, target, value.len());
         let publication = p
             .storage
             .stage_parts(&[&header, &copy[..before], value, &copy[before..used]])
@@ -165,7 +143,7 @@ fn load_member(
     if n == 0 {
         return Ok(None);
     }
-    let offset = GROUP_HEADER + (0..member).map(|i| member_length(header, i)).sum::<usize>();
+    let offset = group::member_offset(header, member);
     p.storage
         .read_at(record, offset as u32, &mut out[..n])
         .map_err(|_| Status::Other)?;

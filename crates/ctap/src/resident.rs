@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CTG1 resident member codec; products own storage, capacity and authorization.
 
+pub mod group;
+
 pub const ID_BYTES: usize = 34;
 pub const RESIDENT: u8 = 0x04;
 pub const RP_HASH_BYTES: usize = 32;

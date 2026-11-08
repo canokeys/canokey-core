@@ -19,7 +19,9 @@ product applications. Firmware uses `no_std` without the `schema` feature.
   latch, and the eight-byte SM2 settings codec. Capabilities address only their
   own material; product ADMIN authority and installation policy stay outside.
 - `resident`: borrowed CTG1 member decoding, bounded field encoding, UTF-8
-  truncation and RP display. Product capacities, group updates and credential
+  truncation and RP display. `resident::group` validates CTG1 headers and plans
+  member offsets/replacement lengths without IO. Product capacities, publication
+  strategies and credential
   derivation remain with their owners during R06 migration.
 - `response`: exact/partial certificate window admission. Product backing and
   source close/erasure remain with their owners. General response cursors and
