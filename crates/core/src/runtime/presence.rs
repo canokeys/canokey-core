@@ -2,56 +2,11 @@
 //! Main-loop presence operation; no C callback may reenter the core.
 #![forbid(unsafe_code)]
 #[cfg(presence_applet)]
-const PRESENCE_TIMEOUT_MS: u32 = 30_000;
-#[cfg(presence_applet)]
-fn wait(device: &mut (impl crate::ports::Device + ?Sized), minimum_ms: u32) -> Result<(), Error> {
-    if device.contactless() {
-        return if device.progress() {
-            Ok(())
-        } else {
-            Err(Error::Cancelled)
-        };
-    }
-    let start = device.now();
-    // A contact predating this request must be released before a fresh gesture.
-    let mut armed = !device.touched();
-    let mut pressed = None;
-    let result = (|| loop {
-        if !device.progress() {
-            return Err(Error::Cancelled);
-        }
-        if device.now().wrapping_sub(start) >= PRESENCE_TIMEOUT_MS {
-            return Err(Error::Timeout);
-        }
-        let blink = (device.now().wrapping_sub(start) / 100).is_multiple_of(2);
-        device.led(blink);
-        let touch = device.touched();
-        if !armed {
-            armed = !touch;
-            continue;
-        }
-        if touch {
-            pressed.get_or_insert_with(|| device.now());
-        } else if let Some(since) = pressed.take() {
-            if device.now().wrapping_sub(since) >= minimum_ms {
-                return Ok(());
-            }
-        }
-    })();
-    device.led_idle();
-    result
-}
-
-#[cfg(presence_applet)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Error {
-    Cancelled,
-    Timeout,
-}
+pub use canokey_ctap::presence::{Error, Request};
+#[cfg(feature = "admin")]
+const LONG_TOUCH_MS: u32 = 500;
 #[cfg(feature = "admin")]
 const SHORT_TOUCH_WINDOW_MS: u32 = 2_000;
-#[cfg(any(feature = "ctap", feature = "admin"))]
-const LONG_TOUCH_MS: u32 = 500;
 #[cfg(feature = "admin")]
 const STRONG_TOUCH_COUNT: u32 = 5;
 #[cfg(feature = "admin")]
@@ -116,51 +71,6 @@ pub fn strong(device: &mut (impl crate::ports::Device + ?Sized)) -> bool {
     })();
     device.led_idle();
     accepted
-}
-
-/// An attempted request owns its gesture even when it times out or is cancelled.
-#[cfg(presence_applet)]
-pub struct Request {
-    attempted: bool,
-}
-#[cfg(presence_applet)]
-impl Request {
-    pub const fn new() -> Self {
-        Self { attempted: false }
-    }
-    #[cfg(classic_presence)]
-    pub fn wait(&mut self, device: &mut (impl crate::ports::Device + ?Sized)) -> bool {
-        self.wait_result(device).is_ok()
-    }
-    #[cfg(feature = "ctap")]
-    pub fn poll(&mut self, device: &mut (impl crate::ports::Device + ?Sized)) -> bool {
-        self.attempted = true;
-        if device.contactless() {
-            device.progress()
-        } else {
-            device.poll_presence()
-        }
-    }
-    pub fn wait_result(
-        &mut self,
-        device: &mut (impl crate::ports::Device + ?Sized),
-    ) -> Result<(), Error> {
-        self.attempted = true;
-        wait(device, 0)
-    }
-    #[cfg(feature = "ctap")]
-    pub fn wait_long(
-        &mut self,
-        device: &mut (impl crate::ports::Device + ?Sized),
-    ) -> Result<(), Error> {
-        self.attempted = true;
-        wait(device, LONG_TOUCH_MS)
-    }
-    #[cfg(feature = "pass")]
-    /// PASS suppresses output after any presence attempt, including failure.
-    pub fn take_attempt(&mut self) -> bool {
-        core::mem::take(&mut self.attempted)
-    }
 }
 
 #[cfg(all(
