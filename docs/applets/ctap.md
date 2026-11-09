@@ -712,21 +712,15 @@ continuation across two3000ms gaps, and that takeover becomes possible after
 the final response completes. Two word-sized window fields are added to the
 applet; no private response buffer or protocol implementation is moved to C.
 
-Provisioned attestation certificates must contain 1..1152 bytes. With a provisioned key, an
-empty certificate is rejected by classic and ML-DSA makeCredential with CTAP
-7F and by U2F registration with 6900; no partial registration response remains.
-The existing configuration fixture checks both CTAP algorithms fail and recover
-after valid ADMIN reprovisioning, with independently verified packed signatures.
-The U2F fixture separately checks empty-certificate rejection. This validates
-use-time rejection, not the legacy install-time incomplete-state rebuild.
-
-Classic makeCredential only falls back to self-attestation when provisioned
-material is genuinely missing. Attestation-key read errors and malformed key
-lengths return CTAP 7F; they must not change the attestation mode. Temporary
-attestation-key bytes are wiped on certificate/key validation errors as well as
-success. `ctap-config` injects a read that supplies key bytes then reports I/O
-failure, checks rejection/no pending response and independently verifies a fresh
-packed attestation after the fault clears.
+Ordinary makeCredential admits missing or empty attestation certificates as
+self-attestation without reading the manufacturing private key. A nonempty
+certificate must fit the 1152-byte limit before loading the exactly 32-byte
+private key. Missing/short keys and storage errors return CTAP 7F without
+fallback or a partial response. Temporary key bytes are wiped on every exit.
+ML-DSA and U2F require a nonempty certificate; their stricter material admission
+is independent of ordinary self-attestation. The configuration fixture verifies
+ES256/Ed25519 self signatures, strict ML-DSA rejection, deferred key-read faults
+and recovery through authorized ADMIN provisioning.
 
 ### Optional credential algorithm restriction
 
@@ -759,25 +753,30 @@ The PC/SC fixture checks warm reset and power-down/up rejection before SELECT,
 then recovery after reselection. Mixed GA/CM enumeration stays within one
 session. The replay lifecycle test verifies agreement and token revocation.
 
-### Boot reconstruction of incomplete provisioning
+### Boot preserves CTAP state independently of manufacturing material
 
-Core installation validates attestation key length/readability, certificate
-length (1..1152), and the provisioned SM2 identifiers before admitting commands.
-Missing or malformed manufacturing prerequisites erase CTAP master, PIN/policy,
-counter, largeBlob and resident credentials as in the legacy startup contract.
-Sparse absent records represent fresh default state; the next successful
-registration signs counter one. Valid SM2 identifiers survive; invalid/missing
-SM2 is repaired only after erasure succeeds. Attestation material is retained
-for explicit ADMIN reprovisioning. Use-time self-attestation remains possible
-on an unprovisioned device, but those credentials do not survive this boot gate.
+CTAP installation initializes only volatile boot state. It does not read,
+rewrite or erase attestation material, SM2 settings, master, PIN/policy, counter,
+largeBlob or resident records. Missing manufacturing material is not authority
+to reset credentials; self-attested credentials survive subsequent boots.
 
-A storage error that prevents validation fails installation without deleting
-records. Failed cleanup also fails installation and leaves its invalid
-prerequisite in place so the next boot retries. This differs deliberately from
-treating transient I/O errors as proof that valid credentials should be erased.
-Logical reader power cycles do not invoke the boot installation gate. The
-existing configuration fixture tests actual credentials, signed counters, PIN
-removal, SM2 preservation/default repair and read/cleanup failure recovery.
+Commands use shared admission functions for SM2 settings and attestation
+material. Missing SM2 settings use the provisioning default. Malformed/short
+settings or I/O failures reject the affected command without rewriting the
+record. Nonempty attestation certificates still require an admitted readable
+key. Manufacturing corruption cannot block startup and the ADMIN repair path;
+this does not bypass failures to mount storage or install other applets.
+Authorized CTAP reset and factory reset retain their explicit erasure contracts.
+
+The configuration fixture covers twelve boot cases: missing/short key,
+missing/empty/malformed certificate, private-key read failure, missing/short/invalid SM2,
+SM2 read failure, and unprovisioned ES256/Ed25519 self attestation. It snapshots
+PIN, master, counter, all 25 resident groups and largeBlob across repeated
+simulated boots. It independently verifies existing credential signatures,
+resident discovery, increasing counters, PIN-token authorization and ADMIN
+repair followed by reboot. Read faults remain armed through installation and
+are observed by the affected command, rather than silently treated as absence.
+Logical reader power resets remain distinct from boot installation.
 
 An omitted or empty getAssertion `allowList` discovers resident credentials.
 A nonempty list with no usable matching IDs returns `NO_CREDENTIALS`; it must
@@ -960,4 +959,5 @@ erases its temporary key on all exits, before signing. Successful provisioned
 selection clears the existing credential key before installing the attestation
 key; failure cleanup remains with the outer credential owner. Strict PQ
 registration still requires a nonempty certificate and key. This command-time
-rule does not change boot installation or registration/counter commit points.
+rule does not change registration/counter commit points. Boot independently
+preserves durable CTAP state as described above.

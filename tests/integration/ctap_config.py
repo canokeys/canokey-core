@@ -157,74 +157,170 @@ def run(wire):
     print(f"CTAP configuration: {len(card.checks)} checks passed")
 
 
-def boot_rebuild(wire, damage):
-    # Fresh device per case: never extend the protocol's ten-second reset gate.
+# Compact CTAP storage ABI: PIN, master, counter, 25 resident groups, blob,
+# SM2 settings, attestation private key and certificate. IDs are fixture inputs.
+PIN_RECORD = 0x4d
+MASTER_RECORD = 0x4e
+COUNTER_RECORD = 0x4f
+GROUP_BASE = 0x50
+GROUP_COUNT = 25
+BLOB_RECORD = 0xb4
+SM2_RECORD = 0xb5
+KEY_RECORD = 0xb6
+CERTIFICATE_RECORD = 0xb7
+BOOT_CASES = (
+    "missing-key", "short-key", "empty-cert", "missing-cert", "malformed-cert", "key-io",
+    "missing-sm2", "short-sm2", "invalid-sm2", "sm2-io",
+    "unprovisioned-es256", "unprovisioned-ed25519",
+)
+
+
+def boot_preserves(wire, damage):
     card = Card(wire)
     default = bytes.fromhex("00000009ffffffca")
-    request = {1: hashlib.sha256(b"boot rebuild").digest()}
+    custom = bytes.fromhex("800000007fffffff")
+    client_hash = hashlib.sha256(b"boot preservation").digest()
+    unprovisioned = damage.startswith("unprovisioned-")
+    algorithm = -8 if damage == "unprovisioned-ed25519" else -7
     def admin():
         card.cmd("admin", 0xa4, 4, data=bytes.fromhex("f000000000"))
     def fido():
         card.cmd("fido", 0xa4, 4, data=bytes.fromhex("f043414e4f464944"))
-    def call(command, params=None, status=0):
+    def call(command, params=None, status=0x00):
         out = card.cmd("ctap", 0x10, cla=0x80,
                        data=bytes([command]) + (cbor.encode(params) if params is not None else b""))
-        assert out[0] == status, out.hex()
+        assert out[0] == status, (damage, out.hex())
         return cbor.decode(out[1:]) if len(out) > 1 else {}
+    def snapshot():
+        records = {}
+        for record in (PIN_RECORD, MASTER_RECORD, COUNTER_RECORD,
+                       *range(GROUP_BASE, GROUP_BASE + GROUP_COUNT), BLOB_RECORD):
+            size = wire.command(f"SIZE {record}")
+            value = None if size == bytes.fromhex("ffffffff") else wire.command(f"RECORD {record}")
+            records[record] = size, value
+        return records
     verify_attestation = provision(card)
+    saved_key = wire.command(f"RECORD {KEY_RECORD}")[:-2]
+    assert len(saved_key) == 32
     admin()
     card.cmd("verify", 0x20, data=b"123456")
-    custom = bytes.fromhex("800000007fffffff")
-    card.cmd("custom SM2 before rebuild", 0x12, data=custom)
+    card.cmd("custom SM2 before reboot", 0x12, data=custom)
+    if unprovisioned:
+        for record in (KEY_RECORD, CERTIFICATE_RECORD, SM2_RECORD):
+            wire.command(f"REMOVE {record}")
     fido()
-    registration = {1: request[1], 2: {"id": "boot.example"}, 3: {"id": b"boot"},
-                    4: [{"type": "public-key", "alg": -7}], 7: {"rk": True}}
+    registration = {1: client_hash, 2: {"id": "boot.example"}, 3: {"id": b"boot"},
+                    4: [{"type": "public-key", "alg": algorithm}], 7: {"rk": True}}
     made = call(1, registration)
-    verify_attestation(made, request[1])
     credential = AuthenticatorData(made[2]).credential_data
+    if unprovisioned:
+        assert set(made[3]) == {"alg", "sig"}
+        credential.public_key.verify(made[2] + client_hash, made[3]["sig"])
+        saved_certificate = None
+    else:
+        verify_attestation(made, client_hash)
+        saved_certificate = made[3]["x5c"][0]
     descriptor = {"id": credential.credential_id, "type": "public-key"}
+    assertion = {1: "boot.example", 2: client_hash, 3: [descriptor]}
     protocol = PinProtocolV1()
     public, secret = protocol.encapsulate(call(6, {1: 1, 2: 2})[1])
     encrypted = protocol.encrypt(secret, b"12345678".ljust(64, b"\0"))
     call(6, {1: 1, 2: 3, 3: public, 4: protocol.authenticate(secret, encrypted), 5: encrypted})
-    records = {record: wire.command(f"RECORD {record}") for record in (77, 78, 79, 80, 181, 182)}
+    # Valid empty largeBlob array and its CTAP 2.1 truncated SHA-256 checksum.
+    blob = b"\x80"
+    blob += hashlib.sha256(blob).digest()[:16]
+    wire.command(f"RECORD {BLOB_RECORD} {blob.hex()}")
+    before = snapshot()
     if damage == "missing-key":
-        wire.command("FAIL_READ 182")
-        assert wire.command("TRY_RESET") == bytes.fromhex("ffffffff")
-        for record, value in records.items():
-            assert wire.command(f"RECORD {record}") == value, "read error must not rebuild"
-    wire.command("RESET")
-    fido()
-    assert call(4)[4]["clientPin"] is True
-    assertion = {1: "boot.example", 2: request[1], 3: [descriptor]}
-    signed = call(2, assertion)
-    credential.public_key.verify(signed[2] + request[1], signed[3])
-    if damage == "missing-key":
-        wire.command("REMOVE 182")
-        wire.command("FAIL_WRITE 80")
-        assert wire.command("TRY_RESET") == bytes.fromhex("ffffffff")
-        assert wire.command("RECORD 80") == records[80]
+        wire.command(f"REMOVE {KEY_RECORD}")
     elif damage == "short-key":
-        wire.command(f"RECORD 182 {records[182][:-3].hex()}")
+        wire.command(f"RECORD {KEY_RECORD} {saved_key[:-1].hex()}")
     elif damage == "empty-cert":
-        wire.command("RECORD 183 ")
-    else:
-        wire.command("RECORD 181 00000001ffffffca")
-    wire.command("RESET")
-    for record in (77, 78, 79, 80, 180):
-        assert wire.command(f"SIZE {record}") == bytes.fromhex("ffffffff")
+        wire.command(f"RECORD {CERTIFICATE_RECORD} ")
+    elif damage == "missing-cert":
+        wire.command(f"REMOVE {CERTIFICATE_RECORD}")
+    elif damage == "malformed-cert":
+        # Incomplete DER SEQUENCE: startup cannot authorize credential erasure
+        # from certificate contents, regardless of command-time DER handling.
+        wire.command(f"RECORD {CERTIFICATE_RECORD} 30")
+    elif damage == "missing-sm2":
+        wire.command(f"REMOVE {SM2_RECORD}")
+    elif damage == "short-sm2":
+        wire.command(f"RECORD {SM2_RECORD} {custom[:-1].hex()}")
+    elif damage == "invalid-sm2":
+        wire.command(f"RECORD {SM2_RECORD} 00000001ffffffca")
+    elif damage == "key-io":
+        wire.command(f"FAIL_READ {KEY_RECORD}")
+    elif damage == "sm2-io":
+        wire.command(f"FAIL_READ {SM2_RECORD}")
+    material_sizes = {record: wire.command(f"SIZE {record}")
+                      for record in (SM2_RECORD, KEY_RECORD, CERTIFICATE_RECORD)}
+    # Repeated boots must neither consume manufacturing read faults nor write
+    # or erase CTAP records. Include every resident group, even absent groups.
+    for _ in range(2):
+        assert wire.command("TRY_RESET") == bytes.fromhex("00000000"), damage
+        assert snapshot() == before, damage
+        for record, size in material_sizes.items():
+            assert wire.command(f"SIZE {record}") == size, damage
+    fido()
+    if damage in ("short-sm2", "invalid-sm2", "sm2-io"):
+        call(4, status=0x7f)
+        card.cmd("no partial settings failure", 0xc0, status=0x6986)
+        assert snapshot() == before
+        # ClientPIN does not depend on the SM2 record. ADMIN must also remain
+        # reachable to repair the actual damaged record, without credential reset.
+        assert call(6, {1: 1, 2: 1})[3] == 8
+        admin()
+        card.cmd("verify to repair settings", 0x20, data=b"123456")
+        if damage == "sm2-io":
+            assert card.cmd("unchanged settings after read fault", 0x11) == custom
+        else:
+            card.cmd("reject malformed settings", 0x11, status=0x6900)
+            card.cmd("repair settings", 0x12, data=custom)
+        fido()
+    assert call(4)[4]["clientPin"] is True
+    expected_sm2 = -54 if damage == "missing-sm2" or unprovisioned else 2147483647
+    assert call(4)[10][-1]["alg"] == expected_sm2
+    signed = call(2, assertion)
+    credential.public_key.verify(signed[2] + client_hash, signed[3])
+    counter = AuthenticatorData(signed[2]).counter
+    assert counter > AuthenticatorData(made[2]).counter
+    # Discover the resident credential as well as opening its explicit handle.
+    discovered = call(2, {1: "boot.example", 2: client_hash})
+    assert discovered[1] == descriptor
+    credential.public_key.verify(discovered[2] + client_hash, discovered[3])
+    assert AuthenticatorData(discovered[2]).counter > counter
+    assert call(12, {1: len(blob), 3: 0})[1] == blob
+    public, secret = protocol.encapsulate(call(6, {1: 1, 2: 2})[1])
+    pin_hash = protocol.encrypt(secret, hashlib.sha256(b"12345678").digest()[:16])
+    token = protocol.decrypt(secret, call(6, {1: 1, 2: 5, 3: public, 6: pin_hash})[2])
+    assert len(token) == 32 and any(token), "the original PIN must still authorize"
+    if damage in ("missing-key", "short-key", "key-io"):
+        call(1, registration | {7: {"rk": False}}, 0x7f)
+        card.cmd("no fallback or partial registration", 0xc0, status=0x6986)
+    if damage in ("missing-cert", "empty-cert") or unprovisioned:
+        fresh = call(1, registration | {7: {"rk": False}})
+        assert set(fresh[3]) == {"alg", "sig"}
+        AuthenticatorData(fresh[2]).credential_data.public_key.verify(
+            fresh[2] + client_hash, fresh[3]["sig"])
+    # Repair through the public ADMIN path, which streams the certificate.
     admin()
-    card.cmd("verify", 0x20, data=b"123456")
-    assert card.cmd("SM2 after rebuild", 0x11) == (default if damage == "invalid-sm2" else custom)
+    card.cmd("verify to restore manufacturing material", 0x20, data=b"123456")
+    if unprovisioned:
+        verify_attestation = provision(card)
+    else:
+        card.cmd("restore key", 1, data=saved_key)
+        card.cmd("restore certificate", 2, data=saved_certificate)
+    card.cmd("restore SM2", 0x12, data=custom)
+    before = snapshot()
+    wire.command("RESET")
+    assert snapshot() == before
     fido()
-    assert call(4)[4]["clientPin"] is False
-    call(2, assertion, 0x2e)
-    verify_attestation = provision(card)
-    fido()
-    made = call(1, registration | {7: {"rk": False}})
-    verify_attestation(made, request[1])
-    assert AuthenticatorData(made[2]).counter == 1
-    call(2, assertion, 0x2e)
+    signed = call(2, assertion)
+    credential.public_key.verify(signed[2] + client_hash, signed[3])
+    assert AuthenticatorData(signed[2]).counter > counter
+    verify_attestation(call(1, registration | {7: {"rk": False}}), client_hash)
+    print(f"CTAP boot preservation {damage}: {len(card.checks)} checks passed")
 
 
 if __name__ == "__main__":
@@ -233,6 +329,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     with connection(args.host) as wire:
         run(wire)
-    for damage in ("missing-key", "short-key", "empty-cert", "invalid-sm2"):
+    for damage in BOOT_CASES:
         with connection(args.host) as wire:
-            boot_rebuild(wire, damage)
+            boot_preserves(wire, damage)

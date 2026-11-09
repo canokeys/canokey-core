@@ -4,7 +4,9 @@ use super::Status;
 #[cfg(feature = "admin")]
 use super::provision::Error;
 use crate::ports::Platform;
-pub(crate) use canokey_ctap::settings::{RECORD_BYTES, Sm2};
+#[cfg(feature = "admin")]
+pub(crate) use canokey_ctap::settings::RECORD_BYTES;
+pub(crate) use canokey_ctap::settings::Sm2;
 
 pub(crate) fn load(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<Sm2, Status> {
     canokey_ctap::settings::load(&mut super::adapter::Settings(p.storage))

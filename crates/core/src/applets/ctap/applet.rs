@@ -34,8 +34,12 @@ impl Applet {
         self.close(w, p);
         self.session.reset_persistent(p)
     }
-    pub fn install(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
-        self.session.install(p).map_err(|_| Sw::UNABLE_TO_PROCESS)
+    pub fn install(
+        &mut self,
+        _p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
+        self.session.install();
+        Ok(())
     }
     pub fn response_preemptable(&self) -> bool {
         // Responses longer than 256 bytes and U2F registration responses
