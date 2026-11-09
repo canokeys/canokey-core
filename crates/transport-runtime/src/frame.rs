@@ -5,10 +5,7 @@ use canokey_protocol::response::StatusWord;
 
 // ISO 7816-4 application names contain at most sixteen bytes. An oversized
 // name is drained without retaining it; P2 is checked before name matching.
-const AID_BYTES: usize = 16;
-
 pub struct Selection {
-    aid: [u8; AID_BYTES],
     used: usize,
 }
 impl Default for Selection {
@@ -17,33 +14,37 @@ impl Default for Selection {
     }
 }
 impl Selection {
+    pub const AID_BYTES: usize = 16;
     pub const fn new() -> Self {
-        Self {
-            aid: [0x00; AID_BYTES],
-            used: 0,
-        }
+        Self { used: 0 }
     }
-    pub fn consume(&mut self, bytes: &[u8]) {
+    /// The owner lends stable public-AID backing; it may reuse a closed response
+    /// allocation while retaining a different unfinished command input.
+    pub fn consume(&mut self, bytes: &[u8], aid: &mut [u8; Self::AID_BYTES]) {
         let Some(end) = self
             .used
             .checked_add(bytes.len())
-            .filter(|n| *n <= self.aid.len())
+            .filter(|n| *n <= aid.len())
         else {
-            self.used = self.aid.len() + 1;
+            self.used = aid.len() + 1;
             return;
         };
-        self.aid[self.used..end].copy_from_slice(bytes);
+        aid[self.used..end].copy_from_slice(bytes);
         self.used = end;
     }
     /// Call only after the complete APDU envelope passes validation. Collecting
     /// an AID never changes the selected applet or its authorization.
-    pub fn finish(&self, p2: u8) -> Result<&[u8], StatusWord> {
+    pub fn finish<'a>(
+        &self,
+        p2: u8,
+        aid: &'a [u8; Self::AID_BYTES],
+    ) -> Result<&'a [u8], StatusWord> {
         if p2 != 0x00 {
             Err(StatusWord::WRONG_P1P2)
-        } else if self.used > self.aid.len() {
+        } else if self.used > aid.len() {
             Err(StatusWord::FILE_NOT_FOUND)
         } else {
-            Ok(&self.aid[..self.used])
+            Ok(&aid[..self.used])
         }
     }
 }

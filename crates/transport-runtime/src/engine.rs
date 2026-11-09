@@ -134,7 +134,10 @@ impl<R: Dispatch<C>, C> Source for RoutedSource<'_, R, C> {
 
 enum FrameRoute {
     None,
-    Select(crate::frame::Selection),
+    Select {
+        aid: [u8; crate::frame::Selection::AID_BYTES],
+        selection: crate::frame::Selection,
+    },
     GetResponse,
     Eject,
     Command,
@@ -396,7 +399,10 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
         // the earlier branch so it can continue using the existing backing.
         self.close_response(p);
         if h.is_select_by_name() {
-            let route = FrameRoute::Select(crate::frame::Selection::new());
+            let route = FrameRoute::Select {
+                aid: [0x00; crate::frame::Selection::AID_BYTES],
+                selection: crate::frame::Selection::new(),
+            };
             if self.owner == Some(P::NFC) && self.chain.active() && self.router.fido_selected(p) {
                 // Unknown AID, invalid P2 and disabled NDEF preserve NFC's
                 // FIDO chain. Successful selection closes it in the router.
@@ -439,8 +445,8 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
         R: Dispatch<C>,
     {
         match &mut self.route {
-            FrameRoute::Select(selection) => {
-                selection.consume(bytes);
+            FrameRoute::Select { aid, selection } => {
+                selection.consume(bytes, aid);
                 Ok(())
             }
             FrameRoute::Command => self.router.consume(bytes, p),
@@ -507,10 +513,10 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
                     Reply::Status(Sw::COMMAND_NOT_ALLOWED)
                 };
             }
-            FrameRoute::Select(selection) => {
+            FrameRoute::Select { aid, selection } => {
                 let transport = self.transport();
                 let selected = selection
-                    .finish(info.header.p2)
+                    .finish(info.header.p2, &aid)
                     .and_then(|aid| self.router.select(aid, transport, p));
                 if let Err(sw) = selected {
                     self.router.reject_select(transport, p);
