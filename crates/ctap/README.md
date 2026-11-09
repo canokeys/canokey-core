@@ -190,3 +190,12 @@ errors stop without compensating writes. Outer owners retain provisional output
 erasure, key cleanup, transport leases and final publication. Attestation
 selection, primitive operations and PQ segmented reply construction remain
 product capabilities while their engines migrate.
+
+`provision::select` owns ordinary attestation material selection over the
+caller's existing temporary key loan. `MissingEither` reads certificate metadata
+and the key before applying Core's missing-pair fallback, with all other errors
+mapped through its existing invalid-material status. `OptionalCertificate`
+skips key access for an admitted zero certificate length and preserves product
+record/source errors. Source capabilities admit the exact private-key length;
+callers retain erasure on partial reads and certificate reload/signing owners.
+Strict PQ registration still requires both materials without self fallback.

@@ -277,31 +277,17 @@ fn respond(
     if !request.make && crate::ports::mldsa::parameters(request.algorithm).is_some() {
         return respond_mldsa_assertion(request, w, p, response, auth_len);
     }
-    let mut self_attest = false;
     let cert_len = if request.make {
-        let certificate = canokey_ctap::ports::Attestation::certificate_length(
-            &mut super::adapter::Attestation(p.storage),
+        let mut attestation_key = [0x00; canokey_ctap::provision::PRIVATE_KEY_BYTES];
+        let selected = canokey_ctap::provision::select(
+            &mut super::attestation::Material(p),
+            &mut attestation_key,
+            super::provision::CERT_LIMIT,
+            canokey_ctap::provision::Selection::MissingEither,
         );
-        let mut attestation_key = [0; 32];
-        let key = super::attestation::key(&mut attestation_key, p);
         let result = (|| {
-            let cert_len = match (key, certificate) {
-                (Ok(()), Ok(n)) if n != 0 && n <= super::provision::CERT_LIMIT => n,
-                (
-                    Ok(()) | Err(crate::ports::StorageError::Missing),
-                    Err(crate::ports::StorageError::Missing),
-                )
-                | (Err(crate::ports::StorageError::Missing), Ok(_)) => {
-                    self_attest = true;
-                    0
-                }
-                _ => {
-                    // I/O failure or malformed key material is not an unprovisioned
-                    // device. Clear even partially supplied private bytes on error.
-                    return Err(Status::Other);
-                }
-            };
-            if !self_attest {
+            let cert_len = selected.map_err(|_| Status::Other)?;
+            if cert_len != 0 {
                 p.memory.wipe(&mut w.key.bytes);
                 w.key.bytes[..32].copy_from_slice(&attestation_key);
             }
@@ -312,6 +298,7 @@ fn respond(
     } else {
         0
     };
+    let self_attest = request.make && cert_len == 0;
     let sign_algorithm = if request.make && !self_attest {
         alg::P256
     } else {
