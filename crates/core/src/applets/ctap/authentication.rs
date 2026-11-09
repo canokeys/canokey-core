@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Credential authorization and signing. All request bytes are owned before entry.
 use super::wire::{assertion_response, auth_data, make_response, pin_protocol};
-use super::{credential, credential_request::Parameters, pin, resident, Session, Status};
+use super::{Session, Status, credential, credential_request::Parameters, pin, resident};
 use crate::{
-    ports::{alg, KeyOperation, Platform},
+    ports::{KeyOperation, Platform, alg},
     runtime::workspace::Workspace,
 };
 use canokey_ctap::{authorization, session::Boundary};
+
+mod selection;
 use canokey_ports::{Crypto as _, Device as _, Memory as _};
 // Two 33-byte positive INTEGERs plus DER tags/lengths.
 const MAX_ECDSA_SIGNATURE_BYTES: usize = 72;
@@ -89,150 +91,21 @@ impl Session {
         )
         .map_err(authorization_error)?
         .is_some();
-        let mut selected = None;
-        let mut user_slot = None;
-        for id in params.ids() {
-            if !credential::permitted_id(id) {
-                continue;
-            }
-            if id[1] & resident::RESIDENT != 0 {
-                let Some((index, _)) = resident::find(id, &rp, w.input, p)? else {
-                    continue;
-                };
-                user_slot = Some(index);
-            } else {
-                user_slot = None;
-            }
-            match credential::open(id, self.sm2, &rp, w.key, p) {
-                Ok(_) if id[1] & credential::CRED_PROTECT_MASK != 3 || uv => {
-                    selected = Some(*id);
-                    break;
-                }
-                Ok(_) | Err(Status::NoCredentials) => (),
-                Err(error) => return Err(error),
-            }
-        }
-        let mut count = 0u8;
-        if !params.make && !params.list_present {
-            let mut next = crate::ports::Record::CTAP_CREDENTIALS;
-            while let Some((index, id)) = resident::discover(&mut next, &rp, uv, w.input, p)? {
-                count += 1;
-                if selected.is_none() {
-                    selected = Some(id);
-                    user_slot = Some(index);
-                }
-            }
-        }
-        p.memory.wipe(&mut w.key.bytes);
-        if params.make && selected.is_some() {
-            return match self.credential_presence(w, p) {
-                Err(Status::Cancelled) => Err(Status::Cancelled),
-                _ => Err(Status::CredentialExcluded),
-            };
-        }
-        if !params.make && selected.is_none() {
-            return Err(Status::NoCredentials);
-        }
-        if params.up {
-            self.credential_presence(w, p)?;
-            // Presence consumes permissions except LBW. Silent assertions
-            // retain authorization for subsequent interactive assertions.
-            self.permissions = canokey_ctap::client_pin::token::after_presence(
-                u16::from(self.permissions),
-                u16::from(pin::PERMISSION_LARGE_BLOB_WRITE),
-            ) as u8;
-            if self.permissions == 0 {
-                self.clear_token(p.memory);
-            }
-        }
-        if let Some(hmac) = &params.hmac {
-            self.prepare_hmac(hmac, w, p)?;
-        }
-        if !params.make {
-            self.assertion.rp = rp;
-            self.assertion.client_hash = params.client_hash;
-            self.assertion.next = user_slot.unwrap_or(0);
-            self.assertion.remaining = count.saturating_sub(1);
-            self.assertion.uv = uv;
-            self.assertion.up = params.up;
-            self.assertion.get_cred_blob = params.get_cred_blob;
-            self.assertion.third_party_payment = params.third_party_payment;
-            return self.sign_assertion(
-                &selected.ok_or(Status::NoCredentials)?,
-                user_slot,
-                count,
-                count > 1,
-                w,
-                p,
-            );
-        }
-        let algorithm = params.algorithm.ok_or(Status::UnsupportedAlgorithm)?;
-        let id = credential::create(
-            algorithm,
-            params.protection
-                | if params.third_party_payment {
-                    credential::THIRD_PARTY_PAYMENT
-                } else {
-                    0
-                }
-                | if params.large_blob_key {
-                    resident::LARGE_BLOB_KEY
-                } else {
-                    0
-                }
-                | if params.resident {
-                    resident::RESIDENT
-                } else {
-                    0
-                },
-            self.sm2,
-            &rp,
-            w.key,
-            p,
-        )?;
-        if params.resident {
-            // Preserve the ECC private/public view (or PQ seed) needed by respond.
-            // The unused RSA tail holds the other three resident members.
-            const COPY_OFFSET: usize =
-                crate::ports::key_layout::ECC_PUBLIC + crate::ports::key_layout::ECC_PUBLIC_BYTES;
-            const {
-                assert!(crate::ports::key_layout::SIZE - COPY_OFFSET >= resident::COPY_BYTES);
-            }
-            resident::store(
+        canokey_ctap::selection::execute(
+            params.make,
+            params.up,
+            selection::Operation {
+                session: self,
                 params,
-                &id,
-                &rp,
-                w.output,
-                (&mut w.key.bytes[COPY_OFFSET..COPY_OFFSET + resident::COPY_BYTES])
-                    .try_into()
-                    .unwrap(),
-                p,
-            )?;
-        }
-        respond(
-            &Signing {
-                id: &id,
+                workspace: w,
+                platform: p,
                 rp: &rp,
-                client_hash: &params.client_hash,
-                algorithm,
-                sm2: self.sm2,
-                make: true,
-                up: params.up,
                 uv,
+                min_pin_length,
+                selected: None,
                 user_slot: None,
                 count: 0,
-                details: false,
-                min_pin_length,
-                hmac_secret: params.hmac_secret,
-                hmac: &self.assertion.hmac,
-                cred_blob: params.cred_blob_len.map(|n| params.resident && n <= 32),
-                get_cred_blob: params.get_cred_blob,
-                third_party_payment: params.third_party_payment,
-                protection: params.protection_requested.then_some(params.protection),
             },
-            w,
-            p,
-            &mut self.auth_response,
         )
     }
     fn next_assertion(

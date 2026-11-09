@@ -75,8 +75,8 @@ empty-authentication presence probes, option checks, PIN/always-UV/resident poli
 and token admission. Product hooks read policy, service the probe and verify the
 existing token; the result retains a product deadline or the bound-session marker.
 The explicit silent-secret check order preserves error/read precedence for the
-borrowed and streamed schema adapters. Selection, normal UP, storage and signing
-remain outside this admission capability while the full engine is migrated.
+borrowed and streamed schema adapters. Selection and normal UP use the separate `selection` capability; storage and
+signing remain product adapters while the full engine is migrated.
 
 `client_pin::operation` owns standard state admission, agreement, authenticated
 new-PIN preparation and Set/Change/Token sequencing. Its synchronous backend
@@ -119,3 +119,12 @@ cargo test -p canokey-ctap
 using only portable dependencies. Other suites check lifetime/erasure, bounded
 reads, publication, time policy and fixed product snapshots. These host tests do
 not qualify hardware, native cleanup under Linux sanitizers or resource budgets.
+
+`selection` sequences ordinary credential-list selection, exclusion disclosure,
+normal presence, successful-UP consumption and response work. `listed` preserves
+first-match, parse-tail and inspect-all profiles without owning IDs, keys or
+records. Product adapters retain resident scan/count order, silent deadline
+checks, storage errors and commit points. The operation is consumed after UP; an adapter may borrow its existing assertion
+and publish it into a continuation only after success, without allocating another
+session or secret backing. Cancellation during exclusion is mapped by
+the product; ordinary presence is never consumed on exclusion or failure.

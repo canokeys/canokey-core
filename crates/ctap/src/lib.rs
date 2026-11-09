@@ -13,6 +13,7 @@ pub mod provision;
 pub mod request;
 pub mod resident;
 pub mod response;
+pub mod selection;
 pub mod session;
 pub mod settings;
 pub mod status;
