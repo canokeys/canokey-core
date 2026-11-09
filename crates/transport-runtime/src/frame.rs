@@ -1,6 +1,52 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Incremental APDU framing with exact consumer errors and sticky failure.
 use canokey_protocol::apdu::{CommandInfo, Error, FrameDecoder, FrameEvent};
+use canokey_protocol::response::StatusWord;
+
+// ISO 7816-4 application names contain at most sixteen bytes. An oversized
+// name is drained without retaining it; P2 is checked before name matching.
+const AID_BYTES: usize = 16;
+
+pub struct Selection {
+    aid: [u8; AID_BYTES],
+    used: usize,
+}
+impl Default for Selection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl Selection {
+    pub const fn new() -> Self {
+        Self {
+            aid: [0x00; AID_BYTES],
+            used: 0,
+        }
+    }
+    pub fn consume(&mut self, bytes: &[u8]) {
+        let Some(end) = self
+            .used
+            .checked_add(bytes.len())
+            .filter(|n| *n <= self.aid.len())
+        else {
+            self.used = self.aid.len() + 1;
+            return;
+        };
+        self.aid[self.used..end].copy_from_slice(bytes);
+        self.used = end;
+    }
+    /// Call only after the complete APDU envelope passes validation. Collecting
+    /// an AID never changes the selected applet or its authorization.
+    pub fn finish(&self, p2: u8) -> Result<&[u8], StatusWord> {
+        if p2 != 0x00 {
+            Err(StatusWord::WRONG_P1P2)
+        } else if self.used > self.aid.len() {
+            Err(StatusWord::FILE_NOT_FOUND)
+        } else {
+            Ok(&self.aid[..self.used])
+        }
+    }
+}
 
 /// Preserve the consumer status when decoding stops inside an application callback.
 /// Structural errors use the product's length error; no payload is retained here.

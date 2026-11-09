@@ -29,6 +29,10 @@ pub trait Backend {
         true
     }
     fn reset(&mut self);
+    /// Release an unfinished streamed input without revoking applet selection
+    /// or authorization. Buffered ingress never lent application input and
+    /// never invokes this hook. Full resets and slot power use reset instead.
+    fn abort_input(&mut self);
     fn slot_power(&mut self) -> bool {
         self.reset();
         true
@@ -113,6 +117,7 @@ struct NoBackend {
     admitted: bool,
 }
 impl Backend for NoBackend {
+    fn abort_input(&mut self) {}
     fn admit(&mut self) -> bool {
         self.admitted
     }
@@ -335,7 +340,7 @@ impl<P: Policy, I: Input> Transport<P, I> {
             }
         }
         if self.input.pending() {
-            backend.reset();
+            backend.abort_input();
             self.input.finished();
         }
         let status = if slot != 0x00 {
@@ -416,7 +421,7 @@ impl<P: Policy, I: Input> Transport<P, I> {
             && now.wrapping_sub(self.last) >= RECEIVE_TIMEOUT_MS
         {
             if self.input.pending() {
-                backend.reset();
+                backend.abort_input();
             }
             self.input.clear();
             if !self.frame.has_header() {

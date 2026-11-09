@@ -134,7 +134,7 @@ impl<R: Dispatch<C>, C> Source for RoutedSource<'_, R, C> {
 
 enum FrameRoute {
     None,
-    Select { aid: [u8; 16], used: usize },
+    Select(crate::frame::Selection),
     GetResponse,
     Eject,
     Command,
@@ -396,10 +396,7 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
         // the earlier branch so it can continue using the existing backing.
         self.close_response(p);
         if h.is_select_by_name() {
-            let route = FrameRoute::Select {
-                aid: [0; 16],
-                used: 0,
-            };
+            let route = FrameRoute::Select(crate::frame::Selection::new());
             if self.owner == Some(P::NFC) && self.chain.active() && self.router.fido_selected(p) {
                 // Unknown AID, invalid P2 and disabled NDEF preserve NFC's
                 // FIDO chain. Successful selection closes it in the router.
@@ -442,16 +439,8 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
         R: Dispatch<C>,
     {
         match &mut self.route {
-            FrameRoute::Select { aid, used, .. } => {
-                let Some(end) = used.checked_add(bytes.len()).filter(|n| *n <= aid.len()) else {
-                    // Drain an unmatchable AID before rejecting the complete
-                    // SELECT. P2 precedence and USB FIDO deselection belong
-                    // to finalization, including when input arrives in pieces.
-                    *used = aid.len() + 1;
-                    return Ok(());
-                };
-                aid[*used..end].copy_from_slice(bytes);
-                *used = end;
+            FrameRoute::Select(selection) => {
+                selection.consume(bytes);
                 Ok(())
             }
             FrameRoute::Command => self.router.consume(bytes, p),
@@ -518,15 +507,11 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
                     Reply::Status(Sw::COMMAND_NOT_ALLOWED)
                 };
             }
-            FrameRoute::Select { aid, used } => {
+            FrameRoute::Select(selection) => {
                 let transport = self.transport();
-                let selected = if info.header.p2 != 0x00 {
-                    Err(Sw::WRONG_P1P2)
-                } else if used > aid.len() {
-                    Err(Sw::FILE_NOT_FOUND)
-                } else {
-                    self.router.select(&aid[..used], transport, p)
-                };
+                let selected = selection
+                    .finish(info.header.p2)
+                    .and_then(|aid| self.router.select(aid, transport, p));
                 if let Err(sw) = selected {
                     self.router.reject_select(transport, p);
                     if self.owner == Some(P::NFC)

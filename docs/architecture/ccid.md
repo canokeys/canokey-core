@@ -47,7 +47,22 @@ rule; they have no application input owner to revoke. Late body bytes must
 never become independently executable power/APDU headers. USB reset aborts the
 drain. No new request/response allocation is introduced: the buffered owner adds
 one four-byte clock; streaming moves its existing clock to Transport. Only
-successful streaming begin authorizes a timeout to reset application state.
+successful streaming begin authorizes a timeout to cancel its provisional input
+through Backend::abort_input. This capability must preserve selected applets and
+their PIN/token authority; it does not advance the card-session generation.
+Envelope errors with a live input use the same cancellation. Backend::reset is
+reserved for card power and transport reset. Buffered ingress never lent that
+input owner and does not invoke the cancellation capability.
+
+SELECT AID collection and P2 admission are shared with the APDU runtime through
+frame::Selection. An unmatchable name is drained before final rejection; P2
+errors precede name matching. Only a completely validated SELECT can change
+selection. The same selected applet retains its grants. Rejected USB SELECT
+revokes FIDO only; NFC retains its selection and unfinished FIDO command prefix.
+Provisional frame cancellation preserves selection and authority. Streaming
+input/response backing preservation still needs separate convergence: cancelling
+a streamed frame may already have overwritten a logical prefix or closed its
+response before the outer CCID envelope was complete.
 
 Both USB facades process the mailbox arrival tick before checking current loop
 time. This accepts a continuation that arrived before the deadline even if the
