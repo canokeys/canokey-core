@@ -64,6 +64,9 @@ pub trait Reader {
 /// Strict five-field product policy: order-independent, no optional members,
 /// no duplicate labels. The enclosing reader owns the map and its byte backing.
 /// Incremental products use Field with their existing ordered/optional policy.
+/// This is structural admission only. Full request/state admission must finish
+/// before Exchange::agree validates the point inside the P-256 primitive, before
+/// secret multiplication. Decoding never needs crypto or PKE scratch.
 pub fn read_strict<R: Reader>(
     reader: &mut R,
     point: &mut [u8; POINT_BYTES],

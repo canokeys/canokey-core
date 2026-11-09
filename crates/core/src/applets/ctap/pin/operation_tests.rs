@@ -12,6 +12,8 @@ struct Backend {
     generated: usize,
     exported: usize,
     agreed: usize,
+    expected_peer: Option<[u8; 64]>,
+    reads: usize,
     fail_generate: bool,
     fail_export: bool,
     fail_agree: bool,
@@ -34,6 +36,7 @@ struct Backend {
 }
 impl Storage for Backend {
     fn load(&mut self, id: Record, out: &mut [u8]) -> Result<usize, StorageError> {
+        self.reads += 1;
         assert_eq!(id, Record::CtapPin);
         let Some(record) = &self.record else {
             return Err(StorageError::Missing);
@@ -97,7 +100,7 @@ impl Crypto for Backend {
             KeyOperation::Agree => {
                 self.agreed += 1;
                 assert_eq!(&key.bytes[..32], &[7; 32]);
-                assert_eq!(input, [5; 64]);
+                assert_eq!(input, self.expected_peer.unwrap_or([0x05; 64]));
                 out[..32].fill(0x17);
                 if self.fail_agree {
                     Err(CryptoError::Failure)
@@ -766,6 +769,105 @@ fn ecdh_failure_and_short_output_precede_internal_protocol_admission_and_kdf() {
             assert_eq!(crypto.mac_calls, 0);
             assert!(storage.retries_written.is_empty());
             assert_eq!(storage.record.as_ref().unwrap()[RETRIES], 8);
+        }
+    }
+}
+
+use super::super::client_pin::admission_cases as point_admission_cases;
+
+#[test]
+fn parsed_point_rejection_never_reaches_kdf_decrypt_retry_or_token_commit() {
+    for point in point_admission_cases::invalid_points() {
+        for (bytes, schema_error) in point_admission_cases::legacy_token_cases_for_point(&point) {
+            let memory = Backend::default();
+            let mut record = vec![0x42; RP_HASHES];
+            record[RETRIES..RP_HASHES].copy_from_slice(&[8, 4, 4, 0x00]);
+            let mut storage = Backend {
+                record: Some(record.clone()),
+                ..Backend::default()
+            };
+            let mut crypto = Backend {
+                fail_agree: true,
+                expected_peer: Some(point),
+                ..Backend::default()
+            };
+            let mut device = Backend::default();
+            let mut session = Session::new();
+            session.agreement_ready = true;
+            session.agreement[..32].fill(0x07);
+            session.token.fill(0x99);
+            session.permissions = PERMISSION_CONFIG;
+            let agreement = session.agreement;
+            let attempts = session.pin_attempts;
+            let mut backing = SessionWorkspace::new();
+            let mut workspace = backing.classic_with(&memory);
+            workspace.input.fill(0xee);
+            workspace.output.fill(0xee);
+            workspace.key.bytes.fill(0xee);
+            let mut parser = super::super::client_pin::Parser::new();
+            parser.consume(&bytes);
+            let mut command = parser.finish();
+            assert_eq!(
+                command.as_ref().err().map(|status| *status as u8),
+                schema_error
+            );
+            let response = session.execute(
+                &mut command,
+                &mut workspace,
+                &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                    storage: &mut storage,
+                    crypto: &mut crypto,
+                    device: &mut device,
+                    memory: &memory,
+                },
+            );
+            let expected = schema_error.unwrap_or(Status::InvalidParameter as u8);
+            assert!(
+                matches!(response, super::super::Response::Error(status) if status as u8 == expected)
+            );
+            assert_eq!(session.agreement, agreement);
+            assert!(session.agreement_ready);
+            assert_eq!(session.pin_attempts, attempts);
+            assert_eq!(session.token, [0x99; 32]);
+            assert_eq!(session.permissions, PERMISSION_CONFIG);
+            // Session::execute enters the credential workspace owner only for
+            // admitted ClientPIN commands. Parse failures leave caller-owned
+            // staging untouched; transport/runtime cleanup owns that backing.
+            let untouched = if schema_error.is_some() { 0xee } else { 0x00 };
+            assert!(
+                workspace
+                    .input
+                    .iter()
+                    .chain(workspace.output.iter())
+                    .chain(workspace.key.bytes.iter())
+                    .all(|byte| *byte == untouched)
+            );
+            assert_eq!(storage.record.as_ref(), Some(&record));
+            assert!(storage.retries_written.is_empty());
+            assert_eq!(storage.reads, usize::from(schema_error.is_none()));
+            assert_eq!(crypto.agreed, usize::from(schema_error.is_none()));
+            assert_eq!(
+                (
+                    crypto.generated,
+                    crypto.exported,
+                    crypto.sha_calls,
+                    crypto.mac_calls,
+                    crypto.decrypt_calls,
+                    crypto.encrypt_calls,
+                    crypto.random_calls
+                ),
+                (0, 0, 0, 0, 0, 0, 0)
+            );
+            if let Ok(super::super::Command::ClientPin(parameters)) = command {
+                assert!(
+                    parameters
+                        .auth
+                        .iter()
+                        .chain(parameters.new_pin.iter())
+                        .chain(parameters.pin_hash.iter())
+                        .all(|byte| *byte == 0x00)
+                );
+            }
         }
     }
 }

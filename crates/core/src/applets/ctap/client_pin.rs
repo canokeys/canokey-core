@@ -304,15 +304,16 @@ mod tests {
 }
 
 #[cfg(test)]
+pub(super) mod admission_cases {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../ctap/tests/fixtures/client_pin_admission.rs"
+    ));
+}
+
+#[cfg(test)]
 mod schema_tests {
     use super::*;
-
-    mod admission_cases {
-        include!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../ctap/tests/fixtures/client_pin_admission.rs"
-        ));
-    }
 
     #[test]
     fn required_scope_matrix_matches_wire_status_at_every_fragment_boundary() {
@@ -326,6 +327,24 @@ mod schema_tests {
                     expected,
                     "split={split} bytes={bytes:?}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_points_are_structural_fields_until_complete_request_admission() {
+        for point in admission_cases::invalid_points() {
+            for (bytes, expected) in admission_cases::legacy_token_cases_for_point(&point) {
+                for split in 0..=bytes.len() {
+                    let mut parser = Parser::new();
+                    parser.consume(&bytes[..split]);
+                    parser.consume(&bytes[split..]);
+                    assert_eq!(
+                        parser.finish().err().map(|error| error as u8),
+                        expected,
+                        "split={split} bytes={bytes:?}"
+                    );
+                }
             }
         }
     }

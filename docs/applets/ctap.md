@@ -920,3 +920,17 @@ permissioned MC/GA tokens. A legacy getPINToken request missing agreement/hash
 and carrying scope reports MissingParameter; a complete legacy request with scope
 reports InvalidParameter. The admission engine performs no crypto, storage,
 presence or token mutation. Product permission capabilities remain explicit.
+
+
+COSE agreement parsing is structural only in both shared consumers. Command
+required-field/scope admission and PIN-state admission precede ECDH; the P-256
+primitive validates field bounds and curve membership before secret multiplication.
+No scalar-one validation is performed while parsing ClientPIN or hmac-secret.
+Consequently an invalid point cannot shadow missing fields or forbidden legacy
+scope. Structurally complete invalid peers fail before KDF, decrypt or durable PIN
+retry charging. The same shared raw matrix covers four invalid points across
+both protocols, missing fields, forbidden scope and unknown nested fields; Core
+checks every parser split and its actual Session adapter verifies no later crypto
+or mutation. Existing primitive errors, key/workspace wiping and authority retention
+remain under their current owners. Direct Session parse-error tests leave the
+caller-owned staging untouched; transport/runtime cleanup owns those buffers.
