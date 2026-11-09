@@ -267,42 +267,13 @@ fn respond(
     response: &mut Option<super::Response>,
 ) -> Result<usize, Status> {
     let counter = credential::counter(p)?;
-    auth_data::header(
-        w.input,
-        request.rp,
-        &counter,
-        request.up,
-        request.uv,
-        request.make,
-    );
-    let mut auth_len = auth_data::HEADER_BYTES;
-    if request.make {
-        if crate::ports::mldsa::parameters(request.algorithm).is_some() {
-            return respond_mldsa_make(request, w, p, response, auth_len);
+    let built = construct_auth_data(request, &counter, w, p)?;
+    let auth_len = match built {
+        auth_data::Constructed::Complete(length) => length,
+        auth_data::Constructed::ExternalPublic => {
+            return respond_mldsa_make(request, w, p, response, auth_data::HEADER_BYTES);
         }
-        let n = p
-            .crypto
-            .key_operation(
-                KeyOperation::Public,
-                request.algorithm,
-                &mut w.key,
-                &[],
-                w.output,
-            )
-            .unwrap_or_default();
-        if n != credential::public_length(request.algorithm) {
-            return Err(Status::Other);
-        }
-        attested_header(&mut w.input[..], request.id);
-        auth_len = auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES;
-        let tail = &mut w.input[auth_len..];
-        let mut e = Encoder::new(tail);
-        super::encoding::public_key(&mut e, request.algorithm, request.sm2, &w.output[..n])
-            .map_err(|_| Status::Other)?;
-        // The encoder retains a suffix of the fixed input workspace.
-        auth_len = crate::runtime::workspace::INPUT_BYTES.wrapping_sub(e.writer().len());
-    }
-    auth_len = append_extensions(request, w, p, auth_len)?;
+    };
     if !request.make && crate::ports::mldsa::parameters(request.algorithm).is_some() {
         return respond_mldsa_assertion(request, w, p, response, auth_len);
     }
@@ -473,13 +444,9 @@ fn load_user<'a>(
     resident::decode(&out[..n]).map(Some)
 }
 
-fn append_extensions(
-    request: &Signing<'_>,
-    w: &mut Workspace,
-    p: &mut Platform<'_, impl crate::ports::Backends>,
-    mut auth_len: usize,
-) -> Result<usize, Status> {
-    let fields = canokey_ctap::response::extensions::Fields {
+#[inline(always)]
+fn extension_fields(request: &Signing<'_>) -> canokey_ctap::response::extensions::Fields {
+    canokey_ctap::response::extensions::Fields {
         make: request.make,
         protection: request.protection,
         min_pin_length: request.min_pin_length,
@@ -488,35 +455,165 @@ fn append_extensions(
         hmac_secret: request.hmac_secret,
         hmac: request.hmac.active(),
         third_party_payment: request.third_party_payment,
-    };
-    if fields.count() != 0 {
-        w.input[auth_data::FLAGS_OFFSET] |= auth_data::ED;
-        let mut blob = [0; 32];
-        let mut blob_len = 0;
-        if request.get_cred_blob {
-            if let Some(entry) = load_user(request.user_slot, w.output, p)? {
-                blob_len = entry.blob.len();
-                blob[..blob_len].copy_from_slice(entry.blob);
-            }
-        }
-        let mut hmac_output = [0; 80];
-        let hmac_len = if request.hmac.active() {
-            request
-                .hmac
-                .output(request.id, request.rp, request.uv, &mut hmac_output, p)?
-        } else {
-            0
-        };
-        let mut e = Encoder::new(&mut w.input[auth_len..]);
-        fields
-            .encode(&mut e, &blob[..blob_len], &hmac_output[..hmac_len], || {
-                request.id[1] & credential::THIRD_PARTY_PAYMENT != 0
-            })
-            .map_err(|_| Status::Other)?;
-        // The encoder only consumes this suffix; its remainder cannot exceed
-        // INPUT_BYTES, and subtracting it gives the absolute cursor directly.
-        auth_len = crate::runtime::workspace::INPUT_BYTES.wrapping_sub(e.writer().len());
     }
+}
+
+#[inline(always)]
+fn construct_auth_data(
+    request: &Signing<'_>,
+    counter: &[u8; 4],
+    w: &mut Workspace,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<auth_data::Constructed, Status> {
+    auth_data::construct(
+        auth_data::Construction {
+            rp: request.rp,
+            counter,
+            up: request.up,
+            uv: request.uv,
+            make: request.make,
+            extension_flag: auth_data::ExtensionFlag::AfterPublic,
+        },
+        AuthData {
+            request,
+            workspace: w,
+            platform: p,
+        },
+    )
+}
+
+struct AuthData<'a, 'r, 'p, 'w, B: crate::ports::Backends> {
+    request: &'a Signing<'r>,
+    workspace: &'a mut Workspace<'w>,
+    platform: &'a mut Platform<'p, B>,
+}
+impl<B: crate::ports::Backends> auth_data::Constructor for AuthData<'_, '_, '_, '_, B> {
+    type Error = Status;
+    type Public = usize;
+    type Extensions = canokey_ctap::response::extensions::Fields;
+    #[inline(always)]
+    fn data(&mut self) -> &mut [u8] {
+        self.workspace.input
+    }
+    #[inline(always)]
+    fn prepare_public(&mut self) -> Result<usize, Status> {
+        let length = self
+            .platform
+            .crypto
+            .key_operation(
+                KeyOperation::Public,
+                self.request.algorithm,
+                self.workspace.key,
+                &[],
+                self.workspace.output,
+            )
+            .unwrap_or_default();
+        if length != credential::public_length(self.request.algorithm) {
+            return Err(Status::Other);
+        }
+        Ok(length)
+    }
+    #[inline(always)]
+    fn attested(&mut self) -> usize {
+        // Share the existing out-of-line helper with PQ framing.
+        attested_header(self.workspace.input, self.request.id);
+        auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES
+    }
+    #[inline(always)]
+    fn public(&mut self, cursor: usize, length: usize) -> Result<usize, Status> {
+        let capacity = crate::runtime::workspace::INPUT_BYTES;
+        let mut e = Encoder::new(&mut self.workspace.input[cursor..]);
+        super::encoding::public_key(
+            &mut e,
+            self.request.algorithm,
+            self.request.sm2,
+            &self.workspace.output[..length],
+        )
+        .map_err(|_| Status::Other)?;
+        Ok(capacity.wrapping_sub(e.writer().len()))
+    }
+    #[inline(always)]
+    fn external_public(&self) -> bool {
+        crate::ports::mldsa::parameters(self.request.algorithm).is_some()
+    }
+    #[inline(always)]
+    fn prepare_extensions(&self) -> Option<Self::Extensions> {
+        let fields = extension_fields(self.request);
+        (fields.count() != 0).then_some(fields)
+    }
+    #[inline(always)]
+    fn extensions(&mut self, cursor: usize, fields: Self::Extensions) -> Result<usize, Status> {
+        append_extensions(self.request, self.workspace, self.platform, cursor, fields)
+    }
+    #[inline(always)]
+    fn late_extensions(self, cursor: usize) -> Result<usize, Status> {
+        auth_data::extend::<Self>(self.request, self.workspace, self.platform, cursor)
+    }
+}
+
+impl<'r, 'p, 'w, B: crate::ports::Backends> auth_data::ExtensionConstructor
+    for AuthData<'_, 'r, 'p, 'w, B>
+{
+    type Request = Signing<'r>;
+    type Workspace = Workspace<'w>;
+    type Platform = Platform<'p, B>;
+    type Prepared = canokey_ctap::response::extensions::Fields;
+    type Error = Status;
+    #[inline(always)]
+    fn prepare(request: &Signing<'r>) -> Option<Self::Prepared> {
+        let fields = extension_fields(request);
+        (fields.count() != 0).then_some(fields)
+    }
+    #[inline(always)]
+    fn data(workspace: &mut Self::Workspace) -> &mut [u8] {
+        workspace.input
+    }
+    #[inline(always)]
+    fn encode(
+        request: &Signing<'r>,
+        workspace: &mut Self::Workspace,
+        platform: &mut Self::Platform,
+        cursor: usize,
+        fields: Self::Prepared,
+    ) -> Result<usize, Status> {
+        append_extensions(request, workspace, platform, cursor, fields)
+    }
+}
+
+#[inline(always)]
+fn append_extensions(
+    request: &Signing<'_>,
+    w: &mut Workspace,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+    mut auth_len: usize,
+    fields: canokey_ctap::response::extensions::Fields,
+) -> Result<usize, Status> {
+    let mut blob = [0; 32];
+    let mut blob_len = 0;
+    if request.get_cred_blob {
+        if let Some(entry) = load_user(request.user_slot, w.output, p)? {
+            blob_len = entry.blob.len();
+            blob[..blob_len].copy_from_slice(entry.blob);
+        }
+    }
+    let mut hmac_output = [0; 80];
+    let hmac_len = if request.hmac.active() {
+        request
+            .hmac
+            .output(request.id, request.rp, request.uv, &mut hmac_output, p)?
+    } else {
+        0
+    };
+    let capacity = crate::runtime::workspace::INPUT_BYTES;
+    let mut e = Encoder::new(&mut w.input[auth_len..]);
+    fields
+        .encode(&mut e, &blob[..blob_len], &hmac_output[..hmac_len], || {
+            request.id[1] & credential::THIRD_PARTY_PAYMENT != 0
+        })
+        .map_err(|_| Status::Other)?;
+    // The encoder only consumes this suffix; its remainder cannot exceed
+    // INPUT_BYTES, and subtracting it gives the absolute cursor directly.
+    auth_len = capacity.wrapping_sub(e.writer().len());
     Ok(auth_len)
 }
 
@@ -592,7 +689,7 @@ fn respond_mldsa_make(
     let cert_len = super::attestation::certificate(p)?;
     // Extensions are encoded once for classic and streamed keys. The large
     // public key is spliced between the COSE header and these extension bytes.
-    let auth_end = append_extensions(request, w, p, auth_prefix)?;
+    let auth_end = auth_data::extend::<AuthData<'_, '_, '_, '_, _>>(request, w, p, auth_prefix)?;
     let extension_len = auth_end - auth_prefix;
     let mut cose = [0u8; 32];
     let mut ce = Encoder::new(&mut cose[..]);
