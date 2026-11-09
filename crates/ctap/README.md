@@ -171,3 +171,12 @@ retain algorithm admission, SM2 policy, key generation, crypto, signing, residen
 commit, segmented public-key assembly and response publication. Classic public
 length/self-attestation helpers exclude PQ variants already dispatched by the
 shared constructor; no algorithm is added or disabled by that distinction.
+
+
+`signing::sign` owns the ordinary CTAP algorithm pipeline: ES256 hashes the
+transcript with SHA-256 and emits DER, Ed25519 signs the original message, and
+SM2 signs its ZA-prefixed digest with fixed-width output. Native results must be
+64 bytes before encoding. Product capabilities borrow existing key, transcript
+and output backing, preserving primitive error mapping and fault checks. The
+engine does not select attestation keys, commit resident records or publish a
+response; those stages and PQ streaming remain to migrate.

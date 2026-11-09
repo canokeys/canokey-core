@@ -321,49 +321,20 @@ fn respond(
     // 32-byte client hash cannot overflow usize. Slice checks still bound it.
     let message_end = auth_len.wrapping_add(32);
     w.input[auth_len..message_end].copy_from_slice(request.client_hash);
-    let mut digest = [0; 32];
-    let message = if sign_algorithm == alg::P256 {
-        p.crypto
-            .sha256(&w.input[..message_end], &mut digest)
-            .unwrap_or_default();
-        &digest[..]
-    } else if sign_algorithm == alg::SM2 {
-        let n = p
-            .crypto
-            .key_operation(
-                KeyOperation::Sm2MessageDigest,
-                alg::SM2,
-                &mut w.key,
-                &w.input[..message_end],
-                w.output,
-            )
-            .unwrap_or_default();
-        if n != 32 {
-            return Err(Status::Other);
-        }
-        digest.copy_from_slice(&w.output[..32]);
-        &digest[..]
-    } else {
-        &w.input[..message_end]
+    let algorithm = match sign_algorithm {
+        alg::P256 => canokey_ctap::signing::Algorithm::Es256,
+        alg::SM2 => canokey_ctap::signing::Algorithm::Sm2,
+        _ => canokey_ctap::signing::Algorithm::Ed25519,
     };
-    let n = p
-        .crypto
-        .key_operation(
-            KeyOperation::EcSign,
-            sign_algorithm,
-            &mut w.key,
-            message,
-            w.output,
-        )
-        .unwrap_or_default();
-    if n != 64 {
-        return Err(Status::Other);
-    }
-    let n = if sign_algorithm == alg::P256 {
-        der_signature(w.output, n).unwrap_or_default()
-    } else {
-        n
-    };
+    let n = canokey_ctap::signing::sign(
+        algorithm,
+        ClassicSigning {
+            algorithm: sign_algorithm,
+            message_end,
+            workspace: w,
+            platform: p,
+        },
+    )?;
     let mut signature = [0; MAX_ECDSA_SIGNATURE_BYTES];
     signature[..n].copy_from_slice(&w.output[..n]);
     p.memory.wipe(&mut w.key.bytes);
@@ -419,6 +390,85 @@ fn respond(
         total,
     });
     Ok(total)
+}
+
+// The shared engine borrows the already concatenated workspace transcript.
+// Preserve primitive failure mapping and SM2's exact digest-length check.
+struct ClassicSigning<'a, 'w, 'p, B: crate::ports::Backends> {
+    algorithm: u8,
+    message_end: usize,
+    workspace: &'a mut Workspace<'w>,
+    platform: &'a mut Platform<'p, B>,
+}
+impl<B: crate::ports::Backends> canokey_ctap::signing::Backend for ClassicSigning<'_, '_, '_, B> {
+    type Error = Status;
+    type Signature = usize;
+    #[inline(always)]
+    fn digest(
+        &mut self,
+        algorithm: canokey_ctap::signing::Algorithm,
+        output: &mut [u8; 32],
+    ) -> Result<(), Status> {
+        let w = &mut self.workspace;
+        if algorithm == canokey_ctap::signing::Algorithm::Es256 {
+            self.platform
+                .crypto
+                .sha256(&w.input[..self.message_end], output)
+                .unwrap_or_default();
+        } else {
+            let length = self
+                .platform
+                .crypto
+                .key_operation(
+                    KeyOperation::Sm2MessageDigest,
+                    alg::SM2,
+                    &mut w.key,
+                    &w.input[..self.message_end],
+                    w.output,
+                )
+                .unwrap_or_default();
+            if length != canokey_ctap::signing::DIGEST_BYTES {
+                return Err(Status::Other);
+            }
+            output.copy_from_slice(&w.output[..canokey_ctap::signing::DIGEST_BYTES]);
+        }
+        Ok(())
+    }
+    #[inline(always)]
+    fn sign(&mut self, digest: Option<&[u8; 32]>) -> Result<usize, Status> {
+        let w = &mut self.workspace;
+        let message = match digest {
+            Some(digest) => &digest[..],
+            None => &w.input[..self.message_end],
+        };
+        Ok(self
+            .platform
+            .crypto
+            .key_operation(
+                KeyOperation::EcSign,
+                self.algorithm,
+                &mut w.key,
+                message,
+                w.output,
+            )
+            .unwrap_or_default())
+    }
+    #[inline(always)]
+    fn length(&self, signature: &usize) -> usize {
+        *signature
+    }
+    #[inline(always)]
+    fn der(&mut self, signature: usize) -> Result<usize, Status> {
+        Ok(der_signature(self.workspace.output, signature).unwrap_or_default())
+    }
+    #[inline(always)]
+    fn raw(&mut self, signature: usize) -> Result<usize, Status> {
+        Ok(signature)
+    }
+    #[inline(always)]
+    fn invalid_signature() -> Status {
+        Status::Other
+    }
 }
 
 /// Attested credential data header after rpIdHash/flags/counter: AAGUID,
