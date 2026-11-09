@@ -10,6 +10,7 @@ pub mod credential;
 pub mod ports;
 pub mod presence;
 pub mod provision;
+pub mod registration;
 pub mod request;
 pub mod resident;
 pub mod response;

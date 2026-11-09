@@ -180,3 +180,13 @@ SM2 signs its ZA-prefixed digest with fixed-width output. Native results must be
 and output backing, preserving primitive error mapping and fault checks. The
 engine does not select attestation keys, commit resident records or publish a
 response; those stages and PQ streaming remain to migrate.
+
+`registration::execute` owns create/commit/respond transaction sequencing after
+successful authorization and presence. An explicit commit profile preserves
+Core's durable resident write before response generation and vLEI's write after
+successful output/deadline checks. Nonresident credentials never enter commit.
+The existing credential owner is borrowed by storage and response capabilities;
+errors stop without compensating writes. Outer owners retain provisional output
+erasure, key cleanup, transport leases and final publication. Attestation
+selection, primitive operations and PQ segmented reply construction remain
+product capabilities while their engines migrate.

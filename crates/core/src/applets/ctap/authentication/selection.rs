@@ -101,11 +101,10 @@ impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, '_, B> 
     fn complete(self) -> Result<usize, Status> {
         let params = self.params;
         let rp = self.rp;
-        let w = self.workspace;
-        let p = self.platform;
-        let session = self.session;
+        let w = &mut *self.workspace;
+        let p = &mut *self.platform;
+        let session = &mut *self.session;
         let uv = self.uv;
-        let min_pin_length = self.min_pin_length;
         if let Some(hmac) = &params.hmac {
             session.prepare_hmac(hmac, w, p)?;
         }
@@ -128,6 +127,47 @@ impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, '_, B> 
             );
         }
         let algorithm = params.algorithm.ok_or(Status::UnsupportedAlgorithm)?;
+        canokey_ctap::registration::execute(
+            params.resident,
+            canokey_ctap::registration::Commit::BeforeResponse,
+            Registration {
+                session,
+                params,
+                workspace: w,
+                platform: p,
+                rp,
+                uv,
+                min_pin_length: self.min_pin_length,
+                algorithm,
+            },
+        )
+    }
+}
+
+struct Registration<'a, 'p, 'w, B: crate::ports::Backends> {
+    session: &'a mut Session,
+    params: &'a Parameters,
+    workspace: &'a mut Workspace<'w>,
+    platform: &'a mut Platform<'p, B>,
+    rp: &'a [u8; 32],
+    uv: bool,
+    min_pin_length: Option<u8>,
+    algorithm: u8,
+}
+impl<B: crate::ports::Backends> canokey_ctap::registration::Backend
+    for Registration<'_, '_, '_, B>
+{
+    type Error = Status;
+    type Credential = credential::Id;
+    type Output = usize;
+    #[inline(always)]
+    fn create(&mut self) -> Result<Self::Credential, Status> {
+        let params = self.params;
+        let rp = self.rp;
+        let w = &mut *self.workspace;
+        let p = &mut *self.platform;
+        let session = &mut *self.session;
+        let algorithm = self.algorithm;
         let id = credential::create(
             algorithm,
             params.protection
@@ -151,28 +191,46 @@ impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, '_, B> 
             w.key,
             p,
         )?;
-        if params.resident {
-            // Preserve the ECC private/public view (or PQ seed) needed by respond.
-            // The unused RSA tail holds the other three resident members.
-            const COPY_OFFSET: usize =
-                crate::ports::key_layout::ECC_PUBLIC + crate::ports::key_layout::ECC_PUBLIC_BYTES;
-            const {
-                assert!(crate::ports::key_layout::SIZE - COPY_OFFSET >= resident::COPY_BYTES);
-            }
-            resident::store(
-                params,
-                &id,
-                rp,
-                w.output,
-                (&mut w.key.bytes[COPY_OFFSET..COPY_OFFSET + resident::COPY_BYTES])
-                    .try_into()
-                    .unwrap(),
-                p,
-            )?;
+        Ok(id)
+    }
+    #[inline(always)]
+    fn commit(&mut self, id: &Self::Credential) -> Result<(), Status> {
+        let params = self.params;
+        let rp = self.rp;
+        let w = &mut *self.workspace;
+        let p = &mut *self.platform;
+        // Preserve the ECC private/public view (or PQ seed) needed by respond.
+        // The unused RSA tail holds the other three resident members.
+        const COPY_OFFSET: usize =
+            crate::ports::key_layout::ECC_PUBLIC + crate::ports::key_layout::ECC_PUBLIC_BYTES;
+        const {
+            assert!(crate::ports::key_layout::SIZE - COPY_OFFSET >= resident::COPY_BYTES);
         }
+        resident::store(
+            params,
+            id,
+            rp,
+            w.output,
+            (&mut w.key.bytes[COPY_OFFSET..COPY_OFFSET + resident::COPY_BYTES])
+                .try_into()
+                .unwrap(),
+            p,
+        )?;
+        Ok(())
+    }
+    #[inline(always)]
+    fn respond(&mut self, id: &Self::Credential) -> Result<usize, Status> {
+        let params = self.params;
+        let rp = self.rp;
+        let w = &mut *self.workspace;
+        let p = &mut *self.platform;
+        let session = &mut *self.session;
+        let algorithm = self.algorithm;
+        let uv = self.uv;
+        let min_pin_length = self.min_pin_length;
         respond(
             &Signing {
-                id: &id,
+                id,
                 rp,
                 client_hash: &params.client_hash,
                 algorithm,
