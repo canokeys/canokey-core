@@ -51,3 +51,44 @@ fn standard_error_disposition_preserves_rejected_auth_but_revokes_uncertain_stat
         );
     }
 }
+
+#[test]
+fn agreement_loss_erases_identity_before_retaining_only_standard_permissions() {
+    struct Owner {
+        erased: bool,
+        permissions: u16,
+        token: [u8; 32],
+        issued: u32,
+        last_used: u32,
+        rp: [u8; 32],
+    }
+    impl canokey_ctap::session::PinAgreement for Owner {
+        fn erase_agreement(&mut self) {
+            self.erased = true;
+        }
+        fn permissions(&self) -> u16 {
+            assert!(self.erased);
+            self.permissions
+        }
+        fn retain_permissions(&mut self, permissions: u16) {
+            assert!(self.erased);
+            self.permissions = permissions;
+        }
+    }
+    for permissions in 0x0000..=0xffff {
+        let mut owner = Owner {
+            erased: false,
+            permissions,
+            token: [0xa5; 32],
+            issued: 10,
+            last_used: 20,
+            rp: [0x5a; 32],
+        };
+        canokey_ctap::session::lose_pin_agreement(&mut owner);
+        assert!(owner.erased);
+        assert_eq!(owner.permissions, permissions & 0x00ff);
+        assert_eq!(owner.token, [0xa5; 32]);
+        assert_eq!((owner.issued, owner.last_used), (10, 20));
+        assert_eq!(owner.rp, [0x5a; 32]);
+    }
+}

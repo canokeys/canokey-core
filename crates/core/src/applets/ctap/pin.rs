@@ -251,6 +251,18 @@ struct CurrentPin<'a, 'p, B: crate::ports::Backends> {
     aes_key: &'a [u8; 32],
     platform: &'a mut Platform<'p, B>,
 }
+impl<B: crate::ports::Backends> canokey_ctap::session::PinAgreement for CurrentPin<'_, '_, B> {
+    fn erase_agreement(&mut self) {
+        self.session.agreement_ready = false;
+        self.platform.memory.wipe(&mut self.session.agreement);
+    }
+    fn permissions(&self) -> u16 {
+        u16::from(self.session.permissions)
+    }
+    fn retain_permissions(&mut self, permissions: u16) {
+        self.session.permissions = permissions as u8;
+    }
+}
 impl<B: crate::ports::Backends> retry::Verification for CurrentPin<'_, '_, B> {
     type Error = Status;
     fn remaining(&self) -> u8 {
@@ -285,8 +297,7 @@ impl<B: crate::ports::Backends> retry::Verification for CurrentPin<'_, '_, B> {
     }
     fn rejected(&mut self) -> Status {
         self.session.pin_attempts -= 1;
-        self.session.agreement_ready = false;
-        self.platform.memory.wipe(&mut self.session.agreement);
+        canokey_ctap::session::lose_pin_agreement(self);
         match retry::rejection(self.record[RETRIES], self.session.pin_attempts) {
             retry::Rejection::Blocked => Status::PinBlocked,
             retry::Rejection::PowerCycleBlocked => Status::PinAuthBlocked,

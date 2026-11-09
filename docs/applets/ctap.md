@@ -226,6 +226,14 @@ retries. A transport/session reset clears key agreement and tokens but cannot
 restore either retry counter. Valid PIN verification restores durable retries.
 Invalid changePIN authentication never consumes a retry.
 
+A compared mismatch calls `canokey_ctap::session::lose_pin_agreement`: the
+private agreement is wiped, while the existing standard token, RP binding and
+issuance/use clocks survive. After three mismatches, token authorization is
+blocked too. A fresh getKeyAgreement or session reset does not restore the
+power-cycle allowance. An early blocked ClientPIN request does not invalidate
+an agreement obtained while blocked. Decapsulation regenerates a missing key
+lazily; generation/primitive uncertainty revokes the complete session.
+
 Standard command error teardown consumes `canokey_ctap::session::reset_on_error`.
 Internal (`0x7f`) revokes the complete authorization session because a primitive
 or persistent commit may have left uncertain state. Ordinary request, token

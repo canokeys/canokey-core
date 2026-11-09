@@ -1083,3 +1083,116 @@ fn parsed_point_rejection_never_reaches_kdf_decrypt_retry_or_token_commit() {
         }
     }
 }
+
+#[test]
+fn wrong_pin_retains_standard_token_but_third_mismatch_blocks_its_use() {
+    for protocol in [wire::V1, wire::V2] {
+        for initial_retries in [3, MAX_RETRIES] {
+            let mut record = vec![0x42; RP_HASHES];
+            record[0] ^= 0x01;
+            record[RETRIES..RP_HASHES].copy_from_slice(&[initial_retries, 4, 4, 0x00]);
+            let mut storage = Backend {
+                record: Some(record),
+                ..Backend::default()
+            };
+            let mut crypto = Backend::default();
+            let memory = Backend::default();
+            let mut device = Backend::default();
+            let mut session = Session::new();
+            session.token.fill(0x99);
+            session.permissions = PERMISSION_CONFIG;
+            session.rp_binding.fill(0x5a);
+            session.rp_bound = true;
+            let mut backing = SessionWorkspace::new();
+            let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                storage: &mut storage,
+                crypto: &mut crypto,
+                device: &mut device,
+                memory: &memory,
+            };
+            for attempt in 1..=3 {
+                let mut command = Ok(super::super::Command::ClientPin(Parameters {
+                    protocol,
+                    subcommand: wire::GET_TOKEN_PERMISSIONS,
+                    agreement: [0x05; 64],
+                    auth: [0x3a; 32],
+                    new_pin: [0x00; 80],
+                    pin_hash: [0xbb; 32],
+                    permissions: wire::PERMISSION_CREDENTIALS,
+                    rp: [0x00; 254],
+                    rp_len: 0,
+                }));
+                let response = session.execute(&mut command, &mut backing, &mut platform);
+                let status = if attempt == initial_retries {
+                    Status::PinBlocked
+                } else if attempt == 3 {
+                    Status::PinAuthBlocked
+                } else {
+                    Status::PinInvalid
+                };
+                assert!(
+                    matches!(response, super::super::Response::Error(error) if error == status)
+                );
+                assert!(!session.agreement_ready);
+                assert_eq!(session.agreement, [0x00; 32]);
+                assert_eq!(session.token, [0x99; 32]);
+                assert_eq!(session.permissions, PERMISSION_CONFIG);
+                assert_eq!(session.rp_binding, [0x5a; 32]);
+                assert!(session.rp_bound);
+                assert_eq!((session.token_started, session.token_used), (0, 0));
+                assert_eq!(platform.crypto.generated, usize::from(attempt));
+                let result = session.authorize(
+                    protocol,
+                    &[0x3a; 32][..wire::auth_bytes(protocol)],
+                    &[0x01],
+                    PERMISSION_CONFIG,
+                    Some(&[0x5a; 32]),
+                    &mut platform,
+                );
+                assert_eq!(
+                    result,
+                    if attempt < 3 {
+                        Ok(())
+                    } else {
+                        Err(Status::PinAuthBlocked)
+                    }
+                );
+            }
+            // Explicit agreement is allowed while blocked. Early ClientPIN
+            // admission must preserve that key and never run ECDH or charge.
+            session
+                .agreement_key(&mut backing.classic_with(&memory), &mut platform)
+                .unwrap();
+            let agreed = platform.crypto.agreed;
+            let charged = platform.storage.retries_written.len();
+            let mut parameters = Parameters {
+                protocol,
+                subcommand: wire::GET_TOKEN_PERMISSIONS,
+                agreement: [0x05; 64],
+                auth: [0x3a; 32],
+                new_pin: [0x00; 80],
+                pin_hash: [0xbb; 32],
+                permissions: wire::PERMISSION_CREDENTIALS,
+                rp: [0x00; 254],
+                rp_len: 0,
+            };
+            let result = session.client_pin(
+                &mut parameters,
+                &mut backing.classic_with(&memory),
+                &mut platform,
+            );
+            assert_eq!(
+                result,
+                Err(if initial_retries == 3 {
+                    Status::PinBlocked
+                } else {
+                    Status::PinAuthBlocked
+                })
+            );
+            assert!(session.agreement_ready);
+            assert_eq!(session.agreement, [0x07; 32]);
+            assert_eq!(platform.crypto.agreed, agreed);
+            assert_eq!(platform.storage.retries_written.len(), charged);
+        }
+    }
+}

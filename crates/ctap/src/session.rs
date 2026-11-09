@@ -4,6 +4,28 @@
 /// CTAP continuation inactivity window, in milliseconds.
 pub const CONTINUATION_IDLE_MS: u32 = 30_000;
 
+// CTAP PIN/UV permissions occupy one byte. Product context-bound grants live
+// outside this field and cannot survive loss of their agreement identity.
+const STANDARD_PERMISSION_MASK: u16 = 0x00ff;
+
+/// Loans the sole PIN owner without exporting its key or token. Erasure must
+/// clear private agreement material and any product identity derived from it.
+/// Retention changes permissions only: token bytes, RP and clocks stay intact.
+pub trait PinAgreement {
+    fn erase_agreement(&mut self);
+    fn permissions(&self) -> u16;
+    fn retain_permissions(&mut self, permissions: u16);
+}
+
+/// A compared PIN mismatch invalidates agreement, retaining standard grants.
+/// Early blocked admission must not call this transition. Products also use it
+/// before replacing an agreement-bound native context; it never refreshes use.
+#[inline]
+pub fn lose_pin_agreement(owner: &mut impl PinAgreement) {
+    owner.erase_agreement();
+    owner.retain_permissions(owner.permissions() & STANDARD_PERMISSION_MASK);
+}
+
 /// Products retain their established acceptance of the exact timeout instant.
 #[derive(Clone, Copy)]
 pub enum Boundary {
