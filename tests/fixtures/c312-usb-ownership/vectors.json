@@ -851,7 +851,8 @@
         {
           "ccid": "6c000000000002000000",
           "expected": "",
-          "expected_ccid": "820700000000020081011110001500fe00"
+          "expected_ccid": "820700000000020081011110006500fe00",
+          "expected_ccid_c": "820700000000020081011110001500fe00"
         },
         {
           "setup": "c102000001000100",
@@ -889,7 +890,12 @@
           "out": "",
           "expected": ""
         }
-      ]
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "GetParameters now preserves ATR BWI6 so the 500 ms extension arrives before BWT; pinned C returns BWI1."
+      }
     },
     {
       "id": "completed-WebUSB-context-preempted-only-on-real-CCID-command",

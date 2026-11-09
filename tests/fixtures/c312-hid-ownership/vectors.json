@@ -1033,7 +1033,8 @@
         {
           "ccid": "6c000000000004000000",
           "expected": "",
-          "expected_ccid": "820700000000040081011110001500fe00"
+          "expected_ccid": "820700000000040081011110006500fe00",
+          "expected_ccid_c": "820700000000040081011110001500fe00"
         },
         {
           "hid": "1234567800aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -1069,7 +1070,12 @@
           "expected": "",
           "expected_ccid": "800200000000050081009000"
         }
-      ]
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "GetParameters now preserves ATR BWI6 so the 500 ms extension arrives before BWT; pinned C returns BWI1."
+      }
     },
     {
       "id": "native-MSG-retains-response-across-WebUSB-refusal",

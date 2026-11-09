@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! C 3.1.2 short-only contract through the production CCID state machine.
+//! CanoKey short-only contract and ATR timing through production CCID.
 use canokey_protocol::ccid::*;
 use canokey_rust_core::runtime::ccid::{Backend, CONTROL_REPLY, REPLY, Transport};
 #[derive(Default)]
@@ -155,6 +155,22 @@ fn atr_checksum_and_historical_bytes_match_the_card_contract() {
     assert_eq!(&ATR[9..16], b"Canokey");
     // ISO7816 TCK covers T0 through TCK, excluding the initial convention TS.
     assert_eq!(ATR[1..].iter().fold(0, |xor, byte| xor ^ byte), 0);
+}
+
+#[test]
+fn parameters_preserve_atr_timing_and_cover_the_extension_interval() {
+    let (mut transport, mut backend) = start();
+    transport.receive(&frame(GET_PARAMETERS, &[]));
+    let reply = finish(&mut transport, &mut backend, false);
+    // CCID 1.1 section 6.1.8: Fi/Di, checksum/convention, guard,
+    // BWI/CWI, clock stop, IFSC, NAD. Literal timing is independent of T1.
+    assert_eq!(&reply[HEADER..], &[0x11, 0x10, 0x00, 0x65, 0x00, 0xfe, 0x00]);
+    assert_eq!(reply[HEADER + 3], ATR[8]);
+    assert_eq!(reply[HEADER + 5], ATR[7]);
+    // ISO 7816-3: BWT = 11 ETU + 2^BWI * 960 * 372/f; Fi372/Di1,
+    // descriptor clock 4 MHz. Time extension must arrive before BWT.
+    let bwt_us = (11 + (1u64 << (reply[HEADER + 3] >> 4)) * 960) * 372 / 4;
+    assert!(u64::from(canokey_rust_core::runtime::ccid::EXTENSION_INTERVAL) * 1000 < bwt_us);
 }
 #[test]
 fn bounded_extended_and_malformed_return6700_without_entering_core() {

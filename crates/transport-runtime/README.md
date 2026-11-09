@@ -37,8 +37,15 @@ prove an embedded stack budget; the linked product ELF needs its own review.
 completion state. `Buffered` retains one short APDU for CanoKey; receive uses a
 no-op backend and cannot enter the application. `Streaming` retains only begin
 and timeout metadata and feeds the product's existing application owner.
-Product `Policy` preserves validation precedence, ATR/T=1 bytes, parameter
-commands and success sentinels. The facade owns reply storage and its in-flight
+`ShortApdu` supplies the common CanoKey card contract: slot/control-envelope
+validation precedence, automatic voltage selection, read-only T=1 parameters,
+ATR and success sentinel. Products alias this policy instead of copying its
+validation. Streaming checks the complete header before reserving application
+input; buffered receive stays application-free until dispatch.
+GetParameters matches ATR BWI6/CWI5 and IFSC254: at the declared 4 MHz clock,
+BWI1 would expire before the 500 ms time-extension interval. The common logical
+slot may activate on an accepted short APDU, including after PowerOff; power
+and USB reset still revoke application selection and authentication. The facade owns reply storage and its in-flight
 lease. `Polling<P>` handles asynchronous status/cancel with only a five-byte
 prefix and cannot borrow a backend. Header progress and remaining u32 payload
 are separate counters, so UINT32_MAX payloads cannot overflow header addition.

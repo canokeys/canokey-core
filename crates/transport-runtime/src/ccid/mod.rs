@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Main-loop single-slot CCID. IRQs own endpoint packets, not this state.
 mod frame;
+mod profile;
 use canokey_protocol::{apdu, ccid::*};
 use core::marker::PhantomData;
 use frame::{Fragment, Frame};
+pub use profile::ShortApdu;
 
 pub const EXTENSION_INTERVAL: u16 = 500;
 pub const RECEIVE_TIMEOUT_MS: u32 = 2000;
@@ -201,7 +203,15 @@ impl<P: Policy, I: Input> Transport<P, I> {
         let trailing = self.frame.feed(bytes, |fragment| match fragment {
             Fragment::Header(header) => {
                 let length = payload_length(header);
-                *error = P::header_error(header, length, active);
+                // Streaming may claim the application input owner here, so all
+                // header-only scope/RFU checks must precede begin/feed. Buffered
+                // ingress cannot enter a backend until final dispatch.
+                let header_error = P::header_error(header, length, active);
+                *error = if I::STREAMING {
+                    P::validate(header, header_error)
+                } else {
+                    header_error
+                };
                 store =
                     !refused && header[0] == TRANSFER && length <= apdu::SHORT_FRAME_BYTES as u32;
                 if I::STREAMING && store && *error == 0x00 {

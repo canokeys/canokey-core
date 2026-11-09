@@ -30,11 +30,13 @@ pub const SUCCESS_ERROR: u8 = 0x81;
 // TA1=Fi372/Di1; TD1/TD2 select T=1; TA3=IFSC254, TB3=BWI6/CWI5;
 // TB1/TC1 are zero, and final 0x99 is the XOR check byte TCK.
 pub const ATR: &[u8] = &[
-    0x3b, 0xf7, 0x11, 0, 0, 0x81, 0x31, 0xfe, 0x65, 0x43, 0x61, 0x6e, 0x6f, 0x6b, 0x65, 0x79, 0x99,
+    0x3b, 0xf7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xfe, 0x65, 0x43, 0x61, 0x6e, 0x6f, 0x6b, 0x65, 0x79, 0x99,
 ];
-// CCID 1.1 section 6.1.8: Fi/Di, TCCKS(T=1 direct), guard, BWI1/CWI5,
-// clock stop, IFSC254, NAD0. These are CCID parameters, not the ATR TB3 value.
-pub const T1: &[u8] = &[0x11, 0x10, 0, 0x15, 0, 0xfe, 0];
+// CCID 1.1 section 6.1.8: Fi/Di, TCCKS(T=1 direct), guard, BWI6/CWI5,
+// clock stop, IFSC254, NAD0. Match ATR TA3/TB3: at the declared 4 MHz clock,
+// BWI1 expires before the runtime's 500 ms time-extension interval.
+pub const T1_IFS: u8 = 0xfe;
+pub const T1: &[u8] = &[0x11, 0x10, 0x00, 0x65, 0x00, T1_IFS, 0x00];
 
 pub fn payload_length(header: &[u8; HEADER]) -> u32 {
     u32::from_le_bytes(header[1..5].try_into().unwrap())

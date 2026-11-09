@@ -164,7 +164,11 @@ def execute(executable, case, rust):
                   "stderr": result.stderr if result.returncode else ""}
     if webusb:
         bulk = [line[5:].strip() for line in result.stdout.splitlines() if line.startswith("BULK ")]
-        expected_bulk = [step.get("expected_ccid", "") for step in case["steps"]]
+        expected_bulk = [step.get("expected_ccid_c", step.get("expected_ccid", ""))
+                         if not rust else step.get("expected_ccid", "")
+                         for step in case["steps"]]
+        if any("expected_ccid_c" in step for step in case["steps"]):
+            validate_difference(case)
         for value in expected_bulk:
             bytes.fromhex(value)
         comparison["passed"] &= bulk == expected_bulk
