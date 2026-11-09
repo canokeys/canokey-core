@@ -2,6 +2,9 @@
 //! Certificate windows borrow product backing only for the synchronous read.
 use crate::ports::Certificate;
 
+pub mod auth_data;
+pub mod encoding;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReadMode {
     Exact,

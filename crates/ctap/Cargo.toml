@@ -15,5 +15,9 @@ canokey-protocol = { path = "../protocol", default-features = false }
 minicbor = { version = "=2.3.0", path = "../../third_party/minicbor/minicbor", default-features = false, features = ["std"], optional = true }
 canokey-ports = { path = "../ports", default-features = false }
 
+[build-dependencies]
+canokey-ports = { path = "../ports", default-features = false }
+minicbor = { version = "=2.3.0", path = "../../third_party/minicbor/minicbor", default-features = false, features = ["std"] }
+
 [lints]
 workspace = true

@@ -266,11 +266,14 @@ fn respond(
     response: &mut Option<super::Response>,
 ) -> Result<usize, Status> {
     let counter = credential::counter(p)?;
-    w.input[..32].copy_from_slice(request.rp);
-    w.input[auth_data::FLAGS_OFFSET] = if request.up { auth_data::UP } else { 0 }
-        | if request.uv { auth_data::UV } else { 0 }
-        | if request.make { auth_data::AT } else { 0 };
-    w.input[auth_data::COUNTER_OFFSET..auth_data::HEADER_BYTES].copy_from_slice(&counter);
+    auth_data::header(
+        w.input,
+        request.rp,
+        &counter,
+        request.up,
+        request.uv,
+        request.make,
+    );
     let mut auth_len = auth_data::HEADER_BYTES;
     if request.make {
         if crate::ports::mldsa::parameters(request.algorithm).is_some() {
@@ -476,12 +479,7 @@ fn respond(
 // These two helpers stay out of line to share code across classic and ML-DSA.
 #[inline(never)]
 fn attested_header(auth: &mut [u8], id: &[u8]) {
-    auth[auth_data::HEADER_BYTES..auth_data::CREDENTIAL_LENGTH_OFFSET]
-        .copy_from_slice(&super::provision::AAGUID);
-    auth[auth_data::CREDENTIAL_LENGTH_OFFSET..auth_data::CREDENTIAL_OFFSET]
-        .copy_from_slice(&(credential::ID_BYTES as u16).to_be_bytes());
-    auth[auth_data::CREDENTIAL_OFFSET..auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES]
-        .copy_from_slice(id);
+    auth_data::attested(auth, &super::provision::AAGUID, id);
 }
 
 /// Load and decode the selected resident record into `out`, if any.

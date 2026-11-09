@@ -128,3 +128,15 @@ checks, storage errors and commit points. The operation is consumed after UP; an
 and publish it into a continuation only after success, without allocating another
 session or secret backing. Cancellation during exclusion is mapped by
 the product; ordinary presence is never consumed on exclusion or failure.
+
+`response::encoding` owns descriptor/user privacy schemas, COSE EC2/Ed25519/AKP
+public-key fragments, management credential envelopes and fixed packed
+attestation tokens. Its build script generates invariant CBOR on the host from
+portable schema inputs, including optional PQ parameter metadata. Firmware
+encodes directly into an existing bounded `Encoder` loan, without a temporary
+response. Products retain crypto, dynamic algorithm/SM2 policy, streaming public
+key/certificate/signature bodies and publication. `response::auth_data` shares
+WebAuthn flags/offsets and RP/counter/attested headers over the existing buffer.
+The vLEI Writer loan advances by the emitted prefix even on failure so its
+existing rollback owner can erase provisional output. Installing these encoding
+capabilities does not install algorithms or change advertised product features.

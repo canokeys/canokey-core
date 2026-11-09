@@ -1,16 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CTAP/COSE assignments and PIN protocol lengths. Labels are scoped by schema.
 pub(super) const RP_ID_MAX: usize = 254;
-pub(super) mod cose {
-    pub const ES256: i32 = -7;
-    pub const EDDSA: i32 = -8;
-    pub const MLDSA65: i32 = crate::ports::mldsa::DSA65.cose;
-    pub const MLDSA44: i32 = crate::ports::mldsa::DSA44.cose;
-    pub const CRV: i8 = -1;
-    pub const X: i8 = -2;
-    pub const Y: i8 = -3;
-    pub const P256: i8 = 1;
-}
+pub(super) use canokey_ctap::response::encoding::cose;
+
 pub(super) mod pin_protocol {
     use canokey_ctap::client_pin::{
         Protocol,
@@ -77,34 +69,7 @@ pub(super) mod management {
     pub const UPDATE_USER: u8 = 0x07;
     pub const VENDOR_METADATA_ONLY: u8 = 0x80;
     pub const VENDOR_ALGORITHM: u8 = 0x80;
-    pub const USER: u8 = 0x06;
-    pub const DESCRIPTOR: u8 = 0x07;
-    pub const TOTAL_CREDENTIALS: u8 = 0x09;
-    pub const CRED_PROTECT: u8 = 0x0a;
-    pub const LARGE_BLOB_KEY: u8 = 0x0b;
-    pub const THIRD_PARTY_PAYMENT: u8 = 0x0c;
 }
-pub(super) mod auth_data {
-    pub const UP: u8 = 0x01;
-    pub const UV: u8 = 0x04;
-    pub const AT: u8 = 0x40;
-    pub const ED: u8 = 0x80;
-    pub const FLAGS_OFFSET: usize = 32;
-    pub const COUNTER_OFFSET: usize = FLAGS_OFFSET + 1;
-    pub const HEADER_BYTES: usize = COUNTER_OFFSET + 4;
-    pub const CREDENTIAL_LENGTH_OFFSET: usize = HEADER_BYTES + 16; // AAGUID16.
-    pub const CREDENTIAL_OFFSET: usize = CREDENTIAL_LENGTH_OFFSET + 2;
-}
-pub(super) mod make_response {
-    // Format/authData labels are carried by generated MAKE_HEADER.
-    pub const ATTESTATION: u8 = 0x03;
-    pub const LARGE_BLOB_KEY: u8 = 0x05;
-}
-pub(super) mod assertion_response {
-    pub const CREDENTIAL: u8 = 0x01;
-    pub const AUTH_DATA: u8 = 0x02;
-    pub const SIGNATURE: u8 = 0x03;
-    pub const USER: u8 = 0x04;
-    pub const COUNT: u8 = 0x05;
-    pub const LARGE_BLOB_KEY: u8 = 0x07;
-}
+pub(super) use canokey_ctap::response::auth_data;
+
+pub(super) use canokey_ctap::response::encoding::{assertion_response, make_response};

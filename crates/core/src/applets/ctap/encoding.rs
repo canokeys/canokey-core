@@ -1,92 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared CTAP response schemas. Fixed tokens are encoded on the build host.
-use super::wire::{cose, management as cm};
-use super::{credential, resident, settings::Sm2};
+use super::wire::cose;
+use super::{credential, settings::Sm2};
+#[cfg(test)]
+use super::resident;
 use crate::ports::alg;
 use canokey_protocol::cbor::{EncodeError, Encoder};
 
-include!(concat!(env!("OUT_DIR"), "/ctap_response.rs"));
-
-// These boundaries share the schema across authentication and management.
-#[inline(never)]
-pub(super) fn descriptor(e: &mut Encoder<&mut [u8]>, id: &[u8]) -> Result<(), EncodeError> {
-    e.encoded(DESCRIPTOR).bytes(id).encoded(PUBLIC_KEY_TYPE);
-    e.finish()
-}
-
-#[inline(never)]
-pub(super) fn user(
-    e: &mut Encoder<&mut [u8]>,
-    entry: &resident::Entry<'_>,
-    details: bool,
-) -> Result<(), EncodeError> {
-    let name = details && !entry.name.is_empty();
-    let display = details && !entry.display.is_empty();
-    e.map(1 + u64::from(name) + u64::from(display))
-        .encoded(USER_ID)
-        .bytes(entry.user);
-    if name {
-        e.encoded(USER_NAME).str(entry.name);
-    }
-    if display {
-        e.encoded(USER_DISPLAY).str(entry.display);
-    }
-    e.finish()
-}
-
-// Classic and streamed PQ management responses share the same envelope.
-// Keep these schemas out of line so both callers use one encoder path.
-#[inline(never)]
-pub(super) fn management_header(
-    e: &mut Encoder<&mut [u8]>,
-    entry: &resident::Entry<'_>,
-    first: bool,
-    has_blob_key: bool,
-) -> Result<(), EncodeError> {
-    e.map(5 + u64::from(first) + u64::from(has_blob_key))
-        .u8(cm::USER);
-    user(e, entry, true)?;
-    e.u8(cm::DESCRIPTOR);
-    descriptor(e, entry.id)
-}
-
-#[inline(never)]
-pub(super) fn management_tail(
-    e: &mut Encoder<&mut [u8]>,
-    id: &credential::Id,
-    total: Option<u8>,
-    blob_key: Option<&[u8]>,
-) -> Result<(), EncodeError> {
-    if let Some(total) = total {
-        e.u8(cm::TOTAL_CREDENTIALS).u8(total);
-    }
-    e.u8(cm::CRED_PROTECT)
-        .u8(id[1] & credential::CRED_PROTECT_MASK);
-    if let Some(key) = blob_key {
-        e.u8(cm::LARGE_BLOB_KEY).bytes(key);
-    }
-    e.u8(cm::THIRD_PARTY_PAYMENT)
-        .bool(id[1] & credential::THIRD_PARTY_PAYMENT != 0);
-    e.finish()
-}
-
-fn mldsa_header(algorithm: u8) -> Result<&'static [u8], EncodeError> {
-    match algorithm {
-        alg::MLDSA65 => Ok(COSE_MLDSA65),
-        alg::MLDSA44 => Ok(COSE_MLDSA44),
-        _ => Err(EncodeError),
-    }
-}
-pub(super) fn mldsa_public_header(
-    e: &mut Encoder<&mut [u8]>,
-    algorithm: u8,
-) -> Result<(), EncodeError> {
-    let params = crate::ports::mldsa::parameters(algorithm).ok_or(EncodeError)?;
-    e.encoded(mldsa_header(algorithm)?)
-        .bytes_len(params.public_bytes as u64);
-    e.finish()
-}
-
+use canokey_ctap::response::encoding as shared;
+pub(super) use canokey_ctap::response::encoding::{
+    ATTESTATION, CERTIFICATE, MAKE_HEADER, SELF_ATTESTATION, descriptor, management_header,
+    management_tail, mldsa_public_header, user,
+};
 /// Fixed P-256 agreement response, including the CTAP status byte.
 /// Typed capacities make the coordinate sizes and final offsets static.
 pub(super) fn key_agreement(
@@ -111,22 +36,20 @@ pub(super) fn public_key(
     public: &[u8],
 ) -> Result<(), EncodeError> {
     if crate::ports::mldsa::parameters(algorithm).is_some() {
-        e.encoded(mldsa_header(algorithm)?).bytes(public);
+        e.encoded(shared::mldsa_header(algorithm)?).bytes(public);
     } else if algorithm != alg::ED25519 {
-        e.encoded(COSE_EC2)
-            .i32(credential::cose_algorithm(algorithm, sm2))
-            .i8(cose::CRV)
-            .i32(if algorithm == alg::SM2 {
+        return shared::ec2(
+            e,
+            credential::cose_algorithm(algorithm, sm2),
+            if algorithm == alg::SM2 {
                 sm2.curve
             } else {
                 i32::from(cose::P256)
-            })
-            .i8(cose::X)
-            .bytes(&public[..32])
-            .i8(cose::Y)
-            .bytes(&public[32..64]);
+            },
+            public,
+        );
     } else {
-        e.encoded(COSE_ED25519).bytes(&public[..32]);
+        return shared::ed25519(e, public);
     }
     e.finish()
 }
