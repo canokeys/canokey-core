@@ -590,6 +590,7 @@ fn token_admission_preserves_primitive_order_and_refreshes_only_successful_use()
                             };
                             let admitted = matches!(protocol, wire::V1 | wire::V2)
                                 && length == wire::auth_bytes(protocol)
+                                && required != 0x00
                                 && granted & required == required
                                 && bound.is_none_or(|bound| bound == rp);
                             let expected = if !admitted {

@@ -416,12 +416,10 @@ impl Session {
             token::Scope {
                 granted: u16::from(self.permissions),
                 required: u16::from(permission),
-                permission_match: token::PermissionMatch::All,
                 bound_rp: self.rp_bound.then_some(&self.rp_binding),
                 requested_rp: rp,
                 missing_rp: token::MissingRp::Allow,
             },
-            token::Order::ScopeThenMac,
             || verify_mac(&self.token, auth, message, p),
             equal,
         )

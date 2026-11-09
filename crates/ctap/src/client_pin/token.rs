@@ -1,18 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Token admission over owner-held metadata; no secret or session storage.
 
-/// Products preserve their first-error and primitive-call ordering.
-#[derive(Clone, Copy)]
-pub enum Order {
-    ScopeThenMac,
-    MacThenScope,
-    PermissionThenMacThenRp,
-}
-#[derive(Clone, Copy)]
-pub enum PermissionMatch {
-    All,
-    Any,
-}
 #[derive(Clone, Copy)]
 pub enum MissingRp {
     Allow,
@@ -24,17 +12,13 @@ pub enum MissingRp {
 pub struct Scope<'a> {
     pub granted: u16,
     pub required: u16,
-    pub permission_match: PermissionMatch,
     pub bound_rp: Option<&'a [u8; 32]>,
     pub requested_rp: Option<&'a [u8; 32]>,
     pub missing_rp: MissingRp,
 }
 impl Scope<'_> {
     fn permission_allowed(&self) -> bool {
-        match self.permission_match {
-            PermissionMatch::All => self.granted & self.required == self.required,
-            PermissionMatch::Any => self.granted & self.required != 0x00,
-        }
+        self.required != 0x00 && self.granted & self.required == self.required
     }
     fn rp_allowed(&self, equal: impl FnOnce(&[u8], &[u8]) -> bool) -> bool {
         match (self.bound_rp, self.requested_rp) {
@@ -50,41 +34,20 @@ pub enum Error<E> {
     Mac(E),
 }
 
-/// Verifies once in the selected order. A failed MAC or scope never commits a
-/// use, RP binding or deadline refresh; owners do so at their established point.
-/// Closures are synchronous and must not reenter the application or retain loans.
+/// Admit all requested permission bits and RP scope before verifying the MAC.
+/// A successful return authorizes the owner to commit usage/RP metadata only
+/// after any deferred credential-RP resolution also succeeds. Closures are
+/// synchronous and must not reenter the application or retain loans.
 #[inline]
 pub fn authorize<E>(
     scope: Scope<'_>,
-    order: Order,
     verify: impl FnOnce() -> Result<(), E>,
     equal: impl FnOnce(&[u8], &[u8]) -> bool,
 ) -> Result<(), Error<E>> {
-    match order {
-        Order::ScopeThenMac => {
-            if !scope.permission_allowed() || !scope.rp_allowed(equal) {
-                return Err(Error::Scope);
-            }
-            verify().map_err(Error::Mac)
-        }
-        Order::MacThenScope => {
-            verify().map_err(Error::Mac)?;
-            if !scope.permission_allowed() || !scope.rp_allowed(equal) {
-                return Err(Error::Scope);
-            }
-            Ok(())
-        }
-        Order::PermissionThenMacThenRp => {
-            if !scope.permission_allowed() {
-                return Err(Error::Scope);
-            }
-            verify().map_err(Error::Mac)?;
-            if !scope.rp_allowed(equal) {
-                return Err(Error::Scope);
-            }
-            Ok(())
-        }
+    if !scope.permission_allowed() || !scope.rp_allowed(equal) {
+        return Err(Error::Scope);
     }
+    verify().map_err(Error::Mac)
 }
 
 /// Remaining milliseconds in a wrapping clock window. Products choose origins,

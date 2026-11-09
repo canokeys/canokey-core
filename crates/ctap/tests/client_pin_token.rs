@@ -1,26 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
-use canokey_ctap::client_pin::token::{self, Error, MissingRp, Order, PermissionMatch, Scope};
+use canokey_ctap::client_pin::token::{self, Error, MissingRp, Scope};
 use std::cell::Cell;
 
 #[test]
-fn admission_preserves_scope_mac_and_comparator_call_order() {
+fn admission_checks_all_permissions_and_rp_before_one_mac() {
     let bound = [0x51; 32];
     let other = [0x52; 32];
-    for order in [
-        Order::ScopeThenMac,
-        Order::MacThenScope,
-        Order::PermissionThenMacThenRp,
-    ] {
-        for permission_ok in [false, true] {
+    for granted in 0..=0x07 {
+        for required in 0..=0x07 {
             for rp in [None, Some(&bound), Some(&other)] {
                 for allow_missing in [false, true] {
                     for mac_ok in [false, true] {
                         let calls = Cell::new((0, 0));
                         let result = token::authorize(
                             Scope {
-                                granted: if permission_ok { 0x01 } else { 0x02 },
-                                required: 0x01,
-                                permission_match: PermissionMatch::All,
+                                granted,
+                                required,
                                 bound_rp: Some(&bound),
                                 requested_rp: rp,
                                 missing_rp: if allow_missing {
@@ -29,7 +24,6 @@ fn admission_preserves_scope_mac_and_comparator_call_order() {
                                     MissingRp::Deny
                                 },
                             },
-                            order,
                             || {
                                 let (mac, compare) = calls.get();
                                 calls.set((mac + 1, compare));
@@ -37,52 +31,27 @@ fn admission_preserves_scope_mac_and_comparator_call_order() {
                             },
                             |left, right| {
                                 let (mac, compare) = calls.get();
+                                assert_eq!(mac, 0, "scope must precede MAC");
                                 calls.set((mac, compare + 1));
                                 left == right
                             },
                         );
+                        let permission_ok = required != 0x00 && granted & required == required;
                         let rp_ok = rp.map_or(allow_missing, |rp| rp == &bound);
-                        let (verify_called, compare_called, expected) = match order {
-                            Order::ScopeThenMac => (
-                                permission_ok && rp_ok,
-                                permission_ok && rp.is_some(),
-                                if !permission_ok || !rp_ok {
-                                    Err(Error::Scope)
-                                } else if !mac_ok {
-                                    Err(Error::Mac(0xee))
-                                } else {
-                                    Ok(())
-                                },
-                            ),
-                            Order::MacThenScope => (
-                                true,
-                                mac_ok && permission_ok && rp.is_some(),
-                                if !mac_ok {
-                                    Err(Error::Mac(0xee))
-                                } else if !permission_ok || !rp_ok {
-                                    Err(Error::Scope)
-                                } else {
-                                    Ok(())
-                                },
-                            ),
-                            Order::PermissionThenMacThenRp => (
-                                permission_ok,
-                                permission_ok && mac_ok && rp.is_some(),
-                                if !permission_ok {
-                                    Err(Error::Scope)
-                                } else if !mac_ok {
-                                    Err(Error::Mac(0xee))
-                                } else if !rp_ok {
-                                    Err(Error::Scope)
-                                } else {
-                                    Ok(())
-                                },
-                            ),
+                        let expected = if !permission_ok || !rp_ok {
+                            Err(Error::Scope)
+                        } else if !mac_ok {
+                            Err(Error::Mac(0xee))
+                        } else {
+                            Ok(())
                         };
                         assert_eq!(result, expected);
                         assert_eq!(
                             calls.get(),
-                            (usize::from(verify_called), usize::from(compare_called))
+                            (
+                                usize::from(permission_ok && rp_ok),
+                                usize::from(permission_ok && rp.is_some()),
+                            )
                         );
                     }
                 }
@@ -95,26 +64,24 @@ fn admission_preserves_scope_mac_and_comparator_call_order() {
 fn permission_masks_and_presence_retention_do_not_grant_new_authority() {
     for granted in 0..=0x07ff {
         for required in [0x00, 0x01, 0x02, 0x03, 0x04, 0x0100, 0x0700, 0x8000] {
-            for permission_match in [PermissionMatch::All, PermissionMatch::Any] {
-                let allowed = match permission_match {
-                    PermissionMatch::All => granted & required == required,
-                    PermissionMatch::Any => granted & required != 0x00,
-                };
-                let result = token::authorize(
-                    Scope {
-                        granted,
-                        required,
-                        permission_match,
-                        bound_rp: None,
-                        requested_rp: None,
-                        missing_rp: MissingRp::Deny,
-                    },
-                    Order::ScopeThenMac,
-                    || Ok::<(), ()>(()),
-                    |_, _| panic!("unbound token must not compare RP"),
-                );
-                assert_eq!(result.is_ok(), allowed);
-            }
+            let allowed = required != 0x00 && granted & required == required;
+            let calls = Cell::new(0);
+            let result = token::authorize(
+                Scope {
+                    granted,
+                    required,
+                    bound_rp: None,
+                    requested_rp: None,
+                    missing_rp: MissingRp::Deny,
+                },
+                || {
+                    calls.set(calls.get() + 1);
+                    Ok::<(), ()>(())
+                },
+                |_, _| panic!("unbound token must not compare RP"),
+            );
+            assert_eq!(result.is_ok(), allowed);
+            assert_eq!(calls.get(), usize::from(allowed));
         }
         for retained in [0x00, 0x10, !0x07, 0xffff] {
             let after = token::after_presence(granted, retained);

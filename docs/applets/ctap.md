@@ -221,8 +221,13 @@ Key agreement and token state live in one shared CTAP session across HID command
 APDU preemption clears that authorization session. Token permissions/RP binding
 are retained in RAM, never in transport/PKE storage. Each command expires tokens after 30 seconds without successful authentication
 or ten minutes from issuance, using wrapping tick differences. Ordinary queries
-never refresh these deadlines. The shared authorization helper verifies MAC,
-permission and any supplied RP binding, then refreshes only the idle timer.
+never refresh these deadlines. The shared authorization helper requires a
+nonzero permission mask with every requested bit, checks any supplied RP binding,
+then verifies the MAC once. Product ordering and partial-permission profiles are
+not available. Only successful admission refreshes the idle timer; zero masks,
+missing grants, RP mismatches and failed MACs do not refresh it. Primitive MAC
+errors retain their native status. Shared and Core adapter tests cover combined
+permission/RP/MAC failures, zero masks and unsuccessful-use state preservation.
 Config does not impose an RP constraint, matching C's ACFG permission check.
 
 ## Ownership and streaming
