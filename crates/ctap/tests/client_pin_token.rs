@@ -109,3 +109,23 @@ fn lifetime_windows_preserve_exact_boundary_and_wrapping_origins() {
         }
     }
 }
+
+#[test]
+fn standard_clocks_intersect_idle_and_absolute_windows_without_refreshing_queries() {
+    for origin in [0u32, 1000, u32::MAX - 1000] {
+        for (last_used, elapsed, expected) in [
+            (0, 0, Some(30_000)),
+            (0, 29_999, Some(1)),
+            (0, 30_000, None),
+            (29_999, 59_998, Some(1)),
+            (29_999, 59_999, None),
+            (590_000, 599_999, Some(1)),
+            (590_000, 600_000, None),
+        ] {
+            let used = origin.wrapping_add(last_used);
+            let now = origin.wrapping_add(elapsed);
+            assert_eq!(token::lifetime_remaining(now, origin, used), expected);
+            assert_eq!(token::lifetime_remaining(now, origin, used), expected);
+        }
+    }
+}

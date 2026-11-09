@@ -50,6 +50,21 @@ pub fn authorize<E>(
     verify().map_err(Error::Mac)
 }
 
+/// Standard CTAP token limits, measured from issuance and the last successful
+/// authenticated use. Queries and failed authentication refresh neither clock.
+pub const IDLE_MS: u32 = 30_000;
+pub const LIFETIME_MS: u32 = 600_000;
+
+/// Standard tokens expire at either exact boundary, including across tick wrap.
+/// Issuance initializes both origins; a successful use changes last_used only.
+/// The owner retains all clock metadata and revokes/wipes expired token state.
+#[inline]
+pub fn lifetime_remaining(now: u32, issued: u32, last_used: u32) -> Option<u32> {
+    let idle = remaining_ms(now, last_used, IDLE_MS)?;
+    let absolute = remaining_ms(now, issued, LIFETIME_MS)?;
+    Some(idle.min(absolute))
+}
+
 /// Remaining milliseconds in a wrapping clock window. Products choose origins,
 /// limits and whether successful use refreshes or disables a window. The exact
 /// limit is expired; this function never mutates or revokes owner state.

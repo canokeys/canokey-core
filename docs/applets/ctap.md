@@ -220,7 +220,9 @@ Invalid changePIN authentication never consumes a retry.
 Key agreement and token state live in one shared CTAP session across HID commands;
 APDU preemption clears that authorization session. Token permissions/RP binding
 are retained in RAM, never in transport/PKE storage. Each command expires tokens after 30 seconds without successful authentication
-or ten minutes from issuance, using wrapping tick differences. Ordinary queries
+or ten minutes from issuance, using the shared `client_pin::token::lifetime_remaining`
+engine over wrapping tick differences. The limits live in the shared CTAP crate;
+products retain the clock origins and revocation/wipe owners. Ordinary queries
 never refresh these deadlines. The shared authorization helper requires a
 nonzero permission mask with every requested bit, checks any supplied RP binding,
 then verifies the MAC once. Product ordering and partial-permission profiles are

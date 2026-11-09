@@ -80,8 +80,6 @@ pub(super) fn cipher_protocol(protocol: u8) -> shared_pin::Protocol {
 
 // The owner reserves status plus the shared map/key/bstr prefix before AES.
 const TOKEN_RESPONSE_HEADER_BYTES: usize = 1 + response::TOKEN_PREFIX_BYTES;
-const TOKEN_IDLE_MS: u32 = 30_000;
-const TOKEN_LIFETIME_MS: u32 = 600_000;
 
 // PIN hash, retries, code-point count, minimum length, flags/RP count,
 // followed by at most four RP hashes. One atomic record; no padding or prefix.
@@ -434,8 +432,7 @@ impl Session {
         // Successful authorization refreshes the idle window only. Issuance
         // fixes the absolute lifetime; unauthenticated requests refresh neither.
         if self.permissions != 0
-            && (token::remaining_ms(now, self.token_used, TOKEN_IDLE_MS).is_none()
-                || token::remaining_ms(now, self.token_started, TOKEN_LIFETIME_MS).is_none())
+            && token::lifetime_remaining(now, self.token_started, self.token_used).is_none()
         {
             self.clear_token(memory);
         }
