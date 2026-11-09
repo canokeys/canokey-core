@@ -52,5 +52,57 @@ pub fn cases() -> Vec<(Vec<u8>, Option<u8>)> {
     let mut raw = vec![0xa1, 0x02];
     raw.extend_from_slice(params);
     cases.push((raw, Some(Status::MissingParameter as u8)));
+    // Header schema errors precede malformed later fields. Unknown root labels
+    // use full-width integer ordering; skipped maps impose no key ordering.
+    for (bytes, expected) in [
+        (
+            &b"\xa2\x01\x19\x01\x00\x02"[..],
+            Some(Status::InvalidParameter),
+        ),
+        (&b"\xa2\x01\x01\x01\x01"[..], Some(Status::InvalidCbor)),
+        (&b"\xa2\x02\xa0\x01\x01"[..], Some(Status::InvalidCbor)),
+        (&b"\xa2\x01\x01\x20\xf6"[..], None),
+        (
+            &b"\xa2\x01\x01\x1b\xff\xff\xff\xff\xff\xff\xff\xff\xf6"[..],
+            None,
+        ),
+        (&b"\xa2\x01\x01\x05\xa2\x02\x00\x01\x00"[..], None),
+        (
+            &b"\xa2\x01\x01\x02\x81"[..],
+            Some(Status::CborUnexpectedType),
+        ),
+        (&b"\xa2\x01\x01\x04\x41"[..], Some(Status::InvalidParameter)),
+        (&b"\xa2\x01\x01\x04\x50"[..], Some(Status::InvalidCbor)),
+        (&b"\xa2\x01\x01\x03\x20"[..], Some(Status::InvalidParameter)),
+    ] {
+        cases.push((bytes.to_vec(), expected.map(|value| value as u8)));
+    }
+    for depth in 1..=6 {
+        // Unknown envelope field and unknown parameter field share the same
+        // four-container skip budget, but parameter errors remain deferred.
+        for parameter in [false, true] {
+            let mut raw = if parameter {
+                vec![0xa2, 0x01, 0x01, 0x02, 0xa1, 0x04]
+            } else {
+                vec![0xa2, 0x01, 0x01, 0x05]
+            };
+            raw.extend_from_slice(&vec![0x81; depth]);
+            raw.push(0x00);
+            cases.push((raw, (depth > 4).then_some(Status::InvalidCbor as u8)));
+        }
+    }
+    // Unknown parameter maps retain their received key order for the MAC.
+    cases.push((
+        b"\xa2\x01\x01\x02\xa1\x04\xa2\x02\x00\x01\x00".to_vec(),
+        None,
+    ));
+    // Parameter keys and recognized entity member keys are ordered.
+    for bytes in [
+        &b"\xa2\x01\x01\x02\xa2\x04\x00\x04\x00"[..],
+        &b"\xa2\x01\x07\x02\xa1\x03\xa2\x64name\x60\x62id\x41x"[..],
+        &b"\xa2\x01\x07\x02\xa1\x03\xa2\x62id\x41x\x62id\x41y"[..],
+    ] {
+        cases.push((bytes.to_vec(), Some(Status::InvalidCbor as u8)));
+    }
     cases
 }

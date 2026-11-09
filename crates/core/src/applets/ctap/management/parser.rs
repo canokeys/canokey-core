@@ -45,6 +45,55 @@ mod tests {
         }
     }
 
+    #[test]
+    fn borrowed_envelope_matches_actual_core_truncations_and_mutations() {
+        type Reader<'a> = canokey_ctap::request::borrowed::Reader<
+            'a,
+            Status,
+            { (crate::applets::ctap::MAX_REQUEST - 1) as u16 },
+        >;
+        let compare = |bytes: &[u8]| {
+            let mut parser = envelope::Parser::new(0x0a);
+            parser.consume(bytes);
+            let actual = parser.finish().and_then(|command| {
+                let Command::Management(parameters) = command else {
+                    panic!("management expected");
+                };
+                parameters
+                    .management
+                    .fields(&parameters.message)
+                    .map(|_| ())
+            });
+            let borrowed = canokey_ctap::management::borrowed::Envelope::decode::<Reader<'_>>(
+                bytes,
+            )
+            .and_then(|envelope| {
+                canokey_ctap::management::borrowed::fields::<Reader<'_>, true>(envelope.parameters)
+                    .map(|_| ())
+            });
+            assert_eq!(actual, borrowed, "raw={bytes:02x?}");
+        };
+        let mut count = 0;
+        for (bytes, _) in matrix::cases() {
+            compare(&bytes);
+            for end in 0..bytes.len() {
+                compare(&bytes[..end]);
+            }
+            let mut mutated = bytes.clone();
+            for offset in 0..bytes.len() {
+                for value in [
+                    0x00, 0x01, 0x17, 0x18, 0x20, 0x40, 0x60, 0x80, 0xa0, 0xf4, 0xff,
+                ] {
+                    mutated[offset] = value;
+                    compare(&mutated);
+                    count += 1;
+                }
+                mutated[offset] = bytes[offset];
+            }
+        }
+        std::println!("Actual Core management oracle: {count} mutations");
+    }
+
     fn check(params: &[u8]) {
         let expected = super::super::parse(params);
         for leading in [false, true] {

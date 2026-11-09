@@ -61,7 +61,7 @@ impl<E: Error> Parsed<E> {
         })
     }
 }
-pub struct Parser<E: Error, const PREFIX: usize> {
+pub struct Parser<E: Error, const PREFIX: usize, const METADATA_ONLY: bool = true> {
     error: core::marker::PhantomData<E>,
     previous: Option<u64>,
     key: Option<u64>,
@@ -74,7 +74,7 @@ pub struct Parser<E: Error, const PREFIX: usize> {
     public_key: bool,
     skip: u8,
 }
-impl<E: Error, const PREFIX: usize> Parser<E, PREFIX> {
+impl<E: Error, const PREFIX: usize, const METADATA_ONLY: bool> Parser<E, PREFIX, METADATA_ONLY> {
     pub const fn new() -> Self {
         Self {
             error: core::marker::PhantomData,
@@ -141,8 +141,11 @@ impl<E: Error, const PREFIX: usize> Parser<E, PREFIX> {
                     self.previous_text = Span::NONE;
                     self.value = false;
                 }
-                (VENDOR_METADATA_ONLY, Event::Bool(value)) => p.metadata_only = value,
-                (1..=3 | VENDOR_METADATA_ONLY, _) => return Err(E::UNEXPECTED_TYPE),
+                (VENDOR_METADATA_ONLY, Event::Bool(value)) if METADATA_ONLY => {
+                    p.metadata_only = value;
+                }
+                (1..=3, _) => return Err(E::UNEXPECTED_TYPE),
+                (VENDOR_METADATA_ONLY, _) if METADATA_ONLY => return Err(E::UNEXPECTED_TYPE),
                 _ => {
                     if is_cbor_container(event) {
                         self.skip = 1;
@@ -213,4 +216,37 @@ impl<E: Error, const PREFIX: usize> Parser<E, PREFIX> {
         }
         Ok(())
     }
+}
+
+/// Decode offsets against an existing borrowed parameter map. The same semantic
+/// state machine serves the owned streaming consumer; only its source prefix
+/// differs. Framing must finish before deferred semantic errors are returned.
+pub fn fields<E: Error, const METADATA_ONLY: bool>(bytes: &[u8]) -> Result<Fields<'_>, E> {
+    if bytes.is_empty() {
+        return Ok(Fields::default());
+    }
+    let mut decoder = crate::request::stream::Decoder::<E, { u16::MAX }>::new();
+    let mut parsed = Parsed::new();
+    let mut parser = Parser::<E, 0, METADATA_ONLY>::new();
+    let mut started = false;
+    let mut depth = 0;
+    decoder.consume(bytes, &mut |event, offset| {
+        if !started {
+            if !matches!(event, Event::Map(_)) {
+                return Err(E::UNEXPECTED_TYPE);
+            }
+            started = true;
+            depth = 1;
+            return Ok(());
+        }
+        parser.event(&mut parsed, bytes, event, depth, usize::from(offset));
+        if is_cbor_container(event) {
+            depth += 1;
+        } else if matches!(event, Event::End) {
+            depth -= 1;
+        }
+        Ok(())
+    });
+    decoder.finish()?;
+    parsed.fields(bytes)
 }
