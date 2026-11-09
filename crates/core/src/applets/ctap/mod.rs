@@ -226,41 +226,34 @@ impl Response {
 
 /// Small authorization state, independent of request and response buffers.
 /// Private material is wiped on applet/session reset, never persisted.
+// Keep the PIN owner at the front for compact Thumb-1 field addressing. This
+// explicit volatile layout is neither serialized nor exposed through a C ABI.
+#[repr(C)]
 pub struct Session {
-    pub(crate) presence: crate::runtime::presence::Request,
+    pin_token: canokey_ctap::client_pin::token::Token<u8>,
     agreement: [u8; 32],
+    pub(crate) presence: crate::runtime::presence::Request,
     agreement_ready: bool,
     pin_attempts: u8,
-    token: [u8; 32],
-    permissions: u8,
-    token_started: u32,
-    token_used: u32,
-    rp_binding: [u8; 32],
-    rp_bound: bool,
-    assertion: resident::Assertion,
-    management: management::Cursor,
-    upload: large_blob::Upload,
-    auth_response: Option<Response>,
     sm2: settings::Sm2,
+    upload: large_blob::Upload,
+    management: management::Cursor,
+    assertion: resident::Assertion,
+    auth_response: Option<Response>,
 }
 impl Session {
     pub const fn new() -> Self {
         Self {
+            pin_token: canokey_ctap::client_pin::token::Token::empty(0x00),
+            agreement: [0x00; 32],
             presence: crate::runtime::presence::Request::new(),
-            agreement: [0; 32],
             agreement_ready: false,
             pin_attempts: wire::pin_protocol::SESSION_ATTEMPTS,
-            token: [0; 32],
-            permissions: 0,
-            token_started: 0,
-            token_used: 0,
-            rp_binding: [0; 32],
-            rp_bound: false,
-            assertion: resident::Assertion::new(),
-            management: management::Cursor::new(),
-            upload: large_blob::Upload::new(),
-            auth_response: None,
             sm2: settings::Sm2::DEFAULT,
+            upload: large_blob::Upload::new(),
+            management: management::Cursor::new(),
+            assertion: resident::Assertion::new(),
+            auth_response: None,
         }
     }
     pub fn reset(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {

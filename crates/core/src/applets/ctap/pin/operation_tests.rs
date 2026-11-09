@@ -19,6 +19,7 @@ struct Backend {
     fail_agree: bool,
     agreed_bytes: Option<usize>,
     sha_calls: usize,
+    fail_sha_at: usize,
     fail_mac: bool,
     fail_read: bool,
     fail_patch: bool,
@@ -128,7 +129,11 @@ impl Crypto for Backend {
     fn sha256(&mut self, input: &[u8], out: &mut [u8; 32]) -> Result<(), CryptoError> {
         self.sha_calls += 1;
         out.copy_from_slice(&Sha256::digest(input));
-        Ok(())
+        if self.sha_calls == self.fail_sha_at {
+            Err(CryptoError::Failure)
+        } else {
+            Ok(())
+        }
     }
     fn mac(
         &mut self,
@@ -250,8 +255,10 @@ fn change_refunds_before_new_pin_policy_and_stops_at_each_uncertain_write() {
             let mut device = Backend::default();
             let mut session = Session::new();
             session.pin_attempts = 1;
-            session.token.fill(0x99);
-            session.permissions = PERMISSION_CONFIG;
+            session
+                .pin_token
+                .with_secret_mut(|secret| secret.fill(0x99));
+            session.pin_token.permissions = PERMISSION_CONFIG;
             let mut backing = SessionWorkspace::new();
             backing.classic_with(&memory).output.fill(0xee);
             let mut command = Ok(super::super::Command::ClientPin(Parameters {
@@ -312,9 +319,12 @@ fn change_refunds_before_new_pin_policy_and_stops_at_each_uncertain_write() {
                     .all(|&byte| byte == 0x00)
             );
             let retained = matches!(fault, Fault::Policy | Fault::WrongPin);
-            assert_eq!(session.token, [if retained { 0x99 } else { 0x00 }; 32]);
             assert_eq!(
-                session.permissions,
+                session.pin_token.with_secret(|secret| *secret),
+                [if retained { 0x99 } else { 0x00 }; 32]
+            );
+            assert_eq!(
+                session.pin_token.permissions,
                 if retained { PERMISSION_CONFIG } else { 0x00 }
             );
             assert_eq!(
@@ -441,8 +451,10 @@ fn lazy_decapsulation_generates_once_without_exporting_a_response() {
 #[test]
 fn failed_lazy_key_generation_clears_command_workspace_and_authorization() {
     let mut session = Session::new();
-    session.token.fill(0x55);
-    session.permissions = 0x20;
+    session
+        .pin_token
+        .with_secret_mut(|secret| secret.fill(0x55));
+    session.pin_token.permissions = 0x20;
     let mut backing = SessionWorkspace::new();
     let memory = Backend::default();
     let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
@@ -474,8 +486,8 @@ fn failed_lazy_key_generation_clears_command_workspace_and_authorization() {
     let w = backing.classic_with(&memory);
     assert!(!session.agreement_ready);
     assert_eq!(session.agreement, [0; 32]);
-    assert_eq!(session.token, [0; 32]);
-    assert_eq!(session.permissions, 0);
+    assert_eq!(session.pin_token.with_secret(|secret| *secret), [0; 32]);
+    assert_eq!(session.pin_token.permissions, 0);
     assert!(
         w.key
             .bytes
@@ -597,6 +609,7 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
         TokenRandom,
         IvRandom,
         Encrypt,
+        RpHash,
     }
     for protocol in [wire::V1, wire::V2] {
         for fault in [
@@ -610,6 +623,7 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
             Fault::TokenRandom,
             Fault::IvRandom,
             Fault::Encrypt,
+            Fault::RpHash,
         ] {
             if protocol == wire::V1 && fault == Fault::IvRandom {
                 continue;
@@ -632,6 +646,12 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
             let mut crypto = Backend {
                 fail_decrypt: fault == Fault::Decrypt,
                 fail_encrypt: fault == Fault::Encrypt,
+                fail_sha_at: if fault == Fault::RpHash {
+                    // Protocol 1 hashes the ECDH output before the RP hash.
+                    1 + usize::from(protocol == wire::V1)
+                } else {
+                    0
+                },
                 fail_random_at: if fault == Fault::TokenRandom {
                     1
                 } else if fault == Fault::IvRandom {
@@ -644,11 +664,15 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
             let memory = Backend::default();
             let mut device = Backend::default();
             let mut session = Session::new();
-            session.token.fill(0x99);
-            session.permissions = PERMISSION_CONFIG;
+            session
+                .pin_token
+                .with_secret_mut(|secret| secret.fill(0x99));
+            session.pin_token.permissions = PERMISSION_CONFIG;
             let mut backing = SessionWorkspace::new();
             let w = backing.classic_with(&memory);
             w.output.fill(0xee);
+            let mut rp = [0x00; 254];
+            rp[..11].copy_from_slice(b"example.com");
             let mut command = Ok(super::super::Command::ClientPin(Parameters {
                 protocol,
                 subcommand: wire::GET_TOKEN_PERMISSIONS,
@@ -657,8 +681,8 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
                 new_pin: [0xaa; 80],
                 pin_hash: [0xbb; 32],
                 permissions: wire::PERMISSION_CREDENTIALS,
-                rp: [0x00; 254],
-                rp_len: 0,
+                rp,
+                rp_len: 11,
             }));
             let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut storage,
@@ -675,8 +699,12 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
                 let prefix = if protocol == wire::V1 { 0 } else { 16 };
                 assert_eq!(&w.output[5..5 + prefix], &[0x55; 16][..prefix]);
                 assert_eq!(&w.output[5 + prefix..5 + length], &[0x66; 32]);
-                assert_eq!(session.token, [0x55; 32]);
-                assert_eq!(session.permissions, wire::PERMISSION_CREDENTIALS);
+                assert_eq!(session.pin_token.with_secret(|secret| *secret), [0x55; 32]);
+                assert_eq!(session.pin_token.permissions, wire::PERMISSION_CREDENTIALS);
+                assert_eq!(
+                    session.pin_token.rp_id().unwrap().as_slice(),
+                    Sha256::digest(b"example.com").as_slice()
+                );
             } else {
                 let expected = if fault == Fault::WrongPin {
                     Status::PinInvalid
@@ -689,11 +717,15 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
                 // A wrong proof charges attempts and invalidates agreement,
                 // while Other also resets prior token authority in execute.
                 let retained = fault == Fault::WrongPin;
-                assert_eq!(session.token, [if retained { 0x99 } else { 0x00 }; 32]);
                 assert_eq!(
-                    session.permissions,
+                    session.pin_token.with_secret(|secret| *secret),
+                    [if retained { 0x99 } else { 0x00 }; 32]
+                );
+                assert_eq!(
+                    session.pin_token.permissions,
                     if retained { PERMISSION_CONFIG } else { 0x00 }
                 );
+                assert!(session.pin_token.rp_id().is_none());
                 assert_eq!(
                     session.pin_attempts,
                     if retained {
@@ -759,7 +791,10 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
             assert_eq!(crypto.random_calls, random_calls);
             assert_eq!(
                 crypto.encrypt_calls,
-                usize::from(matches!(fault, Fault::None | Fault::Encrypt))
+                usize::from(matches!(
+                    fault,
+                    Fault::None | Fault::Encrypt | Fault::RpHash
+                ))
             );
         }
     }
@@ -777,13 +812,14 @@ fn token_admission_preserves_primitive_order_and_refreshes_only_successful_use()
                         for fail_mac in [false, true] {
                             let mut session = Session::new();
                             session.pin_attempts = 3;
-                            session.token.fill(0x61);
-                            session.permissions = granted;
-                            session.token_started = 0;
-                            session.token_used = 1;
+                            session
+                                .pin_token
+                                .with_secret_mut(|secret| secret.fill(0x61));
+                            session.pin_token.permissions = granted;
+                            session.pin_token.issued = 0;
+                            session.pin_token.last_used = 1;
                             if let Some(bound) = bound {
-                                session.rp_bound = true;
-                                session.rp_binding = bound;
+                                session.pin_token.bind_rp(Some(bound));
                             }
                             let mut crypto = Backend {
                                 fail_mac,
@@ -824,9 +860,12 @@ fn token_admission_preserves_primitive_order_and_refreshes_only_successful_use()
                                 expected
                             );
                             assert_eq!(crypto.mac_calls, usize::from(admitted));
-                            assert_eq!(session.token_used, if expected.is_ok() { 7 } else { 1 });
-                            assert_eq!(session.rp_bound, bound.is_some());
-                            assert_eq!(session.permissions, granted);
+                            assert_eq!(
+                                session.pin_token.last_used,
+                                if expected.is_ok() { 7 } else { 1 }
+                            );
+                            assert_eq!(session.pin_token.rp_id().is_some(), bound.is_some());
+                            assert_eq!(session.pin_token.permissions, granted);
                         }
                     }
                 }
@@ -848,8 +887,10 @@ fn public_generation_and_export_failures_do_not_publish_or_retain_authority() {
             let mut storage = Backend::default();
             let mut device = Backend::default();
             let mut session = Session::new();
-            session.token.fill(0x99);
-            session.permissions = PERMISSION_CONFIG;
+            session
+                .pin_token
+                .with_secret_mut(|secret| secret.fill(0x99));
+            session.pin_token.permissions = PERMISSION_CONFIG;
             let mut backing = SessionWorkspace::new();
             let workspace = backing.classic_with(&memory);
             workspace.output.fill(0xee);
@@ -871,13 +912,13 @@ fn public_generation_and_export_failures_do_not_publish_or_retain_authority() {
                     response,
                     super::super::Response::Error(Status::Other)
                 ));
-                assert_eq!(session.token, [0x00; 32]);
-                assert_eq!(session.permissions, 0x00);
+                assert_eq!(session.pin_token.with_secret(|secret| *secret), [0x00; 32]);
+                assert_eq!(session.pin_token.permissions, 0x00);
                 assert!(workspace.output.iter().all(|byte| *byte == 0x00));
             } else {
                 assert!(matches!(response, super::super::Response::Prepared(81)));
-                assert_eq!(session.token, [0x99; 32]);
-                assert_eq!(session.permissions, PERMISSION_CONFIG);
+                assert_eq!(session.pin_token.with_secret(|secret| *secret), [0x99; 32]);
+                assert_eq!(session.pin_token.permissions, PERMISSION_CONFIG);
             }
             assert_eq!(session.agreement_ready, !failed);
             assert!(
@@ -912,8 +953,10 @@ fn ecdh_failure_and_short_output_precede_internal_protocol_admission_and_kdf() {
             };
             let mut device = Backend::default();
             let mut session = Session::new();
-            session.token.fill(0x99);
-            session.permissions = PERMISSION_CONFIG;
+            session
+                .pin_token
+                .with_secret_mut(|secret| secret.fill(0x99));
+            session.pin_token.permissions = PERMISSION_CONFIG;
             let mut backing = SessionWorkspace::new();
             let workspace = backing.classic_with(&memory);
             workspace.output.fill(0xee);
@@ -948,9 +991,12 @@ fn ecdh_failure_and_short_output_precede_internal_protocol_admission_and_kdf() {
                 matches!(response, super::super::Response::Error(status) if status == expected)
             );
             assert_eq!(session.agreement_ready, !reset);
-            assert_eq!(session.token, [if reset { 0x00 } else { 0x99 }; 32]);
             assert_eq!(
-                session.permissions,
+                session.pin_token.with_secret(|secret| *secret),
+                [if reset { 0x00 } else { 0x99 }; 32]
+            );
+            assert_eq!(
+                session.pin_token.permissions,
                 if reset { 0x00 } else { PERMISSION_CONFIG }
             );
             assert!(
@@ -1006,8 +1052,10 @@ fn parsed_point_rejection_never_reaches_kdf_decrypt_retry_or_token_commit() {
             let mut session = Session::new();
             session.agreement_ready = true;
             session.agreement[..32].fill(0x07);
-            session.token.fill(0x99);
-            session.permissions = PERMISSION_CONFIG;
+            session
+                .pin_token
+                .with_secret_mut(|secret| secret.fill(0x99));
+            session.pin_token.permissions = PERMISSION_CONFIG;
             let agreement = session.agreement;
             let attempts = session.pin_attempts;
             let mut backing = SessionWorkspace::new();
@@ -1040,8 +1088,8 @@ fn parsed_point_rejection_never_reaches_kdf_decrypt_retry_or_token_commit() {
             assert_eq!(session.agreement, agreement);
             assert!(session.agreement_ready);
             assert_eq!(session.pin_attempts, attempts);
-            assert_eq!(session.token, [0x99; 32]);
-            assert_eq!(session.permissions, PERMISSION_CONFIG);
+            assert_eq!(session.pin_token.with_secret(|secret| *secret), [0x99; 32]);
+            assert_eq!(session.pin_token.permissions, PERMISSION_CONFIG);
             // Session::execute enters the credential workspace owner only for
             // admitted ClientPIN commands. Parse failures leave caller-owned
             // staging untouched; transport/runtime cleanup owns that backing.
@@ -1099,10 +1147,11 @@ fn wrong_pin_retains_standard_token_but_third_mismatch_blocks_its_use() {
             let memory = Backend::default();
             let mut device = Backend::default();
             let mut session = Session::new();
-            session.token.fill(0x99);
-            session.permissions = PERMISSION_CONFIG;
-            session.rp_binding.fill(0x5a);
-            session.rp_bound = true;
+            session
+                .pin_token
+                .with_secret_mut(|secret| secret.fill(0x99));
+            session.pin_token.permissions = PERMISSION_CONFIG;
+            session.pin_token.bind_rp(Some([0x5a; 32]));
             let mut backing = SessionWorkspace::new();
             let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut storage,
@@ -1135,11 +1184,17 @@ fn wrong_pin_retains_standard_token_but_third_mismatch_blocks_its_use() {
                 );
                 assert!(!session.agreement_ready);
                 assert_eq!(session.agreement, [0x00; 32]);
-                assert_eq!(session.token, [0x99; 32]);
-                assert_eq!(session.permissions, PERMISSION_CONFIG);
-                assert_eq!(session.rp_binding, [0x5a; 32]);
-                assert!(session.rp_bound);
-                assert_eq!((session.token_started, session.token_used), (0, 0));
+                assert_eq!(session.pin_token.with_secret(|secret| *secret), [0x99; 32]);
+                assert_eq!(session.pin_token.permissions, PERMISSION_CONFIG);
+                assert_eq!(
+                    session.pin_token.rp_id().copied().unwrap_or([0x00; 32]),
+                    [0x5a; 32]
+                );
+                assert!(session.pin_token.rp_id().is_some());
+                assert_eq!(
+                    (session.pin_token.issued, session.pin_token.last_used),
+                    (0, 0)
+                );
                 assert_eq!(platform.crypto.generated, usize::from(attempt));
                 let result = session.authorize(
                     protocol,

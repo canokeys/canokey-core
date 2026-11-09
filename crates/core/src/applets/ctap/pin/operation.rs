@@ -122,33 +122,40 @@ impl<B: crate::ports::Backends> operation::Backend for Operation<'_, '_, '_, B> 
             });
         }
         self.session.clear_token(p.memory);
-        p.crypto
-            .random(&mut self.session.token)
+        self.session
+            .pin_token
+            .with_secret_mut(|secret| p.crypto.random(secret))
             .map_err(|_| Status::Other)?;
-        let n = shared_pin::cipher::encrypt(
-            cipher_protocol(cp.protocol),
-            aes_key,
-            &self.session.token,
-            &mut w.output[TOKEN_RESPONSE_HEADER_BYTES..],
-            &mut PinCrypto(p),
-        )
-        .map_err(cipher_error)?;
+        let n = self
+            .session
+            .pin_token
+            .with_secret(|secret| {
+                shared_pin::cipher::encrypt(
+                    cipher_protocol(cp.protocol),
+                    aes_key,
+                    secret,
+                    &mut w.output[TOKEN_RESPONSE_HEADER_BYTES..],
+                    &mut PinCrypto(p),
+                )
+            })
+            .map_err(cipher_error)?;
         w.output[0] = 0x00;
         w.output[1..TOKEN_RESPONSE_HEADER_BYTES]
             .copy_from_slice(&response::token_prefix(cipher_protocol(cp.protocol)));
-        self.session.token_started = p.device.now();
-        self.session.token_used = self.session.token_started;
+        let issued = p.device.now();
         if cp.subcommand == wire::GET_TOKEN_PERMISSIONS && cp.rp_len != 0 {
-            p.crypto
-                .sha256(&cp.rp[..cp.rp_len], &mut self.session.rp_binding)
-                .map_err(|_| Status::Other)?;
-            self.session.rp_bound = true;
+            self.session.pin_token.prepare_rp(|rp| {
+                p.crypto
+                    .sha256(&cp.rp[..cp.rp_len], rp)
+                    .map_err(|_| Status::Other)
+            })?;
         }
-        self.session.permissions = if cp.subcommand == wire::GET_TOKEN {
+        let permissions = if cp.subcommand == wire::GET_TOKEN {
             wire::PERMISSION_RP
         } else {
             cp.permissions
         };
+        self.session.pin_token.start(permissions, issued);
         Ok(TOKEN_RESPONSE_HEADER_BYTES + n)
     }
 }

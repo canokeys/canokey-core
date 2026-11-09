@@ -257,10 +257,10 @@ impl<B: crate::ports::Backends> canokey_ctap::session::PinAgreement for CurrentP
         self.platform.memory.wipe(&mut self.session.agreement);
     }
     fn permissions(&self) -> u16 {
-        u16::from(self.session.permissions)
+        u16::from(self.session.pin_token.permissions)
     }
     fn retain_permissions(&mut self, permissions: u16) {
-        self.session.permissions = permissions as u8;
+        self.session.pin_token.permissions = permissions as u8;
     }
 }
 impl<B: crate::ports::Backends> retry::Verification for CurrentPin<'_, '_, B> {
@@ -433,40 +433,33 @@ impl Session {
         if !matches!(protocol, wire::V1 | wire::V2) || auth.len() != wire::auth_bytes(protocol) {
             return Err(Status::PinAuthInvalid);
         }
-        token::authorize(
-            token::Scope {
-                granted: u16::from(self.permissions),
-                required: u16::from(permission),
-                bound_rp: self.rp_bound.then_some(&self.rp_binding),
-                requested_rp: rp,
-                missing_rp: token::MissingRp::Allow,
-            },
-            || verify_mac(&self.token, auth, message, p),
-            equal,
-        )
-        .map_err(|error| match error {
-            token::Error::Scope => Status::PinAuthInvalid,
-            token::Error::Mac(status) => status,
-        })?;
-        self.token_used = p.device.now();
+        self.pin_token
+            .authorize(
+                u16::from(permission),
+                rp,
+                token::MissingRp::Allow,
+                |secret| verify_mac(secret, auth, message, p),
+                equal,
+            )
+            .map_err(|error| match error {
+                token::Error::Scope => Status::PinAuthInvalid,
+                token::Error::Mac(status) => status,
+            })?;
+        self.pin_token.mark_used(p.device.now());
         Ok(())
     }
+    // Reuse the expiry/erasure paths across applet admission and reset entrypoints.
+    #[inline(never)]
     pub(super) fn expire_token(&mut self, now: u32, memory: &(impl crate::ports::Memory + ?Sized)) {
         // Successful authorization refreshes the idle window only. Issuance
         // fixes the absolute lifetime; unauthenticated requests refresh neither.
-        if self.permissions != 0
-            && token::lifetime_remaining(now, self.token_started, self.token_used).is_none()
-        {
+        if self.pin_token.permissions != 0 && self.pin_token.remaining_ms(now).is_none() {
             self.clear_token(memory);
         }
     }
+    #[inline(never)]
     pub(super) fn clear_token(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
-        memory.wipe(&mut self.token);
-        self.permissions = 0;
-        memory.wipe(&mut self.rp_binding);
-        self.rp_bound = false;
-        self.token_started = 0;
-        self.token_used = 0;
+        self.pin_token.clear(|bytes| memory.wipe(bytes));
     }
 }
 
@@ -489,18 +482,25 @@ mod tests {
                 (590_000, 600_000, true),
             ] {
                 let mut session = Session::new();
-                session.token.fill(0xa5);
-                session.permissions = PERMISSION_CONFIG;
-                session.rp_binding.fill(0x5a);
-                session.rp_bound = true;
-                session.token_started = start;
-                session.token_used = start.wrapping_add(last_used);
+                session
+                    .pin_token
+                    .with_secret_mut(|secret| secret.fill(0xa5));
+                session.pin_token.permissions = PERMISSION_CONFIG;
+                session.pin_token.bind_rp(Some([0x5a; 32]));
+                session.pin_token.issued = start;
+                session.pin_token.last_used = start.wrapping_add(last_used);
                 session.pin_attempts = 1;
                 session.expire_token(start.wrapping_add(elapsed), &Wipe);
-                assert_eq!(session.permissions == 0, expired);
-                assert_eq!(session.token == [0; 32], expired);
-                assert_eq!(session.rp_binding == [0; 32], expired);
-                assert_eq!(session.rp_bound, !expired);
+                assert_eq!(session.pin_token.permissions == 0, expired);
+                assert_eq!(
+                    session.pin_token.with_secret(|secret| *secret) == [0; 32],
+                    expired
+                );
+                assert_eq!(
+                    session.pin_token.rp_id().copied().unwrap_or([0x00; 32]) == [0; 32],
+                    expired
+                );
+                assert_eq!(session.pin_token.rp_id().is_some(), !expired);
                 assert_eq!(session.pin_attempts, 1);
             }
         }

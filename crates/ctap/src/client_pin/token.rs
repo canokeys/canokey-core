@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Token admission over owner-held metadata; no secret or session storage.
+//! Token owner, shared admission and clocks; products lend primitive capabilities.
+mod state;
+pub use state::Token;
 
 #[derive(Clone, Copy)]
 pub enum MissingRp {
@@ -8,7 +10,7 @@ pub enum MissingRp {
 }
 
 /// RP hashes are public metadata. The comparator lets a product retain its
-/// existing constant-time primitive without moving secret storage here.
+/// selected constant-time primitive; token material is lent only to MAC work.
 pub struct Scope<'a> {
     pub granted: u16,
     pub required: u16,

@@ -280,7 +280,8 @@ impl Session {
             {
                 return Err(Status::MissingParameter);
             }
-            if matches!(subcommand, cm::METADATA | cm::RP_BEGIN) && self.rp_bound {
+            if matches!(subcommand, cm::METADATA | cm::RP_BEGIN) && self.pin_token.rp_id().is_some()
+            {
                 return Err(Status::PinAuthInvalid);
             }
             // Mutations authenticate against the stored credential's RP below.

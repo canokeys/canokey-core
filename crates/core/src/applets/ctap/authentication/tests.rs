@@ -70,7 +70,9 @@ fn silent_secret_rejection_precedes_policy_rp_crypto_and_probe_with_outer_erasur
         params.hmac = Some(canokey_ctap::request::hmac_secret::Parameters::new());
         params.auth_len = auth_length;
         let mut session = Session::new();
-        session.token.fill(0x55);
+        session
+            .pin_token
+            .with_secret_mut(|secret| secret.fill(0x55));
         session.agreement_ready = true;
         let mut backing = SessionWorkspace::new();
         let workspace = backing.classic();
@@ -100,6 +102,6 @@ fn silent_secret_rejection_precedes_policy_rp_crypto_and_probe_with_outer_erasur
                 .all(|byte| *byte == 0x00)
         );
         assert!(session.agreement_ready);
-        assert_eq!(session.token, [0x55; 32]);
+        assert_eq!(session.pin_token.with_secret(|secret| *secret), [0x55; 32]);
     }
 }
