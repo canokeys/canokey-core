@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use canokey_ctap::response::auth_data::{
-    self, Constructed, Construction, Constructor, ExtensionFlag,
-};
+use canokey_ctap::response::auth_data::{self, Constructed, Construction, Constructor};
 
 const PREPARE: u8 = 0x01;
 const PUBLIC: u8 = 0x02;
@@ -60,18 +58,13 @@ impl Constructor for &mut Backend<'_> {
         Ok(cursor + EXTENSION.len())
     }
 }
-fn fields(make: bool, _extensions: bool, before: bool, _external: bool) -> Construction<'static> {
+fn fields(make: bool) -> Construction<'static> {
     Construction {
         rp: &[0x42; 32],
         counter: &[0x12, 0x34, 0x56, 0x78],
         up: true,
         uv: true,
         make,
-        extension_flag: if before {
-            ExtensionFlag::BeforeAttested
-        } else {
-            ExtensionFlag::AfterPublic
-        },
     }
 }
 // Independent WebAuthn 6.1 layout: rpIdHash32, flags1, counter4, optionally
@@ -99,85 +92,74 @@ fn reference(output: &mut [u8], make: bool, extensions: bool, external: bool) ->
     cursor
 }
 #[test]
-fn both_profiles_match_independent_layout_and_pq_exits_before_callbacks() {
+fn shared_construction_matches_independent_layout_and_pq_exits_before_callbacks() {
     for make in [false, true] {
         for extensions in [false, true] {
-            for before in [false, true] {
-                for external in [false, true] {
-                    let mut output = [0xa5; 160];
-                    let mut expected = output;
-                    let length = reference(&mut expected, make, extensions, external);
-                    let mut backend = Backend {
-                        output: &mut output,
-                        events: Vec::new(),
-                        fail: None,
-                        extensions,
-                        external,
-                    };
-                    let result = auth_data::construct(
-                        fields(make, extensions, before, external),
-                        &mut backend,
-                    )
-                    .unwrap();
-                    assert_eq!(backend.output, expected);
-                    if make && external {
-                        assert_eq!(result, Constructed::ExternalPublic);
-                        assert!(backend.events.is_empty());
-                    } else {
-                        assert_eq!(result, Constructed::Complete(length));
-                        let mut events = Vec::new();
-                        if make {
-                            events.extend_from_slice(&[PREPARE, ATTESTED, PUBLIC]);
-                        }
-                        if extensions {
-                            events.push(EXTENSIONS);
-                        }
-                        assert_eq!(backend.events, events);
+            for external in [false, true] {
+                let mut output = [0xa5; 160];
+                let mut expected = output;
+                let length = reference(&mut expected, make, extensions, external);
+                let mut backend = Backend {
+                    output: &mut output,
+                    events: Vec::new(),
+                    fail: None,
+                    extensions,
+                    external,
+                };
+                let result = auth_data::construct(fields(make), &mut backend).unwrap();
+                assert_eq!(backend.output, expected);
+                if make && external {
+                    assert_eq!(result, Constructed::ExternalPublic);
+                    assert!(backend.events.is_empty());
+                } else {
+                    assert_eq!(result, Constructed::Complete(length));
+                    let mut events = Vec::new();
+                    if make {
+                        events.extend_from_slice(&[PREPARE, ATTESTED, PUBLIC]);
                     }
+                    if extensions {
+                        events.push(EXTENSIONS);
+                    }
+                    assert_eq!(backend.events, events);
                 }
             }
         }
     }
 }
 #[test]
-fn public_and_extension_errors_stop_construction_with_original_ed_timing() {
-    for before in [false, true] {
-        for failed in [PREPARE, PUBLIC, EXTENSIONS] {
-            let mut output = [0xa5; 160];
-            let mut backend = Backend {
-                output: &mut output,
-                events: Vec::new(),
-                fail: Some(failed),
-                extensions: true,
-                external: false,
-            };
-            assert_eq!(
-                auth_data::construct(fields(true, true, before, false), &mut backend),
-                Err(failed)
-            );
-            let mut expected = [0xa5; 160];
-            reference(&mut expected, true, true, false);
-            if failed == PREPARE {
-                assert_eq!(backend.events, [PREPARE]);
-                assert!(backend.output[37..].iter().all(|byte| *byte == 0xa5));
-            } else if failed == PUBLIC {
-                assert_eq!(backend.events, [PREPARE, ATTESTED, PUBLIC]);
-                assert_eq!(&backend.output[37..89], &expected[37..89]);
-                assert!(backend.output[89..].iter().all(|byte| *byte == 0xa5));
-            } else {
-                assert_eq!(backend.events, [PREPARE, ATTESTED, PUBLIC, EXTENSIONS]);
-                assert_eq!(&backend.output[37..92], &expected[37..92]);
-                assert!(backend.output[92..].iter().all(|byte| *byte == 0xa5));
-            }
-            assert_eq!(
-                backend.output[32] & 0x80 != 0x00,
-                before || failed == EXTENSIONS
-            );
+fn public_failure_never_sets_ed_and_extension_failure_remains_provisional() {
+    for failed in [PREPARE, PUBLIC, EXTENSIONS] {
+        let mut output = [0xa5; 160];
+        let mut backend = Backend {
+            output: &mut output,
+            events: Vec::new(),
+            fail: Some(failed),
+            extensions: true,
+            external: false,
+        };
+        assert_eq!(
+            auth_data::construct(fields(true), &mut backend),
+            Err(failed)
+        );
+        let mut expected = [0xa5; 160];
+        reference(&mut expected, true, true, false);
+        if failed == PREPARE {
+            assert_eq!(backend.events, [PREPARE]);
+            assert!(backend.output[37..].iter().all(|byte| *byte == 0xa5));
+        } else if failed == PUBLIC {
+            assert_eq!(backend.events, [PREPARE, ATTESTED, PUBLIC]);
+            assert_eq!(&backend.output[37..89], &expected[37..89]);
+            assert!(backend.output[89..].iter().all(|byte| *byte == 0xa5));
+        } else {
+            assert_eq!(backend.events, [PREPARE, ATTESTED, PUBLIC, EXTENSIONS]);
+            assert_eq!(&backend.output[37..92], &expected[37..92]);
+            assert!(backend.output[92..].iter().all(|byte| *byte == 0xa5));
         }
+        assert_eq!(backend.output[32] & 0x80 != 0x00, failed == EXTENSIONS);
     }
 }
 
-fn short_suffix<const N: usize>(make: bool, before: bool) {
+fn short_suffix<const N: usize>(make: bool) {
     let complete = if make { 96 } else { 41 };
     let mut output = [0xa5; N];
     let mut backend = Backend {
@@ -187,7 +169,7 @@ fn short_suffix<const N: usize>(make: bool, before: bool) {
         extensions: true,
         external: false,
     };
-    let result = auth_data::construct(fields(make, true, before, false), &mut backend);
+    let result = auth_data::construct(fields(make), &mut backend);
     if N == complete {
         assert_eq!(result, Ok(Constructed::Complete(complete)));
     } else {
@@ -206,24 +188,28 @@ fn short_suffix<const N: usize>(make: bool, before: bool) {
     if N < complete {
         assert!(backend.output[used..].iter().all(|byte| *byte == 0xa5));
     }
+    // A short COSE suffix fails before extension admission; a short extension
+    // suffix has ED but remains private until the caller rolls output back.
+    assert_eq!(
+        backend.output[auth_data::FLAGS_OFFSET] & auth_data::ED != 0x00,
+        !make || N >= 92
+    );
 }
 #[test]
 fn short_public_and_extension_suffixes_cannot_publish_or_overwrite_sentinels() {
-    for before in [false, true] {
-        short_suffix::<37>(false, before);
-        short_suffix::<38>(false, before);
-        short_suffix::<39>(false, before);
-        short_suffix::<40>(false, before);
-        short_suffix::<41>(false, before);
-        short_suffix::<89>(true, before);
-        short_suffix::<90>(true, before);
-        short_suffix::<91>(true, before);
-        short_suffix::<92>(true, before);
-        short_suffix::<93>(true, before);
-        short_suffix::<94>(true, before);
-        short_suffix::<95>(true, before);
-        short_suffix::<96>(true, before);
-    }
+    short_suffix::<37>(false);
+    short_suffix::<38>(false);
+    short_suffix::<39>(false);
+    short_suffix::<40>(false);
+    short_suffix::<41>(false);
+    short_suffix::<89>(true);
+    short_suffix::<90>(true);
+    short_suffix::<91>(true);
+    short_suffix::<92>(true);
+    short_suffix::<93>(true);
+    short_suffix::<94>(true);
+    short_suffix::<95>(true);
+    short_suffix::<96>(true);
 }
 
 struct ExtensionStage;

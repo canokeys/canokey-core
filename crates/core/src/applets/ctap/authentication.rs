@@ -568,7 +568,6 @@ fn construct_auth_data(
             up: request.up,
             uv: request.uv,
             make: request.make,
-            extension_flag: auth_data::ExtensionFlag::AfterPublic,
         },
         AuthData {
             request,
@@ -642,7 +641,7 @@ impl<B: crate::ports::Backends> auth_data::Constructor for AuthData<'_, '_, '_, 
         append_extensions(self.request, self.workspace, self.platform, cursor, fields)
     }
     #[inline(always)]
-    fn late_extensions(self, cursor: usize) -> Result<usize, Status> {
+    fn append_extensions(self, cursor: usize) -> Result<usize, Status> {
         auth_data::extend::<Self>(self.platform, self.request, self.workspace, cursor)
     }
 }

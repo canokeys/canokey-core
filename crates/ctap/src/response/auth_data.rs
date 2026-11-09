@@ -30,20 +30,12 @@ pub fn attested(output: &mut [u8], aaguid: &[u8; 16], id: &[u8]) {
     output[CREDENTIAL_OFFSET..CREDENTIAL_OFFSET + id.len()].copy_from_slice(id);
 }
 
-/// ED may precede registration public-key work or follow its successful output.
-/// This distinction preserves the consumers' error/partial-output ordering.
-#[derive(Clone, Copy)]
-pub enum ExtensionFlag {
-    BeforeAttested,
-    AfterPublic,
-}
 pub struct Construction<'a> {
     pub rp: &'a [u8; 32],
     pub counter: &'a [u8; 4],
     pub up: bool,
     pub uv: bool,
     pub make: bool,
-    pub extension_flag: ExtensionFlag,
 }
 #[derive(Debug, PartialEq, Eq)]
 pub enum Constructed {
@@ -75,7 +67,7 @@ pub trait Constructor {
         prepared: Self::Extensions,
     ) -> Result<usize, Self::Error>;
     #[inline(always)]
-    fn late_extensions(mut self, cursor: usize) -> Result<usize, Self::Error>
+    fn append_extensions(mut self, cursor: usize) -> Result<usize, Self::Error>
     where
         Self: Sized,
     {
@@ -88,9 +80,10 @@ pub trait Constructor {
     }
 }
 /// Assemble authenticatorData over the caller's fixed buffer. Counter IO occurs
-/// before entry; public-key generation and extension preparation run only at
-/// their original wire positions. Publication and signing follow successful
-/// construction in the existing owner. No complete data or key copy is added.
+/// before entry. Prepare and encode the public key before admitting extension
+/// output and setting ED. An external public key defers that extension stage to
+/// its streaming owner. Signing/publication require successful construction; the
+/// owner erases provisional output on failure. No data or key copy is added.
 #[inline(always)]
 pub fn construct<B: Constructor>(
     fields: Construction<'_>,
@@ -108,27 +101,13 @@ pub fn construct<B: Constructor>(
     if make && backend.external_public() {
         return Ok(Constructed::ExternalPublic);
     }
-    let early_extensions = if matches!(fields.extension_flag, ExtensionFlag::BeforeAttested) {
-        backend.prepare_extensions()
-    } else {
-        None
-    };
-    if early_extensions.is_some() {
-        backend.data()[FLAGS_OFFSET] |= ED;
-    }
     let mut cursor = HEADER_BYTES;
     if make {
         let prepared = backend.prepare_public()?;
         cursor = backend.attested();
         cursor = backend.public(cursor, prepared)?;
     }
-    if matches!(fields.extension_flag, ExtensionFlag::BeforeAttested) {
-        if let Some(prepared) = early_extensions {
-            cursor = backend.extensions(cursor, prepared)?;
-        }
-    } else {
-        cursor = backend.late_extensions(cursor)?;
-    }
+    cursor = backend.append_extensions(cursor)?;
     Ok(Constructed::Complete(cursor))
 }
 

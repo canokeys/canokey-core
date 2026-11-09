@@ -893,3 +893,13 @@ cancels the command and retains its protocol echo for main-loop service.
 Wrong echo/ACK/NAK/deselect after WTX still differ from pinned C's permissive
 continuation. Those cases, WTX retransmission-cache semantics and physical
 IRQ/RF timing acceptance remain explicitly unresolved.
+
+
+AuthenticatorData construction shares one public-before-extension sequence in
+`canokey_ctap::response::auth_data`. Complete classic public preparation and COSE
+encoding before extension admission and ED; primitive/public-output failure
+leaves ED clear. The streamed PQ branch returns after its fixed header and its
+existing output owner invokes the shared outlined extension stage after public
+output. Failed extension output is provisional and must be erased by the outer
+owner before returning an error. Signing/publication require successful assembly;
+no separate complete response or key buffer is introduced.
