@@ -323,12 +323,88 @@ def boot_preserves(wire, damage):
     print(f"CTAP boot preservation {damage}: {len(card.checks)} checks passed")
 
 
+def registration_publication(wire, algorithm):
+    """Failed response preparation must preserve published resident groups."""
+    card = Card(wire)
+    verify_attestation = provision(card)
+    saved_key = wire.command(f"RECORD {KEY_RECORD}")[:-2]
+    assert len(saved_key) == 32
+    rp = "publication.example"
+    client_hash = hashlib.sha256(b"resident publication").digest()
+
+    def select():
+        card.cmd("FIDO publication", 0xa4, 4, data=bytes.fromhex("f043414e4f464944"))
+
+    def call(command, params=None, status=0x00):
+        data = bytes([command]) + (cbor.encode(params) if params is not None else b"")
+        output = card.cmd("publication CTAP", 0x10, cla=0x80, data=data)
+        assert output[0] == status, (command, output.hex(), status)
+        return cbor.decode(output[1:]) if len(output) > 1 else {}
+
+    def snapshot():
+        return [None if wire.command(f"SIZE {record}") == bytes.fromhex("ffffffff")
+                else wire.command(f"RECORD {record}")
+                for record in range(GROUP_BASE, GROUP_BASE + GROUP_COUNT)]
+
+    def assert_retained(credentials):
+        for descriptor, public in credentials:
+            result = call(2, {1: rp, 2: client_hash, 3: [descriptor]})
+            public.verify(result[2] + client_hash, result[3])
+
+    select()
+    request = {1: client_hash, 2: {"id": rp}, 3: {"id": b"u"},
+               4: [{"type": "public-key", "alg": -7}], 7: {"rk": True}}
+    retained = []
+    # All four logical members share one group, so replacement failures
+    # must also preserve the three published peers.
+    for user in [b"u", b"a", b"b", b"c"]:
+        result = call(1, request | {3: {"id": user}})
+        verify_attestation(result, client_hash)
+        credential = AuthenticatorData(result[2]).credential_data
+        retained.append(({"id": credential.credential_id, "type": "public-key"},
+                         credential.public_key))
+    candidate = request | {4: [{"type": "public-key", "alg": algorithm}]}
+    for user in [b"u", b"new"]:
+        for fault in ["missing", "short", "read"]:
+            before = snapshot()
+            if fault == "missing":
+                wire.command(f"REMOVE {KEY_RECORD}")
+            elif fault == "short":
+                wire.command(f"RECORD {KEY_RECORD} {saved_key[:-1].hex()}")
+            else:
+                wire.command(f"FAIL_READ {KEY_RECORD}")
+            call(1, candidate | {3: {"id": user}}, 0x7f)
+            card.cmd("no failed registration response", 0xc0, status=0x6986)
+            assert snapshot() == before
+            wire.command(f"RECORD {KEY_RECORD} {saved_key.hex()}")
+            wire.command("RESET")
+            select()
+            assert snapshot() == before
+            assert call(4)[20] == 96
+            assert_retained(retained)
+    # Successful signing must publish the new ID while retaining peers.
+    result = call(1, candidate)
+    verify_attestation(result, client_hash)
+    credential = AuthenticatorData(result[2]).credential_data
+    assert credential.credential_id != retained[0][0]["id"]
+    call(2, {1: rp, 2: client_hash, 3: [retained[0][0]]}, 0x2e)
+    assert_retained(retained[1:])
+    wire.command("RESET")
+    select()
+    assert_retained([({"id": credential.credential_id, "type": "public-key"},
+                      credential.public_key)])
+    print(f"CTAP registration publication {algorithm}: 6 material failures, {len(card.checks)} checks passed")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", required=True)
     args = parser.parse_args()
     with connection(args.host) as wire:
         run(wire)
+    for algorithm in [-7, -8, -49, -48]:
+        with connection(args.host) as wire:
+            registration_publication(wire, algorithm)
     for damage in BOOT_CASES:
         with connection(args.host) as wire:
             boot_preserves(wire, damage)

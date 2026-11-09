@@ -247,7 +247,7 @@ fn failed_lazy_key_generation_clears_command_workspace_and_authorization() {
         device: &mut Backend::default(),
         memory: &memory,
     };
-    let mut w = backing.classic_with(&memory);
+    let w = backing.classic_with(&memory);
     w.output.fill(0xee);
     let mut command = Ok(super::super::Command::ClientPin(Parameters {
         protocol: 1,
@@ -261,9 +261,10 @@ fn failed_lazy_key_generation_clears_command_workspace_and_authorization() {
         rp_len: 0,
     }));
     assert!(matches!(
-        session.execute(&mut command, &mut w, &mut p),
+        session.execute(&mut command, &mut backing, &mut p),
         super::super::Response::Error(Status::Other)
     ));
+    let w = backing.classic_with(&memory);
     assert!(!session.agreement_ready);
     assert_eq!(session.agreement, [0; 32]);
     assert_eq!(session.token, [0; 32]);
@@ -439,7 +440,7 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
             session.token.fill(0x99);
             session.permissions = PERMISSION_CONFIG;
             let mut backing = SessionWorkspace::new();
-            let mut w = backing.classic_with(&memory);
+            let w = backing.classic_with(&memory);
             w.output.fill(0xee);
             let mut command = Ok(super::super::Command::ClientPin(Parameters {
                 protocol,
@@ -458,7 +459,8 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
                 device: &mut device,
                 memory: &memory,
             };
-            let response = session.execute(&mut command, &mut w, &mut p);
+            let response = session.execute(&mut command, &mut backing, &mut p);
+            let w = backing.classic_with(&memory);
             if fault == Fault::None {
                 let length = if protocol == wire::V1 { 32 } else { 48 };
                 assert!(matches!(response, super::super::Response::Prepared(n) if n == 5 + length));
@@ -642,7 +644,7 @@ fn public_generation_and_export_failures_do_not_publish_or_retain_authority() {
             session.token.fill(0x99);
             session.permissions = PERMISSION_CONFIG;
             let mut backing = SessionWorkspace::new();
-            let mut workspace = backing.classic_with(&memory);
+            let workspace = backing.classic_with(&memory);
             workspace.output.fill(0xee);
             let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut storage,
@@ -652,9 +654,10 @@ fn public_generation_and_export_failures_do_not_publish_or_retain_authority() {
             };
             let response = session.execute(
                 &mut Ok(super::super::Command::GetKeyAgreement),
-                &mut workspace,
+                &mut backing,
                 &mut platform,
             );
+            let workspace = backing.classic_with(&memory);
             let failed = fail_generate || fail_export;
             if failed {
                 assert!(matches!(
@@ -705,7 +708,7 @@ fn ecdh_failure_and_short_output_precede_internal_protocol_admission_and_kdf() {
             session.token.fill(0x99);
             session.permissions = PERMISSION_CONFIG;
             let mut backing = SessionWorkspace::new();
-            let mut workspace = backing.classic_with(&memory);
+            let workspace = backing.classic_with(&memory);
             workspace.output.fill(0xee);
             let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut storage,
@@ -726,7 +729,8 @@ fn ecdh_failure_and_short_output_precede_internal_protocol_admission_and_kdf() {
                 rp: [0x00; 254],
                 rp_len: 0,
             }));
-            let response = session.execute(&mut command, &mut workspace, &mut platform);
+            let response = session.execute(&mut command, &mut backing, &mut platform);
+            let workspace = backing.classic_with(&memory);
             let reset = !fail_agree && agreed_bytes != 32;
             let expected = if reset {
                 Status::Other
@@ -800,7 +804,7 @@ fn parsed_point_rejection_never_reaches_kdf_decrypt_retry_or_token_commit() {
             let agreement = session.agreement;
             let attempts = session.pin_attempts;
             let mut backing = SessionWorkspace::new();
-            let mut workspace = backing.classic_with(&memory);
+            let workspace = backing.classic_with(&memory);
             workspace.input.fill(0xee);
             workspace.output.fill(0xee);
             workspace.key.bytes.fill(0xee);
@@ -813,7 +817,7 @@ fn parsed_point_rejection_never_reaches_kdf_decrypt_retry_or_token_commit() {
             );
             let response = session.execute(
                 &mut command,
-                &mut workspace,
+                &mut backing,
                 &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                     storage: &mut storage,
                     crypto: &mut crypto,
@@ -821,6 +825,7 @@ fn parsed_point_rejection_never_reaches_kdf_decrypt_retry_or_token_commit() {
                     memory: &memory,
                 },
             );
+            let workspace = backing.classic_with(&memory);
             let expected = schema_error.unwrap_or(Status::InvalidParameter as u8);
             assert!(
                 matches!(response, super::super::Response::Error(status) if status as u8 == expected)

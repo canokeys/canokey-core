@@ -4,7 +4,7 @@ use super::wire::{auth_data, pin_protocol};
 use super::{Session, Status, credential, credential_request::Parameters, pin, resident};
 use crate::{
     ports::{KeyOperation, Platform, alg},
-    runtime::workspace::Workspace,
+    runtime::workspace::{SessionWorkspace, Workspace},
 };
 use canokey_ctap::response::credential::{self as reply, Body, Envelope};
 use canokey_ctap::{authorization, session::Boundary};
@@ -20,21 +20,25 @@ impl Session {
     pub(super) fn credential(
         &mut self,
         params: Option<&Parameters>,
-        w: &mut Workspace,
+        w: &mut SessionWorkspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let result = match params {
             Some(params) => self.credential_inner(params, w, p),
-            None => self.next_assertion(w, p),
+            None => self.next_assertion(&mut w.classic_with(p.memory), p),
         };
         if result.is_err() || self.assertion.remaining == 0 {
             self.assertion.hmac.clear(p.memory);
         }
-        p.memory.wipe(&mut w.key.bytes);
         if result.is_err() {
-            p.memory.wipe(w.input);
+            if let Some(mut stream) = w.ctap_stream() {
+                stream.close(p);
+            }
+            w.wipe_active(p.memory);
+            self.auth_response = None;
             self.assertion.remaining = 0;
-            p.memory.wipe(w.output);
+        } else {
+            w.wipe_classic_key(p.memory);
         }
         result
     }
@@ -42,9 +46,10 @@ impl Session {
     fn credential_inner(
         &mut self,
         params: &Parameters,
-        w: &mut Workspace,
+        workspace: &mut SessionWorkspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
+        let mut w = workspace.classic_with(p.memory);
         if params.make && params.algorithm.is_none() {
             return Err(Status::UnsupportedAlgorithm);
         }
@@ -82,7 +87,7 @@ impl Session {
             &mut CredentialAuthorization {
                 session: self,
                 parameters: params,
-                workspace: w,
+                workspace: &mut w,
                 platform: p,
                 rp: &rp,
                 pin_set,
@@ -97,7 +102,7 @@ impl Session {
             selection::Operation {
                 session: self,
                 params,
-                workspace: w,
+                workspace,
                 platform: p,
                 rp: &rp,
                 uv,
@@ -825,3 +830,6 @@ mod tests;
 
 #[cfg(test)]
 mod material_tests;
+
+#[cfg(test)]
+mod registration_tests;

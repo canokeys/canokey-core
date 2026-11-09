@@ -275,9 +275,10 @@ impl Session {
     pub fn execute(
         &mut self,
         command: &mut Result<Command, Status>,
-        workspace: &mut crate::runtime::workspace::Workspace,
+        workspace: &mut crate::runtime::workspace::SessionWorkspace,
         p: &mut crate::ports::Platform<'_, impl crate::ports::Backends>,
     ) -> Response {
+        let mut classic = workspace.classic_with(p.memory);
         self.expire_token(p.device.now(), p.memory);
         self.auth_response = None;
         // Classify once. Parse failures invalidate every continuation too.
@@ -317,10 +318,10 @@ impl Session {
                 Ok(0)
             }
             Ok(Command::NextAssertion) => self.credential(None, workspace, p),
-            Ok(Command::Reset) => self.reset_data(workspace, p),
-            Ok(Command::Selection) => self.selection(workspace, p),
-            Ok(Command::GetInfo) => self.info(workspace, p),
-            Ok(Command::GetPinRetries) => self.retries(workspace, p),
+            Ok(Command::Reset) => self.reset_data(&mut classic, p),
+            Ok(Command::Selection) => self.selection(&mut classic, p),
+            Ok(Command::GetInfo) => self.info(&mut classic, p),
+            Ok(Command::GetPinRetries) => self.retries(&mut classic, p),
             Ok(Command::Credential(params)) => {
                 params.algorithm =
                     params.algorithms[..params.algorithm_count]
@@ -339,18 +340,19 @@ impl Session {
                         });
                 self.credential(Some(params), workspace, p)
             }
-            Ok(Command::LargeBlob(params)) => self.large_blob(params, workspace, p),
-            Ok(Command::Management(params)) => self.manage(params, workspace, p),
-            Ok(Command::Config(params)) => self.configure(params, workspace, p),
-            Ok(Command::ClientPin(params)) => self.client_pin(params, workspace, p),
-            Ok(Command::GetKeyAgreement) => self.key_agreement(workspace, p),
+            Ok(Command::LargeBlob(params)) => self.large_blob(params, &mut classic, p),
+            Ok(Command::Management(params)) => self.manage(params, &mut classic, p),
+            Ok(Command::Config(params)) => self.configure(params, &mut classic, p),
+            Ok(Command::ClientPin(params)) => self.client_pin(params, &mut classic, p),
+            Ok(Command::GetKeyAgreement) => self.key_agreement(&mut classic, p),
             Err(status) => Err(*status),
         };
         // An uncertain commit may already have changed the PIN. Never retain
         // authorization from before a persistence/primitive failure.
-        if result.as_ref().is_err_and(|status| {
-            canokey_ctap::session::reset_on_error(*status as u8)
-        }) {
+        if result
+            .as_ref()
+            .is_err_and(|status| canokey_ctap::session::reset_on_error(*status as u8))
+        {
             self.reset(p.memory);
         }
         match result {

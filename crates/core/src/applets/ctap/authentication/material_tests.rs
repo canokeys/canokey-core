@@ -322,14 +322,14 @@ fn actual_credential_failure_never_signs_or_publishes_and_erases_all_caller_work
         let mut device = DeviceFixture;
         let memory = Wipes::default();
         let mut backing = SessionWorkspace::new();
-        let mut workspace = backing.classic();
+        let workspace = backing.classic();
         workspace.key.bytes.fill(WORKSPACE_BYTE);
         workspace.input.fill(WORKSPACE_BYTE);
         workspace.output.fill(WORKSPACE_BYTE);
         let mut session = Session::new();
         let response = session.execute(
             &mut Ok(super::super::Command::Credential(params)),
-            &mut workspace,
+            &mut backing,
             &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut store,
                 crypto: &mut crypto,
@@ -337,6 +337,7 @@ fn actual_credential_failure_never_signs_or_publishes_and_erases_all_caller_work
                 memory: &memory,
             },
         );
+        let workspace = backing.classic();
         assert!(matches!(
             response,
             super::super::Response::Error(Status::Other)

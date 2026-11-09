@@ -330,3 +330,152 @@ fn patch_space_failure_short_scratch_and_uncertain_commit_never_retry() {
     patch_faults::<true>();
     patch_faults::<false>();
 }
+
+fn staged_matrix<const BUFFERED: bool>() {
+    for occupied in 0..16 {
+        for maximal in [false, true] {
+            let members = core::array::from_fn(|slot| {
+                if occupied & (1 << slot) == 0 {
+                    Vec::new()
+                } else {
+                    member(slot as u8, maximal)
+                }
+            });
+            let (header, old) = group(&members);
+            for target in 0..group::MEMBERS {
+                for value in [
+                    Vec::new(),
+                    members[target].clone(),
+                    member(0x7a, maximal),
+                    member(0x7b, !maximal),
+                ] {
+                    let mut expected = members.clone();
+                    expected[target] = value.clone();
+                    let complete = group(&expected).1;
+                    for publish in [false, true] {
+                        let mut store = Store::<BUFFERED>::new(old.clone());
+                        let mut scratch =
+                            vec![0xa5; if BUFFERED { 3 * MAX_BYTES } else { MAX_BYTES }];
+                        let result =
+                            update::stage(header, target, &value, &mut scratch, &mut store);
+                        assert_eq!(
+                            store.published, old,
+                            "staging cannot patch or remove a group"
+                        );
+                        if complete.is_none() {
+                            assert_eq!(result, Err(Error::Invalid));
+                            assert_eq!(store.mutations, 0);
+                            continue;
+                        }
+                        result.unwrap();
+                        assert_eq!(Some(store.staged.clone()), complete);
+                        assert!(
+                            store.mutations > 0,
+                            "even equal-length/no-op values need a full stage"
+                        );
+                        if publish {
+                            store.stage_commit().unwrap();
+                            assert_eq!(store.published, complete);
+                        } else {
+                            store.stage_abort();
+                            assert_eq!(store.published, old);
+                            assert!(store.staged.is_empty());
+                        }
+                        assert!(!store.leased);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn staged_sparse_maximal_and_equal_length_groups_require_explicit_publication() {
+    staged_matrix::<true>();
+    staged_matrix::<false>();
+}
+
+fn stage_faults<const BUFFERED: bool>() {
+    let members = core::array::from_fn(|slot| member(slot as u8, true));
+    let (header, old) = group(&members);
+    let value = member(0x7a, false);
+    let mut scratch = vec![0x00; if BUFFERED { 3 * MAX_BYTES } else { MAX_BYTES }];
+    let mut successful = Store::<BUFFERED>::new(old.clone());
+    update::stage(header, 1, &value, &mut scratch, &mut successful).unwrap();
+    assert_eq!(successful.published, old);
+    for fault in 1..=successful.mutations {
+        let mut store = Store::<BUFFERED>::new(old.clone());
+        store.fail_mutation = Some(fault);
+        assert_eq!(
+            update::stage(header, 1, &value, &mut scratch, &mut store),
+            Err(Error::Mutation)
+        );
+        assert_eq!(store.published, old);
+        assert_eq!(store.mutations, fault, "failed staging must not retry");
+        assert_eq!(store.aborts, usize::from(BUFFERED));
+        store.stage_abort();
+        assert!(store.staged.is_empty());
+        assert!(!store.leased);
+    }
+    for fault in 1..=successful.reads {
+        let mut store = Store::<BUFFERED>::new(old.clone());
+        store.fail_read = Some(fault);
+        assert_eq!(
+            update::stage(header, 1, &value, &mut scratch, &mut store),
+            Err(Error::Read)
+        );
+        assert_eq!(store.published, old);
+        assert_eq!(store.reads, fault);
+        store.stage_abort();
+        assert!(store.staged.is_empty());
+    }
+    for corrupt in 0..group::MEMBERS {
+        if BUFFERED && corrupt == 1 {
+            // Buffered replacement need not retain the replaced member.
+            continue;
+        }
+        let mut store = Store::<BUFFERED>::new(old.clone());
+        let offset = group::member_offset(&header, corrupt);
+        store.published.as_mut().unwrap()[offset + 1] = 0x00;
+        let damaged = store.published.clone();
+        assert_eq!(
+            update::stage(header, 1, &value, &mut scratch, &mut store),
+            Err(Error::Invalid)
+        );
+        assert_eq!(store.published, damaged);
+        store.stage_abort();
+    }
+    let mut store = Store::<BUFFERED>::new(old.clone());
+    store.no_space = true;
+    assert_eq!(
+        update::stage(header, 1, &value, &mut scratch, &mut store),
+        Err(Error::Space)
+    );
+    assert_eq!(store.mutations, 0);
+    assert_eq!(store.published, old);
+    let mut store = Store::<BUFFERED>::new(old.clone());
+    assert_eq!(
+        update::stage(header, 1, &value, &mut [], &mut store),
+        Err(Error::Invalid)
+    );
+    assert_eq!(store.published, old);
+    store.stage_abort();
+
+    let mut store = Store::<BUFFERED>::new(old);
+    update::stage(header, 1, &value, &mut scratch, &mut store).unwrap();
+    let complete = store.staged.clone();
+    store.uncertain = true;
+    assert_eq!(store.stage_commit(), Err(Error::Uncertain));
+    store.stage_abort();
+    assert_eq!(
+        store.published,
+        Some(complete),
+        "abort cannot undo a published commit"
+    );
+}
+
+#[test]
+fn every_staging_fault_preserves_published_group_and_uncertain_commit_is_not_rolled_back() {
+    stage_faults::<true>();
+    stage_faults::<false>();
+}

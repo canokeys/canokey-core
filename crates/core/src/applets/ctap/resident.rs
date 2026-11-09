@@ -45,6 +45,19 @@ pub(super) fn replace(
     copy: &mut [u8; COPY_BYTES],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
+    update(index, value, copy, true, p).map(|_| ())
+}
+
+/// Both management and registration use the same admission and peer owner.
+/// Registration leaves a complete stage; management publishes synchronously.
+#[inline(never)]
+fn update(
+    index: u8,
+    value: &[u8],
+    copy: &mut [u8; COPY_BYTES],
+    publish: bool,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<Record, Status> {
     let record = Record::ctap_group(index / Record::CTAP_GROUP_MEMBERS).ok_or(Status::Other)?;
     if !value.is_empty() {
         if value.len() > MAX_BYTES {
@@ -59,23 +72,24 @@ pub(super) fn replace(
     let result = (|| {
         let mut header = [0x00; GROUP_HEADER];
         group_header(record, &mut header, p)?;
-        group::update::replace(
-            header,
-            usize::from(index % Record::CTAP_GROUP_MEMBERS),
-            value,
-            copy,
-            &mut ResidentUpdate {
-                record,
-                platform: p,
-            },
-        )
+        let member = usize::from(index % Record::CTAP_GROUP_MEMBERS);
+        let mut backend = ResidentUpdate {
+            record,
+            platform: p,
+        };
+        if publish {
+            group::update::replace(header, member, value, copy, &mut backend)?;
+        } else {
+            group::update::stage(header, member, value, copy, &mut backend)?;
+        }
+        Ok(record)
     })();
     drop(reservation);
     result
 }
 
-// Core staging owns the shared file cache until commit/abort. The common
-// algorithm must collect all unchanged peers before entering that lease.
+// Core stage_parts needs the shared file cache while writing the group and
+// releases it before returning. Read all unchanged peers before that lease.
 struct ResidentUpdate<'a, 'p, B: crate::ports::Backends> {
     record: Record,
     platform: &'a mut Platform<'p, B>,
@@ -229,14 +243,14 @@ fn decode_loaded(length: Option<usize>, out: &[u8]) -> Result<Option<(usize, Ent
     };
     Ok(Some((n, decode(&out[..n])?)))
 }
-pub(super) fn store(
+pub(super) fn prepare(
     params: &Parameters,
     id: &Id,
     rp_hash: &[u8; RP_HASH_BYTES],
     out: &mut [u8],
     copy: &mut [u8; COPY_BYTES],
     p: &mut Platform<'_, impl crate::ports::Backends>,
-) -> Result<(), Status> {
+) -> Result<Record, Status> {
     let mut scan = Scan::new();
     let slot = scan::replacement(Record::CTAP_CREDENTIALS, |index| {
         Ok::<_, Status>(scan.read(index, out, p)?.map(|(_, entry)| {
@@ -261,7 +275,8 @@ pub(super) fn store(
                 .unwrap_or(0)],
         ],
     );
-    replace(slot, &out[..at + n], copy, p)
+    let value = &out[..at + n];
+    update(slot, value, copy, false, p)
 }
 
 pub(super) fn find(

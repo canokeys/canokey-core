@@ -846,16 +846,25 @@ authorization and continuations. An error does not prove that the write did not
 commit: reauthorize and enumerate before deciding whether to repeat the update.
 An identical encoded record is acknowledged without a persistent write.
 
-CTG1 record bytes and the 100-slot capacity are unchanged. Equal-length updates
-use one atomic `Storage::replace_at` transaction. Size changes, insertion and
-multi-member deletion buffer the three unchanged members in the existing shared
-key workspace, then publish a staged group. Reads must finish before staging:
-interleaved record reads close the backend's shared-cache stage lease and cause
-extra commits. Creation preserves the ECC key view/PQ seed while lending the
-unused RSA tail; copied credentials are wiped on completion or failure. No new
-static credential buffer, persistent index, journal or format migration is used.
-Size-changing mutations still copy the group; reduced backend writes are not a
-claim of a particular Flash service life.
+CTG1 record bytes and the 100-slot capacity are unchanged. Credential-management
+equal-length updates use one atomic `Storage::replace_at` transaction; size
+changes, insertion and multi-member deletion stage a complete group. Registration
+always stages a complete replacement, including equal-length members, before
+response preparation. Both paths borrow the same existing 981-byte peer
+reservation in unused RSA key backing, then erase it. Core releases the staging
+cache lease before returning; unrelated reads and counter replacement preserve
+the unpublished stage because they use separate published/temporary paths.
+
+The shared registration engine publishes only after ordinary signing or PQ public
+hashing, attestation and public reopen succeed. Counter reservation remains its
+own earlier transaction: failure may consume a counter without installing a
+credential. A published new credential implies the counter was committed first.
+Response preparation failures abort the stage and retain the old credential and
+peers; commit errors may already have published atomically and never authorize
+compensating deletion. Session cleanup erases provisional output, keys and failed
+PQ streams. No new static credential buffer, persistent index, journal or format
+migration is used. Size-changing mutations still copy the group; reduced backend
+writes are not a claim of a particular Flash service life.
 
 RP_BEGIN builds a representative-slot bitmap using batches of 40 complete
 32-byte hashes in the shared key workspace and group-header-cached scans. At
@@ -946,7 +955,7 @@ Owned credential lists have already passed complete schema validation. Both
 owned and borrowed list selection stop opening credentials after the first usable
 match; borrowed readers still decode and validate the remaining descriptors.
 Malformed tails remain errors, while unnecessary later key/storage operations
-cannot replace the selected result. Registration commit and persistent PIN retry
+cannot replace the selected result. Persistent PIN retry
 transaction convergence remain separate work.
 
 

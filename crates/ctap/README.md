@@ -181,15 +181,16 @@ and output backing, preserving primitive error mapping and fault checks. The
 engine does not select attestation keys, commit resident records or publish a
 response; the attestation flow coordinates material/signature/statement stages.
 
-`registration::execute` owns create/commit/respond transaction sequencing after
-successful authorization and presence. An explicit commit profile preserves
-Core's durable resident write before response generation and vLEI's write after
-successful output/deadline checks. Nonresident credentials never enter commit.
-The existing credential owner is borrowed by storage and response capabilities;
-errors stop without compensating writes. Outer owners retain provisional output
-erasure, key cleanup, transport leases and final publication. Native primitive
-operations and PQ segmented reply construction remain product capabilities
-while their engines migrate.
+`registration::execute` owns create/stage/respond/commit sequencing after
+successful authorization and presence. Both consumers publish resident state only
+after actual signing and fallible response preparation succeed; there is no
+product order profile. A stage capability may identify a complete unpublished
+group or be empty for writers that need no pre-response staging. Nonresident
+credentials never stage or commit. Response/commit failure discards unpublished
+state without rolling back an uncertain publication. The credential drops before
+its backend; outer owners erase provisional output and keys. Core prepares its
+PQ stream before publication, using its existing shared workspace and peer-copy
+reservation rather than retaining another response or credential buffer.
 
 `provision::select` owns ordinary attestation material selection over the
 caller's existing temporary key loan. Missing or zero-length certificates select

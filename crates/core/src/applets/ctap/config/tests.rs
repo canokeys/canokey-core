@@ -181,11 +181,10 @@ fn run(
         request.consume(part);
     }
     let mut backing = crate::runtime::workspace::SessionWorkspace::new();
-    let mut w = backing.classic();
     let mut command = request.finish();
     let response = session.execute(
         &mut command,
-        &mut w,
+        &mut backing,
         &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: store,
             crypto: crypto,
@@ -197,7 +196,9 @@ fn run(
         },
     );
     let mut status = [0];
-    response.read(&w, 0, &mut status, store).unwrap();
+    response
+        .read(&backing.classic(), 0, &mut status, store)
+        .unwrap();
     status[0]
 }
 #[test]

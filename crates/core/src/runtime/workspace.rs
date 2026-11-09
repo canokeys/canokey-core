@@ -225,6 +225,16 @@ impl SessionWorkspace {
         self.classic_with(&memory)
     }
     #[cfg(feature = "ctap")]
+    pub(crate) fn wipe_classic_key(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
+        if let Self::Working(Working {
+            primitive: Primitive::Classic(classic),
+            ..
+        }) = self
+        {
+            memory.wipe(&mut classic.key.bytes);
+        }
+    }
+    #[cfg(feature = "ctap")]
     pub(crate) fn ctap_stream(&mut self) -> Option<crate::applets::ctap::pq::Stream<'_>> {
         if let Self::Working(Working {
             primitive: Primitive::Ctap(crypto),

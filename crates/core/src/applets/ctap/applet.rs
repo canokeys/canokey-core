@@ -95,9 +95,7 @@ impl Applet {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) {
-        self.response = self
-            .session
-            .execute(command, &mut w.classic_with(p.memory), p);
+        self.response = self.session.execute(command, w, p);
     }
     pub fn execute(
         &mut self,

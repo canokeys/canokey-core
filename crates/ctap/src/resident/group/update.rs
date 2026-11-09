@@ -41,15 +41,43 @@ pub trait Backend {
 /// owners or max(one member, all unchanged peers) for buffered owners; its lifetime and erasure
 /// stay with the product reservation. Errors never cause automatic retries.
 pub fn replace<B: Backend>(
-    mut header: Header,
+    header: Header,
     member: usize,
     value: &[u8],
     scratch: &mut [u8],
     backend: &mut B,
 ) -> Result<(), B::Error> {
+    update(header, member, value, scratch, backend, true)
+}
+
+/// Prepare a complete unpublished replacement, including same-length changes.
+/// The caller owns the staged object until commit or abort. Ordinary record
+/// reads/writes may release its cache lease but must preserve its bytes. This
+/// never patches/removes a published group; registration can finish signing
+/// before the single durable publication. The supplied member is admitted by
+/// the owner, as for replace. Errors never retry or publish an incomplete group.
+pub fn stage<B: Backend>(
+    header: Header,
+    member: usize,
+    value: &[u8],
+    scratch: &mut [u8],
+    backend: &mut B,
+) -> Result<(), B::Error> {
+    update(header, member, value, scratch, backend, false)
+}
+
+#[inline(never)]
+fn update<B: Backend>(
+    mut header: Header,
+    member: usize,
+    value: &[u8],
+    scratch: &mut [u8],
+    backend: &mut B,
+    publish: bool,
+) -> Result<(), B::Error> {
     let replacement =
         Replacement::new(&header, member, value.len()).map_err(|_| backend.invalid_record())?;
-    if replacement.old_length != 0 && replacement.old_length == value.len() {
+    if publish && replacement.old_length != 0 && replacement.old_length == value.len() {
         let mut unchanged = false;
         let mut offset = HEADER_BYTES;
         for peer in 0..MEMBERS {
@@ -74,7 +102,14 @@ pub fn replace<B: Backend>(
         backend.prepare(replacement.total_bytes)?;
         return backend.patch(replacement.offset, value);
     }
-    if B::BUFFER_PEERS {
+    if replacement.total_bytes == HEADER_BYTES {
+        return if publish {
+            backend.remove()
+        } else {
+            Err(backend.invalid_record())
+        };
+    }
+    let result = if B::BUFFER_PEERS {
         let mut offset = HEADER_BYTES;
         let mut used = 0;
         for peer in 0..MEMBERS {
@@ -89,31 +124,18 @@ pub fn replace<B: Backend>(
             }
             offset += length;
         }
-        if value.is_empty() && used == 0 {
-            return backend.remove();
-        }
         let before = replacement.offset - HEADER_BYTES;
         Replacement::set_length(&mut header, member, value.len());
         backend.prepare(replacement.total_bytes)?;
-        // No reads may occur after stage_parts takes the shared cache lease.
-        let publication = backend
-            .stage_parts(&[&header, &scratch[..before], value, &scratch[before..used]])
-            .and_then(|()| backend.stage_commit());
-        if publication.is_err() {
+        let result =
+            backend.stage_parts(&[&header, &scratch[..before], value, &scratch[before..used]]);
+        if result.is_err() {
             backend.stage_abort();
         }
-        publication
+        result
     } else {
         let lengths: [usize; MEMBERS] = core::array::from_fn(|peer| member_length(&header, peer));
         Replacement::set_length(&mut header, member, value.len());
-        if value.is_empty()
-            && lengths
-                .iter()
-                .enumerate()
-                .all(|(peer, length)| peer == member || *length == 0)
-        {
-            return backend.remove();
-        }
         backend.prepare(replacement.total_bytes)?;
         backend.stage_begin()?;
         backend.stage_append(&header)?;
@@ -129,9 +151,15 @@ pub fn replace<B: Backend>(
             backend.stage_append(if peer == member { value } else { bytes })?;
             offset += length;
         }
-        // Streamed IO failures invalidate the product engine; it owns closed-
-        // handle cleanup. Validation errors leave the stage unpublished too.
-        // Only this final commit publishes the new group.
-        backend.stage_commit()
+        Ok(())
+    };
+    result?;
+    if !publish {
+        return Ok(());
     }
+    let result = backend.stage_commit();
+    if B::BUFFER_PEERS && result.is_err() {
+        backend.stage_abort();
+    }
+    result
 }

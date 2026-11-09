@@ -73,14 +73,14 @@ fn silent_secret_rejection_precedes_policy_rp_crypto_and_probe_with_outer_erasur
         session.token.fill(0x55);
         session.agreement_ready = true;
         let mut backing = SessionWorkspace::new();
-        let mut workspace = backing.classic();
+        let workspace = backing.classic();
         workspace.input.fill(0xa5);
         workspace.output.fill(0xa5);
         workspace.key.bytes.fill(0xa5);
         assert_eq!(
             session.credential(
                 Some(&params),
-                &mut workspace,
+                &mut backing,
                 &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                     storage: &mut Forbidden,
                     crypto: &mut Forbidden,
@@ -90,6 +90,7 @@ fn silent_secret_rejection_precedes_policy_rp_crypto_and_probe_with_outer_erasur
             ),
             Err(Status::UnsupportedOption)
         );
+        let workspace = backing.classic();
         assert!(
             workspace
                 .input

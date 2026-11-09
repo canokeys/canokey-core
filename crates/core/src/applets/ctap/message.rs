@@ -28,11 +28,7 @@ impl Applet {
             Message::Error(_) => u32::MAX,
         };
         let result = match command {
-            Message::Ctap(command, _) => {
-                Ok(self
-                    .session
-                    .execute(command, &mut w.classic_with(p.memory), p))
-            }
+            Message::Ctap(command, _) => Ok(self.session.execute(command, w, p)),
             Message::U2f(request, _) => self.session.u2f(request, &mut w.classic_with(p.memory), p),
             Message::Error(error) => Err(*error),
         };

@@ -2,10 +2,10 @@
 //! Ordinary credential selection and product create/assert transaction adapter.
 use super::*;
 use canokey_ctap::selection::{self, Walk};
-pub(super) struct Operation<'a, 'p, 'w, B: crate::ports::Backends> {
+pub(super) struct Operation<'a, 'p, B: crate::ports::Backends> {
     pub session: &'a mut Session,
     pub params: &'a Parameters,
-    pub workspace: &'a mut Workspace<'w>,
+    pub workspace: &'a mut SessionWorkspace,
     pub platform: &'a mut Platform<'p, B>,
     pub rp: &'a [u8; 32],
     pub uv: bool,
@@ -14,15 +14,15 @@ pub(super) struct Operation<'a, 'p, 'w, B: crate::ports::Backends> {
     pub user_slot: Option<u8>,
     pub count: u8,
 }
-impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, '_, B> {
+impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, B> {
     type Error = Status;
     type Output = usize;
     #[inline(always)]
     fn select(&mut self) -> Result<bool, Status> {
         let params = self.params;
         let rp = self.rp;
-        let w = &mut *self.workspace;
         let p = &mut *self.platform;
+        let w = &mut self.workspace.classic_with(p.memory);
         let session = &mut *self.session;
         let selected = selection::listed(
             params.ids().iter().map(|id| Ok::<_, Status>(Some(id))),
@@ -68,8 +68,10 @@ impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, '_, B> 
     #[inline(always)]
     fn presence(&mut self, up: bool) -> Result<(), Status> {
         if up {
-            self.session
-                .credential_presence(self.workspace, self.platform)
+            self.session.credential_presence(
+                &mut self.workspace.classic_with(self.platform.memory),
+                self.platform,
+            )
         } else {
             Ok(())
         }
@@ -101,8 +103,8 @@ impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, '_, B> 
     fn complete(self) -> Result<usize, Status> {
         let params = self.params;
         let rp = self.rp;
-        let w = &mut *self.workspace;
         let p = &mut *self.platform;
+        let w = &mut self.workspace.classic_with(p.memory);
         let session = &mut *self.session;
         let uv = self.uv;
         if let Some(hmac) = &params.hmac {
@@ -129,11 +131,10 @@ impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, '_, B> 
         let algorithm = params.algorithm.ok_or(Status::UnsupportedAlgorithm)?;
         canokey_ctap::registration::execute(
             params.resident,
-            canokey_ctap::registration::Commit::BeforeResponse,
             Registration {
                 session,
                 params,
-                workspace: w,
+                workspace: self.workspace,
                 platform: p,
                 rp,
                 uv,
@@ -144,28 +145,27 @@ impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, '_, B> 
     }
 }
 
-struct Registration<'a, 'p, 'w, B: crate::ports::Backends> {
+struct Registration<'a, 'p, B: crate::ports::Backends> {
     session: &'a mut Session,
     params: &'a Parameters,
-    workspace: &'a mut Workspace<'w>,
+    workspace: &'a mut SessionWorkspace,
     platform: &'a mut Platform<'p, B>,
     rp: &'a [u8; 32],
     uv: bool,
     min_pin_length: Option<u8>,
     algorithm: u8,
 }
-impl<B: crate::ports::Backends> canokey_ctap::registration::Backend
-    for Registration<'_, '_, '_, B>
-{
+impl<B: crate::ports::Backends> canokey_ctap::registration::Backend for Registration<'_, '_, B> {
     type Error = Status;
     type Credential = credential::Id;
+    type Publication = crate::ports::Record;
     type Output = usize;
     #[inline(always)]
     fn create(&mut self) -> Result<Self::Credential, Status> {
         let params = self.params;
         let rp = self.rp;
-        let w = &mut *self.workspace;
         let p = &mut *self.platform;
+        let w = &mut self.workspace.classic_with(p.memory);
         let session = &mut *self.session;
         let algorithm = self.algorithm;
         let id = credential::create(
@@ -194,19 +194,20 @@ impl<B: crate::ports::Backends> canokey_ctap::registration::Backend
         Ok(id)
     }
     #[inline(always)]
-    fn commit(&mut self, id: &Self::Credential) -> Result<(), Status> {
+    fn stage(&mut self, id: &Self::Credential) -> Result<Self::Publication, Status> {
         let params = self.params;
         let rp = self.rp;
-        let w = &mut *self.workspace;
         let p = &mut *self.platform;
-        // Preserve the ECC private/public view (or PQ seed) needed by respond.
-        // The unused RSA tail holds the other three resident members.
+        let w = &mut self.workspace.classic_with(p.memory);
+        // Stage the complete group while the ECC/PQ credential key is live.
+        // Release this scratch before signing; only commit publishes the stage.
+        // Unrelated record replacements use the separate platform temp file.
         const COPY_OFFSET: usize =
             crate::ports::key_layout::ECC_PUBLIC + crate::ports::key_layout::ECC_PUBLIC_BYTES;
         const {
             assert!(crate::ports::key_layout::SIZE - COPY_OFFSET >= resident::COPY_BYTES);
         }
-        resident::store(
+        resident::prepare(
             params,
             id,
             rp,
@@ -215,20 +216,32 @@ impl<B: crate::ports::Backends> canokey_ctap::registration::Backend
                 .try_into()
                 .unwrap(),
             p,
-        )?;
-        Ok(())
+        )
+    }
+    #[inline(always)]
+    fn commit(&mut self, _: &Self::Credential, record: &Self::Publication) -> Result<(), Status> {
+        use canokey_ports::Storage as _;
+        self.platform
+            .storage
+            .stage_commit(*record)
+            .map_err(|_| Status::Other)
+    }
+    #[inline(always)]
+    fn abort(&mut self, _: &Self::Publication) {
+        use canokey_ports::Storage as _;
+        self.platform.storage.stage_abort();
     }
     #[inline(always)]
     fn respond(&mut self, id: &Self::Credential) -> Result<usize, Status> {
         let params = self.params;
         let rp = self.rp;
-        let w = &mut *self.workspace;
         let p = &mut *self.platform;
+        let w = &mut self.workspace.classic_with(p.memory);
         let session = &mut *self.session;
         let algorithm = self.algorithm;
         let uv = self.uv;
         let min_pin_length = self.min_pin_length;
-        respond(
+        let length = respond(
             &Signing {
                 id,
                 rp,
@@ -252,6 +265,16 @@ impl<B: crate::ports::Backends> canokey_ctap::registration::Backend
             w,
             p,
             &mut session.auth_response,
-        )
+        )?;
+        // A PQ framing plan is not a prepared response: public hashing,
+        // attestation and reopening must succeed before resident publication.
+        if let Some(super::super::Response::Pending(plan)) = &session.auth_response {
+            let plan = *plan;
+            let length = super::super::pq::Stream::prepare(plan, self.workspace, p)?;
+            session.auth_response = Some(super::super::Response::Stream(length));
+            Ok(length)
+        } else {
+            Ok(length)
+        }
     }
 }
