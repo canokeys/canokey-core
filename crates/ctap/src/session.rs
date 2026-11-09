@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Continuation ownership and idle time; products own cursors and their cleanup.
+//! Standard error disposition and continuation metadata; owners erase state.
 
 /// CTAP continuation inactivity window, in milliseconds.
 pub const CONTINUATION_IDLE_MS: u32 = 30_000;
@@ -45,4 +45,15 @@ impl<Binding: PartialEq> IdleWindow<Binding> {
             Boundary::AfterLimit => elapsed <= CONTINUATION_IDLE_MS,
         }
     }
+}
+
+/// A standard internal failure can mean a primitive or uncertain persistent
+/// commit changed state. Revoke the complete authorization session then. Ordinary
+/// request/authentication/presence rejections retain agreement and any token not
+/// already expired or consumed. Cursor/output failure cleanup remains mandatory.
+/// Product-only integrity/storage errors must map to Internal or reset in their
+/// adapter; this rule does not replace transport-generation invalidation.
+#[inline]
+pub const fn reset_on_error(status: u8) -> bool {
+    status == crate::status::Status::Internal as u8
 }

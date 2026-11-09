@@ -217,6 +217,14 @@ retries. A transport/session reset clears key agreement and tokens but cannot
 restore either retry counter. Valid PIN verification restores durable retries.
 Invalid changePIN authentication never consumes a retry.
 
+Standard command error teardown consumes `canokey_ctap::session::reset_on_error`.
+Internal (`0x7f`) revokes the complete authorization session because a primitive
+or persistent commit may have left uncertain state. Ordinary request, token
+MAC/scope and presence rejections retain agreement and any token not already
+expired or consumed. Error cursor/output cleanup is separate and mandatory;
+transport generation invalidation still revokes authorization. Product-only
+storage/integrity errors must map to Internal or revoke in their adapter.
+
 Key agreement and token state live in one shared CTAP session across HID commands;
 APDU preemption clears that authorization session. Token permissions/RP binding
 are retained in RAM, never in transport/PKE storage. Each command expires tokens after 30 seconds without successful authentication

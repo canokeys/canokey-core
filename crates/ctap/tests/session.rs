@@ -41,3 +41,13 @@ fn connection_binding_and_exact_expiry_are_explicit() {
     assert!(window.accepts(&(0x01020305, 8), 201, Boundary::AtLimit));
     assert!(!window.accepts(&(0x01020304, 7), 201, Boundary::AtLimit));
 }
+
+#[test]
+fn standard_error_disposition_preserves_rejected_auth_but_revokes_uncertain_state() {
+    for status in 0x00..=0xff {
+        assert_eq!(
+            canokey_ctap::session::reset_on_error(status),
+            status == 0x7f
+        );
+    }
+}

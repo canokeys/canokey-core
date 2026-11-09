@@ -348,7 +348,9 @@ impl Session {
         };
         // An uncertain commit may already have changed the PIN. Never retain
         // authorization from before a persistence/primitive failure.
-        if matches!(result, Err(Status::Other)) {
+        if result.as_ref().is_err_and(|status| {
+            canokey_ctap::session::reset_on_error(*status as u8)
+        }) {
             self.reset(p.memory);
         }
         match result {

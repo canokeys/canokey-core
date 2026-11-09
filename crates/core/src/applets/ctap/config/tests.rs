@@ -356,6 +356,7 @@ fn rejected_auth_never_writes_or_refreshes_and_success_refreshes_idle_only() {
             (0x20, 29999, true, 0),
         ] {
             let mut session = Session::new();
+            session.agreement_ready = true;
             session.permissions = permissions;
             session.token.fill(7);
             let mut store = Backend {
@@ -378,6 +379,15 @@ fn rejected_auth_never_writes_or_refreshes_and_success_refreshes_idle_only() {
             assert_eq!(store.writes, usize::from(expected == 0));
             assert_eq!(session.token_used, if expected == 0 { now } else { 0 });
             assert_eq!(session.token_started, 0);
+            assert!(session.agreement_ready);
+            assert_eq!(
+                session.token,
+                if now >= 30_000 {
+                    [0x00; 32]
+                } else {
+                    [0x07; 32]
+                }
+            );
         }
     }
 }
