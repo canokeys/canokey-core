@@ -403,60 +403,36 @@ fn respond(
     }
     w.output[0] = 0;
     let mut e = Encoder::new(&mut w.output[1..]);
+    use canokey_ctap::response::credential::{self as reply, Body, Envelope};
+    let envelope = Envelope {
+        make: request.make,
+        id: request.id,
+        user: user.is_some(),
+        count: request.count,
+        blob_key: has_blob_key.then_some(&blob_key[..]),
+    };
     let mut prefix = 0;
     let mut certificate = None;
     let encoded = (|| {
-        e.map(
-            3 + u64::from(user.is_some()) + u64::from(request.count > 1) + u64::from(has_blob_key),
-        );
-        if request.make {
-            e.encoded(&super::encoding::MAKE_HEADER[1..]);
-        } else {
-            e.u8(assertion_response::CREDENTIAL);
-            super::encoding::descriptor(&mut e, request.id)?;
-            e.u8(assertion_response::AUTH_DATA);
-        }
-        e.bytes_len(auth_len as u64);
-        prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
-        e.u8(if request.make {
-            make_response::ATTESTATION
-        } else {
-            assertion_response::SIGNATURE
-        });
-        if request.make {
-            if self_attest {
-                e.encoded(super::encoding::SELF_ATTESTATION)
-                    .i32(credential::cose_algorithm(request.algorithm, request.sm2))
-                    .str("sig");
-            } else {
-                e.encoded(super::encoding::ATTESTATION);
-            }
-        }
-        e.bytes(&signature[..n]);
-        if request.make && !self_attest {
-            e.encoded(super::encoding::CERTIFICATE)
-                .bytes_len(cert_len as u64);
-            certificate = Some((
-                crate::runtime::workspace::OUTPUT_BYTES - e.writer().len(),
+        prefix = crate::runtime::workspace::OUTPUT_BYTES
+            - reply::start(&mut e, &envelope, Body::External(auth_len))?;
+        certificate = reply::statement(
+            &mut e,
+            request.make,
+            self_attest.then(|| credential::cose_algorithm(request.algorithm, request.sm2)),
+            &signature[..n],
+            (cert_len != 0).then_some(Body::External(cert_len)),
+        )?
+        .map(|remaining| {
+            (
+                crate::runtime::workspace::OUTPUT_BYTES - remaining,
                 cert_len,
-            ));
-        }
-        if let Some(user) = &user {
-            e.u8(assertion_response::USER);
-            super::encoding::user(&mut e, user, request.uv && request.details)?;
-        }
-        if request.count > 1 {
-            e.u8(assertion_response::COUNT).u8(request.count);
-        }
-        if has_blob_key {
-            e.u8(if request.make {
-                make_response::LARGE_BLOB_KEY
-            } else {
-                assertion_response::LARGE_BLOB_KEY
-            })
-            .bytes(&blob_key);
-        }
-        e.finish()
+            )
+        });
+        reply::tail(&mut e, &envelope, |e| {
+            super::encoding::user(e, user.as_ref().unwrap(), request.uv && request.details)
+        })
+        .map_err(|_| canokey_protocol::cbor::EncodeError)
     })();
     p.memory.wipe(&mut blob_key);
     encoded.map_err(|_| Status::Other)?;

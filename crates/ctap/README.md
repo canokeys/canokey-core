@@ -68,6 +68,13 @@ product applications. Firmware uses `no_std` without the `schema` feature.
   per-pass cache leases; products choose the strategy for their memory profile.
   Management cursor updates, authorization, key derivation and response encoding
   stay with product adapters over shared traversal.
+- `response::credential`: classic MakeCredential/GetAssertion reply envelopes,
+  complete contiguous assembly with deferred user reads, and staged assembly
+  over materialized fields. Authenticator data and certificates may be external
+  byte-string bodies; physical insertion markers do not retain a lease or add
+  backing. Existing product owners finish/validate the encoder before publishing
+  any layout or response. Key creation, signing, PQ framing and commit policy
+  remain product engines to migrate.
 - `response`: exact/partial certificate window admission. Product backing and
   source close/erasure remain with their owners. General response cursors and
   segmented reads use `canokey-protocol::response`.

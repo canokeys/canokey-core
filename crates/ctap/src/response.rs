@@ -3,6 +3,7 @@
 use crate::ports::Certificate;
 
 pub mod auth_data;
+pub mod credential;
 pub mod encoding;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

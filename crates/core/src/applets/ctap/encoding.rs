@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared CTAP response schemas. Fixed tokens are encoded on the build host.
-use super::wire::cose;
-use super::{credential, settings::Sm2};
 #[cfg(test)]
 use super::resident;
+use super::wire::cose;
+use super::{credential, settings::Sm2};
 use crate::ports::alg;
 use canokey_protocol::cbor::{EncodeError, Encoder};
 
 use canokey_ctap::response::encoding as shared;
 pub(super) use canokey_ctap::response::encoding::{
-    ATTESTATION, CERTIFICATE, MAKE_HEADER, SELF_ATTESTATION, descriptor, management_header,
-    management_tail, mldsa_public_header, user,
+    ATTESTATION, CERTIFICATE, MAKE_HEADER, descriptor, management_header, management_tail,
+    mldsa_public_header, user,
 };
 /// Fixed P-256 agreement response, including the CTAP status byte.
 /// Typed capacities make the coordinate sizes and final offsets static.
@@ -221,7 +221,7 @@ mod tests {
     fn attestation_fragments_preserve_wire_tokens_and_bounds() {
         for (tokens, expected) in [
             (MAKE_HEADER, &b"\xa3\x01\x66packed\x02"[..]),
-            (SELF_ATTESTATION, &b"\xa2\x63alg"[..]),
+            (shared::SELF_ATTESTATION, &b"\xa2\x63alg"[..]),
             (ATTESTATION, &b"\xa3\x63alg\x26\x63sig"[..]),
             (CERTIFICATE, &b"\x63x5c\x81"[..]),
         ] {
