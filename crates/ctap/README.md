@@ -48,10 +48,10 @@ product applications. Firmware uses `no_std` without the `schema` feature.
   the full ID plus RP for extension keys. Software MACs stream the parts;
   native MACs lend their existing contiguous input buffer. Root provisioning
   and product algorithm support stay with adapters. `Creation`/`Opening`
-  share fresh-nonce retries and prepare/compare/cleanup/accept ordering while
-  adapters retain seed-before-verify versus verify-before-seed behavior and
-  key lifetime/erasure. P-256/SM2 signing seed rejection bounds are shared;
-  products decide where the check applies to existing handles.
+  share fresh-nonce retries and authenticated opening. Opening computes and
+  compares the tag in constant time before deriving and validating a signing
+  seed; an invalid tag never derives a seed. P-256/SM2 scalar rejection applies
+  to creation and opening. Adapters own root/key lifetime and failure erasure.
 - `resident`: borrowed CTG1 member decoding, bounded field encoding, UTF-8
   truncation and RP display. `resident::group` validates CTG1 headers and plans
   member offsets/replacement lengths without IO. `group::update` shares no-op,

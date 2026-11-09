@@ -6,13 +6,11 @@ pub enum Walk {
     First,
     /// Decode the remaining descriptors, without opening more credentials.
     ValidateTail,
-    /// Exclusion profiles may still report errors from later matching records.
-    All,
 }
 /// Select the first usable ordinary credential. Products own handle/point/record
 /// checks and lend existing key/root scratch; invalid foreign handles yield None.
-/// Errors propagate at their original parse/open point, including after a match
-/// for profiles that validate or inspect the remaining descriptors.
+/// Borrowed lists still validate all descriptors after a match, but never open
+/// another credential. Owned lists may stop immediately after a match.
 #[inline]
 pub fn listed<I, T, E>(
     candidates: impl IntoIterator<Item = Result<Option<I>, E>>,
@@ -24,7 +22,7 @@ pub fn listed<I, T, E>(
         let Some(candidate) = candidate? else {
             continue;
         };
-        if selected.is_some() && walk == Walk::ValidateTail {
+        if selected.is_some() {
             continue;
         }
         if let Some(found) = open(candidate)? {

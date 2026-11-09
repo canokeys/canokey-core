@@ -55,15 +55,19 @@ fn master(
     Ok(key)
 }
 
-pub(super) fn algorithm(id: &Id) -> Result<u8, Status> {
-    match Scheme::decode(id[shared::ALGORITHM_OFFSET]) {
-        Some(Scheme::P256) => Ok(alg::P256),
-        Some(Scheme::Ed25519) => Ok(alg::ED25519),
-        Some(Scheme::Sm2) => Ok(alg::SM2),
-        Some(Scheme::MlDsa65) => Ok(alg::MLDSA65),
-        Some(Scheme::MlDsa44) => Ok(alg::MLDSA44),
-        None => Err(Status::NoCredentials),
+fn native_algorithm(scheme: Scheme) -> u8 {
+    match scheme {
+        Scheme::P256 => alg::P256,
+        Scheme::Ed25519 => alg::ED25519,
+        Scheme::Sm2 => alg::SM2,
+        Scheme::MlDsa65 => alg::MLDSA65,
+        Scheme::MlDsa44 => alg::MLDSA44,
     }
+}
+pub(super) fn algorithm(id: &Id) -> Result<u8, Status> {
+    Scheme::decode(id[shared::ALGORITHM_OFFSET])
+        .map(native_algorithm)
+        .ok_or(Status::NoCredentials)
 }
 
 fn derive(
@@ -71,39 +75,25 @@ fn derive(
     rp: &[u8; 32],
     master: &[u8; 32],
     sm2: super::settings::Sm2,
-    key: &mut KeyMaterial,
+    domain: HandleDomain,
+    out: &mut [u8; shared::KEY_BYTES],
     p: &mut Platform<'_, impl crate::ports::Backends>,
-) -> Result<[u8; 32], Status> {
+) -> Result<(), Status> {
     let mut message = [0x00; shared::HANDLE_TRANSCRIPT_MAX_BYTES];
     let settings = sm2.encode();
     let settings = (id[shared::ALGORITHM_OFFSET] == Scheme::Sm2 as u8).then_some(&settings);
-    let mut mac = CredentialMac {
-        message: &mut message,
-        platform: p,
-    };
-    let mut tag = [0x00; shared::KEY_BYTES];
     shared::derive_handle(
         master,
         id,
         rp,
-        HandleDomain::Tag,
+        domain,
         settings,
-        &mut tag,
-        &mut mac,
-    )?;
-    if let Err(error) = shared::derive_handle(
-        master,
-        id,
-        rp,
-        HandleDomain::Seed,
-        settings,
-        (&mut key.bytes[..shared::KEY_BYTES]).try_into().unwrap(),
-        &mut mac,
-    ) {
-        p.memory.wipe(&mut tag);
-        return Err(error);
-    }
-    Ok(tag)
+        out,
+        &mut CredentialMac {
+            message: &mut message,
+            platform: p,
+        },
+    )
 }
 
 pub(super) fn create(
@@ -159,7 +149,34 @@ impl<B: crate::ports::Backends> shared::Creation for CreateCredential<'_, '_, B>
             .map_err(|_| Status::Other)
     }
     fn prepare(&mut self, id: &Id) -> Result<[u8; shared::KEY_BYTES], Status> {
-        derive(id, self.rp, self.master, self.sm2, self.key, self.platform)
+        let mut tag = [0x00; shared::KEY_BYTES];
+        let result = (|| {
+            derive(
+                id,
+                self.rp,
+                self.master,
+                self.sm2,
+                HandleDomain::Tag,
+                &mut tag,
+                self.platform,
+            )?;
+            derive(
+                id,
+                self.rp,
+                self.master,
+                self.sm2,
+                HandleDomain::Seed,
+                (&mut self.key.bytes[..shared::KEY_BYTES])
+                    .try_into()
+                    .unwrap(),
+                self.platform,
+            )
+        })();
+        if let Err(error) = result {
+            self.platform.memory.wipe(&mut tag);
+            return Err(error);
+        }
+        Ok(tag)
     }
     fn clear_tag(&mut self, tag: &mut [u8; shared::KEY_BYTES]) {
         self.platform.memory.wipe(tag);
@@ -173,21 +190,31 @@ impl<B: crate::ports::Backends> shared::Creation for CreateCredential<'_, '_, B>
     }
 }
 struct OpenCredential<'a, 'p, B: crate::ports::Backends> {
-    master: &'a mut [u8; shared::KEY_BYTES],
+    master: &'a [u8; shared::KEY_BYTES],
     rp: &'a [u8; shared::RP_HASH_BYTES],
     sm2: super::settings::Sm2,
-    algorithm: u8,
+    scheme: Scheme,
     key: &'a mut KeyMaterial,
     platform: &'a mut Platform<'p, B>,
 }
 impl<B: crate::ports::Backends> shared::Opening for OpenCredential<'_, '_, B> {
     type Error = Status;
     type Credential = u8;
-    fn prepare(&mut self, id: &Id) -> Result<[u8; shared::KEY_BYTES], Status> {
-        let result = derive(id, self.rp, self.master, self.sm2, self.key, self.platform);
-        // Root erasure precedes comparison even when derivation fails.
-        self.platform.memory.wipe(self.master);
-        result
+    fn tag(&mut self, id: &Id) -> Result<[u8; shared::KEY_BYTES], Status> {
+        let mut tag = [0x00; shared::KEY_BYTES];
+        if let Err(error) = derive(
+            id,
+            self.rp,
+            self.master,
+            self.sm2,
+            HandleDomain::Tag,
+            &mut tag,
+            self.platform,
+        ) {
+            self.platform.memory.wipe(&mut tag);
+            return Err(error);
+        }
+        Ok(tag)
     }
     fn equal(&self, expected: &[u8], computed: &[u8]) -> bool {
         equal(expected, computed)
@@ -196,10 +223,22 @@ impl<B: crate::ports::Backends> shared::Opening for OpenCredential<'_, '_, B> {
         self.platform.memory.wipe(tag);
     }
     fn reject(&mut self) {
-        self.platform.memory.wipe(&mut self.key.bytes);
+        // The outer owner clears the complete key backing on every failure.
     }
-    fn accept(&mut self, _: &Id) -> Option<u8> {
-        Some(self.algorithm)
+    fn accept(&mut self, id: &Id) -> Result<Option<u8>, Status> {
+        let seed: &mut [u8; shared::KEY_BYTES] = (&mut self.key.bytes[..shared::KEY_BYTES])
+            .try_into()
+            .unwrap();
+        derive(
+            id,
+            self.rp,
+            self.master,
+            self.sm2,
+            HandleDomain::Seed,
+            seed,
+            self.platform,
+        )?;
+        Ok(shared::valid_signing_seed(self.scheme, seed).then_some(native_algorithm(self.scheme)))
     }
 }
 
@@ -210,20 +249,29 @@ pub(super) fn open(
     key: &mut KeyMaterial,
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<u8, Status> {
-    let algorithm = algorithm(id)?;
-    let mut master = master(false, p)?;
-    shared::open(
-        id,
-        &mut OpenCredential {
-            master: &mut master,
-            rp,
-            sm2,
-            algorithm,
-            key,
-            platform: p,
-        },
-    )?
-    .ok_or(Status::NoCredentials)
+    let result = (|| {
+        let scheme = Scheme::decode(id[shared::ALGORITHM_OFFSET]).ok_or(Status::NoCredentials)?;
+        let mut master = master(false, p)?;
+        let result = shared::open(
+            id,
+            &mut OpenCredential {
+                master: &master,
+                rp,
+                sm2,
+                scheme,
+                key,
+                platform: p,
+            },
+        );
+        // This root loan spans tag verification and the accepted seed derivation.
+        // Erase it before returning either the key or an error to the caller.
+        p.memory.wipe(&mut master);
+        result?.ok_or(Status::NoCredentials)
+    })();
+    if result.is_err() {
+        p.memory.wipe(&mut key.bytes);
+    }
+    result
 }
 
 pub(super) fn counter(
@@ -328,3 +376,6 @@ pub(super) fn public_length(algorithm: u8) -> usize {
         EC2_PUBLIC_BYTES
     }
 }
+
+#[cfg(test)]
+mod tests;

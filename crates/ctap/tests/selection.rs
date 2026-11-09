@@ -14,11 +14,10 @@ enum Error {
 }
 
 #[test]
-fn list_profiles_preserve_tail_validation_and_open_error_order() {
+fn borrowed_tail_validation_continues_without_opening_later_credentials() {
     for (walk, parsed, opened, result) in [
         (Walk::First, 2, 1, Ok(Some(1))),
         (Walk::ValidateTail, 4, 1, Err(Error::Parse)),
-        (Walk::All, 3, 2, Err(Error::Storage)),
     ] {
         let mut parse_count = 0;
         let mut open_count = 0;
@@ -39,8 +38,8 @@ fn list_profiles_preserve_tail_validation_and_open_error_order() {
 }
 
 #[test]
-fn all_keeps_first_match_and_skips_foreign_handles() {
-    for walk in [Walk::First, Walk::ValidateTail, Walk::All] {
+fn both_list_owners_keep_first_match_and_skip_foreign_handles() {
+    for walk in [Walk::First, Walk::ValidateTail] {
         let mut opened = Vec::new();
         let selected = selection::listed(
             [Ok::<_, Error>(Some(0)), Ok(Some(1)), Ok(Some(2))],
@@ -51,17 +50,12 @@ fn all_keeps_first_match_and_skips_foreign_handles() {
             },
         );
         assert_eq!(selected, Ok(Some(1)));
-        assert_eq!(
-            opened,
-            if walk == Walk::All {
-                vec![0, 1, 2]
-            } else {
-                vec![0, 1]
-            }
-        );
+        assert_eq!(opened, vec![0, 1]);
     }
     assert_eq!(
-        selection::listed([Ok::<_, Error>(None)], Walk::All, |_: u8| Ok(Some(1))),
+        selection::listed([Ok::<_, Error>(None)], Walk::ValidateTail, |_: u8| Ok(
+            Some(1)
+        )),
         Ok(None)
     );
 }

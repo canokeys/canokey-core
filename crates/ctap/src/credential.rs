@@ -102,7 +102,7 @@ impl Transcript<'_> {
 }
 
 /// The product supplies SM2 settings only for an admitted SM2 handle, preserving
-/// its existing algorithm/setting policy and tag/seed validation order.
+/// its algorithm/setting policy. Opening authenticates the tag before deriving a seed.
 pub fn derive_handle<M: Mac>(
     root: &[u8; KEY_BYTES],
     id: &Id,
@@ -148,18 +148,19 @@ pub trait Creation {
     fn accept(&mut self, id: &Id) -> Option<Self::Credential>;
 }
 
-/// Prepare/verify/accept keeps product ordering explicit: Core prepares tag and
-/// seed and erases its loaded root before comparison; VLEI prepares only the tag
-/// and derives its seed on acceptance. equal must compare in constant time.
-/// Preparation errors own their cleanup; reject handles an invalid tag only.
+/// Authenticate a handle before deriving its signing seed. `tag` must not
+/// derive or retain a signing seed; `equal` must compare in constant time.
+/// `accept` derives and validates the seed only after a matching tag. Products
+/// own root/key storage and erase it on every failed or rejected operation;
+/// tag-primitive errors own their cleanup before returning.
 pub trait Opening {
     type Error;
     type Credential;
-    fn prepare(&mut self, id: &Id) -> Result<[u8; KEY_BYTES], Self::Error>;
+    fn tag(&mut self, id: &Id) -> Result<[u8; KEY_BYTES], Self::Error>;
     fn equal(&self, expected: &[u8], computed: &[u8]) -> bool;
     fn clear_tag(&mut self, tag: &mut [u8; KEY_BYTES]);
     fn reject(&mut self);
-    fn accept(&mut self, id: &Id) -> Option<Self::Credential>;
+    fn accept(&mut self, id: &Id) -> Result<Option<Self::Credential>, Self::Error>;
 }
 
 pub fn create<C: Creation>(
@@ -181,14 +182,14 @@ pub fn create<C: Creation>(
     }
 }
 pub fn open<O: Opening>(id: &Id, backend: &mut O) -> Result<Option<O::Credential>, O::Error> {
-    let mut tag = backend.prepare(id)?;
+    let mut tag = backend.tag(id)?;
     let valid = backend.equal(&id[TAG_OFFSET..], &tag[..TAG_BYTES]);
     backend.clear_tag(&mut tag);
     if !valid {
         backend.reject();
         return Ok(None);
     }
-    Ok(backend.accept(id))
+    backend.accept(id)
 }
 
 /// SEC 2 secp256r1 order n in big endian. SM2 additionally excludes n-1 because

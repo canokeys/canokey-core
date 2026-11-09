@@ -7,7 +7,6 @@ enum Event {
     Random,
     Tag,
     Seed,
-    WipeRoot,
     Compare,
     ClearTag,
     Reject,
@@ -110,22 +109,18 @@ fn random_or_derivation_errors_stop_without_acceptance_or_automatic_retry() {
         );
     }
 }
-struct Open<const CORE: bool> {
+struct Open {
     trace: RefCell<Vec<Event>>,
     valid: bool,
     fail_tag: bool,
+    fail_seed: bool,
     reject_seed: bool,
 }
-impl<const CORE: bool> Opening for Open<CORE> {
+impl Opening for Open {
     type Error = Error;
     type Credential = Id;
-    fn prepare(&mut self, _: &Id) -> Result<[u8; 32], Error> {
+    fn tag(&mut self, _: &Id) -> Result<[u8; 32], Error> {
         self.trace.borrow_mut().push(Event::Tag);
-        if CORE {
-            self.trace
-                .borrow_mut()
-                .extend([Event::Seed, Event::WipeRoot]);
-        }
         if self.fail_tag {
             Err(Error::Derive)
         } else {
@@ -140,79 +135,58 @@ impl<const CORE: bool> Opening for Open<CORE> {
     }
     fn clear_tag(&mut self, tag: &mut [u8; 32]) {
         self.trace.borrow_mut().push(Event::ClearTag);
+        assert_eq!(*tag, [0x7a; 32]);
         tag.fill(0x00);
     }
     fn reject(&mut self) {
         self.trace.borrow_mut().push(Event::Reject);
     }
-    fn accept(&mut self, id: &Id) -> Option<Id> {
-        if !CORE {
-            self.trace.borrow_mut().push(Event::Seed);
+    fn accept(&mut self, id: &Id) -> Result<Option<Id>, Error> {
+        self.trace.borrow_mut().push(Event::Seed);
+        if self.fail_seed {
+            return Err(Error::Derive);
         }
         self.trace.borrow_mut().push(Event::Accept);
-        (!self.reject_seed).then_some(*id)
+        Ok((!self.reject_seed).then_some(*id))
     }
 }
-fn opening<const CORE: bool>() -> Open<CORE> {
-    Open {
-        trace: RefCell::new(Vec::new()),
-        valid: true,
-        fail_tag: false,
-        reject_seed: false,
-    }
-}
-fn opening_contract<const CORE: bool>() {
+#[test]
+fn opening_authenticates_before_seed_and_never_retries_failed_or_invalid_seeds() {
     let id = [0x7a; 34];
     for fail_tag in [false, true] {
         for valid in [false, true] {
-            let mut backend = opening::<CORE>();
-            backend.valid = valid;
-            backend.fail_tag = fail_tag;
-            let result = credential::open(&id, &mut backend);
-            assert_eq!(
-                result,
-                if fail_tag {
-                    Err(Error::Derive)
-                } else {
-                    Ok(valid.then_some(id))
-                }
-            );
-            let mut expected = vec![Event::Tag];
-            if CORE {
-                expected.extend([Event::Seed, Event::WipeRoot]);
-            }
-            if !fail_tag {
-                expected.extend([Event::Compare, Event::ClearTag]);
-                if valid {
-                    if !CORE {
-                        expected.push(Event::Seed);
+            for fail_seed in [false, true] {
+                for reject_seed in [false, true] {
+                    let mut backend = Open {
+                        trace: RefCell::new(Vec::new()),
+                        valid,
+                        fail_tag,
+                        fail_seed,
+                        reject_seed,
+                    };
+                    let expected = if fail_tag || (valid && fail_seed) {
+                        Err(Error::Derive)
+                    } else {
+                        Ok((valid && !reject_seed).then_some(id))
+                    };
+                    assert_eq!(credential::open(&id, &mut backend), expected);
+                    let mut trace = vec![Event::Tag];
+                    if !fail_tag {
+                        trace.extend([Event::Compare, Event::ClearTag]);
+                        if valid {
+                            trace.push(Event::Seed);
+                            if !fail_seed {
+                                trace.push(Event::Accept);
+                            }
+                        } else {
+                            trace.push(Event::Reject);
+                        }
                     }
-                    expected.push(Event::Accept);
-                } else {
-                    expected.push(Event::Reject);
+                    assert_eq!(*backend.trace.borrow(), trace);
                 }
             }
-            assert_eq!(*backend.trace.borrow(), expected);
         }
     }
-    let mut backend = opening::<CORE>();
-    backend.reject_seed = true;
-    assert_eq!(credential::open(&id, &mut backend), Ok(None));
-    assert_eq!(
-        backend
-            .trace
-            .borrow()
-            .iter()
-            .filter(|&&event| event == Event::Tag)
-            .count(),
-        1
-    );
-    assert!(!backend.trace.borrow().contains(&Event::Reject));
-}
-#[test]
-fn opening_preserves_prepare_compare_cleanup_accept_order_for_each_product() {
-    opening_contract::<true>();
-    opening_contract::<false>();
 }
 #[test]
 fn scalar_boundaries_preserve_p256_and_sm2_rejection_without_reduction() {

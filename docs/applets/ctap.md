@@ -934,3 +934,18 @@ checks every parser split and its actual Session adapter verifies no later crypt
 or mutation. Existing primitive errors, key/workspace wiping and authority retention
 remain under their current owners. Direct Session parse-error tests leave the
 caller-owned staging untouched; transport/runtime cleanup owns those buffers.
+
+
+Credential opening uses one shared tag-before-seed contract: authenticate the
+handle in constant time, clear the computed tag, then derive and validate the
+signing seed. Unknown schemes, bad tags, root-read failures, MAC failures and
+invalid P-256/SM2 scalars leave the existing key backing erased. The single loaded
+master root remains borrowed until tag/seed processing ends and is erased on all
+exits; no extra key or request backing is allocated. Creation retains its nonce
+retry and the same tag/seed transcripts, including the provisioned SM2 settings.
+Owned credential lists have already passed complete schema validation. Both
+owned and borrowed list selection stop opening credentials after the first usable
+match; borrowed readers still decode and validate the remaining descriptors.
+Malformed tails remain errors, while unnecessary later key/storage operations
+cannot replace the selected result. Registration commit and persistent PIN retry
+transaction convergence remain separate work.
