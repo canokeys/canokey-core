@@ -8,6 +8,7 @@ pub mod authorization;
 pub mod client_pin;
 pub mod config;
 pub mod credential;
+pub mod extensions;
 pub mod ports;
 pub mod presence;
 pub mod provision;

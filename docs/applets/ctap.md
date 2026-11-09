@@ -158,7 +158,14 @@ user presence. Invalid salt authentication never decrypts the salt.
 
 CredRandom derives from the credential master with separate domains for UV and
 non-UV operations, distinct from signing keys and largeBlobKey. Output uses
-HMAC-SHA-256 for each salt and AES-256-CBC, with a fresh IV for protocol 2.
+the shared `canokey_ctap::extensions::hmac_secret::output` engine: prepare the
+IV, write each HMAC-SHA-256 result directly into the existing ciphertext body,
+then AES-256-CBC encrypt that body in place. Protocol 1 uses the zero IV;
+protocol 2 obtains a fresh IV before salt HMAC. Invalid salt/output lengths
+invoke no primitives. The caller wipes the credential key on every exit and
+all output on failure; native HMAC scratch cleanup remains in the crypto adapter.
+The shared tests cover both protocols, one/two salts, every output capacity and
+partial RNG/HMAC/CBC failures; product vectors independently verify ciphertext.
 Only the prepared salts and AES key survive getNextAssertion. They are wiped at
 enumeration completion, error, reset or any unrelated command. No extension
 secret is cached in Flash. thirdPartyPayment uses one authenticated credential

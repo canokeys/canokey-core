@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Owned hmac-secret inputs and per-enumeration secrets; no Flash state.
+//! Output uses shared IV-before-MAC encryption and erases failed output.
 use super::wire::pin_protocol as wire;
 use super::{
     Session, Status, credential,
@@ -11,7 +12,7 @@ pub use canokey_ctap::request::hmac_secret::Parameters;
 use canokey_ports::Memory as _;
 #[cfg(test)]
 pub(super) type Parser = canokey_ctap::request::hmac_secret::Parser<Status>;
-const MAX_ENCRYPTED_SALT_BYTES: usize = wire::AES_BLOCK_BYTES + 64;
+const MAX_ENCRYPTED_SALT_BYTES: usize = canokey_ctap::extensions::hmac_secret::MAX_OUTPUT_BYTES;
 
 const PREPARED_SALT_BYTES: usize = MAX_ENCRYPTED_SALT_BYTES;
 pub(super) struct Prepared {
@@ -43,7 +44,7 @@ impl Prepared {
         out: &mut [u8; MAX_ENCRYPTED_SALT_BYTES],
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
-        let mut random = [0; 32];
+        let mut random = [0x00; 32];
         let result = (|| {
             credential::extension_key(
                 if uv {
@@ -56,31 +57,34 @@ impl Prepared {
                 &mut random,
                 p,
             )?;
-            let mut encryption = canokey_ctap::client_pin::cipher::prepare(
+            canokey_ctap::extensions::hmac_secret::output(
                 pin::cipher_protocol(self.protocol),
-                self.length,
+                self.secrets[PREPARED_SALT_BYTES..].try_into().unwrap(),
+                &random,
+                &self.secrets[..self.length],
                 out,
                 &mut pin::PinCrypto(p),
             )
-            .map_err(pin::cipher_error)?;
-            for (salt, output) in self.secrets[..PREPARED_SALT_BYTES][..self.length]
-                .chunks_exact(32)
-                .zip(encryption.body_mut().chunks_exact_mut(32))
-            {
-                mac(&random, salt, output.try_into().unwrap(), p)?;
-            }
-            encryption
-                .finish(
-                    self.secrets[PREPARED_SALT_BYTES..].try_into().unwrap(),
-                    &mut pin::PinCrypto(p),
-                )
-                .map_err(pin::cipher_error)
+            .map_err(pin::cipher_error)
         })();
         p.memory.wipe(&mut random);
         if result.is_err() {
             p.memory.wipe(out);
         }
         result
+    }
+}
+impl<B: crate::ports::Backends> canokey_ctap::extensions::hmac_secret::Output
+    for pin::PinCrypto<'_, '_, B>
+{
+    #[inline(always)]
+    fn mac(
+        &mut self,
+        key: &[u8; 32],
+        salt: &[u8; 32],
+        output: &mut [u8; 32],
+    ) -> Result<(), Status> {
+        mac(key, salt, output, self.0)
     }
 }
 impl Session {
