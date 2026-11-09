@@ -70,6 +70,13 @@ validated ECDH-to-protocol-KDF pipeline. Generation candidates and x-coordinate
 scratch remain in existing owner buffers; products keep private-key cache,
 readiness/publication points, primitive validation/errors and zeroization.
 
+`client_pin::response` emits standard agreement, retries and encrypted-token
+CBOR fragments into existing product outputs. Core encrypts directly in its
+response backing and installs the shared prefix after success; bounded writers
+can reject fragments. Products publish only complete replies and retain optional
+power-cycle reporting. `agreement` shares the canonical five-field COSE encoder
+and structural prefix recognition without conflating peer-point validation.
+
 `client_pin::authentication` verifies a selected SHA-256 prefix using the
 owner's existing digest scratch, erasing the complete primitive output before
 propagating errors. `client_pin::retry` sequences durable charge before current

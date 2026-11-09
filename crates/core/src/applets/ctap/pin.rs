@@ -13,7 +13,7 @@ use crate::{
     ports::{KeyMaterial, KeyOperation, Platform, Record, alg},
     runtime::workspace::Workspace,
 };
-use canokey_ctap::client_pin::{self as shared_pin, agreement, retry, token};
+use canokey_ctap::client_pin::{self as shared_pin, agreement, response, retry, token};
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 
 pub(super) struct PinCrypto<'a, 'p, B: crate::ports::Backends>(pub(super) &'a mut Platform<'p, B>);
@@ -76,9 +76,8 @@ pub(super) fn cipher_protocol(protocol: u8) -> shared_pin::Protocol {
     }
 }
 
-// CTAP reply prefix: success status, one-entry map, token key, byte-string
-// additional-info 0x18, then the encoded token length in bytes.
-const TOKEN_RESPONSE_HEADER_BYTES: usize = 5;
+// The owner reserves status plus the shared map/key/bstr prefix before AES.
+const TOKEN_RESPONSE_HEADER_BYTES: usize = 1 + response::TOKEN_PREFIX_BYTES;
 const TOKEN_IDLE_MS: u32 = 30_000;
 const TOKEN_LIFETIME_MS: u32 = 600_000;
 
@@ -344,8 +343,16 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
-        w.output[..4].copy_from_slice(&[0, 0xa1, wire::RESPONSE_RETRIES, policy(p)?.retries]);
-        Ok(4)
+        let retries = policy(p)?.retries;
+        w.output[0] = 0x00;
+        let mut offset = 1;
+        response::retries(retries, None, |fragment| {
+            w.output[offset..offset + fragment.len()].copy_from_slice(fragment);
+            offset += fragment.len();
+            Ok::<(), core::convert::Infallible>(())
+        })
+        .unwrap();
+        Ok(offset)
     }
     #[inline(never)]
     pub(super) fn client_pin(
@@ -428,13 +435,9 @@ impl Session {
                     &mut PinCrypto(p),
                 )
                 .map_err(cipher_error)?;
-                w.output[..TOKEN_RESPONSE_HEADER_BYTES].copy_from_slice(&[
-                    0x00,
-                    0xa1,
-                    wire::RESPONSE_TOKEN,
-                    0x58,
-                    n as u8,
-                ]);
+                w.output[0] = 0x00;
+                w.output[1..TOKEN_RESPONSE_HEADER_BYTES]
+                    .copy_from_slice(&response::token_prefix(cipher_protocol(cp.protocol)));
                 self.token_started = p.device.now();
                 self.token_used = self.token_started;
                 if cp.subcommand == wire::GET_TOKEN_PERMISSIONS && cp.rp_len != 0 {

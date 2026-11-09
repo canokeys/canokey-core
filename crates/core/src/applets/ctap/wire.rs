@@ -43,8 +43,6 @@ pub(super) mod pin_protocol {
     pub const LABEL_PIN_HASH: i8 = request::LABEL_PIN_HASH;
     pub const LABEL_PERMISSIONS: i8 = request::LABEL_PERMISSIONS;
     pub const LABEL_RP_ID: i8 = request::LABEL_RP_ID;
-    pub const RESPONSE_TOKEN: u8 = 0x02;
-    pub const RESPONSE_RETRIES: u8 = 0x03;
     pub const PERMISSION_MAKE: u8 = request::PERMISSION_MAKE as u8;
     pub const PERMISSION_ASSERT: u8 = request::PERMISSION_ASSERT as u8;
     pub const PERMISSION_BIO: u8 = 0x08;

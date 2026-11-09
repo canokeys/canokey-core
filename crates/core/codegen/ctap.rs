@@ -233,19 +233,6 @@ pub fn generate_response() {
         e.map(5)?.u8(1)?.u8(2)?.u8(3)?;
         Ok(())
     });
-    fragment(&mut out, "KEY_AGREEMENT", |e| {
-        e.map(1)?
-            .u8(1)?
-            .map(5)?
-            .u8(1)?
-            .u8(2)?
-            .u8(3)?
-            .i8(-25)?
-            .i8(-1)?
-            .u8(1)?
-            .i8(-2)?;
-        Ok(())
-    });
     let path = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
     std::fs::write(
         path.join("ctap_response.rs"),

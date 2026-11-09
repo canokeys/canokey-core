@@ -151,3 +151,32 @@ pub fn decapsulate<X: Exchange>(
         backend,
     )
 }
+
+// CTAP 2.1 PIN/UV agreement COSE_Key, RFC 8949 encoding:
+// map(5), kty(1)=EC2(2), alg(3)=ECDH-ES+HKDF-256(-25), crv(-1)=P-256(1),
+// x(-2)=bstr(32), then X, y(-3)=bstr(32), then Y. Coordinates are big endian.
+const COSE_PREFIX: &[u8] = b"\xa5\x01\x02\x03\x38\x18\x20\x01\x21\x58\x20";
+const COSE_Y_PREFIX: &[u8] = b"\x22\x58\x20";
+const COSE_Y_LABEL_OFFSET: usize = COSE_PREFIX.len() + COORDINATE_BYTES;
+pub const ENCODED_KEY_BYTES: usize = COSE_Y_LABEL_OFFSET + COSE_Y_PREFIX.len() + COORDINATE_BYTES;
+
+/// Recognizes the fixed canonical COSE shape inside a product's restricted
+/// generic CBOR value model. Point/schema validation remains a separate step.
+pub fn is_canonical_prefix(bytes: &[u8]) -> bool {
+    bytes.len() >= ENCODED_KEY_BYTES
+        && bytes.starts_with(COSE_PREFIX)
+        && bytes[COSE_Y_LABEL_OFFSET..COSE_Y_LABEL_OFFSET + COSE_Y_PREFIX.len()] == *COSE_Y_PREFIX
+}
+
+/// Emit public-key fragments directly to existing output. The synchronous sink
+/// retains no input borrow; owners publish only complete responses on success.
+#[inline]
+pub fn encode<E>(
+    point: &[u8; POINT_BYTES],
+    mut emit: impl FnMut(&[u8]) -> Result<(), E>,
+) -> Result<(), E> {
+    emit(COSE_PREFIX)?;
+    emit(&point[..COORDINATE_BYTES])?;
+    emit(COSE_Y_PREFIX)?;
+    emit(&point[COORDINATE_BYTES..])
+}

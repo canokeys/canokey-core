@@ -93,16 +93,15 @@ pub(super) fn key_agreement(
     output: &mut [u8; crate::runtime::workspace::OUTPUT_BYTES],
     public: &[u8; 64],
 ) -> usize {
-    const HEAD: usize = 1 + KEY_AGREEMENT.len();
-    const X: usize = HEAD + 2;
-    const Y: usize = X + 32 + 3;
-    output[0] = 0;
-    output[1..HEAD].copy_from_slice(KEY_AGREEMENT);
-    output[HEAD..X].copy_from_slice(b"\x58\x20"); // CBOR bytes(32) header.
-    output[X..X + 32].copy_from_slice(&public[..32]);
-    output[X + 32..Y].copy_from_slice(b"\x22\x58\x20"); // COSE Y label (-3), bytes(32).
-    output[Y..Y + 32].copy_from_slice(&public[32..]);
-    Y + 32
+    output[0] = 0x00;
+    let mut offset = 1;
+    canokey_ctap::client_pin::response::key_agreement(public, |fragment| {
+        output[offset..offset + fragment.len()].copy_from_slice(fragment);
+        offset += fragment.len();
+        Ok::<(), core::convert::Infallible>(())
+    })
+    .unwrap();
+    offset
 }
 
 pub(super) fn public_key(

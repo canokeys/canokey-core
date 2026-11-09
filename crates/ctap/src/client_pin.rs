@@ -5,6 +5,7 @@ pub mod agreement;
 pub mod authentication;
 pub mod cipher;
 pub mod request;
+pub mod response;
 pub mod retry;
 pub mod token;
 
