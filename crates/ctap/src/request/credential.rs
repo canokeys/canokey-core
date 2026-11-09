@@ -6,7 +6,7 @@ use super::{
 };
 use crate::credential::{ID_BYTES, Id};
 use schema::{Context, Field, text_field};
-pub(super) mod schema;
+pub(crate) mod schema;
 use canokey_protocol::cbor::Event;
 pub const CRED_BLOB_BYTES: usize = 32;
 pub const RP_ID_MAX: usize = 254;
@@ -545,8 +545,8 @@ impl<E: Error, const ALGORITHMS: usize> Fields<E, ALGORITHMS> {
                 _ => return Err(E::INVALID_PARAMETER),
             },
             Field::Protection => match *event {
-                Event::Unsigned(n @ 1..=3) => {
-                    self.params.protection = n as u8;
+                Event::Unsigned(n) => {
+                    self.params.protection = crate::extensions::protection::<E>(n)?;
                     self.params.protection_requested = true;
                 }
                 _ => return Err(E::INVALID_PARAMETER),

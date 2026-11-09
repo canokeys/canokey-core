@@ -2,7 +2,6 @@
 //! Sole token backing and metadata, shared by standard and product permissions.
 use super::super::KEY_BYTES;
 use super::{Error, MissingRp, Scope};
-use crate::client_pin::state::AGREEMENT_READY;
 
 const RP_BOUND: u8 = 0x01;
 
@@ -20,9 +19,7 @@ const MATERIAL_BYTES: usize = KEY_BYTES + KEY_BYTES;
 #[repr(C)]
 pub struct Token<Permissions = u16> {
     pub permissions: Permissions,
-    // Shared connection flags fill this existing metadata byte. Token-only
-    // erasure clears RP scope while retaining the agreement readiness bit.
-    pub(in crate::client_pin) flags: u8,
+    flags: u8,
     pub issued: u32,
     pub last_used: u32,
     material: [u8; MATERIAL_BYTES],
@@ -102,13 +99,41 @@ impl<P: Copy + From<u8>> Token<P> {
     #[inline(never)]
     pub fn clear(&mut self, mut wipe: impl FnMut(&mut [u8])) {
         wipe(&mut self.material);
-        self.flags &= AGREEMENT_READY;
+        self.flags = 0x00;
         self.permissions = P::from(0x00);
         self.issued = 0;
         self.last_used = 0;
     }
 }
 impl<P: Copy + Into<u16>> Token<P> {
+    #[inline(never)]
+    pub fn allows(
+        &self,
+        required: u16,
+        rp: Option<&[u8; KEY_BYTES]>,
+        missing_rp: MissingRp,
+        equal: impl FnOnce(&[u8], &[u8]) -> bool,
+    ) -> bool {
+        Scope {
+            granted: self.permissions.into(),
+            required,
+            bound_rp: self.rp_id(),
+            requested_rp: rp,
+            missing_rp,
+        }
+        .allows(equal)
+    }
+    pub fn verify_request<E>(
+        &self,
+        required: u16,
+        rp: Option<&[u8; KEY_BYTES]>,
+        missing_rp: MissingRp,
+        verify: impl FnOnce(&[u8; KEY_BYTES]) -> Result<(), E>,
+        equal: impl FnOnce(&[u8], &[u8]) -> bool,
+    ) -> Result<super::VerifiedRequest, Error<E>> {
+        self.authorize(required, rp, missing_rp, verify, equal)?;
+        Ok(super::VerifiedRequest { _private: () })
+    }
     /// Shared scope/MAC admission does not commit use or RP binding. Deferred
     /// record-RP admission must finish before the caller marks successful use.
     pub fn authorize<E>(
@@ -119,17 +144,10 @@ impl<P: Copy + Into<u16>> Token<P> {
         verify: impl FnOnce(&[u8; KEY_BYTES]) -> Result<(), E>,
         equal: impl FnOnce(&[u8], &[u8]) -> bool,
     ) -> Result<(), Error<E>> {
-        super::authorize(
-            Scope {
-                granted: self.permissions.into(),
-                required,
-                bound_rp: self.rp_id(),
-                requested_rp: rp,
-                missing_rp,
-            },
-            || self.with_secret(verify),
-            equal,
-        )
+        if !self.allows(required, rp, missing_rp, equal) {
+            return Err(Error::Scope);
+        }
+        self.with_secret(verify).map_err(Error::Mac)
     }
 }
 

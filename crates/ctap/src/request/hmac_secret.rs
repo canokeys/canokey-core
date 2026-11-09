@@ -6,23 +6,62 @@ use super::{
 };
 use crate::client_pin::Protocol;
 use canokey_protocol::cbor::Event;
+pub mod borrowed;
+
+// CTAP 2.1 hmac-secret assertion input map labels.
+pub const KEY_AGREEMENT: i8 = 0x01;
+pub const SALT_ENC: i8 = 0x02;
+pub const SALT_AUTH: i8 = 0x03;
+pub const PIN_PROTOCOL: i8 = 0x04;
 mod wire {
     use super::Protocol;
     pub const V1: u8 = Protocol::One as u8;
-    pub const V2: u8 = Protocol::Two as u8;
-    pub const AES_BLOCK_BYTES: usize = crate::client_pin::cipher::BLOCK_BYTES;
     pub const AUTH_V1_BYTES: usize = Protocol::One.auth_bytes();
     pub const AUTH_V2_BYTES: usize = Protocol::Two.auth_bytes();
 }
 // One/two SHA-256 salts, optionally preceded by the v2 AES IV.
-const SALT_BYTES: usize = 32;
-const DOUBLE_SALT_BYTES: usize = 2 * SALT_BYTES;
-const MAX_ENCRYPTED_SALT_BYTES: usize = wire::AES_BLOCK_BYTES + DOUBLE_SALT_BYTES;
+const MAX_ENCRYPTED_SALT_BYTES: usize = crate::extensions::hmac_secret::MAX_OUTPUT_BYTES;
 
 // Sentinel for a non-integer/unsupported-width label. It is outside the
 // recognized hmac-secret extension labels 1..=4 and follows the skip path.
 const COSE_KEY_MISSING: i8 = 127;
 const HMAC_COSE_REQUIRED_MASK: u8 = 0x07;
+
+/// Bounded body admission precedes missing-field checks, matching streaming
+/// input. The final protocol-specific check waits until the map closes.
+#[inline(always)]
+pub(crate) fn admit_body<E: Error>(field: i8, length: usize) -> Result<(), E> {
+    let valid = if field == SALT_ENC {
+        length >= crate::extensions::hmac_secret::SALT_BYTES && length <= MAX_ENCRYPTED_SALT_BYTES
+    } else {
+        length >= wire::AUTH_V1_BYTES && length <= wire::AUTH_V2_BYTES
+    };
+    if valid {
+        Ok(())
+    } else if field == SALT_ENC {
+        Err(E::INVALID_LENGTH)
+    } else {
+        Err(E::INVALID_PARAMETER)
+    }
+}
+#[inline(always)]
+pub(crate) fn admit_fields<E: Error>(
+    seen: u8,
+    protocol: Protocol,
+    salt: usize,
+    auth: usize,
+) -> Result<(), E> {
+    if seen & HMAC_COSE_REQUIRED_MASK != HMAC_COSE_REQUIRED_MASK {
+        return Err(E::MISSING_PARAMETER);
+    }
+    if crate::extensions::hmac_secret::salt_length(protocol, salt).is_none() {
+        return Err(E::INVALID_LENGTH);
+    }
+    if auth != protocol.auth_bytes() {
+        return Err(E::INVALID_PARAMETER);
+    }
+    Ok(())
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -99,27 +138,17 @@ impl<E: Error> Parser<E> {
         }
         let Some(key) = self.key.take() else {
             if matches!(event, Event::End) {
-                if self.seen & HMAC_COSE_REQUIRED_MASK != HMAC_COSE_REQUIRED_MASK {
-                    return Err(E::MISSING_PARAMETER);
-                }
                 let p = &self.params;
-                let iv = if p.protocol == wire::V2 {
-                    wire::AES_BLOCK_BYTES
-                } else {
-                    0
-                };
-                if p.salt_len != SALT_BYTES + iv && p.salt_len != DOUBLE_SALT_BYTES + iv {
-                    return Err(E::INVALID_LENGTH);
-                }
-                if p.auth_len
-                    != if p.protocol == wire::V1 {
-                        wire::AUTH_V1_BYTES
+                admit_fields::<E>(
+                    self.seen,
+                    if p.protocol == wire::V1 {
+                        Protocol::One
                     } else {
-                        wire::AUTH_V2_BYTES
-                    }
-                {
-                    return Err(E::INVALID_PARAMETER);
-                }
+                        Protocol::Two
+                    },
+                    p.salt_len,
+                    p.auth_len,
+                )?;
                 return Ok(true);
             }
             let key = Key::ordered(event, &mut self.previous)?;
@@ -137,21 +166,11 @@ impl<E: Error> Parser<E> {
             }
             2 => {
                 self.seen |= 2;
-                self.params.salt_len = self.bytes(
-                    key,
-                    event,
-                    SALT_BYTES as u16,
-                    MAX_ENCRYPTED_SALT_BYTES as u16,
-                )?;
+                self.params.salt_len = self.bytes(key, event)?;
             }
             3 => {
                 self.seen |= 4;
-                self.params.auth_len = self.bytes(
-                    key,
-                    event,
-                    wire::AUTH_V1_BYTES as u16,
-                    wire::AUTH_V2_BYTES as u16,
-                )?;
+                self.params.auth_len = self.bytes(key, event)?;
             }
             4 => match *event {
                 Event::Unsigned(n @ (1 | 2)) => self.params.protocol = n as u8,
@@ -161,17 +180,12 @@ impl<E: Error> Parser<E> {
         }
         Ok(false)
     }
-    fn bytes(&mut self, key: i8, event: &Event<'_>, min: u16, max: u16) -> Result<usize, E> {
+    #[inline(always)]
+    fn bytes(&mut self, key: i8, event: &Event<'_>) -> Result<usize, E> {
         let Event::Bytes(n) = *event else {
             return Err(E::UNEXPECTED_TYPE);
         };
-        if n < min || n > max {
-            return Err(if key == 2 {
-                E::INVALID_LENGTH
-            } else {
-                E::INVALID_PARAMETER
-            });
-        }
+        admit_body::<E>(key, usize::from(n))?;
         self.body = Some((key, 0));
         Ok(usize::from(n))
     }

@@ -23,6 +23,7 @@ impl Product {
 impl Backend for Product {
     type Error = Status;
     type Output = ();
+    type Authenticated = ();
     fn reset_cursor(&mut self) {
         self.events.push("reset");
         self.mode = 0x00;
@@ -54,7 +55,7 @@ impl Backend for Product {
             "next-credential"
         })
     }
-    fn mutate(&mut self, delete: bool) -> Result<(), Status> {
+    fn mutate(&mut self, delete: bool, _: ()) -> Result<(), Status> {
         self.step("read-record")?;
         self.step("record-rp")?;
         self.step(if delete { "delete" } else { "update" })

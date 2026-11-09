@@ -177,7 +177,7 @@ pub(super) fn decrypt(
         .map_err(cipher_error)
 }
 struct KeyGeneration<'a, 'p, B: crate::ports::Backends> {
-    session: &'a mut Session,
+    pin: &'a mut shared_pin::Session<u8>,
     key: &'a mut KeyMaterial,
     input: &'a mut [u8],
     platform: &'a mut Platform<'p, B>,
@@ -186,7 +186,7 @@ impl<B: crate::ports::Backends> agreement::Generation for KeyGeneration<'_, '_, 
     type Error = Status;
     type Output = ();
     fn ready(&self) -> bool {
-        self.session.pin.agreement_ready()
+        self.pin.agreement_ready()
     }
     fn generate(&mut self) -> Result<bool, Status> {
         self.platform
@@ -197,15 +197,14 @@ impl<B: crate::ports::Backends> agreement::Generation for KeyGeneration<'_, '_, 
         Ok(true)
     }
     fn commit(&mut self) -> Result<(), Status> {
-        self.session.pin.with_private_mut(|private| {
+        self.pin.with_private_mut(|private| {
             private.copy_from_slice(&self.key.bytes[..32]);
         });
-        self.session.pin.commit_agreement();
+        self.pin.commit_agreement();
         Ok(())
     }
     fn restore(&mut self) -> Result<(), Status> {
-        self.session
-            .pin
+        self.pin
             .with_private(|private| self.key.bytes[..32].copy_from_slice(private));
         Ok(())
     }
@@ -322,6 +321,38 @@ impl<B: crate::ports::Backends> retry::Verification for CurrentPin<'_, '_, B> {
     }
 }
 
+pub(super) fn decapsulate(
+    owner: &mut shared_pin::Session<u8>,
+    protocol: u8,
+    agreement: &[u8; 64],
+    shared: &mut [u8; 64],
+    w: &mut Workspace,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Status> {
+    // ECDH validates the peer point in the primitive backend. Generating
+    // our private key does not require exporting a public response first.
+    if !owner.agreement_ready() {
+        w.clear(p.memory);
+    }
+    agreement::establish(&mut KeyGeneration {
+        pin: owner,
+        key: w.key,
+        input: w.input,
+        platform: p,
+    })?;
+    let (mac_key, aes_key) = shared.split_at_mut(shared_pin::KEY_BYTES);
+    agreement::decapsulate(
+        || shared_pin::Protocol::decode(u64::from(protocol)).ok_or(Status::InvalidParameter),
+        agreement,
+        w.input,
+        mac_key.try_into().unwrap(),
+        aes_key.try_into().unwrap(),
+        &mut AgreementCrypto {
+            key: w.key,
+            platform: p,
+        },
+    )
+}
 /// Authorization commits usage only once the request has its final RP scope.
 #[derive(Clone, Copy)]
 pub(super) enum AuthorizationScope {
@@ -339,12 +370,13 @@ impl Session {
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
         agreement::establish(&mut KeyGeneration {
-            session: self,
+            pin: &mut self.pin,
             key: w.key,
             input: w.input,
             platform: p,
         })
     }
+    #[inline(always)]
     pub(super) fn decapsulate(
         &mut self,
         protocol: u8,
@@ -353,24 +385,7 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
-        // ECDH validates the peer point in the primitive backend. Generating
-        // our private key does not require exporting a public response first.
-        if !self.pin.agreement_ready() {
-            w.clear(p.memory);
-        }
-        self.agreement_key(w, p)?;
-        let (mac_key, aes_key) = shared.split_at_mut(shared_pin::KEY_BYTES);
-        agreement::decapsulate(
-            || shared_pin::Protocol::decode(u64::from(protocol)).ok_or(Status::InvalidParameter),
-            agreement,
-            w.input,
-            mac_key.try_into().unwrap(),
-            aes_key.try_into().unwrap(),
-            &mut AgreementCrypto {
-                key: w.key,
-                platform: p,
-            },
-        )
+        decapsulate(&mut self.pin, protocol, agreement, shared, w, p)
     }
     pub(super) fn retries(
         &mut self,
@@ -446,6 +461,7 @@ impl Session {
             AuthorizationScope::SuppliedRp,
             p,
         )
+        .map(|_| ())
     }
     pub(super) fn authorize_scoped(
         &mut self,
@@ -456,7 +472,7 @@ impl Session {
         rp: Option<&[u8; 32]>,
         scope: AuthorizationScope,
         p: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Status> {
+    ) -> Result<token::VerifiedRequest, Status> {
         self.expire_token(p.device.now(), p.memory);
         if self.pin_attempts.blocked() {
             return Err(Status::PinAuthBlocked);
@@ -464,9 +480,10 @@ impl Session {
         if !matches!(protocol, wire::V1 | wire::V2) || auth.len() != wire::auth_bytes(protocol) {
             return Err(Status::PinAuthInvalid);
         }
-        self.pin
+        let verified = self
+            .pin
             .token
-            .authorize(
+            .verify_request(
                 u16::from(permission),
                 rp,
                 if matches!(scope, AuthorizationScope::Global) {
@@ -484,6 +501,30 @@ impl Session {
         if !matches!(scope, AuthorizationScope::DeferredRp) {
             self.pin.token.mark_used(p.device.now());
         }
+        Ok(verified)
+    }
+    /// The shared management dispatcher has authenticated this request before
+    /// record IO. Serialized execution forbids replacing its token between that
+    /// admission and this final check; time may still advance during storage IO.
+    pub(super) fn finish_management(
+        &mut self,
+        _verified: &token::VerifiedRequest,
+        rp: &[u8; 32],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Status> {
+        self.expire_token(p.device.now(), p.memory);
+        if self.pin_attempts.blocked() {
+            return Err(Status::PinAuthBlocked);
+        }
+        if !self.pin.token.allows(
+            wire::PERMISSION_CREDENTIALS.into(),
+            Some(rp),
+            token::MissingRp::Deny,
+            equal,
+        ) {
+            return Err(Status::PinAuthInvalid);
+        }
+        self.pin.token.mark_used(p.device.now());
         Ok(())
     }
     // Reuse the expiry/erasure paths across applet admission and reset entrypoints.

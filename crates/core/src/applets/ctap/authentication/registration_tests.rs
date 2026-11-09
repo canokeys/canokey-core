@@ -350,6 +350,15 @@ fn actual_registration_stages_before_signing_and_publishes_only_after_complete_c
                     &mut workspace,
                     &mut platform,
                 );
+                if cfg!(feature = "ctap-restrict-algorithms") && algorithm != -7 {
+                    assert!(matches!(response,
+                        super::super::Response::Error(Status::UnsupportedAlgorithm)));
+                    assert!(trace.borrow().is_empty());
+                    assert_eq!(disk.group, old);
+                    assert!(disk.stage.is_empty());
+                    assert!(session.auth_response.is_none());
+                    continue;
+                }
                 if fault == Fault::None {
                     assert!(!matches!(response, super::super::Response::Error(_)));
                     if let Some(mut stream) = workspace.ctap_stream() {

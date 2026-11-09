@@ -276,6 +276,7 @@ struct Operation<'a, 'r, 'w, 'p, B: crate::ports::Backends> {
 impl<B: crate::ports::Backends> canokey_ctap::management::Backend for Operation<'_, '_, '_, '_, B> {
     type Error = Status;
     type Output = usize;
+    type Authenticated = canokey_ctap::client_pin::token::VerifiedRequest;
     fn reset_cursor(&mut self) {
         self.session.management = Cursor::new();
     }
@@ -285,7 +286,7 @@ impl<B: crate::ports::Backends> canokey_ctap::management::Backend for Operation<
     fn continue_live(&mut self) -> Result<(), Status> {
         Ok(())
     }
-    fn authorize(&mut self, deferred_rp: bool) -> Result<(), Status> {
+    fn authorize(&mut self, deferred_rp: bool) -> Result<Self::Authenticated, Status> {
         self.session.authorize_scoped(
             self.params.protocol,
             &self.params.auth[..self.params.auth_len],
@@ -464,10 +465,13 @@ impl<B: crate::ports::Backends> canokey_ctap::management::Backend for Operation<
         }
         Err(canokey_ctap::management::exhausted::<Status>(first))
     }
-    fn mutate(&mut self, delete: bool) -> Result<usize, Status> {
+    fn mutate(
+        &mut self,
+        delete: bool,
+        authenticated: Self::Authenticated,
+    ) -> Result<usize, Status> {
         let w = &mut *self.w;
         let p = &mut *self.p;
-        let params = self.params;
         let fields = &self.fields;
         let id = fields.id.ok_or(Status::MissingParameter)?;
         let selected = scan::ascending(0, Record::CTAP_CREDENTIALS, |index| {
@@ -478,14 +482,8 @@ impl<B: crate::ports::Backends> canokey_ctap::management::Backend for Operation<
             if entry.id != id {
                 return Ok(None);
             }
-            self.session.authorize(
-                params.protocol,
-                &params.auth[..params.auth_len],
-                &params.message[params.start + PREFIX - 1..params.len],
-                CREDENTIAL_MANAGEMENT_PERMISSION,
-                Some(entry.rp_hash),
-                p,
-            )?;
+            self.session
+                .finish_management(&authenticated, entry.rp_hash, p)?;
             if delete {
                 resident::replace(
                     index,
@@ -566,10 +564,18 @@ mod tests {
             panic!("management must use HMAC-SHA-256");
         }
     }
-    struct Clock;
+    struct Clock {
+        expire_on_resolution: bool,
+        queries: usize,
+    }
     impl crate::ports::Device for Clock {
         fn now(&mut self) -> u32 {
-            20
+            self.queries += 1;
+            if self.expire_on_resolution && self.queries > 1 {
+                30_001
+            } else {
+                20
+            }
         }
         fn progress(&mut self) -> bool {
             true
@@ -586,9 +592,9 @@ mod tests {
     fn actual_mutation_preflight_resolves_record_rp_before_usage_or_publication() {
         use super::super::{Command, envelope};
         use std::vec;
-        // Cases: bad MAC, mismatching RP, absent ID, valid deletion. A fake
+        // Cases: bad MAC, mismatching RP, absent ID, deletion, expiry after IO. A fake
         // primitive isolates control/IO ordering; native suites cover HMAC.
-        for case in 0..4 {
+        for case in 0..5 {
             let mut storage = Records::default();
             storage.records.push(resident(0, 0x07, 1));
             let mut id = storage.records[0].1[..credential::ID_BYTES].to_vec();
@@ -607,7 +613,10 @@ mod tests {
                 panic!("management expected");
             };
             let mut crypto = Mac { calls: 0 };
-            let mut device = Clock;
+            let mut device = Clock {
+                expire_on_resolution: case == 4,
+                queries: 0,
+            };
             let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut storage,
                 crypto: &mut crypto,
@@ -627,14 +636,21 @@ mod tests {
             assert_eq!(
                 result,
                 match case {
-                    0 | 1 => Err(Status::PinAuthInvalid),
+                    0 | 1 | 4 => Err(Status::PinAuthInvalid),
                     2 => Err(Status::NoCredentials),
                     _ => Ok(1),
                 }
             );
-            assert_eq!(session.pin.token.last_used, if case == 3 { 20 } else { 1 });
+            assert_eq!(
+                session.pin.token.last_used,
+                match case {
+                    3 => 20,
+                    4 => 0,
+                    _ => 1,
+                }
+            );
             assert_eq!(session.management.mode, 0x00);
-            assert_eq!(platform.crypto.calls, if case == 3 { 2 } else { 1 });
+            assert_eq!(platform.crypto.calls, 1);
             if case == 0 {
                 assert_eq!(platform.storage.size_calls + platform.storage.read_calls, 0);
             }

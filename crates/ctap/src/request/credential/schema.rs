@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Context {
+pub(crate) enum Context {
     Root,
     Rp,
     User,
@@ -12,7 +12,7 @@ pub(super) enum Context {
     Extensions,
 }
 #[derive(Clone, Copy)]
-pub(super) enum Field {
+pub(crate) enum Field {
     Ignore,
     TextOnly,
     ClientHash,
@@ -54,7 +54,7 @@ pub(super) fn admit_option<E: crate::request::Error>(make: bool, field: Field) -
 }
 // Compact records carry a byte length instead of a fat slice pointer. Build
 // names and lengths from the same literals so the two arrays cannot drift.
-pub(super) fn text_field(context: Context, key: &[u8], make: bool) -> Field {
+pub(crate) fn text_field(context: Context, key: &[u8], make: bool) -> Field {
     macro_rules! fields {
         ($(($scope:ident, $name:literal, $field:ident, $make_only:literal)),* $(,)?) => {
             const NAMES: &[u8] = concat!($($name),*).as_bytes();

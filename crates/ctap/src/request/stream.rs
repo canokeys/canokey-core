@@ -73,6 +73,32 @@ pub struct Key<E: Error> {
     error: core::marker::PhantomData<E>,
 }
 impl<E: Error> Key<E> {
+    /// Decode a single validated integer label without narrowing a u64 CBOR
+    /// argument to i64. RFC 8949 major types 0/1 carry unsigned arguments of
+    /// zero, one, two, four or eight following bytes; other types are rejected.
+    pub fn borrowed<'a, R: super::credential::borrowed::Reader<'a, Error = E>>(
+        reader: &mut R,
+    ) -> Result<Option<i8>, E> {
+        let raw = reader.item()?;
+        let major = raw[0] >> 5;
+        if major > 0x01 {
+            return Err(E::UNEXPECTED_TYPE);
+        }
+        let argument = match raw.len() {
+            1 => u64::from(raw[0] & 0x1f),
+            2 => u64::from(raw[1]),
+            3 => u64::from(u16::from_be_bytes(raw[1..].try_into().unwrap())),
+            5 => u64::from(u32::from_be_bytes(raw[1..].try_into().unwrap())),
+            9 => u64::from_be_bytes(raw[1..].try_into().unwrap()),
+            _ => return Err(E::INVALID_CBOR),
+        };
+        Ok(Self {
+            negative: major == 0x01,
+            argument,
+            error: core::marker::PhantomData,
+        }
+        .integer())
+    }
     // Preserve the full 64-bit ordering even for unrecognized field labels.
     // One call boundary avoids duplicating the comparison in every schema.
     // None is an unknown label, not an absent key; callers retain it as Some(None).

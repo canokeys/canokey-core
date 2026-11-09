@@ -2,17 +2,15 @@
 //! Sole connection-owned PIN material; power-cycle allowance has a longer life.
 use super::{KEY_BYTES, token};
 
-// Internal owner flag; RP binding uses the other low bit in token storage.
-pub(super) const AGREEMENT_READY: u8 = 0x02;
-
 /// One standard PIN session owns agreement and token material. Product identity,
 /// public-key cache and native token metadata may view it but cannot copy secrets.
 /// Volatile retry allowance lives in retry::Attempts outside this connection
 /// owner: CID/slot/session reset must not refund a power-cycle lockout.
-// Keep the frequently accessed token at offset zero for compact Thumb-1 access.
+// Keep readiness and token metadata at small offsets for Thumb-1 access.
 // This volatile layout is not a wire format, record format or exported C ABI.
 #[repr(C)]
 pub struct Session<Permissions = u16> {
+    agreement_ready: bool,
     pub token: token::Token<Permissions>,
     private: [u8; KEY_BYTES],
 }
@@ -21,15 +19,16 @@ impl<P: Copy> Session<P> {
         Self {
             token: token::Token::empty(no_permissions),
             private: [0x00; KEY_BYTES],
+            agreement_ready: false,
         }
     }
     pub fn agreement_ready(&self) -> bool {
-        self.token.flags & AGREEMENT_READY != 0x00
+        self.agreement_ready
     }
     /// The adapter has validated the candidate and completed its required public
     /// metadata. Public export can remain a separate fallible operation.
     pub fn commit_agreement(&mut self) {
-        self.token.flags |= AGREEMENT_READY;
+        self.agreement_ready = true;
     }
     /// Private-key loans cannot escape the synchronous primitive call.
     ///
@@ -46,7 +45,7 @@ impl<P: Copy> Session<P> {
         primitive(&mut self.private)
     }
     pub fn clear_agreement(&mut self, wipe: impl FnOnce(&mut [u8])) {
-        self.token.flags &= !AGREEMENT_READY;
+        self.agreement_ready = false;
         wipe(&mut self.private);
     }
 }
@@ -122,7 +121,7 @@ mod tests {
     }
 
     #[test]
-    fn token_scope_changes_and_revocation_preserve_the_live_agreement_flag() {
+    fn token_scope_changes_and_revocation_preserve_the_live_agreement() {
         let mut owner = Session::empty(0x00u8);
         owner.with_private_mut(|private| private.fill(0x73));
         owner.commit_agreement();
@@ -144,6 +143,27 @@ mod tests {
         owner.clear_agreement(|bytes| bytes.fill(0x00));
         assert!(!owner.agreement_ready());
         assert_eq!(owner.token.rp_id(), Some(&[0x52; KEY_BYTES]));
+    }
+
+    #[test]
+    fn moving_or_replacing_tokens_cannot_move_agreement_readiness() {
+        let mut established = Session::empty(0x00u8);
+        established.with_private_mut(|private| private.fill(0x73));
+        established.commit_agreement();
+        let mut empty = Session::empty(0x00u8);
+        core::mem::swap(&mut established.token, &mut empty.token);
+        assert!(established.agreement_ready());
+        assert!(!empty.agreement_ready());
+        assert_eq!(
+            established.with_private(|private| *private),
+            [0x73; KEY_BYTES]
+        );
+        assert_eq!(empty.with_private(|private| *private), [0x00; KEY_BYTES]);
+        established.token = token::Token::empty(0x00);
+        established.token.clear(|bytes| bytes.fill(0x00));
+        assert!(established.agreement_ready());
+        established.clear_agreement(|bytes| bytes.fill(0x00));
+        assert!(!established.agreement_ready());
     }
 
     #[test]

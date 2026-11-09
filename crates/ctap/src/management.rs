@@ -89,15 +89,20 @@ impl Request {
 pub trait Backend {
     type Error: Error;
     type Output;
+    type Authenticated;
     fn reset_cursor(&mut self);
     fn cursor_mode(&self) -> u8;
     fn continue_live(&mut self) -> Result<(), Self::Error>;
-    fn authorize(&mut self, deferred_rp: bool) -> Result<(), Self::Error>;
+    fn authorize(&mut self, deferred_rp: bool) -> Result<Self::Authenticated, Self::Error>;
     fn begin(&mut self) {}
     fn metadata(&mut self) -> Result<Self::Output, Self::Error>;
     fn rps(&mut self, first: bool) -> Result<Self::Output, Self::Error>;
     fn credentials(&mut self, first: bool) -> Result<Self::Output, Self::Error>;
-    fn mutate(&mut self, delete: bool) -> Result<Self::Output, Self::Error>;
+    fn mutate(
+        &mut self,
+        delete: bool,
+        authenticated: Self::Authenticated,
+    ) -> Result<Self::Output, Self::Error>;
 }
 #[inline]
 pub fn execute<B: Backend>(request: Request, backend: &mut B) -> Result<B::Output, B::Error> {
@@ -126,7 +131,11 @@ pub fn execute<B: Backend>(request: Request, backend: &mut B) -> Result<B::Outpu
         {
             return Err(B::Error::MISSING_PARAMETER);
         }
-        backend.authorize(matches!(command, DELETE | UPDATE_USER))?;
+        let mutation = matches!(command, DELETE | UPDATE_USER);
+        let authenticated = backend.authorize(mutation)?;
+        if mutation {
+            return backend.mutate(command == DELETE, authenticated);
+        }
         if matches!(command, RP_BEGIN | CREDENTIAL_BEGIN) {
             backend.begin();
         }
@@ -137,7 +146,6 @@ pub fn execute<B: Backend>(request: Request, backend: &mut B) -> Result<B::Outpu
         METADATA => backend.metadata(),
         RP_BEGIN | RP_NEXT => backend.rps(!continued),
         CREDENTIAL_BEGIN | CREDENTIAL_NEXT => backend.credentials(!continued),
-        DELETE | UPDATE_USER => backend.mutate(command == DELETE),
         _ => unreachable!(),
     }
 }

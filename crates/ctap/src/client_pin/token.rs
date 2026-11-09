@@ -3,6 +3,19 @@
 mod state;
 pub use state::Token;
 
+/// Evidence that the synchronous request passed scope and MAC admission.
+/// This value has no secret backing and cannot be constructed or cloned by an
+/// adapter. The serialized operation retains exclusive ownership of its token
+/// until final RP/lifetime admission; this receipt is never session state.
+///
+/// ```compile_fail
+/// use canokey_ctap::client_pin::token::VerifiedRequest;
+/// let forged = VerifiedRequest { _private: () };
+/// ```
+pub struct VerifiedRequest {
+    _private: (),
+}
+
 #[derive(Clone, Copy)]
 pub enum MissingRp {
     Allow,
@@ -19,6 +32,13 @@ pub struct Scope<'a> {
     pub missing_rp: MissingRp,
 }
 impl Scope<'_> {
+    /// Pure permission/RP admission. This does not authenticate a request or
+    /// refresh use. A deferred management operation calls it again only after
+    /// its authenticated request has resolved the stored credential RP.
+    pub fn allows(&self, equal: impl FnOnce(&[u8], &[u8]) -> bool) -> bool {
+        self.permission_allowed() && self.rp_allowed(equal)
+    }
+
     fn permission_allowed(&self) -> bool {
         self.required != 0x00 && self.granted & self.required == self.required
     }
@@ -46,7 +66,7 @@ pub fn authorize<E>(
     verify: impl FnOnce() -> Result<(), E>,
     equal: impl FnOnce(&[u8], &[u8]) -> bool,
 ) -> Result<(), Error<E>> {
-    if !scope.permission_allowed() || !scope.rp_allowed(equal) {
+    if !scope.allows(equal) {
         return Err(Error::Scope);
     }
     verify().map_err(Error::Mac)
