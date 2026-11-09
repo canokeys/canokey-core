@@ -19,9 +19,9 @@ pub trait Policy {
     const WRITE_PARAMETERS: bool;
     fn validate(header: &[u8; HEADER], receive_error: u8) -> u8;
 }
-/// The main loop alone calls this capability. Buffered receive asks for owner
-/// admission without dispatching an application. Streaming begin/feed may parse into the existing
-/// product input owner; only exchange may execute a completed command.
+/// The main loop alone calls this capability. Reception reserves transport
+/// ownership without entering the APDU consumer. Only a complete, valid short
+/// envelope may reach exchange; rejection preserves the previous APDU context.
 pub trait Backend {
     /// Called once after validating a complete bounded XfrBlock header.
     /// Admission may reserve/preempt a transport owner, but cannot execute APDUs.
@@ -29,95 +29,22 @@ pub trait Backend {
         true
     }
     fn reset(&mut self);
-    /// Release an unfinished streamed input without revoking applet selection
-    /// or authorization. Buffered ingress never lent application input and
-    /// never invokes this hook. Full resets and slot power use reset instead.
-    fn abort_input(&mut self);
+    /// Release this transport's RX reservation after completion or timeout.
+    /// This is idempotent and must not cancel the previous applet input/output,
+    /// selection or authorization. Slot/bus resets use reset instead.
+    fn release(&mut self) {}
     fn slot_power(&mut self) -> bool {
         self.reset();
         true
     }
-    fn begin(&mut self, _total: usize) -> bool {
-        false
-    }
-    fn feed(&mut self, _bytes: &[u8]) {}
     fn exchange(&mut self, input: &[u8], output: &mut [u8]) -> Result<usize, ()>;
     fn arm(&mut self, _header: &[u8; HEADER], _interval: u16) {}
     fn disarm(&mut self) {}
-}
-mod sealed {
-    pub trait Sealed {}
-}
-/// Fixed ingress strategies keep their own payload storage.
-/// They are sealed so profiles cannot add another payload allocation or hook.
-pub trait Input: sealed::Sealed {
-    const INITIAL: Self;
-    const STREAMING: bool;
-    fn clear(&mut self);
-    fn begin(&mut self, length: usize, backend: &mut impl Backend) -> bool;
-    fn feed(&mut self, offset: usize, bytes: &[u8], backend: &mut impl Backend);
-    fn bytes(&self, length: usize) -> &[u8];
-    fn pending(&self) -> bool {
-        false
-    }
-    fn finished(&mut self) {}
-}
-pub struct Buffered {
-    bytes: [u8; apdu::SHORT_FRAME_BYTES],
-}
-impl sealed::Sealed for Buffered {}
-impl Input for Buffered {
-    const INITIAL: Self = Self {
-        bytes: [0x00; apdu::SHORT_FRAME_BYTES],
-    };
-    const STREAMING: bool = false;
-    fn clear(&mut self) {
-        self.bytes.fill(0x00);
-    }
-    fn begin(&mut self, _length: usize, _backend: &mut impl Backend) -> bool {
-        true
-    }
-    fn feed(&mut self, offset: usize, bytes: &[u8], _backend: &mut impl Backend) {
-        self.bytes[offset..offset + bytes.len()].copy_from_slice(bytes);
-    }
-    fn bytes(&self, length: usize) -> &[u8] {
-        &self.bytes[..length]
-    }
-}
-pub struct Streaming {
-    begun: bool,
-}
-impl sealed::Sealed for Streaming {}
-impl Input for Streaming {
-    const INITIAL: Self = Self { begun: false };
-    const STREAMING: bool = true;
-    fn clear(&mut self) {
-        *self = Self::INITIAL;
-    }
-    fn begin(&mut self, length: usize, backend: &mut impl Backend) -> bool {
-        self.begun = backend.begin(length);
-        self.begun
-    }
-    fn feed(&mut self, _offset: usize, bytes: &[u8], backend: &mut impl Backend) {
-        if self.begun {
-            backend.feed(bytes);
-        }
-    }
-    fn bytes(&self, _length: usize) -> &[u8] {
-        &[]
-    }
-    fn pending(&self) -> bool {
-        self.begun
-    }
-    fn finished(&mut self) {
-        self.begun = false;
-    }
 }
 struct NoBackend {
     admitted: bool,
 }
 impl Backend for NoBackend {
-    fn abort_input(&mut self) {}
     fn admit(&mut self) -> bool {
         self.admitted
     }
@@ -137,7 +64,7 @@ enum Phase {
 // Private volatile state: keep byte metadata before the buffered APDU so
 // Thumb-1 can address it directly. This is neither a wire nor an exported ABI.
 #[repr(C)]
-pub struct Transport<P: Policy, I: Input> {
+pub struct Transport<P: Policy> {
     frame: Frame,
     last: u32,
     reply_len: u16,
@@ -146,19 +73,19 @@ pub struct Transport<P: Policy, I: Input> {
     active: bool,
     refused: bool,
     policy: PhantomData<P>,
-    input: I,
+    input: [u8; apdu::SHORT_FRAME_BYTES],
 }
-impl<P: Policy, I: Input> Default for Transport<P, I> {
+impl<P: Policy> Default for Transport<P> {
     fn default() -> Self {
         Self::new()
     }
 }
-impl<P: Policy, I: Input> Transport<P, I> {
+impl<P: Policy> Transport<P> {
     pub const fn new() -> Self {
         Self {
             frame: Frame::new(),
             last: 0,
-            input: I::INITIAL,
+            input: [0x00; apdu::SHORT_FRAME_BYTES],
             reply_len: 0,
             phase: Phase::Idle,
             error: 0x00,
@@ -168,11 +95,9 @@ impl<P: Policy, I: Input> Transport<P, I> {
         }
     }
     pub fn reset(&mut self, backend: &mut impl Backend) {
-        if !I::STREAMING {
-            backend.disarm();
-        }
+        backend.disarm();
         backend.reset();
-        self.input.clear();
+        self.input.fill(0x00);
         self.frame = Frame::new();
         self.phase = Phase::Idle;
         self.active = false;
@@ -212,7 +137,6 @@ impl<P: Policy, I: Input> Transport<P, I> {
             self.error = 0x00;
             self.refused = false;
             self.phase = Phase::Receiving;
-            self.input.finished();
         }
         let error = &mut self.error;
         let input = &mut self.input;
@@ -221,10 +145,9 @@ impl<P: Policy, I: Input> Transport<P, I> {
         let trailing = self.frame.feed(bytes, |fragment| match fragment {
             Fragment::Header(header) => {
                 let length = payload_length(header);
-                // Streaming may claim the application input owner here, so all
-                // header-only scope/RFU checks must precede begin/feed. Buffered
-                // ingress only asks for owner admission; application dispatch
-                // remains deferred until the declared body has completed.
+                // Header admission can reserve a transport owner, but cannot
+                // borrow applet input. Its previous state survives until a
+                // complete short APDU reaches exchange.
                 let header_error =
                     if header[0] == TRANSFER && length > apdu::SHORT_FRAME_BYTES as u32 {
                         BAD_LENGTH
@@ -237,20 +160,10 @@ impl<P: Policy, I: Input> Transport<P, I> {
                     *refused = !backend.admit();
                     store = !*refused;
                 }
-                if I::STREAMING && store && *error == 0x00 {
-                    if input.begin(length as usize, backend) {
-                        backend.arm(
-                            &extension(header[SLOT_OFFSET], header[SEQUENCE_OFFSET]),
-                            EXTENSION_INTERVAL,
-                        );
-                    } else {
-                        *error = SLOT_BUSY;
-                    }
-                }
             }
             Fragment::Body { offset, bytes } => {
                 if store && *error == 0x00 {
-                    input.feed(offset, bytes, backend);
+                    input[offset..offset + bytes.len()].copy_from_slice(bytes);
                 }
             }
         });
@@ -301,23 +214,17 @@ impl<P: Policy, I: Input> Transport<P, I> {
                         output[HEADER..HEADER + MIN_REPLY_BYTES].copy_from_slice(&[0x64, 0x00]);
                         length = MIN_REPLY_BYTES;
                     } else {
-                        let input = self.input.bytes(self.frame.length() as usize);
-                        let short = I::STREAMING
-                            || apdu::parse(input).is_ok_and(|command| !command.info.extended);
+                        let input = &self.input[..self.frame.length() as usize];
+                        let short = apdu::parse(input).is_ok_and(|command| !command.info.extended);
                         let result = if !short {
                             output[HEADER..HEADER + MIN_REPLY_BYTES].copy_from_slice(&[0x67, 0x00]);
                             Ok(MIN_REPLY_BYTES)
                         } else {
-                            if !I::STREAMING {
-                                backend.arm(&extension(slot, sequence), EXTENSION_INTERVAL);
-                            }
+                            backend.arm(&extension(slot, sequence), EXTENSION_INTERVAL);
                             let result = backend.exchange(input, &mut output[HEADER..]);
-                            if !I::STREAMING {
-                                backend.disarm();
-                            }
+                            backend.disarm();
                             result
                         };
-                        self.input.finished();
                         match result {
                             Ok(reply_bytes)
                                 if (MIN_REPLY_BYTES..=apdu::SHORT_REPLY_BYTES)
@@ -339,10 +246,8 @@ impl<P: Policy, I: Input> Transport<P, I> {
                 _ => unsupported = true,
             }
         }
-        if self.input.pending() {
-            backend.abort_input();
-            self.input.finished();
-        }
+        backend.release();
+        self.input.fill(0x00);
         let status = if slot != 0x00 {
             ICC_ABSENT
         } else {
@@ -382,7 +287,7 @@ impl<P: Policy, I: Input> Transport<P, I> {
         }
     }
 }
-impl<P: Policy> Transport<P, Buffered> {
+impl<P: Policy> Transport<P> {
     pub fn idle(&self, _now: u32) -> bool {
         self.completed_transaction()
     }
@@ -400,15 +305,7 @@ impl<P: Policy> Transport<P, Buffered> {
         self.receive_at(bytes, 0, &mut NoBackend { admitted });
     }
 }
-impl<P: Policy> Transport<P, Streaming> {
-    pub fn idle(&self) -> bool {
-        self.completed_transaction()
-    }
-    pub fn receive(&mut self, bytes: &[u8], now: u32, backend: &mut impl Backend) {
-        self.receive_at(bytes, now, backend);
-    }
-}
-impl<P: Policy, I: Input> Transport<P, I> {
+impl<P: Policy> Transport<P> {
     /// Expiry revokes a live RX owner, but a known envelope must still drain
     /// its declared body before one error reply. Reinterpreting its late tail
     /// as another header could otherwise execute unauthenticated power/APDUs.
@@ -420,10 +317,8 @@ impl<P: Policy, I: Input> Transport<P, I> {
             && !self.refused
             && now.wrapping_sub(self.last) >= RECEIVE_TIMEOUT_MS
         {
-            if self.input.pending() {
-                backend.abort_input();
-            }
-            self.input.clear();
+            backend.release();
+            self.input.fill(0x00);
             if !self.frame.has_header() {
                 self.phase = Phase::Idle;
                 return true;

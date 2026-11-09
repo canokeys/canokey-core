@@ -16,9 +16,6 @@ struct Mock {
     refuse_input: bool,
 }
 impl Backend for Mock {
-    fn abort_input(&mut self) {
-        unreachable!("buffered CCID never lends application input");
-    }
     fn admit(&mut self) -> bool {
         self.admission_calls += 1;
         !self.refuse_input

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Single-slot short-APDU card contract shared by buffered and streamed ingress.
+//! Single-slot short-APDU card contract shared by both products.
 use super::Policy;
 use canokey_protocol::ccid::*;
 
@@ -30,11 +30,7 @@ impl Policy for ShortApdu {
                 || header[9] != 0x00
                 || (reserved == 3 && header[SPECIFIC_OFFSET] != 0x00))
         {
-            if reserved == 2 {
-                BAD_RFU2
-            } else {
-                BAD_POWER
-            }
+            if reserved == 2 { BAD_RFU2 } else { BAD_POWER }
         } else if receive_error != 0x00 {
             receive_error
         } else if command == POWER_ON && header[SPECIFIC_OFFSET] != 0x00 {

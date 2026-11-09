@@ -7,5 +7,4 @@ pub const FRAME: usize = canokey_protocol::apdu::SHORT_FRAME_BYTES;
 pub const REPLY: usize = canokey_protocol::apdu::SHORT_REPLY_BYTES;
 pub const CONTROL_REPLY: usize = HEADER + ATR.len();
 pub use canokey_transport_runtime::ccid::EXTENSION_INTERVAL;
-pub type Transport =
-    canokey_transport_runtime::ccid::Transport<CanoKey, canokey_transport_runtime::ccid::Buffered>;
+pub type Transport = canokey_transport_runtime::ccid::Transport<CanoKey>;

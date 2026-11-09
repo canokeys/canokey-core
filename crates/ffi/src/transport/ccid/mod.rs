@@ -55,9 +55,6 @@ struct Platform<P> {
     provider: core::marker::PhantomData<P>,
 }
 impl<P: Provider> Backend for Platform<P> {
-    fn abort_input(&mut self) {
-        unreachable!("buffered CCID never lends application input");
-    }
     fn admit(&mut self) -> bool {
         // The shared receiver calls this only after a complete, valid
         // bounded XfrBlock header. Fragmented headers therefore cannot
