@@ -71,5 +71,3 @@ pub(super) mod management {
     pub const VENDOR_ALGORITHM: u8 = 0x80;
 }
 pub(super) use canokey_ctap::response::auth_data;
-
-pub(super) use canokey_ctap::response::encoding::{assertion_response, make_response};

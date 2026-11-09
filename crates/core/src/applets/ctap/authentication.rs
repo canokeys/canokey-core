@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Credential authorization and signing. All request bytes are owned before entry.
-use super::wire::{assertion_response, auth_data, make_response, pin_protocol};
+use super::wire::{auth_data, pin_protocol};
 use super::{Session, Status, credential, credential_request::Parameters, pin, resident};
 use crate::{
     ports::{KeyOperation, Platform, alg},
     runtime::workspace::Workspace,
 };
+use canokey_ctap::response::credential::{self as reply, Body, Envelope, Fields};
 use canokey_ctap::{authorization, session::Boundary};
 
 mod selection;
@@ -403,7 +404,6 @@ fn respond(
     }
     w.output[0] = 0;
     let mut e = Encoder::new(&mut w.output[1..]);
-    use canokey_ctap::response::credential::{self as reply, Body, Envelope};
     let envelope = Envelope {
         make: request.make,
         id: request.id,
@@ -479,13 +479,17 @@ fn append_extensions(
     p: &mut Platform<'_, impl crate::ports::Backends>,
     mut auth_len: usize,
 ) -> Result<usize, Status> {
-    let extensions = u64::from(request.protection.is_some())
-        + u64::from(request.min_pin_length.is_some())
-        + u64::from(request.cred_blob.is_some() || request.get_cred_blob)
-        + u64::from(request.hmac_secret)
-        + u64::from(request.hmac.active())
-        + u64::from(!request.make && request.third_party_payment);
-    if extensions != 0 {
+    let fields = canokey_ctap::response::extensions::Fields {
+        make: request.make,
+        protection: request.protection,
+        min_pin_length: request.min_pin_length,
+        cred_blob: request.cred_blob,
+        get_cred_blob: request.get_cred_blob,
+        hmac_secret: request.hmac_secret,
+        hmac: request.hmac.active(),
+        third_party_payment: request.third_party_payment,
+    };
+    if fields.count() != 0 {
         w.input[auth_data::FLAGS_OFFSET] |= auth_data::ED;
         let mut blob = [0; 32];
         let mut blob_len = 0;
@@ -504,34 +508,11 @@ fn append_extensions(
             0
         };
         let mut e = Encoder::new(&mut w.input[auth_len..]);
-        {
-            e.map(extensions);
-            if let Some(accepted) = request.cred_blob {
-                e.str("credBlob").bool(accepted);
-            } else if request.get_cred_blob {
-                e.str("credBlob").bytes(&blob[..blob_len]);
-            }
-            if let Some(protection) = request.protection {
-                e.str("credProtect").u8(protection);
-            }
-            if request.hmac_secret {
-                e.str("hmac-secret").bool(true);
-            }
-            if !request.make && hmac_len != 0 {
-                e.str("hmac-secret").bytes(&hmac_output[..hmac_len]);
-            }
-            if let Some(minimum) = request.min_pin_length {
-                e.str("minPinLength").u8(minimum);
-            }
-            if request.make && hmac_len != 0 {
-                e.str("hmac-secret-mc").bytes(&hmac_output[..hmac_len]);
-            }
-            if !request.make && request.third_party_payment {
-                e.str("thirdPartyPayment")
-                    .bool(request.id[1] & credential::THIRD_PARTY_PAYMENT != 0);
-            }
-        }
-        e.finish().map_err(|_| Status::Other)?;
+        fields
+            .encode(&mut e, &blob[..blob_len], &hmac_output[..hmac_len], || {
+                request.id[1] & credential::THIRD_PARTY_PAYMENT != 0
+            })
+            .map_err(|_| Status::Other)?;
         // The encoder only consumes this suffix; its remainder cannot exceed
         // INPUT_BYTES, and subtracting it gives the absolute cursor directly.
         auth_len = crate::runtime::workspace::INPUT_BYTES.wrapping_sub(e.writer().len());
@@ -553,30 +534,31 @@ fn respond_mldsa_assertion(
     let user = load_user(request.user_slot, &mut w.key.bytes, p)?;
     w.output[0] = 0;
     let mut e = Encoder::new(&mut w.output[1..]);
-    e.map(3 + u64::from(user.is_some()) + u64::from(request.count > 1) + u64::from(has_blob_key));
-    e.u8(assertion_response::CREDENTIAL);
-    super::encoding::descriptor(&mut e, request.id).map_err(|_| Status::Other)?;
-    e.u8(assertion_response::AUTH_DATA)
-        .bytes_len(auth_len as u64)
-        .finish()
-        .map_err(|_| Status::Other)?;
+    reply::start_fields(
+        &mut e,
+        Fields {
+            make: false,
+            user: user.is_some(),
+            count: request.count,
+            blob_key: has_blob_key,
+        },
+        request.id,
+        Body::External(auth_len),
+    )
+    .map_err(|_| Status::Other)?;
+    e.finish().map_err(|_| Status::Other)?;
     let prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     let mut tail = Encoder::new(&mut w.output[prefix..]);
-    tail.u8(assertion_response::SIGNATURE)
-        .bytes_len(params.signature_bytes as u64);
-    let signature_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
-    if let Some(user) = &user {
-        tail.u8(assertion_response::USER);
-        super::encoding::user(&mut tail, user, request.uv && request.details)
-            .map_err(|_| Status::Other)?;
-    }
-    if request.count > 1 {
-        tail.u8(assertion_response::COUNT).u8(request.count);
-    }
+    let signature_at = crate::runtime::workspace::OUTPUT_BYTES
+        - reply::signature_header(&mut tail, params.signature_bytes);
+    reply::tail_fields(&mut tail, user.is_some(), request.count, |e| {
+        super::encoding::user(e, user.as_ref().unwrap(), request.uv && request.details)
+    })
+    .map_err(|_| Status::Other)?;
     if has_blob_key {
         let mut key = [0; 32];
         credential::large_blob_key(request.id, request.rp, &mut key, p)?;
-        tail.u8(assertion_response::LARGE_BLOB_KEY).bytes(&key);
+        reply::blob_key(&mut tail, false, &key);
         p.memory.wipe(&mut key);
     }
     tail.finish().map_err(|_| Status::Other)?;
@@ -620,9 +602,18 @@ fn respond_mldsa_make(
     let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
     w.output[0] = 0;
     let mut e = Encoder::new(&mut w.output[1..]);
-    e.map(3 + u64::from(has_blob_key))
-        .encoded(&super::encoding::MAKE_HEADER[1..])
-        .bytes_len((auth_prefix_len + params.public_bytes + extension_len) as u64);
+    reply::start_fields(
+        &mut e,
+        Fields {
+            make: true,
+            user: false,
+            count: 0,
+            blob_key: has_blob_key,
+        },
+        request.id,
+        Body::External(auth_prefix_len + params.public_bytes + extension_len),
+    )
+    .map_err(|_| Status::Other)?;
     e.finish().map_err(|_| Status::Other)?;
     let auth_start = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     w.output[auth_start..auth_start + auth_prefix].copy_from_slice(&w.input[..auth_prefix]);
@@ -632,19 +623,17 @@ fn respond_mldsa_make(
     w.output[cose_at..public_at].copy_from_slice(&cose[..cose_prefix_len]);
     w.output[public_at..public_at + extension_len].copy_from_slice(&w.input[auth_prefix..auth_end]);
     let mut tail = Encoder::new(&mut w.output[public_at + extension_len..]);
-    tail.u8(make_response::ATTESTATION)
-        .encoded(super::encoding::ATTESTATION);
+    reply::statement_prefix(&mut tail, true, None).map_err(|_| Status::Other)?;
     tail.finish().map_err(|_| Status::Other)?;
     // Stream::attest inserts the encoded DER signature here, exactly once.
     let signature_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
-    tail.encoded(super::encoding::CERTIFICATE)
-        .bytes_len(cert_len as u64);
+    reply::certificate_body(&mut tail, Body::External(cert_len));
     tail.finish().map_err(|_| Status::Other)?;
     let cert_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
     if has_blob_key {
         let mut key = [0; 32];
         credential::large_blob_key(request.id, request.rp, &mut key, p)?;
-        tail.u8(make_response::LARGE_BLOB_KEY).bytes(&key);
+        reply::blob_key(&mut tail, true, &key);
         p.memory.wipe(&mut key);
     }
     tail.finish().map_err(|_| Status::Other)?;

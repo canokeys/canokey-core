@@ -5,6 +5,7 @@ use crate::ports::Certificate;
 pub mod auth_data;
 pub mod credential;
 pub mod encoding;
+pub mod extensions;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReadMode {

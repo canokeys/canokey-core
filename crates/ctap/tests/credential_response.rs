@@ -225,3 +225,145 @@ fn staged_materialized_user_and_complete_envelopes_match() {
         assert!(output[1 + capacity..].iter().all(|b| *b == 0xa5));
     }
 }
+
+// Physical framing excludes the external authData, signature and certificate.
+// Assertion signatures insert raw bytes; packed attestation inserts an encoded
+// DER byte string, including its header, before the x5c field.
+#[test]
+fn pq_markers_reconstruct_both_profiles_and_reject_every_short_framing() {
+    for params in [canokey_ports::mldsa::DSA44, canokey_ports::mldsa::DSA65] {
+        for make in [false, true] {
+            for with_user in [false, true] {
+                for with_blob in [false, true] {
+                    let with_user = with_user && !make;
+                    let count = if with_user { 2 } else { 0 };
+                    let auth = vec![0x33; 37 + if make { params.public_bytes } else { 0 }];
+                    let signature = vec![0x44; if make { 71 } else { params.signature_bytes }];
+                    let certificate = [0x55; 70];
+                    let mut expected = vec![0x00; 8192];
+                    let mut reference = Encoder::new(&mut expected[..]);
+                    reference.map(
+                        3 + u64::from(with_user) + u64::from(count > 1) + u64::from(with_blob),
+                    );
+                    if make {
+                        reference.u8(0x01).str("packed").u8(0x02);
+                    } else {
+                        reference
+                            .u8(0x01)
+                            .map(2)
+                            .str("id")
+                            .bytes(b"ID")
+                            .str("type")
+                            .str("public-key")
+                            .u8(0x02);
+                    }
+                    reference.bytes(&auth).u8(0x03);
+                    if make {
+                        reference.map(3).str("alg").i32(-7).str("sig");
+                    }
+                    reference.bytes(&signature);
+                    if make {
+                        reference.str("x5c").array(1).bytes(&certificate);
+                    }
+                    if with_user {
+                        reference.u8(0x04);
+                        user(&mut reference).unwrap();
+                    }
+                    if count > 1 {
+                        reference.u8(0x05).u8(count);
+                    }
+                    if with_blob {
+                        reference
+                            .u8(if make { 0x05 } else { 0x07 })
+                            .bytes(&[0x66; 32]);
+                    }
+                    reference.finish().unwrap();
+                    let expected_len = 8192 - reference.writer().len();
+                    let mut framing = [0xa5; 258];
+                    let mut e = Encoder::new(&mut framing[1..257]);
+                    let auth_at = 256
+                        - reply::start_fields(
+                            &mut e,
+                            reply::Fields {
+                                make,
+                                user: with_user,
+                                count,
+                                blob_key: with_blob,
+                            },
+                            b"ID",
+                            Body::External(auth.len()),
+                        )
+                        .unwrap();
+                    let signature_at = if make {
+                        reply::statement_prefix(&mut e, true, None).unwrap();
+                        256 - e.writer().len()
+                    } else {
+                        256 - reply::signature_header(&mut e, signature.len())
+                    };
+                    let certificate_at = if make {
+                        256 - reply::certificate_body(&mut e, Body::External(certificate.len()))
+                    } else {
+                        signature_at
+                    };
+                    reply::tail_fields(&mut e, with_user, count, user).unwrap();
+                    if with_blob {
+                        reply::blob_key(&mut e, make, &[0x66; 32]);
+                    }
+                    e.finish().unwrap();
+                    let used = 256 - e.writer().len();
+                    let physical = &framing[1..1 + used];
+                    let mut reconstructed = Vec::from(&physical[..auth_at]);
+                    reconstructed.extend_from_slice(&auth);
+                    reconstructed.extend_from_slice(&physical[auth_at..signature_at]);
+                    if make {
+                        let mut encoded = [0x00; 80];
+                        let mut e = Encoder::new(&mut encoded[..]);
+                        e.bytes(&signature).finish().unwrap();
+                        let length = 80 - e.writer().len();
+                        reconstructed.extend_from_slice(&encoded[..length]);
+                    } else {
+                        reconstructed.extend_from_slice(&signature);
+                    }
+                    reconstructed.extend_from_slice(&physical[signature_at..certificate_at]);
+                    if make {
+                        reconstructed.extend_from_slice(&certificate);
+                    }
+                    reconstructed.extend_from_slice(&physical[certificate_at..]);
+                    assert_eq!(reconstructed, expected[..expected_len]);
+                    for capacity in 0..=used {
+                        let mut output = [0xa5; 258];
+                        let mut e = Encoder::new(&mut output[1..1 + capacity]);
+                        let result = (|| {
+                            reply::start_fields(
+                                &mut e,
+                                reply::Fields {
+                                    make,
+                                    user: with_user,
+                                    count,
+                                    blob_key: with_blob,
+                                },
+                                b"ID",
+                                Body::External(auth.len()),
+                            )?;
+                            if make {
+                                reply::statement_prefix(&mut e, true, None)?;
+                                reply::certificate_body(&mut e, Body::External(certificate.len()));
+                            } else {
+                                reply::signature_header(&mut e, signature.len());
+                            }
+                            reply::tail_fields(&mut e, with_user, count, user)
+                                .map_err(|_| EncodeError)?;
+                            if with_blob {
+                                reply::blob_key(&mut e, make, &[0x66; 32]);
+                            }
+                            e.finish()
+                        })();
+                        assert_eq!(result.is_ok(), capacity == used);
+                        assert_eq!(output[0], 0xa5);
+                        assert!(output[1 + capacity..].iter().all(|b| *b == 0xa5));
+                    }
+                }
+            }
+        }
+    }
+}

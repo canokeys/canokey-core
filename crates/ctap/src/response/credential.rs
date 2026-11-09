@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Classic credential reply envelopes over existing contiguous or segmented
+//! Credential reply envelopes over existing contiguous or segmented
 //! backing. External bodies record insertion points without retaining a lease.
 use super::encoding::{self, EncodeError, Encoder, assertion_response, make_response};
 
@@ -58,16 +58,40 @@ pub fn start(
     envelope: &Envelope<'_>,
     auth: Body<'_>,
 ) -> Result<usize, EncodeError> {
-    e.map(
-        3 + u64::from(envelope.user)
-            + u64::from(envelope.count > 1)
-            + u64::from(envelope.blob_key.is_some()),
-    );
-    if envelope.make {
+    start_fields(
+        e,
+        Fields {
+            make: envelope.make,
+            user: envelope.user,
+            count: envelope.count,
+            blob_key: envelope.blob_key.is_some(),
+        },
+        envelope.id,
+        auth,
+    )
+}
+/// Header metadata is available before a streamed largeBlobKey is derived.
+/// It contains no key bytes or additional response backing.
+#[derive(Clone, Copy)]
+pub struct Fields {
+    pub make: bool,
+    pub user: bool,
+    pub count: u8,
+    pub blob_key: bool,
+}
+#[inline(always)]
+pub fn start_fields(
+    e: &mut Encoder<&mut [u8]>,
+    fields: Fields,
+    id: &[u8],
+    auth: Body<'_>,
+) -> Result<usize, EncodeError> {
+    e.map(3 + u64::from(fields.user) + u64::from(fields.count > 1) + u64::from(fields.blob_key));
+    if fields.make {
         e.encoded(&encoding::MAKE_HEADER[1..]);
     } else {
         e.u8(assertion_response::CREDENTIAL);
-        encoding::descriptor(e, envelope.id)?;
+        encoding::descriptor(e, id)?;
         e.u8(assertion_response::AUTH_DATA);
     }
     Ok(auth.write(e))
@@ -86,6 +110,23 @@ pub fn statement(
     signature: &[u8],
     certificate: Option<Body<'_>>,
 ) -> Result<Option<usize>, EncodeError> {
+    statement_prefix(e, make, self_algorithm)?;
+    e.bytes(signature);
+    let remaining = if let Some(certificate) = certificate {
+        Some(certificate_body(e, certificate))
+    } else {
+        None
+    };
+    Ok(remaining)
+}
+/// Packed statement prefix without a signature body. The PQ owner inserts its
+/// encoded DER signature (including the byte-string header) at this exact point.
+#[inline(always)]
+pub fn statement_prefix(
+    e: &mut Encoder<&mut [u8]>,
+    make: bool,
+    self_algorithm: Option<i32>,
+) -> Result<(), EncodeError> {
     statement_key(e)?;
     if make {
         if let Some(algorithm) = self_algorithm {
@@ -96,14 +137,49 @@ pub fn statement(
             e.encoded(encoding::ATTESTATION);
         }
     }
-    e.bytes(signature);
-    let remaining = if let Some(certificate) = certificate {
-        e.encoded(encoding::CERTIFICATE);
-        Some(certificate.write(e))
+    Ok(())
+}
+/// An external PQ signature already has its byte-string header here; its owner
+/// inserts only signature bytes after the returned physical position.
+#[inline(always)]
+pub fn signature_header(e: &mut Encoder<&mut [u8]>, length: usize) -> usize {
+    e.u8(assertion_response::SIGNATURE).bytes_len(length as u64);
+    e.writer().len()
+}
+#[inline(always)]
+pub fn certificate_body(e: &mut Encoder<&mut [u8]>, body: Body<'_>) -> usize {
+    e.encoded(encoding::CERTIFICATE);
+    body.write(e)
+}
+/// Write a prepared key at its original field point; the product controls its
+/// derivation/read order and erases it before checking final encoding success.
+#[inline(always)]
+pub fn blob_key(e: &mut Encoder<&mut [u8]>, make: bool, key: &[u8]) {
+    e.u8(if make {
+        make_response::LARGE_BLOB_KEY
     } else {
-        None
-    };
-    Ok(remaining)
+        assertion_response::LARGE_BLOB_KEY
+    })
+    .bytes(key);
+}
+/// Staged user/count fields over an already materialized record, with no IO.
+/// Encoding remains latched: the owner retains its existing key-derivation and
+/// erasure order and must finish the encoder before publishing any markers.
+#[inline(always)]
+pub fn tail_fields<E>(
+    e: &mut Encoder<&mut [u8]>,
+    has_user: bool,
+    count: u8,
+    user: impl FnOnce(&mut Encoder<&mut [u8]>) -> Result<(), E>,
+) -> Result<(), Error<E>> {
+    if has_user {
+        e.u8(assertion_response::USER);
+        user(e).map_err(Error::User)?;
+    }
+    if count > 1 {
+        e.u8(assertion_response::COUNT).u8(count);
+    }
+    Ok(())
 }
 /// The staged form accepts an already materialized user encoder, with no IO.
 /// Use assemble for deferred reads so encoding failures precede storage errors.
@@ -113,20 +189,9 @@ pub fn tail<E>(
     envelope: &Envelope<'_>,
     user: impl FnOnce(&mut Encoder<&mut [u8]>) -> Result<(), E>,
 ) -> Result<(), Error<E>> {
-    if envelope.user {
-        e.u8(assertion_response::USER);
-        user(e).map_err(Error::User)?;
-    }
-    if envelope.count > 1 {
-        e.u8(assertion_response::COUNT).u8(envelope.count);
-    }
+    tail_fields(e, envelope.user, envelope.count, user)?;
     if let Some(key) = envelope.blob_key {
-        e.u8(if envelope.make {
-            make_response::LARGE_BLOB_KEY
-        } else {
-            assertion_response::LARGE_BLOB_KEY
-        })
-        .bytes(key);
+        blob_key(e, envelope.make, key);
     }
     e.finish()?;
     Ok(())
