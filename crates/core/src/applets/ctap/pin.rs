@@ -321,6 +321,22 @@ impl<B: crate::ports::Backends> retry::Verification for CurrentPin<'_, '_, B> {
     }
 }
 
+// Both agreement responses and exchanges restore the same private key into the
+// existing workspace. Outline the complete setup once for Thumb-1 callers.
+#[inline(never)]
+fn establish_agreement(
+    owner: &mut shared_pin::Session<u8>,
+    w: &mut Workspace,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Status> {
+    agreement::establish(&mut KeyGeneration {
+        pin: owner,
+        key: w.key,
+        input: w.input,
+        platform: p,
+    })
+}
+
 pub(super) fn decapsulate(
     owner: &mut shared_pin::Session<u8>,
     protocol: u8,
@@ -334,12 +350,7 @@ pub(super) fn decapsulate(
     if !owner.agreement_ready() {
         w.clear(p.memory);
     }
-    agreement::establish(&mut KeyGeneration {
-        pin: owner,
-        key: w.key,
-        input: w.input,
-        platform: p,
-    })?;
+    establish_agreement(owner, w, p)?;
     let (mac_key, aes_key) = shared.split_at_mut(shared_pin::KEY_BYTES);
     agreement::decapsulate(
         || shared_pin::Protocol::decode(u64::from(protocol)).ok_or(Status::InvalidParameter),
@@ -361,20 +372,14 @@ pub(super) enum AuthorizationScope {
     DeferredRp,
 }
 impl Session {
-    // Both callers own workspace cleanup and Session::execute invalidates
-    // authorization after a primitive failure. Only public replies export COSE.
-    #[inline(never)]
+    // Callers own workspace cleanup; only public replies export COSE.
+    #[inline(always)]
     pub(super) fn agreement_key(
         &mut self,
         w: &mut Workspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
-        agreement::establish(&mut KeyGeneration {
-            pin: &mut self.pin,
-            key: w.key,
-            input: w.input,
-            platform: p,
-        })
+        establish_agreement(&mut self.pin, w, p)
     }
     #[inline(always)]
     pub(super) fn decapsulate(
@@ -506,6 +511,7 @@ impl Session {
     /// The shared management dispatcher has authenticated this request before
     /// record IO. Serialized execution forbids replacing its token between that
     /// admission and this final check; time may still advance during storage IO.
+    #[inline(never)]
     pub(super) fn finish_management(
         &mut self,
         _verified: &token::VerifiedRequest,

@@ -15,7 +15,6 @@ pub const SALT_AUTH: i8 = 0x03;
 pub const PIN_PROTOCOL: i8 = 0x04;
 mod wire {
     use super::Protocol;
-    pub const V1: u8 = Protocol::One as u8;
     pub const AUTH_V1_BYTES: usize = Protocol::One.auth_bytes();
     pub const AUTH_V2_BYTES: usize = Protocol::Two.auth_bytes();
 }
@@ -68,7 +67,7 @@ pub(crate) fn admit_fields<E: Error>(
 pub struct Parameters {
     pub salt_len: usize,
     pub auth_len: usize,
-    pub protocol: u8,
+    pub protocol: Protocol,
     pub agreement: [u8; 64],
     pub salt: [u8; MAX_ENCRYPTED_SALT_BYTES],
     pub auth: [u8; 32],
@@ -81,7 +80,7 @@ impl Parameters {
             auth: [0; 32],
             salt_len: 0,
             auth_len: 0,
-            protocol: wire::V1,
+            protocol: Protocol::One,
         }
     }
     pub fn clear(&mut self, memory: &(impl canokey_ports::Memory + ?Sized)) {
@@ -141,11 +140,7 @@ impl<E: Error> Parser<E> {
                 let p = &self.params;
                 admit_fields::<E>(
                     self.seen,
-                    if p.protocol == wire::V1 {
-                        Protocol::One
-                    } else {
-                        Protocol::Two
-                    },
+                    p.protocol,
                     p.salt_len,
                     p.auth_len,
                 )?;
@@ -173,7 +168,9 @@ impl<E: Error> Parser<E> {
                 self.params.auth_len = self.bytes(key, event)?;
             }
             4 => match *event {
-                Event::Unsigned(n @ (1 | 2)) => self.params.protocol = n as u8,
+                Event::Unsigned(n) => {
+                    self.params.protocol = Protocol::decode(n).ok_or(E::INVALID_PARAMETER)?;
+                }
                 _ => return Err(E::INVALID_PARAMETER),
             },
             _ => self.ignore(event),

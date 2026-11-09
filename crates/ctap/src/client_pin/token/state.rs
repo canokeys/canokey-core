@@ -3,8 +3,6 @@
 use super::super::KEY_BYTES;
 use super::{Error, MissingRp, Scope};
 
-const RP_BOUND: u8 = 0x01;
-
 // Private token followed by public SHA-256 RP binding. This is volatile owner
 // storage, not a wire/record layout. Contiguity permits one complete erasure.
 const RP_OFFSET: usize = KEY_BYTES;
@@ -19,7 +17,7 @@ const MATERIAL_BYTES: usize = KEY_BYTES + KEY_BYTES;
 #[repr(C)]
 pub struct Token<Permissions = u16> {
     pub permissions: Permissions,
-    flags: u8,
+    rp_bound: bool,
     pub issued: u32,
     pub last_used: u32,
     material: [u8; MATERIAL_BYTES],
@@ -34,7 +32,7 @@ impl<P: Copy> Token<P> {
             permissions,
             issued: now,
             last_used: now,
-            flags: 0x00,
+            rp_bound: false,
         }
     }
     /// Issuance fixes both clock origins; re-agreement must never call this.
@@ -51,15 +49,16 @@ impl<P: Copy> Token<P> {
         super::lifetime_remaining(now, self.issued, self.last_used)
     }
     pub fn rp_id(&self) -> Option<&[u8; KEY_BYTES]> {
-        (self.flags & RP_BOUND != 0x00).then(|| (&self.material[RP_OFFSET..]).try_into().unwrap())
+        self.rp_bound
+            .then(|| (&self.material[RP_OFFSET..]).try_into().unwrap())
     }
     pub fn bind_rp(&mut self, rp: Option<[u8; KEY_BYTES]>) {
         if let Some(rp) = rp {
             self.material[RP_OFFSET..].copy_from_slice(&rp);
-            self.flags |= RP_BOUND;
+            self.rp_bound = true;
         } else {
             self.material[RP_OFFSET..].fill(0x00);
-            self.flags &= !RP_BOUND;
+            self.rp_bound = false;
         }
     }
     /// Hash directly into the sole RP backing. Failed partial output remains
@@ -69,11 +68,7 @@ impl<P: Copy> Token<P> {
         hash: impl FnOnce(&mut [u8; KEY_BYTES]) -> Result<(), E>,
     ) -> Result<(), E> {
         let result = hash((&mut self.material[RP_OFFSET..]).try_into().unwrap());
-        if result.is_ok() {
-            self.flags |= RP_BOUND;
-        } else {
-            self.flags &= !RP_BOUND;
-        }
+        self.rp_bound = result.is_ok();
         result
     }
     /// A primitive may consume a secret synchronously, but cannot export its loan.
@@ -99,7 +94,7 @@ impl<P: Copy + From<u8>> Token<P> {
     #[inline(never)]
     pub fn clear(&mut self, mut wipe: impl FnMut(&mut [u8])) {
         wipe(&mut self.material);
-        self.flags = 0x00;
+        self.rp_bound = false;
         self.permissions = P::from(0x00);
         self.issued = 0;
         self.last_used = 0;

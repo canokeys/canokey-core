@@ -123,7 +123,7 @@ impl Session {
             .hmac
             .0
             .prepare(
-                pin::cipher_protocol(params.protocol),
+                params.protocol,
                 &params.agreement,
                 &params.salt[..params.salt_len],
                 &params.auth[..params.auth_len],

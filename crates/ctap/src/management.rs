@@ -112,11 +112,12 @@ pub fn execute<B: Backend>(request: Request, backend: &mut B) -> Result<B::Outpu
     }
     let command = request.subcommand;
     let continued = matches!(command, RP_NEXT | CREDENTIAL_NEXT);
-    if continued {
+    let authenticated = if continued {
         if backend.cursor_mode() != command {
             return Err(B::Error::NOT_ALLOWED);
         }
         backend.continue_live()?;
+        None
     } else {
         backend.reset_cursor();
         if !request.authenticated {
@@ -131,21 +132,20 @@ pub fn execute<B: Backend>(request: Request, backend: &mut B) -> Result<B::Outpu
         {
             return Err(B::Error::MISSING_PARAMETER);
         }
-        let mutation = matches!(command, DELETE | UPDATE_USER);
-        let authenticated = backend.authorize(mutation)?;
-        if mutation {
-            return backend.mutate(command == DELETE, authenticated);
-        }
+        let authenticated = backend.authorize(matches!(command, DELETE | UPDATE_USER))?;
         if matches!(command, RP_BEGIN | CREDENTIAL_BEGIN) {
             backend.begin();
         }
-    }
+        Some(authenticated)
+    };
     // Only enumeration may create a cursor. Metadata and mutations retain the
     // empty cursor established before authorization, including on failure.
+    // Only continuation can lack a receipt; both mutation commands have one.
     match command {
         METADATA => backend.metadata(),
         RP_BEGIN | RP_NEXT => backend.rps(!continued),
         CREDENTIAL_BEGIN | CREDENTIAL_NEXT => backend.credentials(!continued),
+        DELETE | UPDATE_USER => backend.mutate(command == DELETE, authenticated.unwrap()),
         _ => unreachable!(),
     }
 }

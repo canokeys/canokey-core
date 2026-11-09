@@ -4,7 +4,7 @@ use canokey_ctap::{
         Protocol,
         cipher::{self, Direction},
     },
-    extensions::hmac_secret::{Input, Prepared},
+    extensions::hmac_secret::{Input, Output, Prepared},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,11 +39,36 @@ impl cipher::Cbc for Crypto {
         iv: &[u8; 16],
         bytes: &mut [u8],
     ) -> Result<(), Fault> {
-        assert!(matches!(direction, Direction::Decrypt));
         assert_eq!(key, &[0x5a; 32]);
         assert!(iv == &[0x00; 16] || iv == &[0x42; 16]);
-        bytes.fill(0x69);
-        self.step("cbc", Fault::Decrypt)
+        match direction {
+            Direction::Decrypt => {
+                bytes.fill(0x69);
+                self.step("cbc", Fault::Decrypt)
+            }
+            Direction::Encrypt => {
+                assert!(bytes.iter().all(|&byte| byte == 0x77));
+                bytes.fill(0x88);
+                self.calls.push("encrypt");
+                Ok(())
+            }
+        }
+    }
+}
+impl cipher::Encryption for Crypto {
+    fn random_iv(&mut self, iv: &mut [u8; 16]) -> Result<(), Fault> {
+        self.calls.push("iv");
+        iv.fill(0x42);
+        Ok(())
+    }
+}
+impl Output for Crypto {
+    fn mac(&mut self, key: &[u8; 32], salt: &[u8; 32], output: &mut [u8; 32]) -> Result<(), Fault> {
+        assert_eq!(key, &[0x24; 32]);
+        assert_eq!(salt, &[0x69; 32]);
+        self.calls.push("salt-mac");
+        output.fill(0x77);
+        Ok(())
     }
 }
 impl Input for Crypto {
@@ -105,21 +130,31 @@ fn both_protocols_commit_only_decrypted_salts_and_aes_key_then_erase_all_capacit
             assert_eq!(crypto.erased.len(), 1);
             assert_eq!(&crypto.erased[0][..32], &[0xa5; 32]);
             assert_eq!(&crypto.erased[0][32..], &[0x5a; 32]);
+            // Output must still see every plaintext salt and the complete AES
+            // key after that key overwrites the compacted ciphertext tail.
+            let mut output = [0x00; 80];
+            let written = prepared.output(&[0x24; 32], &mut output, &mut crypto).unwrap();
+            assert_eq!(written, length + protocol.iv_bytes());
+            assert_eq!(&output[..protocol.iv_bytes()], vec![0x42; protocol.iv_bytes()]);
+            assert_eq!(&output[protocol.iv_bytes()..written], vec![0x88; length]);
             let mut captured = Vec::new();
             prepared.clear(|bytes| {
                 captured.extend_from_slice(bytes);
                 bytes.fill(0x00);
             });
             assert_eq!(&captured[..length], vec![0x69; length]);
+            let tail = &captured[length..64];
+            let ciphertext_tail = if protocol == Protocol::Two {
+                16.min(tail.len())
+            } else {
+                0
+            };
+            assert_eq!(&tail[..ciphertext_tail], vec![0x42; ciphertext_tail]);
             assert_eq!(
-                &captured[length..80],
-                if protocol == Protocol::Two {
-                    [vec![0x42; 16], vec![0x00; 64 - length]].concat()
-                } else {
-                    vec![0x00; 80 - length]
-                }
+                &tail[ciphertext_tail..],
+                vec![0x00; tail.len() - ciphertext_tail]
             );
-            assert_eq!(&captured[80..], &[0x5a; 32]);
+            assert_eq!(&captured[64..], &[0x5a; 32]);
             assert!(!prepared.active());
             prepared.clear(|bytes| assert!(bytes.iter().all(|&byte| byte == 0x00)));
         }
@@ -158,7 +193,7 @@ fn every_primitive_failure_erases_candidate_and_shared_keys_without_later_calls(
                     .iter()
                     .any(|bytes| bytes.len() == 64 && bytes[..32] == [0xa5; 32])
             );
-            assert!(crypto.erased.iter().any(|bytes| bytes.len() == 112));
+            assert!(crypto.erased.iter().any(|bytes| bytes.len() == 96));
             prepared.clear(|bytes| assert!(bytes.iter().all(|&byte| byte == 0x00)));
         }
     }

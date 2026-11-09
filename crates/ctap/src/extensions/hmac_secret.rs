@@ -33,25 +33,34 @@ pub trait Input {
     fn wipe(&mut self, bytes: &mut [u8]);
 }
 
-const AES_KEY_OFFSET: usize = MAX_OUTPUT_BYTES;
+// CBC compacts the IV before the AES key is retained. The key can therefore
+// overwrite the ciphertext tail beyond the maximum plaintext salt length.
+const AES_KEY_OFFSET: usize = MAX_SALT_BYTES;
+// Native primitives and fixed-size copies use word-aligned owner storage.
+#[repr(align(4))]
+struct Secrets([u8; AES_KEY_OFFSET + KEY_BYTES]);
+
 /// The only state retained between assertion/enumeration responses: plaintext
 /// salts followed by the AES key. The input MAC key is erased after preparation.
 /// Owners call clear on cancellation/reset/drop; this type cannot be cloned.
+// Keep byte metadata at small Thumb-1 offsets. This transient layout is neither
+// a persisted record nor an exported ABI.
+#[repr(C)]
 pub struct Prepared {
-    secrets: [u8; AES_KEY_OFFSET + KEY_BYTES],
-    length: usize,
+    length: u8,
     protocol: Protocol,
+    secrets: Secrets,
 }
 impl Prepared {
     pub const fn new() -> Self {
         Self {
-            secrets: [0x00; AES_KEY_OFFSET + KEY_BYTES],
+            secrets: Secrets([0x00; AES_KEY_OFFSET + KEY_BYTES]),
             length: 0,
             protocol: Protocol::One,
         }
     }
     pub fn clear(&mut self, mut wipe: impl FnMut(&mut [u8])) {
-        wipe(&mut self.secrets);
+        wipe(&mut self.secrets.0);
         self.length = 0;
     }
     pub fn active(&self) -> bool {
@@ -60,7 +69,7 @@ impl Prepared {
     /// Validate shape before agreement. Authenticate ciphertext before writing
     /// plaintext; publish length/protocol only after CBC succeeds. Shared keys
     /// and failed candidate state are erased on every ordinary exit.
-    #[inline(always)]
+    #[inline(never)]
     pub fn prepare<B: Input>(
         &mut self,
         protocol: Protocol,
@@ -79,16 +88,17 @@ impl Prepared {
                 ciphertext,
                 auth,
             )?;
-            let (salts, aes) = self.secrets.split_at_mut(AES_KEY_OFFSET);
-            salts[..ciphertext.len()].copy_from_slice(ciphertext);
+            let encoded = &mut self.secrets.0[..ciphertext.len()];
+            encoded.copy_from_slice(ciphertext);
             backend.decrypt(
                 protocol,
                 (&keys[KEY_BYTES..]).try_into().unwrap(),
-                &mut salts[..ciphertext.len()],
+                encoded,
             )?;
-            aes.copy_from_slice(&keys[KEY_BYTES..]);
+            self.secrets.0[AES_KEY_OFFSET..].copy_from_slice(&keys[KEY_BYTES..]);
             self.protocol = protocol;
-            self.length = length;
+            // Only one or two SHA-256 salts can pass salt_length admission.
+            self.length = length as u8;
             Ok(())
         })();
         backend.wipe(&mut keys);
@@ -105,9 +115,9 @@ impl Prepared {
     ) -> Result<usize, cipher::Error<B::Error>> {
         output(
             self.protocol,
-            self.secrets[AES_KEY_OFFSET..].try_into().unwrap(),
+            self.secrets.0[AES_KEY_OFFSET..].try_into().unwrap(),
             credential_key,
-            &self.secrets[..self.length],
+            &self.secrets.0[..usize::from(self.length)],
             out,
             backend,
         )
