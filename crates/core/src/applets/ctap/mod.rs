@@ -646,3 +646,10 @@ impl canokey_ctap::request::Error for Status {
     const INVALID_OPTION: Self = Self::InvalidOption;
     const INTERNAL: Self = Self::Other;
 }
+
+impl canokey_ctap::management::Error for Status {
+    const NO_CREDENTIALS: Self = Self::NoCredentials;
+    const PUAT_REQUIRED: Self = Self::PuatRequired;
+    const INVALID_SUBCOMMAND: Self = Self::InvalidSubcommand;
+    const NOT_ALLOWED: Self = Self::NotAllowed;
+}

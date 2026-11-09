@@ -58,15 +58,5 @@ pub(super) mod config {
     pub const SET_MIN_PIN: u8 = 0x03;
     pub const VENDOR_LONG_RESET: u8 = 0x04;
 }
-pub(super) mod management {
-    pub const METADATA: u8 = 0x01;
-    pub const RP_BEGIN: u8 = 0x02;
-    pub const RP_NEXT: u8 = 0x03;
-    pub const CREDENTIAL_BEGIN: u8 = 0x04;
-    pub const CREDENTIAL_NEXT: u8 = 0x05;
-    pub const DELETE: u8 = 0x06;
-    pub const UPDATE_USER: u8 = 0x07;
-    pub const VENDOR_METADATA_ONLY: u8 = 0x80;
-    pub const VENDOR_ALGORITHM: u8 = 0x80;
-}
+pub(super) use canokey_ctap::management;
 pub(super) use canokey_ctap::response::auth_data;

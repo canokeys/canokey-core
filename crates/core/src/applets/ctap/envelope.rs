@@ -236,8 +236,7 @@ impl Fields {
             Some(1) => match *event {
                 Event::Unsigned(n) => {
                     self.subcommand_seen = true;
-                    self.params.subcommand =
-                        u8::try_from(n).map_err(|_| Status::InvalidParameter)?
+                    self.params.subcommand = canokey_ctap::management::subcommand::<Status>(n)?
                 }
                 _ => return Err(Status::UnexpectedType),
             },
@@ -248,19 +247,18 @@ impl Fields {
                 self.depth = 1;
             }
             Some(3) => match *event {
-                Event::Unsigned(n @ (1 | 2)) => self.params.protocol = n as u8,
-                Event::Unsigned(_) | Event::Negative(_) => return Err(Status::InvalidParameter),
+                Event::Unsigned(n) => {
+                    self.params.protocol = canokey_ctap::management::protocol::<Status>(n)?;
+                }
+                Event::Negative(_) => return Err(Status::InvalidParameter),
                 _ => return Err(Status::UnexpectedType),
             },
             Some(4) => match *event {
-                Event::Bytes(n)
-                    if usize::from(n) == super::wire::pin_protocol::AUTH_V1_BYTES
-                        || usize::from(n) == super::wire::pin_protocol::AUTH_V2_BYTES =>
-                {
+                Event::Bytes(n) => {
+                    canokey_ctap::management::auth_length::<Status>(usize::from(n))?;
                     self.params.auth_len = usize::from(n);
                     self.auth_offset = Some(0);
                 }
-                Event::Bytes(_) => return Err(Status::InvalidParameter),
                 _ => return Err(Status::UnexpectedType),
             },
             _ => {

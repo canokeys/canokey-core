@@ -989,3 +989,14 @@ key; failure cleanup remains with the outer credential owner. Strict PQ
 registration still requires a nonempty certificate and key. This command-time
 rule does not change registration/counter commit points. Boot independently
 preserves durable CTAP state as described above.
+
+### Credential management admission
+
+The common `canokey-ctap::management` engine owns request fields, required-field
+admission and enumeration/continuation dispatch. Header errors precede deferred
+parameter semantics. Delete/update verify the MAC before record reads without
+refreshing token use; the matching record supplies the RP for the committing
+authorization before atomic mutation. Global metadata/RP enumeration rejects an
+RP-bound token even if an unrelated RP hash is supplied. User updates preserve
+absent names, clear explicitly empty names and retain bounded UTF-8 truncation.
+Product adapters own record IO, key/PQ response loans and workspace erasure.

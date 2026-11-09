@@ -322,6 +322,13 @@ impl<B: crate::ports::Backends> retry::Verification for CurrentPin<'_, '_, B> {
     }
 }
 
+/// Authorization commits usage only once the request has its final RP scope.
+#[derive(Clone, Copy)]
+pub(super) enum AuthorizationScope {
+    SuppliedRp,
+    Global,
+    DeferredRp,
+}
 impl Session {
     // Both callers own workspace cleanup and Session::execute invalidates
     // authorization after a primitive failure. Only public replies export COSE.
@@ -430,6 +437,26 @@ impl Session {
         rp: Option<&[u8; 32]>,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
+        self.authorize_scoped(
+            protocol,
+            auth,
+            message,
+            permission,
+            rp,
+            AuthorizationScope::SuppliedRp,
+            p,
+        )
+    }
+    pub(super) fn authorize_scoped(
+        &mut self,
+        protocol: u8,
+        auth: &[u8],
+        message: &[u8],
+        permission: u8,
+        rp: Option<&[u8; 32]>,
+        scope: AuthorizationScope,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Status> {
         self.expire_token(p.device.now(), p.memory);
         if self.pin_attempts.blocked() {
             return Err(Status::PinAuthBlocked);
@@ -442,7 +469,11 @@ impl Session {
             .authorize(
                 u16::from(permission),
                 rp,
-                token::MissingRp::Allow,
+                if matches!(scope, AuthorizationScope::Global) {
+                    token::MissingRp::Deny
+                } else {
+                    token::MissingRp::Allow
+                },
                 |secret| verify_mac(secret, auth, message, p),
                 equal,
             )
@@ -450,7 +481,9 @@ impl Session {
                 token::Error::Scope => Status::PinAuthInvalid,
                 token::Error::Mac(status) => status,
             })?;
-        self.pin.token.mark_used(p.device.now());
+        if !matches!(scope, AuthorizationScope::DeferredRp) {
+            self.pin.token.mark_used(p.device.now());
+        }
         Ok(())
     }
     // Reuse the expiry/erasure paths across applet admission and reset entrypoints.

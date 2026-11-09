@@ -42,20 +42,9 @@ impl Cursor {
         }
     }
 }
-#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-struct User<'a> {
-    id: &'a [u8],
-    name: Option<&'a str>,
-    display: Option<&'a str>,
-}
-#[derive(Default)]
-#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-pub(super) struct Fields<'a> {
-    rp: Option<&'a [u8; 32]>,
-    id: Option<&'a credential::Id>,
-    user: Option<User<'a>>,
-    metadata_only: bool,
-}
+pub(super) use canokey_ctap::management::Fields;
+#[cfg(test)]
+use canokey_ctap::management::User;
 #[cfg(test)]
 fn parse(bytes: &[u8]) -> Result<Fields<'_>, Status> {
     let mut fields = Fields::default();
@@ -259,207 +248,227 @@ impl Session {
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let fields = params.management.fields(&params.message)?;
-        let subcommand = params.subcommand;
-        if !matches!(subcommand, cm::METADATA..=cm::UPDATE_USER) {
-            return Err(Status::InvalidSubcommand);
-        }
-        let continued = subcommand == cm::RP_NEXT || subcommand == cm::CREDENTIAL_NEXT;
-        if continued {
-            if self.management.mode != subcommand {
-                return Err(Status::NotAllowed);
-            }
-        } else {
-            self.management = Cursor::new();
-            if params.auth_len == 0 {
-                return Err(Status::PuatRequired);
-            }
-            if params.protocol == 0
-                || (subcommand == cm::CREDENTIAL_BEGIN && fields.rp.is_none())
-                || (matches!(subcommand, cm::DELETE | cm::UPDATE_USER) && fields.id.is_none())
-                || (subcommand == cm::UPDATE_USER && fields.user.is_none())
-            {
-                return Err(Status::MissingParameter);
-            }
-            if matches!(subcommand, cm::METADATA | cm::RP_BEGIN) && self.pin.token.rp_id().is_some()
-            {
-                return Err(Status::PinAuthInvalid);
-            }
-            // Mutations authenticate against the stored credential's RP below.
-            if !matches!(subcommand, cm::DELETE | cm::UPDATE_USER) {
-                self.authorize(
-                    params.protocol,
-                    &params.auth[..params.auth_len],
-                    &params.message[params.start + PREFIX - 1..params.len],
-                    CREDENTIAL_MANAGEMENT_PERMISSION,
-                    fields.rp,
-                    p,
-                )?;
-            }
-        }
+        let request = canokey_ctap::management::Request::new(
+            params.subcommand,
+            params.auth_len != 0,
+            params.protocol != 0,
+            &fields,
+        );
+        canokey_ctap::management::execute(
+            request,
+            &mut Operation {
+                session: self,
+                params,
+                fields,
+                w,
+                p,
+            },
+        )
+    }
+}
+struct Operation<'a, 'r, 'w, 'p, B: crate::ports::Backends> {
+    session: &'a mut Session,
+    params: &'r Parameters,
+    fields: Fields<'r>,
+    w: &'a mut Workspace<'w>,
+    p: &'a mut Platform<'p, B>,
+}
+impl<B: crate::ports::Backends> canokey_ctap::management::Backend for Operation<'_, '_, '_, '_, B> {
+    type Error = Status;
+    type Output = usize;
+    fn reset_cursor(&mut self) {
+        self.session.management = Cursor::new();
+    }
+    fn cursor_mode(&self) -> u8 {
+        self.session.management.mode
+    }
+    fn continue_live(&mut self) -> Result<(), Status> {
+        Ok(())
+    }
+    fn authorize(&mut self, deferred_rp: bool) -> Result<(), Status> {
+        self.session.authorize_scoped(
+            self.params.protocol,
+            &self.params.auth[..self.params.auth_len],
+            &self.params.message[self.params.start + PREFIX - 1..self.params.len],
+            CREDENTIAL_MANAGEMENT_PERMISSION,
+            if self.params.subcommand == cm::CREDENTIAL_BEGIN {
+                self.fields.rp
+            } else {
+                None
+            },
+            if deferred_rp {
+                super::pin::AuthorizationScope::DeferredRp
+            } else {
+                super::pin::AuthorizationScope::Global
+            },
+            self.p,
+        )
+    }
+    fn metadata(&mut self) -> Result<usize, Status> {
+        let w = &mut *self.w;
+        let p = &mut *self.p;
         w.output[0] = 0;
-        if subcommand == cm::METADATA {
-            let count = credential_count(None, w.input, p)?;
-            let mut e = Encoder::new(&mut w.output[1..]);
-            e.map(2)
-                .u8(1)
-                .u8(count)
-                .u8(2)
-                .u8(Record::CTAP_CREDENTIALS - count)
-                .finish()
-                .map_err(|_| Status::Other)?;
-            return Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len());
+        let count = credential_count(None, w.input, p)?;
+        let mut e = Encoder::new(&mut w.output[1..]);
+        e.map(2)
+            .u8(1)
+            .u8(count)
+            .u8(2)
+            .u8(Record::CTAP_CREDENTIALS - count)
+            .finish()
+            .map_err(|_| Status::Other)?;
+        return Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len());
+    }
+    fn rps(&mut self, first: bool) -> Result<usize, Status> {
+        let w = &mut *self.w;
+        let p = &mut *self.p;
+        w.output[0] = 0x00;
+
+        let mut total = 0;
+        if first {
+            total = collect_rps(&mut self.session.management, w.input, &mut w.key.bytes, p)?;
         }
-        if subcommand == cm::RP_BEGIN || subcommand == cm::RP_NEXT {
-            let mut total = 0;
-            if subcommand == cm::RP_BEGIN {
-                total = collect_rps(&mut self.management, w.input, &mut w.key.bytes, p)?;
+        let (_, n) = next_rp(&mut self.session.management, w.input, p)?
+            .ok_or(canokey_ctap::management::exhausted::<Status>(first))?;
+        self.session.management.mode = cm::RP_NEXT;
+        let entry = resident::decode(&w.input[..n])?;
+        let mut e = Encoder::new(&mut w.output[1..]);
+        let result = (|| {
+            e.map(if first { 3 } else { 2 })
+                .u8(3)
+                .map(1)
+                .str("id")
+                .str(entry.rp);
+            e.u8(4).bytes(entry.rp_hash);
+            if first {
+                e.u8(5).u8(total);
             }
-            let (_, n) = next_rp(&mut self.management, w.input, p)?.ok_or(if continued {
-                Status::NotAllowed
-            } else {
-                Status::NoCredentials
-            })?;
-            self.management.mode = cm::RP_NEXT;
-            let entry = resident::decode(&w.input[..n])?;
-            let mut e = Encoder::new(&mut w.output[1..]);
-            let result = (|| {
-                e.map(if subcommand == cm::RP_BEGIN { 3 } else { 2 })
-                    .u8(3)
-                    .map(1)
-                    .str("id")
-                    .str(entry.rp);
-                e.u8(4).bytes(entry.rp_hash);
-                if subcommand == cm::RP_BEGIN {
-                    e.u8(5).u8(total);
+            e.finish()
+        })();
+        result.map_err(|_| Status::Other)?;
+        return Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len());
+    }
+    fn credentials(&mut self, first: bool) -> Result<usize, Status> {
+        let w = &mut *self.w;
+        let p = &mut *self.p;
+        let fields = &self.fields;
+
+        if first {
+            self.session.management.rp = *fields.rp.ok_or(Status::MissingParameter)?;
+            self.session.management.metadata_only = fields.metadata_only;
+        }
+        let total = if first {
+            credential_count(Some(&self.session.management.rp), w.input, p)?
+        } else {
+            0
+        };
+        let selected = scan::ascending(
+            self.session.management.next,
+            Record::CTAP_CREDENTIALS,
+            |index| {
+                let Some((_, entry)) = resident::read(index, w.input, p)? else {
+                    return Ok(None);
+                };
+                if *entry.rp_hash != self.session.management.rp {
+                    return Ok(None);
                 }
-                e.finish()
-            })();
-            result.map_err(|_| Status::Other)?;
-            return Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len());
-        }
-        if subcommand == cm::CREDENTIAL_BEGIN || subcommand == cm::CREDENTIAL_NEXT {
-            if subcommand == cm::CREDENTIAL_BEGIN {
-                self.management.rp = *fields.rp.ok_or(Status::MissingParameter)?;
-                self.management.metadata_only = fields.metadata_only;
-            }
-            let total = if subcommand == cm::CREDENTIAL_BEGIN {
-                credential_count(Some(&self.management.rp), w.input, p)?
-            } else {
-                0
-            };
-            let selected =
-                scan::ascending(self.management.next, Record::CTAP_CREDENTIALS, |index| {
-                    let Some((_, entry)) = resident::read(index, w.input, p)? else {
-                        return Ok(None);
-                    };
-                    if *entry.rp_hash != self.management.rp {
-                        return Ok(None);
-                    }
-                    self.management.next = index + 1;
-                    self.management.mode = cm::CREDENTIAL_NEXT;
-                    // Key derivation borrows only the key buffer, so the input
-                    // record stays validated and borrowed through encoding.
-                    let id = entry.id;
-                    let algorithm = credential::open(id, self.sm2, &self.management.rp, w.key, p)?;
-                    let pq_public = crate::ports::mldsa::parameters(algorithm).is_some()
-                        && !self.management.metadata_only;
-                    let public_len = if self.management.metadata_only || pq_public {
-                        0
-                    } else {
-                        let n = p
-                            .crypto
-                            .key_operation(
-                                KeyOperation::Public,
-                                algorithm,
-                                &mut w.key,
-                                &[],
-                                w.output,
-                            )
-                            .map_err(|_| Status::Other)?;
-                        if n != credential::public_length(algorithm) {
-                            return Err(Status::Other);
-                        }
-                        w.key.bytes[PUBLIC_KEY_OFFSET..PUBLIC_KEY_OFFSET + n]
-                            .copy_from_slice(&w.output[..n]);
-                        n
-                    };
-                    let has_blob_key = id[1] & resident::LARGE_BLOB_KEY != 0;
-                    if has_blob_key {
-                        credential::large_blob_key(
-                            id,
-                            &self.management.rp,
-                            (&mut w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END])
-                                .try_into()
-                                .unwrap(),
-                            p,
-                        )?;
-                    }
-                    if pq_public {
-                        let blob_key = has_blob_key.then(|| {
-                            (&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END])
-                                .try_into()
-                                .unwrap()
-                        });
-                        let (plan, length) = canokey_ctap::streaming::reply::public(
-                            &entry,
-                            algorithm,
-                            id,
-                            (subcommand == cm::CREDENTIAL_BEGIN).then_some(total),
-                            blob_key,
-                            w.output,
-                        )
+                self.session.management.next = index + 1;
+                self.session.management.mode = cm::CREDENTIAL_NEXT;
+                // Key derivation borrows only the key buffer, so the input
+                // record stays validated and borrowed through encoding.
+                let id = entry.id;
+                let algorithm =
+                    credential::open(id, self.session.sm2, &self.session.management.rp, w.key, p)?;
+                let pq_public = crate::ports::mldsa::parameters(algorithm).is_some()
+                    && !self.session.management.metadata_only;
+                let public_len = if self.session.management.metadata_only || pq_public {
+                    0
+                } else {
+                    let n = p
+                        .crypto
+                        .key_operation(KeyOperation::Public, algorithm, &mut w.key, &[], w.output)
                         .map_err(|_| Status::Other)?;
-                        // Encode directly from the input record before reusing
-                        // it for the stream seed; maximal user records exceed 256 B.
-                        w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
-                        self.auth_response = Some(super::Response::Pending(plan));
-                        return Ok(Some(length + credential::public_length(algorithm)));
+                    if n != credential::public_length(algorithm) {
+                        return Err(Status::Other);
                     }
-                    w.output[0] = 0;
-                    let mut e = Encoder::new(&mut w.output[1..]);
-                    let result = (|| {
-                        super::encoding::management_header(
+                    w.key.bytes[PUBLIC_KEY_OFFSET..PUBLIC_KEY_OFFSET + n]
+                        .copy_from_slice(&w.output[..n]);
+                    n
+                };
+                let has_blob_key = id[1] & resident::LARGE_BLOB_KEY != 0;
+                if has_blob_key {
+                    credential::large_blob_key(
+                        id,
+                        &self.session.management.rp,
+                        (&mut w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END])
+                            .try_into()
+                            .unwrap(),
+                        p,
+                    )?;
+                }
+                if pq_public {
+                    let blob_key = has_blob_key.then(|| {
+                        (&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END])
+                            .try_into()
+                            .unwrap()
+                    });
+                    let (plan, length) = canokey_ctap::streaming::reply::public(
+                        &entry,
+                        algorithm,
+                        id,
+                        first.then_some(total),
+                        blob_key,
+                        w.output,
+                    )
+                    .map_err(|_| Status::Other)?;
+                    // Encode directly from the input record before reusing
+                    // it for the stream seed; maximal user records exceed 256 B.
+                    w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
+                    self.session.auth_response = Some(super::Response::Pending(plan));
+                    return Ok(Some(length + credential::public_length(algorithm)));
+                }
+                w.output[0] = 0;
+                let mut e = Encoder::new(&mut w.output[1..]);
+                let result = (|| {
+                    super::encoding::management_header(&mut e, &entry, first, has_blob_key)?;
+                    if public_len != 0 {
+                        e.u8(8);
+                        super::encoding::public_key(
                             &mut e,
-                            &entry,
-                            subcommand == cm::CREDENTIAL_BEGIN,
-                            has_blob_key,
+                            algorithm,
+                            self.session.sm2,
+                            &w.key.bytes[PUBLIC_KEY_OFFSET..PUBLIC_KEY_OFFSET + public_len],
                         )?;
-                        if public_len != 0 {
-                            e.u8(8);
-                            super::encoding::public_key(
-                                &mut e,
-                                algorithm,
-                                self.sm2,
-                                &w.key.bytes[PUBLIC_KEY_OFFSET..PUBLIC_KEY_OFFSET + public_len],
-                            )?;
-                        }
-                        super::encoding::management_tail(
-                            &mut e,
-                            id,
-                            (subcommand == cm::CREDENTIAL_BEGIN).then_some(total),
-                            has_blob_key
-                                .then_some(&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END]),
-                        )?;
-                        if public_len == 0 {
-                            e.u8(cm::VENDOR_ALGORITHM)
-                                .i32(credential::cose_algorithm(algorithm, self.sm2));
-                        }
-                        e.finish()
-                    })();
-                    result.map_err(|_| Status::Other)?;
-                    Ok(Some(
-                        crate::runtime::workspace::OUTPUT_BYTES - e.writer().len(),
-                    ))
-                })?;
-            if let Some((_, length)) = selected {
-                return Ok(length);
-            }
-            return Err(if continued {
-                Status::NotAllowed
-            } else {
-                Status::NoCredentials
-            });
+                    }
+                    super::encoding::management_tail(
+                        &mut e,
+                        id,
+                        first.then_some(total),
+                        has_blob_key
+                            .then_some(&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END]),
+                    )?;
+                    if public_len == 0 {
+                        e.u8(cm::VENDOR_ALGORITHM)
+                            .i32(credential::cose_algorithm(algorithm, self.session.sm2));
+                    }
+                    e.finish()
+                })();
+                result.map_err(|_| Status::Other)?;
+                Ok(Some(
+                    crate::runtime::workspace::OUTPUT_BYTES - e.writer().len(),
+                ))
+            },
+        )?;
+        if let Some((_, length)) = selected {
+            return Ok(length);
         }
+        Err(canokey_ctap::management::exhausted::<Status>(first))
+    }
+    fn mutate(&mut self, delete: bool) -> Result<usize, Status> {
+        let w = &mut *self.w;
+        let p = &mut *self.p;
+        let params = self.params;
+        let fields = &self.fields;
         let id = fields.id.ok_or(Status::MissingParameter)?;
         let selected = scan::ascending(0, Record::CTAP_CREDENTIALS, |index| {
             let Some(n) = resident::load(index, w.input, p)? else {
@@ -469,7 +478,7 @@ impl Session {
             if entry.id != id {
                 return Ok(None);
             }
-            self.authorize(
+            self.session.authorize(
                 params.protocol,
                 &params.auth[..params.auth_len],
                 &params.message[params.start + PREFIX - 1..params.len],
@@ -477,7 +486,7 @@ impl Session {
                 Some(entry.rp_hash),
                 p,
             )?;
-            if subcommand == cm::DELETE {
+            if delete {
                 resident::replace(
                     index,
                     &[],
@@ -530,8 +539,108 @@ impl Session {
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
     use super::super::resident::tests::{Records, resident};
     use super::*;
+
+    struct Mac {
+        calls: usize,
+    }
+    impl crate::ports::Crypto for Mac {
+        fn mac(
+            &mut self,
+            algorithm: u8,
+            _: &[u8],
+            _: &[u8],
+            out: &mut [u8; 64],
+        ) -> Result<(), crate::ports::CryptoError> {
+            assert_eq!(algorithm, 0x02);
+            self.calls += 1;
+            out.fill(0xa5);
+            Ok(())
+        }
+        fn random(&mut self, _: &mut [u8]) -> Result<(), crate::ports::CryptoError> {
+            panic!("management mutation must not request entropy");
+        }
+        fn hmac_sha1(&mut self, _: &[u8; 20], _: &[u8], _: &mut [u8; 20]) {
+            panic!("management must use HMAC-SHA-256");
+        }
+    }
+    struct Clock;
+    impl crate::ports::Device for Clock {
+        fn now(&mut self) -> u32 {
+            20
+        }
+        fn progress(&mut self) -> bool {
+            true
+        }
+        fn serial(&mut self, _: &mut [u8; 4]) {
+            unreachable!()
+        }
+        fn touched(&mut self) -> bool {
+            false
+        }
+        fn led(&mut self, _: bool) {}
+    }
+    #[test]
+    fn actual_mutation_preflight_resolves_record_rp_before_usage_or_publication() {
+        use super::super::{Command, envelope};
+        use std::vec;
+        // Cases: bad MAC, mismatching RP, absent ID, valid deletion. A fake
+        // primitive isolates control/IO ordering; native suites cover HMAC.
+        for case in 0..4 {
+            let mut storage = Records::default();
+            storage.records.push(resident(0, 0x07, 1));
+            let mut id = storage.records[0].1[..credential::ID_BYTES].to_vec();
+            if case == 2 {
+                id[2] ^= 0x01;
+            }
+            let mut raw = vec![0xa4, 0x01, cm::DELETE, 0x02, 0xa1, 0x02, 0xa2];
+            raw.extend_from_slice(b"\x62id\x58");
+            raw.push(credential::ID_BYTES as u8);
+            raw.extend_from_slice(&id);
+            raw.extend_from_slice(b"\x64type\x6apublic-key\x03\x02\x04\x58\x20");
+            raw.extend_from_slice(&[if case == 0 { 0x5a } else { 0xa5 }; 32]);
+            let mut parser = envelope::Parser::new(0x0a);
+            parser.consume(&raw);
+            let Command::Management(parameters) = parser.finish().unwrap() else {
+                panic!("management expected");
+            };
+            let mut crypto = Mac { calls: 0 };
+            let mut device = Clock;
+            let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                storage: &mut storage,
+                crypto: &mut crypto,
+                device: &mut device,
+                memory: &canokey_ports::default_memory(),
+            };
+            let mut session = Session::new();
+            session.pin.token.permissions = CREDENTIAL_MANAGEMENT_PERMISSION;
+            session.pin.token.issued = 1;
+            session.pin.token.last_used = 1;
+            session
+                .pin
+                .token
+                .bind_rp(Some([if case == 1 { 0x08 } else { 0x07 }; 32]));
+            let mut backing = crate::runtime::workspace::SessionWorkspace::new();
+            let result = session.manage(&parameters, &mut backing.classic(), &mut platform);
+            assert_eq!(
+                result,
+                match case {
+                    0 | 1 => Err(Status::PinAuthInvalid),
+                    2 => Err(Status::NoCredentials),
+                    _ => Ok(1),
+                }
+            );
+            assert_eq!(session.pin.token.last_used, if case == 3 { 20 } else { 1 });
+            assert_eq!(session.management.mode, 0x00);
+            assert_eq!(platform.crypto.calls, if case == 3 { 2 } else { 1 });
+            if case == 0 {
+                assert_eq!(platform.storage.size_calls + platform.storage.read_calls, 0);
+            }
+            assert_eq!(platform.storage.mutations > 0, case == 3);
+        }
+    }
 
     #[test]
     fn rp_index_batches_full_hashes_in_slot_order_without_writes() {
