@@ -19,6 +19,7 @@ pub mod cose {
 pub mod management {
     pub const USER: u8 = 0x06;
     pub const DESCRIPTOR: u8 = 0x07;
+    pub const PUBLIC_KEY: u8 = 0x08;
     pub const TOTAL_CREDENTIALS: u8 = 0x09;
     pub const CRED_PROTECT: u8 = 0x0a;
     pub const LARGE_BLOB_KEY: u8 = 0x0b;

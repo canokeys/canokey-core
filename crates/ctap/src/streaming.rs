@@ -10,6 +10,8 @@ use canokey_ports::{
 };
 use canokey_protocol::{cbor::Encoder, der::der_signature, response::StatusWord as Sw};
 
+pub mod reply;
+
 /// Static product material/error projections. Algorithm admission and ordinary
 /// attestation fallback run before this strict streaming engine is entered.
 /// These calls borrow existing capabilities; they cannot retain a workspace.

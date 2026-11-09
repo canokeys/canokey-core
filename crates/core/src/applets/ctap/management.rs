@@ -24,52 +24,6 @@ const VISITED_BYTES: usize = rp::bitmap_bytes(Record::CTAP_CREDENTIALS);
 const LARGE_BLOB_KEY_OFFSET: usize = 320;
 const LARGE_BLOB_KEY_END: usize = LARGE_BLOB_KEY_OFFSET + 32;
 
-fn mldsa_public_response(
-    entry: &resident::Entry<'_>,
-    algorithm: u8,
-    id: &credential::Id,
-    total: u8,
-    subcommand: u8,
-    blob_key: Option<&[u8; 32]>,
-    output: &mut [u8; crate::runtime::workspace::OUTPUT_BYTES],
-) -> Result<(super::pq::Pending, usize), Status> {
-    output[0] = 0;
-    let mut e = Encoder::new(&mut output[1..]);
-    super::encoding::management_header(
-        &mut e,
-        entry,
-        subcommand == cm::CREDENTIAL_BEGIN,
-        blob_key.is_some(),
-    )
-    .map_err(|_| Status::Other)?;
-    e.u8(8).finish().map_err(|_| Status::Other)?;
-    super::encoding::mldsa_public_header(&mut e, algorithm).map_err(|_| Status::Other)?;
-    let public_at = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
-    super::encoding::management_tail(
-        &mut e,
-        id,
-        (subcommand == cm::CREDENTIAL_BEGIN).then_some(total),
-        blob_key.map(|key| &key[..]),
-    )
-    .map_err(|_| Status::Other)?;
-    let output = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
-    Ok((
-        super::pq::Pending {
-            algorithm,
-            mode: super::pq::Mode::Public,
-            prefix: public_at,
-            auth: 0,
-            public_at,
-            signature_at: 0,
-            certificate: None,
-            output,
-            hash_prefix: (0, 0),
-            hash_suffix: (0, 0),
-        },
-        output,
-    ))
-}
-
 pub(super) struct Cursor {
     mode: u8,
     metadata_only: bool,
@@ -445,9 +399,15 @@ impl Session {
                                 .try_into()
                                 .unwrap()
                         });
-                        let (plan, length) = mldsa_public_response(
-                            &entry, algorithm, id, total, subcommand, blob_key, w.output,
-                        )?;
+                        let (plan, length) = canokey_ctap::streaming::reply::public(
+                            &entry,
+                            algorithm,
+                            id,
+                            (subcommand == cm::CREDENTIAL_BEGIN).then_some(total),
+                            blob_key,
+                            w.output,
+                        )
+                        .map_err(|_| Status::Other)?;
                         // Encode directly from the input record before reusing
                         // it for the stream seed; maximal user records exceed 256 B.
                         w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
