@@ -627,107 +627,31 @@ impl Parser {
     }
 }
 
-// Integer keys sort by (negative, argument): nonnegative keys before negative.
-// This is not length-first canonical CBOR ordering across encoded widths.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct Key {
-    negative: bool,
-    argument: u64,
-}
-impl Key {
-    // Preserve the full 64-bit ordering even for unrecognized field labels.
-    // One call boundary avoids duplicating the comparison in every schema.
-    // None is an unknown label, not an absent key; callers retain it as Some(None).
-    #[inline(never)]
-    fn ordered(
-        event: &canokey_protocol::cbor::Event<'_>,
-        previous: &mut Option<Self>,
-    ) -> Result<Option<i8>, Status> {
-        let key = Self::parse(event)?;
-        if previous.is_some_and(|old| key <= old) {
-            return Err(Status::InvalidCbor);
-        }
-        *previous = Some(key);
-        Ok(key.integer())
-    }
-    fn parse(event: &canokey_protocol::cbor::Event<'_>) -> Result<Self, Status> {
-        match *event {
-            canokey_protocol::cbor::Event::Unsigned(argument) => Ok(Self {
-                negative: false,
-                argument,
-            }),
-            canokey_protocol::cbor::Event::Negative(argument) => Ok(Self {
-                negative: true,
-                argument,
-            }),
-            _ => Err(Status::UnexpectedType),
-        }
-    }
-    fn integer(self) -> Option<i8> {
-        let n = i8::try_from(self.argument).ok()?;
-        Some(if self.negative { -1 - n } else { n })
-    }
-}
-
-#[inline]
-pub(super) fn is_cbor_container(event: &canokey_protocol::cbor::Event<'_>) -> bool {
-    matches!(
-        event,
-        canokey_protocol::cbor::Event::Map(_)
-            | canokey_protocol::cbor::Event::Array(_)
-            | canokey_protocol::cbor::Event::Bytes(_)
-            | canokey_protocol::cbor::Event::Text(_)
-    )
-}
-
-/// Consume one event while ignoring an unsupported CBOR value. The decoder
-/// emits container starts and a matching End, so all extension parsers can use
-/// the same depth transition rules.
+type Key = canokey_ctap::request::stream::Key<Status>;
+pub(super) use canokey_ctap::request::stream::is_cbor_container;
 pub(super) fn skip_cbor_event(
     depth: &mut u8,
     event: &canokey_protocol::cbor::Event<'_>,
 ) -> Result<bool, Status> {
-    if *depth == 0 {
-        return Ok(false);
-    }
-    // Pinned C TinyCBOR skips each unknown value with at most four nested
-    // maps/arrays. Known schema nesting keeps the decoder's separate budget.
-    // Strings have matching End events but cannot contain another container.
-    const MAX_UNKNOWN_CONTAINERS: u8 = 4;
-    if matches!(
-        event,
-        canokey_protocol::cbor::Event::Map(_) | canokey_protocol::cbor::Event::Array(_)
-    ) && *depth >= MAX_UNKNOWN_CONTAINERS
-    {
-        return Err(Status::InvalidCbor);
-    }
-    if is_cbor_container(event) {
-        *depth = depth.saturating_add(1);
-    } else if matches!(event, canokey_protocol::cbor::Event::End) {
-        *depth -= 1;
-    }
-    Ok(true)
+    canokey_ctap::request::stream::skip_cbor_event::<Status>(depth, event)
 }
-
 pub(super) fn consume_cbor_body(
     event: &canokey_protocol::cbor::Event<'_>,
     body: &mut Option<(i8, usize)>,
     target: &mut [u8],
 ) -> Result<(), Status> {
-    let Some((key, offset)) = *body else {
-        return Err(Status::Other);
-    };
-    match *event {
-        canokey_protocol::cbor::Event::Data(bytes) => {
-            let end = offset.checked_add(bytes.len()).ok_or(Status::InvalidCbor)?;
-            target
-                .get_mut(offset..end)
-                .ok_or(Status::InvalidCbor)?
-                .copy_from_slice(bytes);
-            *body = Some((key, end));
-        }
-        canokey_protocol::cbor::Event::End => *body = None,
-        _ => return Err(Status::InvalidCbor),
-    }
-    Ok(())
+    canokey_ctap::request::stream::consume_cbor_body::<Status>(event, body, target)
+}
+impl canokey_ctap::request::Error for Status {
+    const INVALID_CBOR: Self = Self::InvalidCbor;
+    const UNEXPECTED_TYPE: Self = Self::UnexpectedType;
+    const INVALID_LENGTH: Self = Self::InvalidLength;
+    const INVALID_PARAMETER: Self = Self::InvalidParameter;
+    const MISSING_PARAMETER: Self = Self::MissingParameter;
+    const LIMIT_EXCEEDED: Self = Self::LimitExceeded;
+    const UNSUPPORTED_ALGORITHM: Self = Self::UnsupportedAlgorithm;
+    const PIN_AUTH_INVALID: Self = Self::PinAuthInvalid;
+    const UNSUPPORTED_OPTION: Self = Self::UnsupportedOption;
+    const INVALID_OPTION: Self = Self::InvalidOption;
+    const INTERNAL: Self = Self::Other;
 }

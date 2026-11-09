@@ -1,107 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Incremental COSE EC2 key agreement shared by clientPIN and hmac-secret.
-//! The enclosing schema owns the coordinates and its length-error policy.
-use super::{Key, Status};
-use canokey_ctap::client_pin::agreement::{COORDINATE_BYTES, Field, POINT_BYTES, REQUIRED_FIELDS};
-use canokey_protocol::cbor::Event;
-
-// Sentinel for a non-integer/unsupported-width label. It is outside the
-// recognized COSE EC2 agreement labels 1, 3, -1, -2 and -3 and follows the skip path.
-const COSE_KEY_MISSING: i8 = 127;
-
-pub(super) struct Parser {
-    previous: Option<Key>,
-    key: Option<Option<i8>>,
-    seen: u8,
-    body: Option<(i8, usize)>,
-    skip: u8,
-}
-
-impl Parser {
-    pub const fn new() -> Self {
-        Self {
-            previous: None,
-            key: None,
-            seen: 0,
-            body: None,
-            skip: 0,
-        }
-    }
-
-    /// Called after the enclosing schema consumes the map header. Returns true
-    /// when the map closes with all five required COSE fields present.
-    #[inline(never)]
-    pub fn event(
-        &mut self,
-        event: &Event<'_>,
-        coordinates: &mut [u8; POINT_BYTES],
-        length_error: Status,
-    ) -> Result<bool, Status> {
-        if super::skip_cbor_event(&mut self.skip, event)? {
-            return Ok(false);
-        }
-        if let Some((key, _)) = self.body {
-            let target = if Field::decode(i64::from(key)) == Some(Field::X) {
-                &mut coordinates[..COORDINATE_BYTES]
-            } else {
-                &mut coordinates[COORDINATE_BYTES..]
-            };
-            super::consume_cbor_body(event, &mut self.body, target)?;
-            return Ok(false);
-        }
-        let Some(key) = self.key.take() else {
-            if matches!(event, Event::End) {
-                return if self.seen == REQUIRED_FIELDS {
-                    Ok(true)
-                } else {
-                    Err(Status::MissingParameter)
-                };
-            }
-            self.key = Some(Key::ordered(event, &mut self.previous)?);
-            return Ok(false);
-        };
-        let key = key.unwrap_or(COSE_KEY_MISSING);
-        let bit = field(key, event)?;
-        if bit == 0 {
-            if super::is_cbor_container(event) {
-                self.skip = 1;
-            }
-        } else {
-            if matches!(Field::decode(i64::from(key)), Some(Field::X | Field::Y)) {
-                match *event {
-                    Event::Bytes(length) if usize::from(length) == COORDINATE_BYTES => {
-                        self.body = Some((key, 0))
-                    }
-                    Event::Bytes(_) => return Err(length_error),
-                    _ => return Err(Status::UnexpectedType),
-                }
-            }
-            self.seen |= bit;
-        }
-        Ok(false)
-    }
-}
-
-/// Validate one member of the COSE_Key agreement map shared by clientPIN and
-/// hmac-secret. Unknown optional members are ignored by the caller.
-fn field(key: i8, event: &canokey_protocol::cbor::Event<'_>) -> Result<u8, Status> {
-    let Some(field) = Field::decode(i64::from(key)) else {
-        return Ok(0x00);
-    };
-    if let Some(expected) = field.scalar() {
-        if Key::parse(event)?.integer().map(i64::from) != Some(expected) {
-            return Err(Status::InvalidParameter);
-        }
-    }
-    // Coordinate lengths are checked by the parser using its caller's policy.
-    Ok(field.bit())
-}
-
+//! Product error mapping for the portable incremental COSE agreement parser.
+use super::Status;
+pub(super) type Parser = canokey_ctap::request::agreement::Parser<Status>;
 #[cfg(test)]
 mod tests {
     extern crate std;
     use super::*;
-    use canokey_protocol::cbor::{Decoder, Error};
+    use canokey_protocol::cbor::{Decoder, Error, Event};
     use std::{vec, vec::Vec};
 
     fn key() -> Vec<u8> {

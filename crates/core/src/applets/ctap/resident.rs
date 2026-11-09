@@ -10,8 +10,7 @@ use crate::ports::{Platform, Record, StorageError};
 use canokey_ports::Storage as _;
 
 pub(super) use canokey_ctap::resident::{
-    FIXED_BYTES, MAX_BYTES, RESIDENT, RP_DISPLAY_BYTES, RP_HASH_BYTES, USER_DISPLAY_BYTES,
-    USER_ID_BYTES, USER_NAME_BYTES,
+    FIXED_BYTES, MAX_BYTES, RESIDENT, RP_DISPLAY_BYTES, RP_HASH_BYTES,
 };
 pub(super) const LARGE_BLOB_KEY: u8 = 0x08;
 #[cfg(test)]

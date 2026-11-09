@@ -29,3 +29,37 @@ pub fn parameterless(
     }
     Ok(Some(parsed))
 }
+
+pub mod agreement;
+pub mod credential;
+pub mod hmac_secret;
+pub mod stream;
+
+/// Parsing reports product errors directly, preserving first-error identity
+/// without converting a full owned request or retaining an application borrow.
+pub trait Error: Copy {
+    const INVALID_CBOR: Self;
+    const UNEXPECTED_TYPE: Self;
+    const INVALID_LENGTH: Self;
+    const INVALID_PARAMETER: Self;
+    const MISSING_PARAMETER: Self;
+    const LIMIT_EXCEEDED: Self;
+    const UNSUPPORTED_ALGORITHM: Self;
+    const PIN_AUTH_INVALID: Self;
+    const UNSUPPORTED_OPTION: Self;
+    const INVALID_OPTION: Self;
+    const INTERNAL: Self;
+}
+impl Error for Status {
+    const INVALID_CBOR: Self = Self::InvalidCbor;
+    const UNEXPECTED_TYPE: Self = Self::CborUnexpectedType;
+    const INVALID_LENGTH: Self = Self::InvalidLength;
+    const INVALID_PARAMETER: Self = Self::InvalidParameter;
+    const MISSING_PARAMETER: Self = Self::MissingParameter;
+    const LIMIT_EXCEEDED: Self = Self::LimitExceeded;
+    const UNSUPPORTED_ALGORITHM: Self = Self::UnsupportedAlgorithm;
+    const PIN_AUTH_INVALID: Self = Self::PinAuthInvalid;
+    const UNSUPPORTED_OPTION: Self = Self::UnsupportedOption;
+    const INVALID_OPTION: Self = Self::InvalidOption;
+    const INTERNAL: Self = Self::Internal;
+}

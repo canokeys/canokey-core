@@ -4,8 +4,15 @@ Allocator-free CTAP mechanisms, independent of Core, FFI, native crypto and
 product applications. Firmware uses `no_std` without the `schema` feature.
 
 - `config`, `status`, `request`: standard command/status values and exact
-  parameterless command admission. Parameterized command parsing stays with the
-  products until its migration.
+  parameterless command admission. `request::credential` owns the streamed
+  makeCredential/getAssertion schema and its bounded semantic fields, with
+  product capacities, error constants and direct Command publication.
+  `credential::borrowed` owns borrowed entities/options/algorithm/list parsing
+  over a product reader and extension/algorithm profile. Both use the same root
+  label classifier; representation-specific unknown-field/error ordering stays
+  explicit. `request::stream`, `agreement` and `hmac_secret` share incremental
+  first-error/framing, COSE and encrypted input parsing without crypto or new
+  backing. Prepared secrets and product extension engines remain with owners.
 - `info`: GetInfo encoding over immutable product policy fragments and a bounded
   synchronous sink. Host-only `schema` compiles supplied fragments; it does not
   read product directories.

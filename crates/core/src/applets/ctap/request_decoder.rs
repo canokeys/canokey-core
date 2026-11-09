@@ -1,72 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared incremental request framing and first-error handling. Command schemas
-//! own field interpretation; this boundary preserves their exact status codes.
+//! Product request capacity for the shared first-error incremental decoder.
 use super::Status;
-use canokey_protocol::cbor::{self, Event};
-
-pub(super) struct RequestDecoder {
-    decoder: cbor::Decoder,
-    error: Option<Status>,
-}
-
-impl RequestDecoder {
-    pub const fn new() -> Self {
-        Self {
-            decoder: cbor::Decoder::new((super::MAX_REQUEST - 1) as u16),
-            error: None,
-        }
-    }
-
-    pub const fn large_blob() -> Self {
-        Self {
-            decoder: cbor::Decoder::new((super::MAX_REQUEST - 1) as u16).with_wide_byte_lengths(),
-            error: None,
-        }
-    }
-
-    /// Returns false after any failure. A rejected request never re-enters its
-    /// schema, and a schema error takes precedence over the generic CBOR error.
-    // Borrow the event only for this synchronous callback. Its scalar/slice
-    // payload need not be copied through every schema/helper call boundary.
-    #[inline(never)]
-    pub fn consume(
-        &mut self,
-        bytes: &[u8],
-        fields: &mut dyn FnMut(&Event<'_>, u16) -> Result<(), Status>,
-    ) -> bool {
-        if self.error.is_some() {
-            return false;
-        }
-        let mut input = bytes;
-        loop {
-            match self.decoder.next_event(&mut input) {
-                Ok(Some(event)) => {
-                    if let Err(status) = fields(&event, self.decoder.position()) {
-                        self.error = Some(status);
-                        break;
-                    }
-                }
-                Ok(None) => break,
-                Err(_) => {
-                    self.error = Some(Status::InvalidCbor);
-                    break;
-                }
-            }
-        }
-        self.error.is_none()
-    }
-
-    pub fn finish(&self) -> Result<(), Status> {
-        if let Some(error) = self.error {
-            return Err(error);
-        }
-        self.decoder.finish().map_err(|_| Status::InvalidCbor)
-    }
-}
-
+pub(super) type RequestDecoder =
+    canokey_ctap::request::stream::Decoder<Status, { (super::MAX_REQUEST - 1) as u16 }>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use canokey_protocol::cbor::Event;
 
     #[test]
     fn first_schema_error_survives_later_input() {
