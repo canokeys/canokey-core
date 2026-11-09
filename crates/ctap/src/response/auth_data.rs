@@ -140,7 +140,8 @@ pub trait ExtensionConstructor {
     type Platform: ?Sized;
     type Prepared;
     type Error;
-    fn prepare(request: &Self::Request) -> Option<Self::Prepared>;
+    fn prepare(request: &Self::Request) -> Self::Prepared;
+    fn present(prepared: &Self::Prepared) -> bool;
     fn data(workspace: &mut Self::Workspace) -> &mut [u8];
     fn encode(
         request: &Self::Request,
@@ -155,12 +156,13 @@ pub trait ExtensionConstructor {
 /// metadata. Each context is an existing borrowed object, passed separately.
 #[inline(never)]
 pub fn extend<B: ExtensionConstructor>(
+    platform: &mut B::Platform,
     request: &B::Request,
     workspace: &mut B::Workspace,
-    platform: &mut B::Platform,
     cursor: usize,
 ) -> Result<usize, B::Error> {
-    if let Some(prepared) = B::prepare(request) {
+    let prepared = B::prepare(request);
+    if B::present(&prepared) {
         B::data(workspace)[FLAGS_OFFSET] |= ED;
         B::encode(request, workspace, platform, cursor, prepared)
     } else {

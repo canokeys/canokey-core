@@ -289,22 +289,42 @@ pub(super) fn permitted_id(id: &Id) -> bool {
     !cfg!(feature = "ctap-restrict-algorithms") || algorithm(id).is_ok_and(permitted)
 }
 
-pub(super) fn cose_algorithm(algorithm: u8, sm2: super::settings::Sm2) -> i32 {
+/// Classic packed self-attestation cannot name a streamed PQ signing algorithm.
+#[inline(always)]
+pub(super) fn classic_cose_algorithm(algorithm: u8, sm2: super::settings::Sm2) -> i32 {
     match algorithm {
-        alg::P256 => super::wire::cose::ES256,
         alg::ED25519 => super::wire::cose::EDDSA,
-        alg::MLDSA65 => super::wire::cose::MLDSA65,
-        alg::MLDSA44 => super::wire::cose::MLDSA44,
         alg::SM2 => sm2.algorithm,
         _ => super::wire::cose::ES256,
     }
 }
+pub(super) fn cose_algorithm(algorithm: u8, sm2: super::settings::Sm2) -> i32 {
+    match algorithm {
+        alg::MLDSA65 => super::wire::cose::MLDSA65,
+        alg::MLDSA44 => super::wire::cose::MLDSA44,
+        _ => classic_cose_algorithm(algorithm, sm2),
+    }
+}
+// Native classic public output is compressed Ed25519 (32 bytes), or the two
+// 32-byte affine coordinates of P-256/SM2 without a SEC1 point prefix.
+const ED25519_PUBLIC_BYTES: usize = 32;
+const EC2_PUBLIC_BYTES: usize = 64;
+/// AuthData construction dispatches streamed public keys before this capability.
+/// Keep their large lengths out of the contiguous public-output check.
+#[inline(always)]
+pub(super) fn classic_public_length(algorithm: u8) -> usize {
+    if algorithm == alg::ED25519 {
+        ED25519_PUBLIC_BYTES
+    } else {
+        EC2_PUBLIC_BYTES
+    }
+}
 pub(super) fn public_length(algorithm: u8) -> usize {
     if algorithm == alg::ED25519 {
-        32
+        ED25519_PUBLIC_BYTES
     } else if let Some(params) = crate::ports::mldsa::parameters(algorithm) {
         params.public_bytes
     } else {
-        64
+        EC2_PUBLIC_BYTES
     }
 }

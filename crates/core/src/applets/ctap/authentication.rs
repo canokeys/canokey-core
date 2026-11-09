@@ -390,7 +390,7 @@ fn respond(
         certificate = reply::statement(
             &mut e,
             request.make,
-            self_attest.then(|| credential::cose_algorithm(request.algorithm, request.sm2)),
+            self_attest.then(|| credential::classic_cose_algorithm(request.algorithm, request.sm2)),
             &signature[..n],
             (cert_len != 0).then_some(Body::External(cert_len)),
         )?
@@ -508,7 +508,7 @@ impl<B: crate::ports::Backends> auth_data::Constructor for AuthData<'_, '_, '_, 
                 self.workspace.output,
             )
             .unwrap_or_default();
-        if length != credential::public_length(self.request.algorithm) {
+        if length != credential::classic_public_length(self.request.algorithm) {
             return Err(Status::Other);
         }
         Ok(length)
@@ -547,7 +547,7 @@ impl<B: crate::ports::Backends> auth_data::Constructor for AuthData<'_, '_, '_, 
     }
     #[inline(always)]
     fn late_extensions(self, cursor: usize) -> Result<usize, Status> {
-        auth_data::extend::<Self>(self.request, self.workspace, self.platform, cursor)
+        auth_data::extend::<Self>(self.platform, self.request, self.workspace, cursor)
     }
 }
 
@@ -560,9 +560,12 @@ impl<'r, 'p, 'w, B: crate::ports::Backends> auth_data::ExtensionConstructor
     type Prepared = canokey_ctap::response::extensions::Fields;
     type Error = Status;
     #[inline(always)]
-    fn prepare(request: &Signing<'r>) -> Option<Self::Prepared> {
-        let fields = extension_fields(request);
-        (fields.count() != 0).then_some(fields)
+    fn prepare(request: &Signing<'r>) -> Self::Prepared {
+        extension_fields(request)
+    }
+    #[inline(always)]
+    fn present(fields: &Self::Prepared) -> bool {
+        fields.count() != 0
     }
     #[inline(always)]
     fn data(workspace: &mut Self::Workspace) -> &mut [u8] {
@@ -689,7 +692,7 @@ fn respond_mldsa_make(
     let cert_len = super::attestation::certificate(p)?;
     // Extensions are encoded once for classic and streamed keys. The large
     // public key is spliced between the COSE header and these extension bytes.
-    let auth_end = auth_data::extend::<AuthData<'_, '_, '_, '_, _>>(request, w, p, auth_prefix)?;
+    let auth_end = auth_data::extend::<AuthData<'_, '_, '_, '_, _>>(p, request, w, auth_prefix)?;
     let extension_len = auth_end - auth_prefix;
     let mut cose = [0u8; 32];
     let mut ce = Encoder::new(&mut cose[..]);

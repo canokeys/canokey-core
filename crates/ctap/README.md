@@ -161,13 +161,13 @@ existing rollback owner can erase provisional output. Installing these encoding
 capabilities does not install algorithms or change advertised product features.
 
 
-AuthData construction candidate (`codex/shared-authdata`):
 `response::auth_data::construct` sequences the fixed header, optional attested
-header/COSE and extension output over existing backing. The explicit ED profile
-preserves early registration flags versus post-public-key extension admission.
-PQ registration hands off after the fixed header, before public-key/extension
-work. A statically typed outlined extension stage takes the existing request,
-workspace and platform as separate loans. Crypto, signing, resident commit and
-response publication remain product capabilities. This candidate is not resource
-qualified: NFCC links at 186300 bytes with 68 bytes headroom, below the unchanged
-128-byte minimum. Do not promote it as an accepted firmware revision.
+header/COSE and extension output over existing backing. The ED profile preserves
+early registration flags versus post-public-key extension admission. PQ
+registration hands off after the fixed header, before public-key/extension work.
+The outlined extension stage takes the existing request, workspace and platform
+as separate loans and prepares only public field metadata. Product capabilities
+retain algorithm admission, SM2 policy, key generation, crypto, signing, resident
+commit, segmented public-key assembly and response publication. Classic public
+length/self-attestation helpers exclude PQ variants already dispatched by the
+shared constructor; no algorithm is added or disabled by that distinction.

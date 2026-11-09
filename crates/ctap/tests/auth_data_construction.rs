@@ -231,10 +231,13 @@ impl auth_data::ExtensionConstructor for ExtensionStage {
     type Request = (bool, bool);
     type Workspace = [u8; 80];
     type Platform = Vec<usize>;
-    type Prepared = ();
+    type Prepared = bool;
     type Error = u8;
-    fn prepare(request: &Self::Request) -> Option<()> {
-        request.0.then_some(())
+    fn prepare(request: &Self::Request) -> bool {
+        request.0
+    }
+    fn present(prepared: &bool) -> bool {
+        *prepared
     }
     fn data(workspace: &mut Self::Workspace) -> &mut [u8] {
         workspace
@@ -244,8 +247,9 @@ impl auth_data::ExtensionConstructor for ExtensionStage {
         workspace: &mut Self::Workspace,
         platform: &mut Self::Platform,
         cursor: usize,
-        (): (),
+        present: bool,
     ) -> Result<usize, u8> {
+        assert!(present);
         platform.push(cursor);
         assert_ne!(workspace[32] & 0x80, 0x00);
         if request.1 {
@@ -263,9 +267,9 @@ fn outlined_extension_stage_preserves_no_output_and_failure_boundaries() {
             workspace[32] = 0x05;
             let mut events = Vec::new();
             let result = auth_data::extend::<ExtensionStage>(
+                &mut events,
                 &(present, fail),
                 &mut workspace,
-                &mut events,
                 37,
             );
             if present {
