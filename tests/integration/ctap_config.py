@@ -110,14 +110,49 @@ def run(wire):
     admin()
     card.cmd("verify", 0x20, data=b"123456")
     card.cmd("restore", 0x12, data=default)
-    card.cmd("empty attestation certificate", 2, data=b"")
+    # Manufacturing record IDs from the compact CTAP storage ABI.
+    key_record = 182
+    certificate_record = 183
+    saved_key = wire.command(f"RECORD {key_record}")[:-2]
+    assert len(saved_key) == 32
     fido()
-    for algorithm in [-7, -49, -48]:
-        call(1, request | {4: [{"type": "public-key", "alg": algorithm}]}, 0x7f)
-        card.cmd("no partial attestation", 0xc0, status=0x6986)
-    verify_attestation = provision(card)
-    fido()
-    for algorithm in [-7, -49, -48]:
+    saved_certificate = call(1, request)[3]["x5c"][0]
+    for damaged_key in [None, saved_key[:-1]]:
+        if damaged_key is None:
+            wire.command(f"REMOVE {key_record}")
+        else:
+            wire.command(f"RECORD {key_record} {damaged_key.hex()}")
+        for algorithm in [-7, -8, -49, -48]:
+            call(1, request | {4: [{"type": "public-key", "alg": algorithm}]}, 0x7f)
+            card.cmd("no fallback on missing or short key", 0xc0, status=0x6986)
+    wire.command(f"RECORD {key_record} {saved_key.hex()}")
+    for certificate in [b"", None]:
+        if certificate is None:
+            wire.command(f"REMOVE {certificate_record}")
+        else:
+            wire.command(f"RECORD {certificate_record} {certificate.hex()}")
+        # This one-shot read fault must survive self attestation and strict-PQ
+        # certificate rejection: neither path may read the provisioned key.
+        wire.command(f"FAIL_READ {key_record}")
+        for algorithm in [-7, -8]:
+            result = call(1, request | {4: [{"type": "public-key", "alg": algorithm}]})
+            assert result[1] == "packed"
+            assert set(result[3]) == {"alg", "sig"}
+            assert result[3]["alg"] == algorithm
+            credential = AuthenticatorData(result[2]).credential_data
+            credential.public_key.verify(result[2] + request[1], result[3]["sig"])
+        for algorithm in [-49, -48]:
+            call(1, request | {4: [{"type": "public-key", "alg": algorithm}]}, 0x7f)
+            card.cmd("strict PQ needs a certificate", 0xc0, status=0x6986)
+        admin()
+        card.cmd("verify before certificate restore", 0x20, data=b"123456")
+        card.cmd("restore certificate through ISO chaining", 2, data=saved_certificate)
+        fido()
+        es256 = request | {4: [{"type": "public-key", "alg": -7}]}
+        call(1, es256, 0x7f)  # The unconsumed one-shot private-key fault.
+        card.cmd("no partial failed-read attestation", 0xc0, status=0x6986)
+        verify_attestation(call(1, es256), request[1])
+    for algorithm in [-7, -8, -49, -48]:
         verify_attestation(call(1, request | {4: [{"type": "public-key", "alg": algorithm}]}), request[1])
     print(f"CTAP configuration: {len(card.checks)} checks passed")
 

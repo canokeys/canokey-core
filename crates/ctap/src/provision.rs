@@ -43,18 +43,6 @@ pub fn certificate_length<S: Attestation>(
     }
 }
 
-/// Ordinary packed-attestation fallback and material-read ordering. Strict PQ
-/// registration continues to require a certificate and key without fallback.
-#[derive(Clone, Copy)]
-pub enum Selection {
-    /// Read certificate metadata and key even if the first read fails. Missing
-    /// either permits self attestation; other IO and malformed keys are fatal.
-    MissingEither,
-    /// An admitted zero-length certificate skips key access. Missing/corrupt
-    /// product records are classified by the source before entering selection.
-    OptionalCertificate,
-}
-
 /// Product capabilities classify missing records and malformed material using
 /// their existing error mapping. Key reads admit exactly PRIVATE_KEY_BYTES.
 pub trait SelectionSource {
@@ -65,42 +53,31 @@ pub trait SelectionSource {
     fn invalid() -> Self::Error;
 }
 
-/// Select provisioned material into the caller's existing temporary key loan.
-/// A zero certificate length means self attestation. Partial/failed key reads remain in `output`;
-/// the caller must erase it on every exit, before any response publication.
+/// A missing or empty certificate selects self attestation without key access.
+/// A nonempty certificate must fit the bound and have a readable, admitted key;
+/// missing/corrupt keys and source failures cannot fall back to self attestation.
+/// Partial/failed key reads remain in `output`; its owner must erase that loan
+/// on every exit before signing or publishing a response. Strict PQ material
+/// admission continues to require a nonempty certificate through its own entry.
 #[inline(always)]
 pub fn select<S: SelectionSource>(
     source: &mut S,
     output: &mut [u8; PRIVATE_KEY_BYTES],
     maximum: usize,
-    selection: Selection,
 ) -> Result<usize, S::Error> {
-    let certificate = source.certificate_length();
-    match selection {
-        Selection::MissingEither => {
-            let key = source.key(output);
-            match (key, certificate) {
-                (Ok(()), Ok(length)) if length != 0 && length <= maximum => Ok(length),
-                (Ok(()), Err(error)) if S::missing(&error) => Ok(0),
-                (Err(error), Ok(_)) if S::missing(&error) => Ok(0),
-                (Err(key), Err(certificate)) if S::missing(&key) && S::missing(&certificate) => {
-                    Ok(0)
-                }
-                _ => Err(S::invalid()),
-            }
-        }
-        Selection::OptionalCertificate => {
-            let length = certificate?;
-            if length > maximum {
-                return Err(S::invalid());
-            }
-            if length == 0 {
-                return Ok(0);
-            }
-            source.key(output)?;
-            Ok(length)
-        }
+    let length = match source.certificate_length() {
+        Ok(length) => length,
+        Err(error) if S::missing(&error) => 0,
+        Err(error) => return Err(error),
+    };
+    if length > maximum {
+        return Err(S::invalid());
     }
+    if length == 0 {
+        return Ok(0);
+    }
+    source.key(output)?;
+    Ok(length)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

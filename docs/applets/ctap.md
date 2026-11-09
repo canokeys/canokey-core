@@ -949,3 +949,15 @@ match; borrowed readers still decode and validate the remaining descriptors.
 Malformed tails remain errors, while unnecessary later key/storage operations
 cannot replace the selected result. Registration commit and persistent PIN retry
 transaction convergence remain separate work.
+
+
+Ordinary attestation has one shared material policy. A missing or empty
+certificate selects self attestation and never reads the provisioned private
+key. A nonempty certificate must fit CERT_LIMIT and have an exactly 32-byte
+readable key; missing/short keys, certificate bounds and IO failures return an
+error without fallback. Material selection reads metadata before the key and
+erases its temporary key on all exits, before signing. Successful provisioned
+selection clears the existing credential key before installing the attestation
+key; failure cleanup remains with the outer credential owner. Strict PQ
+registration still requires a nonempty certificate and key. This command-time
+rule does not change boot installation or registration/counter commit points.

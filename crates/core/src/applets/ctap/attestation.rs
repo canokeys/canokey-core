@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared record checks; callers retain their self-attestation and error policy.
+//! Record adapters for shared material admission; callers own temporary-key erasure.
 use super::{Status, provision};
 use crate::ports::{Platform, StorageError};
 use canokey_ctap::provision::{self as common, CertificatePolicy, ReadError};

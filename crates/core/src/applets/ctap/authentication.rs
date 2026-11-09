@@ -59,8 +59,7 @@ impl Session {
             secret: params.hmac.is_some(),
             large_blob_key: params.large_blob_key,
         };
-        authorization::validate(&admission)
-            .map_err(|rule| authorization_error(rule.into()))?;
+        authorization::validate(&admission).map_err(|rule| authorization_error(rule.into()))?;
         let mut policy = [0; pin::RECORD_BYTES];
         pin::load(p, &mut policy)?;
         let pin_set = policy[pin::PIN_LENGTH] != 0;
@@ -315,7 +314,6 @@ impl<B: crate::ports::Backends> canokey_ctap::attestation::Backend
             &mut super::attestation::Material(p),
             &mut attestation_key,
             super::provision::CERT_LIMIT,
-            canokey_ctap::provision::Selection::MissingEither,
         );
         let result = (|| {
             let cert_len = selected.map_err(|_| Status::Other)?;
@@ -824,3 +822,6 @@ fn respond_mldsa_make(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod material_tests;

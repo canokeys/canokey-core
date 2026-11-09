@@ -192,13 +192,13 @@ operations and PQ segmented reply construction remain product capabilities
 while their engines migrate.
 
 `provision::select` owns ordinary attestation material selection over the
-caller's existing temporary key loan. `MissingEither` reads certificate metadata
-and the key before applying Core's missing-pair fallback, with all other errors
-mapped through its existing invalid-material status. `OptionalCertificate`
-skips key access for an admitted zero certificate length and preserves product
-record/source errors. Source capabilities admit the exact private-key length;
-callers retain erasure on partial reads and certificate reload/signing owners.
-Strict PQ registration still requires both materials without self fallback.
+caller's existing temporary key loan. Missing or zero-length certificates select
+self attestation without key access. Nonempty certificates must fit the source's
+bound and have an exactly sized readable key; missing keys, malformed lengths
+and IO failures are errors, without self fallback. Source capabilities preserve
+record validation and map missing certificate metadata explicitly. Callers erase
+partial temporary keys before signing/publication and retain certificate reload
+ownership. Strict PQ registration still requires both materials without fallback.
 
 
 With the explicit `streaming` feature, `streaming` owns the ML-DSA response
