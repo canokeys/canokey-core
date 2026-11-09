@@ -110,8 +110,8 @@ pub fn statement(
     signature: &[u8],
     certificate: Option<Body<'_>>,
 ) -> Result<Option<usize>, EncodeError> {
-    statement_prefix(e, make, self_algorithm)?;
-    e.bytes(signature);
+    statement_key(e)?;
+    statement_value(e, make, self_algorithm, signature)?;
     let remaining = if let Some(certificate) = certificate {
         Some(certificate_body(e, certificate))
     } else {
@@ -128,6 +128,27 @@ pub fn statement_prefix(
     self_algorithm: Option<i32>,
 ) -> Result<(), EncodeError> {
     statement_key(e)?;
+    statement_value_prefix(e, make, self_algorithm)
+}
+/// Statement value after an already emitted response field key. The borrowed
+/// provisioned owner reloads its certificate only after this prefix fits.
+#[inline(always)]
+pub fn statement_value(
+    e: &mut Encoder<&mut [u8]>,
+    make: bool,
+    self_algorithm: Option<i32>,
+    signature: &[u8],
+) -> Result<(), EncodeError> {
+    statement_value_prefix(e, make, self_algorithm)?;
+    e.bytes(signature);
+    Ok(())
+}
+#[inline(always)]
+fn statement_value_prefix(
+    e: &mut Encoder<&mut [u8]>,
+    make: bool,
+    self_algorithm: Option<i32>,
+) -> Result<(), EncodeError> {
     if make {
         if let Some(algorithm) = self_algorithm {
             e.encoded(encoding::SELF_ATTESTATION)
@@ -148,8 +169,14 @@ pub fn signature_header(e: &mut Encoder<&mut [u8]>, length: usize) -> usize {
 }
 #[inline(always)]
 pub fn certificate_body(e: &mut Encoder<&mut [u8]>, body: Body<'_>) -> usize {
-    e.encoded(encoding::CERTIFICATE);
+    certificate_header(e);
     body.write(e)
+}
+/// x5c array prefix without a byte-string header. Immediate certificate owners
+/// validate/reload material before writing that header and body.
+#[inline(always)]
+pub fn certificate_header(e: &mut Encoder<&mut [u8]>) {
+    e.encoded(encoding::CERTIFICATE);
 }
 /// Write a prepared key at its original field point; the product controls its
 /// derivation/read order and erases it before checking final encoding success.

@@ -179,7 +179,7 @@ SM2 signs its ZA-prefixed digest with fixed-width output. Native results must be
 64 bytes before encoding. Product capabilities borrow existing key, transcript
 and output backing, preserving primitive error mapping and fault checks. The
 engine does not select attestation keys, commit resident records or publish a
-response; provisioned ordinary signing/certificate assembly remains to migrate.
+response; the attestation flow coordinates material/signature/statement stages.
 
 `registration::execute` owns create/commit/respond transaction sequencing after
 successful authorization and presence. An explicit commit profile preserves
@@ -187,9 +187,9 @@ Core's durable resident write before response generation and vLEI's write after
 successful output/deadline checks. Nonresident credentials never enter commit.
 The existing credential owner is borrowed by storage and response capabilities;
 errors stop without compensating writes. Outer owners retain provisional output
-erasure, key cleanup, transport leases and final publication. Attestation
-selection, primitive operations and PQ segmented reply construction remain
-product capabilities while their engines migrate.
+erasure, key cleanup, transport leases and final publication. Native primitive
+operations and PQ segmented reply construction remain product capabilities
+while their engines migrate.
 
 `provision::select` owns ordinary attestation material selection over the
 caller's existing temporary key loan. `MissingEither` reads certificate metadata
@@ -225,3 +225,25 @@ product orchestration work. Portable engine tests run with:
 ```sh
 cargo test -p canokey-ctap --features streaming
 ```
+
+
+`attestation::execute` sequences ordinary material selection, fallback, signing
+and consuming response assembly. Assertions bypass material reads. A nonzero
+admitted certificate selects provisioned P-256; zero follows an explicit
+`SignCredential` or `Return` fallback profile, preserving the existing owner of
+self signing. Selection/signing errors cannot fall back or enter response work.
+The signature remains a length in existing workspace backing or a native return
+value; adapters and signature owners are released on every exit.
+
+`signing::Primitive` and `signing::prepare` share transcript/algorithm/raw-length
+policy before wire conversion. `Backend` adds conversion for existing output
+buffers, while a provisioned owner can keep its native return until statement
+assembly without a second signature buffer. Statement value and certificate
+prefix helpers preserve the borrowed product's post-signing admin-record reload:
+encoding the statement must succeed before reloading/validating the certificate
+and emitting its byte-string header. Core retains deferred certificate insertion
+metadata and exact response-lease reads. Existing temporary/Zeroizing key owners,
+record frames, native error mapping, rollback and final publication stay local;
+no storage borrow, callback, complete message or new secret backing is retained.
+Strict PQ material admission and segmented public/authData planning still need
+migration; this ordinary engine does not enable or admit another algorithm.

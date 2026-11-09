@@ -13,7 +13,7 @@ struct Fixture<'a> {
     failure: Option<Error>,
     length: usize,
 }
-impl Backend for Fixture<'_> {
+impl signing::Primitive for Fixture<'_> {
     type Error = Error;
     type Signature = usize;
     fn digest(&mut self, algorithm: Algorithm, output: &mut [u8; 32]) -> Result<(), Error> {
@@ -44,6 +44,11 @@ impl Backend for Fixture<'_> {
     fn length(&self, signature: &usize) -> usize {
         *signature
     }
+    fn invalid_signature() -> Error {
+        Error::Length
+    }
+}
+impl Backend for Fixture<'_> {
     fn der(&mut self, _: usize) -> Result<usize, Error> {
         self.events.push("der");
         if self.failure == Some(Error::Encode) {
@@ -57,9 +62,6 @@ impl Backend for Fixture<'_> {
             return Err(Error::Encode);
         }
         Ok(signature)
-    }
-    fn invalid_signature() -> Error {
-        Error::Length
     }
 }
 #[test]
@@ -147,5 +149,32 @@ fn malformed_native_lengths_never_reach_wire_encoding() {
             );
             assert!(!events.contains(&"der") && !events.contains(&"raw"));
         }
+    }
+}
+
+#[test]
+fn native_result_can_be_used_without_forcing_an_output_buffer_or_wire_conversion() {
+    for algorithm in [Algorithm::Es256, Algorithm::Ed25519, Algorithm::Sm2] {
+        let mut events = vec![];
+        assert_eq!(
+            signing::prepare(
+                algorithm,
+                &mut Fixture {
+                    events: &mut events,
+                    failure: None,
+                    length: 64,
+                }
+            ),
+            Ok(64)
+        );
+        assert!(!events.contains(&"der") && !events.contains(&"raw"));
+        assert_eq!(
+            events.last(),
+            Some(&if algorithm == Algorithm::Ed25519 {
+                "sign-message"
+            } else {
+                "sign-digest"
+            })
+        );
     }
 }

@@ -16,7 +16,7 @@ pub enum Algorithm {
 
 /// A signature can remain in an existing workspace or be an existing bounded
 /// native return value. The engine never allocates transcript/signature backing.
-pub trait Backend {
+pub trait Primitive {
     type Error;
     type Signature;
     fn digest(
@@ -27,16 +27,24 @@ pub trait Backend {
     fn sign(&mut self, digest: Option<&[u8; DIGEST_BYTES]>)
     -> Result<Self::Signature, Self::Error>;
     fn length(&self, signature: &Self::Signature) -> usize;
-    fn der(&mut self, signature: Self::Signature) -> Result<usize, Self::Error>;
-    fn raw(&mut self, signature: Self::Signature) -> Result<usize, Self::Error>;
     fn invalid_signature() -> Self::Error;
 }
 
-/// ES256 signs SHA-256; SM2 signs its ZA-prefixed digest and keeps fixed r || s;
-/// Ed25519 signs the unmodified transcript. Only ES256 uses ASN.1 DER. Backend
-/// errors stop before encoding; erasure and publication remain caller-owned.
+/// Wire conversion over the same primitive result; no output backing is owned.
+pub trait Backend: Primitive {
+    fn der(&mut self, signature: Self::Signature) -> Result<usize, Self::Error>;
+    fn raw(&mut self, signature: Self::Signature) -> Result<usize, Self::Error>;
+}
+
+/// ES256 signs SHA-256; SM2 signs its ZA-prefixed digest; Ed25519 signs the
+/// original message. Admit only the exact raw signature length. The result can
+/// remain a native return value until certificate response assembly; no second
+/// signature output is required. Erasure/publication remain caller-owned.
 #[inline(always)]
-pub fn sign<B: Backend>(algorithm: Algorithm, mut backend: B) -> Result<usize, B::Error> {
+pub fn prepare<B: Primitive>(
+    algorithm: Algorithm,
+    backend: &mut B,
+) -> Result<B::Signature, B::Error> {
     let mut digest = [0x00; DIGEST_BYTES];
     let prepared = match algorithm {
         Algorithm::Ed25519 => None,
@@ -49,6 +57,14 @@ pub fn sign<B: Backend>(algorithm: Algorithm, mut backend: B) -> Result<usize, B
     if backend.length(&signature) != RAW_SIGNATURE_BYTES {
         return Err(B::invalid_signature());
     }
+    Ok(signature)
+}
+
+/// Prepare and encode using the caller's existing output. Only ES256 uses
+/// ASN.1 DER; Ed25519/SM2 retain fixed-width r || s or native raw bytes.
+#[inline(always)]
+pub fn sign<B: Backend>(algorithm: Algorithm, mut backend: B) -> Result<usize, B::Error> {
+    let signature = prepare(algorithm, &mut backend)?;
     match algorithm {
         Algorithm::Es256 => backend.der(signature),
         Algorithm::Ed25519 | Algorithm::Sm2 => backend.raw(signature),

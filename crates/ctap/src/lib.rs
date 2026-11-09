@@ -3,6 +3,7 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
+pub mod attestation;
 pub mod authorization;
 pub mod client_pin;
 pub mod config;

@@ -277,7 +277,39 @@ fn respond(
     if !request.make && crate::ports::mldsa::parameters(request.algorithm).is_some() {
         return respond_mldsa_assertion(request, w, p, response, auth_len);
     }
-    let cert_len = if request.make {
+    canokey_ctap::attestation::execute(
+        request.make,
+        canokey_ctap::attestation::Unprovisioned::SignCredential,
+        ClassicResponse {
+            request,
+            workspace: w,
+            platform: p,
+            response,
+            auth_len,
+        },
+    )
+    .map(|output| output.unwrap())
+}
+
+// Only existing loans cross the shared material/sign/response stages. The
+// outlined key-read capability and temporary key erasure precede signing.
+struct ClassicResponse<'a, 'r, 'w, 'p, B: crate::ports::Backends> {
+    request: &'a Signing<'r>,
+    workspace: &'a mut Workspace<'w>,
+    platform: &'a mut Platform<'p, B>,
+    response: &'a mut Option<super::Response>,
+    auth_len: usize,
+}
+impl<B: crate::ports::Backends> canokey_ctap::attestation::Backend
+    for ClassicResponse<'_, '_, '_, '_, B>
+{
+    type Error = Status;
+    type Signature = usize;
+    type Output = usize;
+    #[inline(always)]
+    fn select(&mut self) -> Result<usize, Status> {
+        let w = &mut *self.workspace;
+        let p = &mut *self.platform;
         let mut attestation_key = [0x00; canokey_ctap::provision::PRIVATE_KEY_BYTES];
         let selected = canokey_ctap::provision::select(
             &mut super::attestation::Material(p),
@@ -289,94 +321,119 @@ fn respond(
             let cert_len = selected.map_err(|_| Status::Other)?;
             if cert_len != 0 {
                 p.memory.wipe(&mut w.key.bytes);
-                w.key.bytes[..32].copy_from_slice(&attestation_key);
+                w.key.bytes[..canokey_ctap::provision::PRIVATE_KEY_BYTES]
+                    .copy_from_slice(&attestation_key);
             }
             Ok(cert_len)
         })();
         p.memory.wipe(&mut attestation_key);
-        result?
-    } else {
-        0
-    };
-    let self_attest = request.make && cert_len == 0;
-    let sign_algorithm = if request.make && !self_attest {
-        alg::P256
-    } else {
-        request.algorithm
-    };
-    // append_extensions returns a cursor within INPUT_BYTES (544), so the
-    // 32-byte client hash cannot overflow usize. Slice checks still bound it.
-    let message_end = auth_len.wrapping_add(32);
-    w.input[auth_len..message_end].copy_from_slice(request.client_hash);
-    let algorithm = match sign_algorithm {
-        alg::P256 => canokey_ctap::signing::Algorithm::Es256,
-        alg::SM2 => canokey_ctap::signing::Algorithm::Sm2,
-        _ => canokey_ctap::signing::Algorithm::Ed25519,
-    };
-    let n = canokey_ctap::signing::sign(
-        algorithm,
-        ClassicSigning {
-            algorithm: sign_algorithm,
-            message_end,
+        result
+    }
+    #[inline(always)]
+    fn sign(&mut self, statement: canokey_ctap::attestation::Statement) -> Result<usize, Status> {
+        let request = self.request;
+        let w = &mut *self.workspace;
+        let p = &mut *self.platform;
+        let auth_len = self.auth_len;
+        let sign_algorithm = if statement.provisioned() {
+            alg::P256
+        } else {
+            request.algorithm
+        };
+        // append_extensions returns a cursor within INPUT_BYTES (544), so the
+        // 32-byte client hash cannot overflow usize. Slice checks still bound it.
+        let message_end = auth_len.wrapping_add(canokey_ctap::signing::DIGEST_BYTES);
+        w.input[auth_len..message_end].copy_from_slice(request.client_hash);
+        let algorithm = match sign_algorithm {
+            alg::P256 => canokey_ctap::signing::Algorithm::Es256,
+            alg::SM2 => canokey_ctap::signing::Algorithm::Sm2,
+            _ => canokey_ctap::signing::Algorithm::Ed25519,
+        };
+        canokey_ctap::signing::sign(
+            algorithm,
+            ClassicSigning {
+                algorithm: sign_algorithm,
+                message_end,
+                workspace: w,
+                platform: p,
+            },
+        )
+    }
+    #[inline(always)]
+    fn respond(
+        self,
+        statement: canokey_ctap::attestation::Statement,
+        n: usize,
+    ) -> Result<usize, Status> {
+        let Self {
+            request,
             workspace: w,
             platform: p,
-        },
-    )?;
-    let mut signature = [0; MAX_ECDSA_SIGNATURE_BYTES];
-    signature[..n].copy_from_slice(&w.output[..n]);
-    p.memory.wipe(&mut w.key.bytes);
-    let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
-    let mut blob_key = [0; 32];
-    let user = load_user(request.user_slot, &mut w.key.bytes, p)?;
-    if has_blob_key {
-        credential::large_blob_key(request.id, request.rp, &mut blob_key, p)?;
-    }
-    w.output[0] = 0;
-    let mut e = Encoder::new(&mut w.output[1..]);
-    let envelope = Envelope {
-        make: request.make,
-        id: request.id,
-        user: user.is_some(),
-        count: request.count,
-        blob_key: has_blob_key.then_some(&blob_key[..]),
-    };
-    let mut prefix = 0;
-    let mut certificate = None;
-    let encoded = (|| {
-        prefix = crate::runtime::workspace::OUTPUT_BYTES
-            - reply::start(&mut e, &envelope, Body::External(auth_len))?;
-        certificate = reply::statement(
-            &mut e,
-            request.make,
-            self_attest.then(|| credential::classic_cose_algorithm(request.algorithm, request.sm2)),
-            &signature[..n],
-            (cert_len != 0).then_some(Body::External(cert_len)),
-        )?
-        .map(|remaining| {
-            (
-                crate::runtime::workspace::OUTPUT_BYTES - remaining,
-                cert_len,
-            )
+            response,
+            auth_len,
+        } = self;
+        let cert_len = statement.certificate_length();
+        let self_attest = matches!(
+            statement,
+            canokey_ctap::attestation::Statement::SelfAttestation
+        );
+        let mut signature = [0x00; MAX_ECDSA_SIGNATURE_BYTES];
+        signature[..n].copy_from_slice(&w.output[..n]);
+        p.memory.wipe(&mut w.key.bytes);
+        let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0x00;
+        let mut blob_key = [0x00; canokey_ctap::signing::DIGEST_BYTES];
+        let user = load_user(request.user_slot, &mut w.key.bytes, p)?;
+        if has_blob_key {
+            credential::large_blob_key(request.id, request.rp, &mut blob_key, p)?;
+        }
+        w.output[0] = 0x00;
+        let mut e = Encoder::new(&mut w.output[1..]);
+        let envelope = Envelope {
+            make: request.make,
+            id: request.id,
+            user: user.is_some(),
+            count: request.count,
+            blob_key: has_blob_key.then_some(&blob_key[..]),
+        };
+        let mut prefix = 0;
+        let mut certificate = None;
+        let encoded = (|| {
+            prefix = crate::runtime::workspace::OUTPUT_BYTES
+                - reply::start(&mut e, &envelope, Body::External(auth_len))?;
+            certificate = reply::statement(
+                &mut e,
+                request.make,
+                self_attest
+                    .then(|| credential::classic_cose_algorithm(request.algorithm, request.sm2)),
+                &signature[..n],
+                (cert_len != 0).then_some(Body::External(cert_len)),
+            )?
+            .map(|remaining| {
+                (
+                    crate::runtime::workspace::OUTPUT_BYTES - remaining,
+                    cert_len,
+                )
+            });
+            reply::tail(&mut e, &envelope, |e| {
+                super::encoding::user(e, user.as_ref().unwrap(), request.uv && request.details)
+            })
+            .map_err(|_| canokey_protocol::cbor::EncodeError)
+        })();
+        p.memory.wipe(&mut blob_key);
+        encoded.map_err(|_| Status::Other)?;
+        // Each term is bounded by its workspace or the validated CERT_LIMIT.
+        let total = (crate::runtime::workspace::OUTPUT_BYTES - e.writer().len())
+            .wrapping_add(auth_len)
+            .wrapping_add(cert_len);
+        *response = Some(super::Response::Authentication {
+            registration: false,
+            prefix,
+            auth: auth_len,
+            certificate,
+            total,
         });
-        reply::tail(&mut e, &envelope, |e| {
-            super::encoding::user(e, user.as_ref().unwrap(), request.uv && request.details)
-        })
-        .map_err(|_| canokey_protocol::cbor::EncodeError)
-    })();
-    p.memory.wipe(&mut blob_key);
-    encoded.map_err(|_| Status::Other)?;
-    // Each term is bounded by its workspace or the validated CERT_LIMIT.
-    let total = (crate::runtime::workspace::OUTPUT_BYTES - e.writer().len())
-        .wrapping_add(auth_len)
-        .wrapping_add(cert_len);
-    *response = Some(super::Response::Authentication {
-        registration: false,
-        prefix,
-        auth: auth_len,
-        certificate,
-        total,
-    });
-    Ok(total)
+        Ok(total)
+    }
 }
 
 // The shared engine borrows the already concatenated workspace transcript.
@@ -387,7 +444,7 @@ struct ClassicSigning<'a, 'w, 'p, B: crate::ports::Backends> {
     workspace: &'a mut Workspace<'w>,
     platform: &'a mut Platform<'p, B>,
 }
-impl<B: crate::ports::Backends> canokey_ctap::signing::Backend for ClassicSigning<'_, '_, '_, B> {
+impl<B: crate::ports::Backends> canokey_ctap::signing::Primitive for ClassicSigning<'_, '_, '_, B> {
     type Error = Status;
     type Signature = usize;
     #[inline(always)]
@@ -445,16 +502,18 @@ impl<B: crate::ports::Backends> canokey_ctap::signing::Backend for ClassicSignin
         *signature
     }
     #[inline(always)]
+    fn invalid_signature() -> Status {
+        Status::Other
+    }
+}
+impl<B: crate::ports::Backends> canokey_ctap::signing::Backend for ClassicSigning<'_, '_, '_, B> {
+    #[inline(always)]
     fn der(&mut self, signature: usize) -> Result<usize, Status> {
         Ok(der_signature(self.workspace.output, signature).unwrap_or_default())
     }
     #[inline(always)]
     fn raw(&mut self, signature: usize) -> Result<usize, Status> {
         Ok(signature)
-    }
-    #[inline(always)]
-    fn invalid_signature() -> Status {
-        Status::Other
     }
 }
 
