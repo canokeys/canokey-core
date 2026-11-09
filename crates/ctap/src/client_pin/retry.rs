@@ -8,9 +8,9 @@ pub const POWER_CYCLE_ATTEMPTS: u8 = 3;
 /// persistence error may already be durable; it must fail closed without a
 /// comparison, refund or grant. Comparison may decrypt into owner-held scratch.
 /// Rejection owns power-cycle charging and agreement/session invalidation.
-/// Success refund, policy checks and permission publication stay at their product
-/// commit points: Core refunds before new-PIN policy, vLEI change replaces only
-/// after policy; neither may move these writes across authentication or deadlines.
+/// A correct verifier restores volatile attempts and persists the refund before
+/// any subsequent new-PIN policy, record replacement or grant publication. A
+/// failed refund is uncertain and must not authorize those later operations.
 pub trait Verification {
     type Error;
     fn remaining(&self) -> u8;
@@ -18,6 +18,7 @@ pub trait Verification {
     fn charge(&mut self, remaining: u8) -> Result<(), Self::Error>;
     fn compare(&mut self) -> Result<bool, Self::Error>;
     fn rejected(&mut self) -> Self::Error;
+    fn accepted(&mut self) -> Result<(), Self::Error>;
 }
 
 #[inline]
@@ -27,7 +28,7 @@ pub fn verify<V: Verification>(backend: &mut V) -> Result<(), V::Error> {
     };
     backend.charge(remaining)?;
     if backend.compare()? {
-        Ok(())
+        backend.accepted()
     } else {
         Err(backend.rejected())
     }

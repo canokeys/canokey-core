@@ -69,6 +69,7 @@ struct Backend {
     durable: u8,
     attempts: u8,
     charge_failure: u8,
+    refund_failure: u8,
     comparison: Result<bool, ()>,
     events: Vec<&'static str>,
 }
@@ -101,58 +102,101 @@ impl retry::Verification for Backend {
         self.attempts -= 1;
         Failure::Wrong(retry::rejection(self.remaining, self.attempts))
     }
+    fn accepted(&mut self) -> Result<(), Failure> {
+        self.events.push("reset-attempts");
+        self.attempts = retry::POWER_CYCLE_ATTEMPTS;
+        self.events.push("refund");
+        self.remaining = retry::MAX_RETRIES;
+        if self.refund_failure != 1 {
+            self.durable = retry::MAX_RETRIES;
+        }
+        if self.refund_failure != 0 {
+            Err(Failure::Store)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[test]
-fn verification_never_compares_after_uncertain_charge_or_refunds_before_owner_commit() {
-    for remaining in 0..=8 {
-        for attempts in 1..=3 {
-            // 1 fails before the durable write; 2 reports failure after it.
+fn verification_charges_before_compare_and_requires_a_successful_refund_before_returning_authority()
+{
+    for remaining in 0..=retry::MAX_RETRIES {
+        for attempts in 1..=retry::POWER_CYCLE_ATTEMPTS {
+            // Each persistent transition can fail before writing or report an
+            // uncertain failure after writing. Neither transition may retry.
             for charge_failure in 0..=2 {
-                for comparison in [Ok(true), Ok(false), Err(())] {
-                    let mut backend = Backend {
-                        remaining,
-                        durable: remaining,
-                        attempts,
-                        charge_failure,
-                        comparison,
-                        events: Vec::new(),
-                    };
-                    let result = retry::verify(&mut backend);
-                    if remaining == 0 {
-                        assert_eq!(result, Err(Failure::Blocked));
-                        assert!(backend.events.is_empty());
-                        assert_eq!(backend.attempts, attempts);
-                        continue;
-                    }
-                    assert_eq!(backend.remaining, remaining - 1);
-                    assert_eq!(
-                        backend.durable,
-                        if charge_failure == 1 {
-                            remaining
-                        } else {
-                            remaining - 1
-                        }
-                    );
-                    if charge_failure != 0 {
-                        assert_eq!(result, Err(Failure::Store));
-                        assert_eq!(backend.events, ["charge"]);
-                        assert_eq!(backend.attempts, attempts);
-                    } else if comparison == Ok(false) {
-                        let expected = if remaining == 1 {
-                            retry::Rejection::Blocked
-                        } else if attempts == 1 {
-                            retry::Rejection::PowerCycleBlocked
-                        } else {
-                            retry::Rejection::Invalid
+                for refund_failure in 0..=2 {
+                    for comparison in [Ok(true), Ok(false), Err(())] {
+                        let mut backend = Backend {
+                            remaining,
+                            durable: remaining,
+                            attempts,
+                            charge_failure,
+                            refund_failure,
+                            comparison,
+                            events: Vec::new(),
                         };
-                        assert_eq!(result, Err(Failure::Wrong(expected)));
-                        assert_eq!(backend.events, ["charge", "compare", "reject"]);
-                        assert_eq!(backend.attempts, attempts - 1);
-                    } else {
-                        assert_eq!(result, comparison.map(|_| ()).map_err(|_| Failure::Compare));
-                        assert_eq!(backend.events, ["charge", "compare"]);
-                        assert_eq!(backend.attempts, attempts);
+                        let result = retry::verify(&mut backend);
+                        if remaining == 0 {
+                            assert_eq!(result, Err(Failure::Blocked));
+                            assert!(backend.events.is_empty());
+                            assert_eq!(backend.attempts, attempts);
+                            assert_eq!(backend.durable, remaining);
+                        } else if charge_failure != 0 {
+                            assert_eq!(result, Err(Failure::Store));
+                            assert_eq!(backend.events, ["charge"]);
+                            assert_eq!(backend.attempts, attempts);
+                            assert_eq!(backend.remaining, remaining - 1);
+                            assert_eq!(
+                                backend.durable,
+                                if charge_failure == 1 {
+                                    remaining
+                                } else {
+                                    remaining - 1
+                                }
+                            );
+                        } else if comparison == Ok(false) {
+                            let expected = if remaining == 1 {
+                                retry::Rejection::Blocked
+                            } else if attempts == 1 {
+                                retry::Rejection::PowerCycleBlocked
+                            } else {
+                                retry::Rejection::Invalid
+                            };
+                            assert_eq!(result, Err(Failure::Wrong(expected)));
+                            assert_eq!(backend.events, ["charge", "compare", "reject"]);
+                            assert_eq!(backend.attempts, attempts - 1);
+                            assert_eq!(backend.durable, remaining - 1);
+                        } else if comparison.is_err() {
+                            assert_eq!(result, Err(Failure::Compare));
+                            assert_eq!(backend.events, ["charge", "compare"]);
+                            assert_eq!(backend.attempts, attempts);
+                            assert_eq!(backend.durable, remaining - 1);
+                        } else {
+                            assert_eq!(
+                                result,
+                                if refund_failure == 0 {
+                                    Ok(())
+                                } else {
+                                    Err(Failure::Store)
+                                }
+                            );
+                            assert_eq!(
+                                backend.events,
+                                ["charge", "compare", "reset-attempts", "refund"]
+                            );
+                            assert_eq!(backend.attempts, retry::POWER_CYCLE_ATTEMPTS);
+                            assert_eq!(backend.remaining, retry::MAX_RETRIES);
+                            assert_eq!(
+                                backend.durable,
+                                if refund_failure == 1 {
+                                    remaining - 1
+                                } else {
+                                    retry::MAX_RETRIES
+                                }
+                            );
+                        }
                     }
                 }
             }

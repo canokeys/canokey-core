@@ -180,6 +180,15 @@ is still wiped immediately; retained response bytes are public protocol output.
 
 ## PIN state
 
+ClientPIN admits durable exhaustion and the power-cycle attempt limit before
+agreement/MAC work. The shared `client_pin::retry::verify` persists a decrement
+before decrypting/comparing the current PIN. A correct verifier restores the
+volatile allowance and persists the full retry refund before new-PIN policy,
+replacement or token publication. Thus a rejected new PIN still refunds a
+correct old PIN. An uncertain charge/refund stops all later work; it never
+authorizes a compensating write. Product adapters retain record ownership,
+atomic storage operations and temporary-secret erasure.
+
 Record `4d` atomically contains the PIN and policy in 20 + 32*N bytes:
 
 - Bytes 0..15: SHA-256 PIN prefix; byte 16: retries; byte 17: Unicode code-point count (zero means no PIN).

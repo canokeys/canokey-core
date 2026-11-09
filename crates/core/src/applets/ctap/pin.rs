@@ -5,12 +5,12 @@ use super::wire::pin_protocol::{
     MAX_PIN_BYTES, MAX_RETRIES, MIN_CODE_POINTS, PIN_HASH_BYTES, SESSION_ATTEMPTS,
 };
 use super::{
+    Session, Status,
     client_pin::Parameters,
     crypto::{equal, mac, verify_mac},
-    Session, Status,
 };
 use crate::{
-    ports::{alg, KeyMaterial, KeyOperation, Platform, Record},
+    ports::{KeyMaterial, KeyOperation, Platform, Record, alg},
     runtime::workspace::Workspace,
 };
 use canokey_ctap::client_pin::{self as shared_pin, agreement, response, retry, token};
@@ -242,8 +242,8 @@ impl<B: crate::ports::Backends> agreement::Exchange for AgreementCrypto<'_, '_, 
     }
 }
 
-// This loan spans only the durable charge and current-PIN comparison. The
-// caller retains successful refund/policy/token publication and final erasure.
+// This loan spans durable charging, current-PIN comparison and successful
+// refund. New-PIN policy and token publication require its successful return.
 struct CurrentPin<'a, 'p, B: crate::ports::Backends> {
     session: &'a mut Session,
     parameters: &'a mut Parameters,
@@ -292,6 +292,18 @@ impl<B: crate::ports::Backends> retry::Verification for CurrentPin<'_, '_, B> {
             retry::Rejection::PowerCycleBlocked => Status::PinAuthBlocked,
             retry::Rejection::Invalid => Status::PinInvalid,
         }
+    }
+    fn accepted(&mut self) -> Result<(), Status> {
+        self.session.pin_attempts = SESSION_ATTEMPTS;
+        self.record[RETRIES] = MAX_RETRIES;
+        self.platform
+            .storage
+            .replace_at(
+                Record::CtapPin,
+                RETRIES as u32,
+                &self.record[RETRIES..RETRIES + 1],
+            )
+            .map_err(|_| Status::Other)
     }
 }
 

@@ -25,6 +25,11 @@ struct Backend {
     fail_patch_at: usize,
     fail_patch_durable: bool,
     fail_decrypt: bool,
+    fail_decrypt_at: usize,
+    new_pin: Option<&'static [u8]>,
+    fail_replace: bool,
+    fail_replace_durable: bool,
+    replacements: Vec<Vec<u8>>,
     fail_encrypt: bool,
     fail_random_at: usize,
     random_calls: usize,
@@ -62,8 +67,17 @@ impl Storage for Backend {
         self.record.as_mut().unwrap()[RETRIES] = input[0];
         Ok(())
     }
-    fn replace(&mut self, _: Record, _: &[u8]) -> Result<(), StorageError> {
-        unreachable!()
+    fn replace(&mut self, id: Record, input: &[u8]) -> Result<(), StorageError> {
+        assert_eq!(id, Record::CtapPin);
+        self.replacements.push(input.to_vec());
+        if !self.fail_replace || self.fail_replace_durable {
+            self.record = Some(input.to_vec());
+        }
+        if self.fail_replace {
+            Err(StorageError::Unavailable)
+        } else {
+            Ok(())
+        }
     }
 }
 impl Crypto for Backend {
@@ -157,7 +171,11 @@ impl Crypto for Backend {
         } else {
             self.decrypt_calls += 1;
             data.fill(0x42);
-            if self.fail_decrypt {
+            if let Some(pin) = self.new_pin.filter(|_| self.decrypt_calls == 2) {
+                data.fill(0x00);
+                data[..pin.len()].copy_from_slice(pin);
+            }
+            if self.fail_decrypt || self.decrypt_calls == self.fail_decrypt_at {
                 return Err(CryptoError::Failure);
             }
         }
@@ -165,6 +183,195 @@ impl Crypto for Backend {
     }
     fn hmac_sha1(&mut self, _: &[u8; 20], _: &[u8], _: &mut [u8; 20]) {
         unreachable!()
+    }
+}
+
+#[test]
+fn change_refunds_before_new_pin_policy_and_stops_at_each_uncertain_write() {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Fault {
+        None,
+        Charge,
+        ChargeDurable,
+        Refund,
+        RefundDurable,
+        WrongPin,
+        OldDecrypt,
+        NewDecrypt,
+        Policy,
+        Replace,
+        ReplaceDurable,
+    }
+    for protocol in [wire::V1, wire::V2] {
+        for fault in [
+            Fault::None,
+            Fault::Charge,
+            Fault::ChargeDurable,
+            Fault::Refund,
+            Fault::RefundDurable,
+            Fault::WrongPin,
+            Fault::OldDecrypt,
+            Fault::NewDecrypt,
+            Fault::Policy,
+            Fault::Replace,
+            Fault::ReplaceDurable,
+        ] {
+            let mut original = vec![0x42; RP_HASHES];
+            original[RETRIES..RP_HASHES].copy_from_slice(&[6, 4, 4, FORCE_CHANGE]);
+            if fault == Fault::WrongPin {
+                original[0] ^= 0x01;
+            }
+            let mut storage = Backend {
+                record: Some(original.clone()),
+                fail_patch_at: match fault {
+                    Fault::Charge | Fault::ChargeDurable => 1,
+                    Fault::Refund | Fault::RefundDurable => 2,
+                    _ => 0,
+                },
+                fail_patch_durable: matches!(fault, Fault::ChargeDurable | Fault::RefundDurable),
+                fail_replace: matches!(fault, Fault::Replace | Fault::ReplaceDurable),
+                fail_replace_durable: fault == Fault::ReplaceDurable,
+                ..Backend::default()
+            };
+            let mut crypto = Backend {
+                new_pin: Some(if fault == Fault::Policy {
+                    b"a"
+                } else {
+                    b"new-pass8"
+                }),
+                fail_decrypt_at: match fault {
+                    Fault::OldDecrypt => 1,
+                    Fault::NewDecrypt => 2,
+                    _ => 0,
+                },
+                ..Backend::default()
+            };
+            let memory = Backend::default();
+            let mut device = Backend::default();
+            let mut session = Session::new();
+            session.pin_attempts = 1;
+            session.token.fill(0x99);
+            session.permissions = PERMISSION_CONFIG;
+            let mut backing = SessionWorkspace::new();
+            backing.classic_with(&memory).output.fill(0xee);
+            let mut command = Ok(super::super::Command::ClientPin(Parameters {
+                protocol,
+                subcommand: shared_pin::request::Command::Change as u8,
+                agreement: [0x05; 64],
+                auth: [0x3a; 32],
+                new_pin: [0xaa; 80],
+                pin_hash: [0xbb; 32],
+                permissions: 0x00,
+                rp: [0x00; 254],
+                rp_len: 0,
+            }));
+            let response = session.execute(
+                &mut command,
+                &mut backing,
+                &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                    storage: &mut storage,
+                    crypto: &mut crypto,
+                    device: &mut device,
+                    memory: &memory,
+                },
+            );
+            let workspace = backing.classic_with(&memory);
+            let expected = match fault {
+                Fault::None => None,
+                Fault::WrongPin => Some(Status::PinAuthBlocked),
+                Fault::Policy => Some(Status::PinPolicy),
+                _ => Some(Status::Other),
+            };
+            if let Some(expected) = expected {
+                assert!(
+                    matches!(response, super::super::Response::Error(status) if status == expected),
+                    "{protocol} {fault:?}"
+                );
+                assert!(workspace.output.iter().all(|&byte| byte == 0x00));
+            } else {
+                assert!(matches!(response, super::super::Response::Prepared(1)));
+                assert_eq!(workspace.output[0], 0x00);
+            }
+            assert!(
+                workspace
+                    .key
+                    .bytes
+                    .iter()
+                    .chain(workspace.input.iter())
+                    .all(|&byte| byte == 0x00)
+            );
+            let Ok(super::super::Command::ClientPin(parameters)) = command else {
+                panic!()
+            };
+            assert!(
+                parameters
+                    .auth
+                    .iter()
+                    .chain(parameters.pin_hash.iter())
+                    .chain(parameters.new_pin.iter())
+                    .all(|&byte| byte == 0x00)
+            );
+            let retained = matches!(fault, Fault::Policy | Fault::WrongPin);
+            assert_eq!(session.token, [if retained { 0x99 } else { 0x00 }; 32]);
+            assert_eq!(
+                session.permissions,
+                if retained { PERMISSION_CONFIG } else { 0x00 }
+            );
+            assert_eq!(
+                session.pin_attempts,
+                if fault == Fault::WrongPin {
+                    0
+                } else if matches!(
+                    fault,
+                    Fault::Charge | Fault::ChargeDurable | Fault::OldDecrypt
+                ) {
+                    1
+                } else {
+                    SESSION_ATTEMPTS
+                }
+            );
+            assert_eq!(
+                session.agreement_ready,
+                matches!(fault, Fault::None | Fault::Policy)
+            );
+            let charged_only = matches!(
+                fault,
+                Fault::Charge | Fault::ChargeDurable | Fault::WrongPin | Fault::OldDecrypt
+            );
+            assert_eq!(
+                storage.retries_written,
+                if charged_only { vec![5] } else { vec![5, 8] }
+            );
+            assert_eq!(
+                crypto.decrypt_calls,
+                if matches!(fault, Fault::Charge | Fault::ChargeDurable) {
+                    0
+                } else if charged_only || matches!(fault, Fault::Refund | Fault::RefundDurable) {
+                    1
+                } else {
+                    2
+                }
+            );
+            let replaced = matches!(fault, Fault::None | Fault::Replace | Fault::ReplaceDurable);
+            assert_eq!(storage.replacements.len(), usize::from(replaced));
+            let mut expected_record = original;
+            if matches!(fault, Fault::None | Fault::ReplaceDurable) {
+                expected_record[..PIN_HASH_BYTES]
+                    .copy_from_slice(&Sha256::digest(b"new-pass8")[..PIN_HASH_BYTES]);
+                expected_record[PIN_LENGTH] = 9;
+                expected_record[FLAGS] &= !FORCE_CHANGE;
+            }
+            expected_record[RETRIES] = match fault {
+                Fault::Charge => 6,
+                Fault::ChargeDurable | Fault::Refund | Fault::WrongPin | Fault::OldDecrypt => 5,
+                _ => 8,
+            };
+            assert_eq!(
+                storage.record.as_ref(),
+                Some(&expected_record),
+                "{protocol} {fault:?}"
+            );
+        }
     }
 }
 impl Device for Backend {

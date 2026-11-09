@@ -25,9 +25,8 @@ pub enum AdmissionError {
     Blocked,
     PowerCycleBlocked,
 }
-/// Product reads determine the admitted record and when power-cycle admission
-/// happens. Products checking attempts inside their durable transaction pass
-/// false here, preserving crypto/error precedence before that transaction.
+/// Product reads supply durable retries and volatile attempts. Admission runs
+/// before agreement or MAC work; durable exhaustion has precedence.
 pub struct State {
     pub configured: bool,
     pub retries: u8,
@@ -58,13 +57,13 @@ impl State {
 /// its key/record scratch and returns unit; a product with zeroizing value types
 /// can return those directly. No capability retains a loan or publishes grants.
 ///
-/// prepare_current_pin admits/decrypts the current verifier at the product's
-/// commit boundary: Core charges, compares and refunds there; vLEI decrypts the
-/// verifier and its change/token transaction charges, compares and commits under
-/// the authenticated deadline. A prepared verifier is not proof of authority.
+/// prepare_current_pin enters the existing record owner or defers that entry to
+/// change/token. Both owners use retry::verify to persist a charge before
+/// decrypting/comparing, and refund a correct verifier before new-PIN policy.
+/// A prepared verifier is not proof of authority.
 /// set/change own new-PIN policy and durable publication; issue_token owns final
-/// grant checks, replacement, encryption and reply publication. This preserves
-/// different refund/replacement ordering without duplicating wire orchestration.
+/// grant checks, replacement, encryption and reply publication. Product deadline
+/// and record ownership checks remain inside those synchronous transactions.
 /// Owners erase partial outputs and all temporary secrets on every return.
 pub trait Backend {
     type Error;

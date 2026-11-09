@@ -100,19 +100,7 @@ impl<B: crate::ports::Backends> operation::Backend for Operation<'_, '_, '_, B> 
             record,
             aes_key,
             platform: p,
-        })?;
-        self.session.pin_attempts = SESSION_ATTEMPTS;
-        // Correct current PIN restores retries even if the new PIN
-        // subsequently fails policy validation.
-        record[RETRIES] = MAX_RETRIES;
-        p.storage
-            .replace_at(
-                Record::CtapPin,
-                RETRIES as u32,
-                &record[RETRIES..RETRIES + 1],
-            )
-            .map_err(|_| Status::Other)?;
-        Ok(())
+        })
     }
     fn set_pin(&mut self, _: &()) -> Result<usize, Status> {
         self.replace_pin()
