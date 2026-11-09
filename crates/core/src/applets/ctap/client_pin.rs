@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Incremental clientPIN schema. Only owned fields survive request release.
+//! Owned ClientPIN backing for the shared incremental field state machine.
 use super::wire::pin_protocol as wire;
-use super::{Command, Key, Status};
-use canokey_ctap::client_pin::{Protocol, request as schema};
-use canokey_protocol::cbor::Event;
+use super::{Command, Status};
+use canokey_ctap::client_pin::request::{self as schema, stream};
 
-fn schema_error(error: schema::Error) -> Status {
-    match error {
-        schema::Error::MissingParameter => Status::MissingParameter,
-        schema::Error::InvalidParameter => Status::InvalidParameter,
-        schema::Error::UnauthorizedPermission => Status::UnauthorizedPermission,
-    }
+impl stream::Error for Status {
+    const INVALID_SUBCOMMAND: Self = Self::InvalidSubcommand;
+    const UNAUTHORIZED_PERMISSION: Self = Self::UnauthorizedPermission;
+    const PIN_POLICY: Self = Self::PinPolicy;
 }
-
-// Sentinel for a non-integer/unsupported-width label. It is outside the
-// recognized clientPIN labels 1..=6, 9 and 10 and follows the skip path.
-const COSE_KEY_MISSING: i8 = 127;
+const PERMISSIONS: schema::PermissionPolicy = schema::PermissionPolicy {
+    supported: wire::PERMISSION_MASK as u16,
+    rejected: wire::PERMISSION_BIO as u64,
+    maximum: Some(wire::PERMISSION_MASK as u64),
+    protocol_two_only: 0x00,
+};
 
 #[repr(C)]
 pub struct Parameters {
@@ -46,220 +45,94 @@ impl Parameters {
 }
 pub struct Parser {
     decoder: super::request_decoder::RequestDecoder,
-    fields: Fields,
+    fields: stream::Fields<Status, Parameters>,
 }
 impl Parser {
     pub const fn new() -> Self {
         Self {
             decoder: super::request_decoder::RequestDecoder::new(),
-            fields: Fields::new(),
+            fields: stream::Fields::new(Parameters::new()),
         }
     }
-    // Share this parser across HID and APDU callers on size-constrained targets.
     #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
         let fields = &mut self.fields;
-        self.decoder
-            .consume(bytes, &mut |event, _| fields.event(event));
+        self.decoder.consume(bytes, &mut |event, offset| {
+            fields.event(event, offset, PERMISSIONS)
+        });
     }
     pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
-        memory.wipe(&mut self.fields.params.agreement);
-        memory.wipe(&mut self.fields.params.auth);
-        memory.wipe(&mut self.fields.params.new_pin);
-        memory.wipe(&mut self.fields.params.pin_hash);
-        memory.wipe(&mut self.fields.params.rp);
+        memory.wipe(&mut self.fields.output.agreement);
+        memory.wipe(&mut self.fields.output.auth);
+        memory.wipe(&mut self.fields.output.new_pin);
+        memory.wipe(&mut self.fields.output.pin_hash);
+        memory.wipe(&mut self.fields.output.rp);
     }
     #[inline(never)]
     pub fn finish(&mut self) -> Result<Command, Status> {
         self.decoder.finish()?;
-        let f = &mut self.fields;
-        if f.seen & (1 << wire::LABEL_SUBCOMMAND) == 0 {
-            return Err(Status::MissingParameter);
-        }
-        let command = schema::Command::decode(u64::from(f.params.subcommand))
-            .ok_or(Status::InvalidSubcommand)?;
-        if f.params.subcommand == wire::GET_RETRIES {
-            return Ok(Command::GetPinRetries);
-        }
-        schema::admit(
-            command,
-            f.seen,
-            u16::from(f.params.permissions),
-            f.params.rp_len != 0,
-        )
-        .map_err(schema_error)?;
-        if f.params.subcommand == wire::GET_AGREEMENT {
+        self.fields.finish()?;
+        if self.fields.output.subcommand == schema::Command::Retries as u8 {
+            Ok(Command::GetPinRetries)
+        } else if self.fields.output.subcommand == schema::Command::Agreement as u8 {
             Ok(Command::GetKeyAgreement)
         } else {
             Ok(Command::ClientPin(core::mem::replace(
-                &mut f.params,
+                &mut self.fields.output,
                 Parameters::new(),
             )))
         }
     }
 }
-struct Fields {
-    params: Parameters,
-    started: bool,
-    previous: Option<Key>,
-    agreement: super::agreement::Parser,
-    key: Option<Option<i8>>,
-    cose: bool,
-    seen: u16,
-    skip_depth: u8,
-    body: Option<(i8, usize)>,
-}
-impl Fields {
-    const fn new() -> Self {
-        Self {
-            params: Parameters::new(),
-            started: false,
-            previous: None,
-            agreement: super::agreement::Parser::new(),
-            key: None,
-            cose: false,
-            seen: 0,
-            skip_depth: 0,
-            body: None,
+impl stream::Output<Status> for Parameters {
+    fn protocol(&self) -> u8 {
+        self.protocol
+    }
+    fn subcommand(&self) -> u8 {
+        self.subcommand
+    }
+    fn permissions(&self) -> u16 {
+        u16::from(self.permissions)
+    }
+    fn rp_present(&self) -> bool {
+        self.rp_len != 0
+    }
+    fn set_protocol(&mut self, value: u8) {
+        self.protocol = value;
+    }
+    fn set_subcommand(&mut self, value: u8) {
+        self.subcommand = value;
+    }
+    fn set_permissions(&mut self, value: u16) {
+        self.permissions = value as u8;
+    }
+    fn agreement(&mut self) -> &mut [u8; 64] {
+        &mut self.agreement
+    }
+    fn start(&mut self, label: i8, _offset: u16, length: u16) {
+        if label == schema::LABEL_RP_ID {
+            self.rp_len = usize::from(length);
         }
     }
-    fn event(&mut self, event: &Event<'_>) -> Result<(), Status> {
-        if !self.started {
-            if !matches!(event, Event::Map(_)) {
-                return Err(Status::UnexpectedType);
-            }
-            self.started = true;
-            return Ok(());
-        }
-        if self.cose {
-            if self
-                .agreement
-                .event(event, &mut self.params.agreement, Status::InvalidCbor)?
-            {
-                self.cose = false;
-            }
-            return Ok(());
-        }
-        if super::skip_cbor_event(&mut self.skip_depth, event)? {
-            return Ok(());
-        }
-        if let Some((key, _)) = self.body {
-            let dest: &mut [u8] = match key {
-                wire::LABEL_AUTH => &mut self.params.auth,
-                wire::LABEL_NEW_PIN => &mut self.params.new_pin,
-                wire::LABEL_PIN_HASH => &mut self.params.pin_hash,
-                wire::LABEL_RP_ID => &mut self.params.rp,
-                _ => return Err(Status::InvalidCbor),
-            };
-            super::consume_cbor_body(event, &mut self.body, dest)?;
-            return Ok(());
-        }
-        let Some(key) = self.key.take() else {
-            if matches!(event, Event::End) {
-                return Ok(());
-            }
-            let key = Key::ordered(event, &mut self.previous)?;
-            self.key = Some(key);
-            return Ok(());
-        };
-        let key = key.unwrap_or(COSE_KEY_MISSING);
-
-        if (wire::LABEL_PROTOCOL..=wire::LABEL_PIN_HASH).contains(&key)
-            || key == wire::LABEL_PERMISSIONS
-            || key == wire::LABEL_RP_ID
-        {
-            self.seen |= 1 << key;
-        }
-        match key {
-            wire::LABEL_PROTOCOL => match *event {
-                Event::Unsigned(n) if Protocol::decode(n).is_some() => {
-                    self.params.protocol = n as u8
-                }
-                Event::Unsigned(_) | Event::Negative(_) => return Err(Status::InvalidParameter),
-                _ => return Err(Status::UnexpectedType),
-            },
-            wire::LABEL_SUBCOMMAND => match *event {
-                Event::Unsigned(n) => {
-                    self.params.subcommand =
-                        u8::try_from(n).map_err(|_| Status::InvalidSubcommand)?
-                }
-                Event::Negative(_) => return Err(Status::InvalidSubcommand),
-                _ => return Err(Status::UnexpectedType),
-            },
-            wire::LABEL_AGREEMENT => {
-                if !matches!(event, Event::Map(_)) {
-                    return Err(Status::UnexpectedType);
-                }
-                self.cose = true;
-            }
-            wire::LABEL_AUTH..=wire::LABEL_PIN_HASH => {
-                if self.params.protocol == 0 {
-                    return Err(Status::MissingParameter);
-                }
-                let field = match key {
-                    wire::LABEL_AUTH => schema::EncryptedField::Auth,
-                    wire::LABEL_NEW_PIN => schema::EncryptedField::NewPin,
-                    _ => schema::EncryptedField::PinHash,
-                };
-                let protocol = Protocol::decode(u64::from(self.params.protocol))
-                    .ok_or(Status::InvalidParameter)?;
-                self.bytes(key, event, protocol, field)?;
-            }
-            wire::LABEL_PERMISSIONS => match *event {
-                Event::Unsigned(n) => {
-                    // Core rejects all bits above the defined standard mask.
-                    let policy = schema::PermissionPolicy {
-                        supported: u16::from(wire::PERMISSION_MASK),
-                        rejected: u64::from(wire::PERMISSION_BIO),
-                        maximum: Some(u64::from(wire::PERMISSION_MASK)),
-                        protocol_two_only: 0x00,
-                    };
-                    // Permission admission is protocol-independent in this profile.
-                    self.params.permissions =
-                        policy.validate(Protocol::Two, n).map_err(schema_error)? as u8;
-                }
-                Event::Negative(_) => return Err(Status::UnauthorizedPermission),
-                _ => return Err(Status::UnexpectedType),
-            },
-            wire::LABEL_RP_ID => match *event {
-                Event::Text(n) if n > 0 && usize::from(n) <= super::wire::RP_ID_MAX => {
-                    self.params.rp_len = usize::from(n);
-                    self.body = Some((wire::LABEL_RP_ID, 0));
-                }
-                Event::Text(_) => return Err(Status::InvalidParameter),
-                _ => return Err(Status::UnexpectedType),
-            },
-            _ => self.skip(event),
-        }
-        Ok(())
-    }
-    fn bytes(
+    fn body(
         &mut self,
-        key: i8,
-        event: &Event<'_>,
-        protocol: Protocol,
-        field: schema::EncryptedField,
+        event: &canokey_protocol::cbor::Event<'_>,
+        body: &mut Option<(i8, usize)>,
     ) -> Result<(), Status> {
-        match *event {
-            Event::Bytes(length) => {
-                field
-                    .validate(protocol, usize::from(length))
-                    .map_err(|error| match error {
-                        schema::LengthError::PinTooLong => Status::PinPolicy,
-                        schema::LengthError::WrongLength => Status::InvalidCbor,
-                    })?;
-                self.body = Some((key, 0));
-                Ok(())
-            }
-            _ => Err(Status::UnexpectedType),
-        }
-    }
-    fn skip(&mut self, event: &Event<'_>) {
-        if super::is_cbor_container(event) {
-            self.skip_depth = 1;
-        }
+        let (label, _) = body.ok_or(Status::InvalidCbor)?;
+        let target: &mut [u8] = match label {
+            schema::LABEL_AUTH => &mut self.auth,
+            schema::LABEL_NEW_PIN => &mut self.new_pin,
+            schema::LABEL_PIN_HASH => &mut self.pin_hash,
+            schema::LABEL_RP_ID => &mut self.rp,
+            _ => return Err(Status::InvalidCbor),
+        };
+        canokey_ctap::request::stream::consume_cbor_body(event, body, target)
     }
 }
+
+#[cfg(test)]
+mod reference;
 
 #[cfg(test)]
 mod tests {
@@ -389,5 +262,91 @@ mod schema_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod differential_tests {
+    extern crate std;
+    use super::*;
+    use std::vec::Vec;
+
+    fn fingerprint(command: Command) -> Vec<u8> {
+        match command {
+            Command::GetPinRetries => std::vec![wire::V1],
+            Command::GetKeyAgreement => std::vec![wire::V2],
+            Command::ClientPin(p) => {
+                let mut bytes = std::vec![p.protocol, p.subcommand, p.permissions];
+                bytes.extend_from_slice(&(p.rp_len as u16).to_be_bytes());
+                bytes.extend_from_slice(&p.agreement);
+                bytes.extend_from_slice(&p.auth);
+                bytes.extend_from_slice(&p.new_pin);
+                bytes.extend_from_slice(&p.pin_hash);
+                bytes.extend_from_slice(&p.rp);
+                bytes
+            }
+            _ => panic!("ClientPIN command expected"),
+        }
+    }
+    fn borrowed(bytes: &[u8]) -> Result<Vec<u8>, Status> {
+        let parsed = schema::borrowed::decode::<Status, { (super::super::MAX_REQUEST - 1) as u16 }>(
+            bytes,
+            PERMISSIONS,
+        )?;
+        Ok(fingerprint(match parsed.command {
+            schema::Command::Retries => Command::GetPinRetries,
+            schema::Command::Agreement => Command::GetKeyAgreement,
+            _ => {
+                let mut p = Parameters::new();
+                p.protocol = parsed.protocol;
+                p.subcommand = parsed.command as u8;
+                p.permissions = parsed.permissions as u8;
+                p.agreement = parsed.agreement;
+                p.auth[..parsed.auth.len()].copy_from_slice(parsed.auth);
+                p.new_pin[..parsed.new_pin.len()].copy_from_slice(parsed.new_pin);
+                p.pin_hash[..parsed.pin_hash.len()].copy_from_slice(parsed.pin_hash);
+                if let Some(rp) = parsed.rp_id {
+                    p.rp_len = rp.len();
+                    p.rp[..rp.len()].copy_from_slice(rp.as_bytes());
+                }
+                Command::ClientPin(p)
+            }
+        }))
+    }
+    fn compare(bytes: &[u8], split: usize) {
+        let mut reference = reference::Parser::new();
+        reference.consume(&bytes[..split]);
+        reference.consume(&bytes[split..]);
+        let expected = reference.finish().map(fingerprint);
+        let mut actual = Parser::new();
+        actual.consume(&bytes[..split]);
+        actual.consume(&bytes[split..]);
+        assert_eq!(
+            actual.finish().map(fingerprint),
+            expected,
+            "split={split} bytes={bytes:02x?}"
+        );
+        assert_eq!(borrowed(bytes), expected, "borrowed bytes={bytes:02x?}");
+    }
+    #[test]
+    fn actual_owned_and_borrowed_match_pre_extraction_parser() {
+        let mut count = 0;
+        for (bytes, _) in admission_cases::parsing_cases() {
+            for split in 0..=bytes.len() {
+                compare(&bytes, split);
+            }
+            for end in 0..bytes.len() {
+                compare(&bytes[..end], end / 2);
+            }
+            for index in 0..bytes.len() {
+                for replacement in [0x00, 0x01, 0x17, 0x18, 0x20, 0x3f, 0x40, 0x50, 0x80, 0xff] {
+                    let mut mutated = bytes.clone();
+                    mutated[index] = replacement;
+                    compare(&mutated, index);
+                    count += 1;
+                }
+            }
+        }
+        std::println!("Actual ClientPIN pre-extraction oracle: {count} mutations");
     }
 }

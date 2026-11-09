@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CTAP/COSE assignments and PIN protocol lengths. Labels are scoped by schema.
-pub(super) const RP_ID_MAX: usize = 254;
+pub(super) const RP_ID_MAX: usize = canokey_ctap::request::credential::RP_ID_MAX;
 pub(super) use canokey_ctap::response::encoding::cose;
 
 pub(super) mod pin_protocol {
@@ -20,18 +20,10 @@ pub(super) mod pin_protocol {
     pub const MIN_CODE_POINTS: u8 = 0x04;
     pub const MAX_PIN_BYTES: u8 = 63;
     pub const MAX_RETRIES: u8 = canokey_ctap::client_pin::retry::MAX_RETRIES;
+    #[cfg(test)]
     pub const GET_RETRIES: u8 = Command::Retries as u8;
-    pub const GET_AGREEMENT: u8 = Command::Agreement as u8;
     pub const GET_TOKEN: u8 = Command::Token as u8;
     pub const GET_TOKEN_PERMISSIONS: u8 = Command::TokenPermissions as u8;
-    pub const LABEL_PROTOCOL: i8 = request::LABEL_PROTOCOL;
-    pub const LABEL_SUBCOMMAND: i8 = request::LABEL_SUBCOMMAND;
-    pub const LABEL_AGREEMENT: i8 = request::LABEL_AGREEMENT;
-    pub const LABEL_AUTH: i8 = request::LABEL_AUTH;
-    pub const LABEL_NEW_PIN: i8 = request::LABEL_NEW_PIN;
-    pub const LABEL_PIN_HASH: i8 = request::LABEL_PIN_HASH;
-    pub const LABEL_PERMISSIONS: i8 = request::LABEL_PERMISSIONS;
-    pub const LABEL_RP_ID: i8 = request::LABEL_RP_ID;
     pub const PERMISSION_MAKE: u8 = request::PERMISSION_MAKE as u8;
     pub const PERMISSION_ASSERT: u8 = request::PERMISSION_ASSERT as u8;
     pub const PERMISSION_BIO: u8 = 0x08;

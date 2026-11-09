@@ -4,6 +4,7 @@
 
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 mod adapter;
+#[cfg(test)]
 mod agreement;
 mod applet;
 pub use applet::Applet;
