@@ -70,6 +70,14 @@ validated ECDH-to-protocol-KDF pipeline. Generation candidates and x-coordinate
 scratch remain in existing owner buffers; products keep private-key cache,
 readiness/publication points, primitive validation/errors and zeroization.
 
+`authorization` owns ordinary MakeCredential/GetAssertion PIN/UV admission:
+empty-authentication presence probes, option checks, PIN/always-UV/resident policy
+and token admission. Product hooks read policy, service the probe and verify the
+existing token; the result retains a product deadline or the bound-session marker.
+The explicit silent-secret check order preserves error/read precedence for the
+borrowed and streamed schema adapters. Selection, normal UP, storage and signing
+remain outside this admission capability while the full engine is migrated.
+
 `client_pin::operation` owns standard state admission, agreement, authenticated
 new-PIN preparation and Set/Change/Token sequencing. Its synchronous backend
 lends existing secret/record scratch or uses existing zeroizing value types.

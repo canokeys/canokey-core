@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Credential authorization and signing. All request bytes are owned before entry.
 use super::wire::{assertion_response, auth_data, make_response, pin_protocol};
-use super::{Session, Status, credential, credential_request::Parameters, pin, resident};
+use super::{credential, credential_request::Parameters, pin, resident, Session, Status};
 use crate::{
-    ports::{KeyOperation, Platform, alg},
+    ports::{alg, KeyOperation, Platform},
     runtime::workspace::Workspace,
 };
-use canokey_ctap::session::Boundary;
+use canokey_ctap::{authorization, session::Boundary};
 use canokey_ports::{Crypto as _, Device as _, Memory as _};
 // Two 33-byte positive INTEGERs plus DER tags/lengths.
 const MAX_ECDSA_SIGNATURE_BYTES: usize = 72;
@@ -62,46 +62,33 @@ impl Session {
         .then_some(policy[pin::MIN_PIN_LENGTH]);
         p.memory.wipe(&mut policy);
         hash_result.map_err(|_| Status::Other)?;
-        if params.auth_len == Some(0) {
-            self.credential_presence(w, p)?;
-            return Err(if pin_set {
-                Status::PinInvalid
-            } else {
-                Status::PinNotSet
-            });
-        }
-        if !params.make && !params.up && params.hmac.is_some() {
-            return Err(Status::UnsupportedOption);
-        }
-        if params.make && params.large_blob_key && !params.resident {
-            return Err(Status::InvalidOption);
-        }
-        if (params.make && !params.up) || (params.uv && params.auth_len.is_none()) {
-            return Err(Status::InvalidOption);
-        }
-        let uv = if let Some(n) = params.auth_len {
-            if !pin_set {
-                return Err(Status::PinNotSet);
-            }
-            self.authorize(
-                params.protocol,
-                &params.auth[..n],
-                &params.client_hash,
-                if params.make {
-                    pin_protocol::PERMISSION_MAKE
-                } else {
-                    pin_protocol::PERMISSION_ASSERT
-                },
-                Some(&rp),
-                p,
-            )?;
-            true
-        } else {
-            if always_uv || (pin_set && params.make && params.resident) {
-                return Err(Status::PuatRequired);
-            }
-            false
-        };
+        let uv = authorization::authorize(
+            &authorization::Request {
+                make: params.make,
+                up: params.up,
+                uv: params.uv,
+                resident: params.resident,
+                auth_length: params.auth_len,
+                secret: params.hmac.is_some(),
+                large_blob_key: params.large_blob_key,
+            },
+            authorization::Profile {
+                secret_order: authorization::SecretOrder::AfterEmptyAuthentication,
+                // The streamed schema rejects rk on GetAssertion before entry.
+                reject_assertion_resident: false,
+            },
+            &mut CredentialAuthorization {
+                session: self,
+                parameters: params,
+                workspace: w,
+                platform: p,
+                rp: &rp,
+                pin_set,
+                always_uv,
+            },
+        )
+        .map_err(authorization_error)?
+        .is_some();
         let mut selected = None;
         let mut user_slot = None;
         for id in params.ids() {
@@ -323,6 +310,59 @@ impl Session {
                 error
             }
         })
+    }
+}
+
+// The adapter lends the active session/workspace only for the synchronous
+// presence probe or existing token check. Policy and RP were validated above.
+struct CredentialAuthorization<'a, 'p, 'w, B: crate::ports::Backends> {
+    session: &'a mut Session,
+    parameters: &'a Parameters,
+    workspace: &'a mut Workspace<'w>,
+    platform: &'a mut Platform<'p, B>,
+    rp: &'a [u8; 32],
+    pin_set: bool,
+    always_uv: bool,
+}
+impl<B: crate::ports::Backends> authorization::Backend for CredentialAuthorization<'_, '_, '_, B> {
+    type Error = Status;
+    type Authorization = ();
+    fn policy(&mut self) -> Result<authorization::Policy, Status> {
+        Ok(authorization::Policy {
+            pin_set: self.pin_set,
+            always_uv: self.always_uv,
+        })
+    }
+    fn presence(&mut self) -> Result<(), Status> {
+        self.session
+            .credential_presence(self.workspace, self.platform)
+    }
+    fn verify(&mut self) -> Result<(), Status> {
+        let params = self.parameters;
+        self.session.authorize(
+            params.protocol,
+            &params.auth[..params.auth_len.unwrap()],
+            &params.client_hash,
+            if params.make {
+                pin_protocol::PERMISSION_MAKE
+            } else {
+                pin_protocol::PERMISSION_ASSERT
+            },
+            Some(self.rp),
+            self.platform,
+        )
+    }
+}
+fn authorization_error(error: authorization::Error<Status>) -> Status {
+    match error {
+        authorization::Error::Backend(status) => status,
+        authorization::Error::Rule(rule) => match rule {
+            authorization::RuleError::PinInvalid => Status::PinInvalid,
+            authorization::RuleError::PinNotSet => Status::PinNotSet,
+            authorization::RuleError::UnsupportedOption => Status::UnsupportedOption,
+            authorization::RuleError::InvalidOption => Status::InvalidOption,
+            authorization::RuleError::PuatRequired => Status::PuatRequired,
+        },
     }
 }
 
