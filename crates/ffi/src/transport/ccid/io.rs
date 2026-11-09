@@ -30,6 +30,9 @@ static mut QUEUED: u8 = 0;
 static mut REPEATING: bool = false;
 static mut REPEAT_LENGTH: u8 = 0;
 static mut REPEAT_INTERVAL: u16 = 0;
+pub(super) fn now() -> u32 {
+    unsafe { device_get_tick() }
+}
 pub unsafe fn ck_ccid_io_generation() -> u32 {
     unsafe { core::ptr::read_volatile(core::ptr::addr_of!(GENERATION)) }
 }

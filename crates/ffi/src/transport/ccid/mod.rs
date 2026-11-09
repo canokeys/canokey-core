@@ -55,6 +55,23 @@ struct Platform<P> {
     provider: core::marker::PhantomData<P>,
 }
 impl<P: Provider> Backend for Platform<P> {
+    fn admit(&mut self) -> bool {
+        // The shared receiver calls this only after a complete, valid
+        // bounded XfrBlock header. Fragmented headers therefore cannot
+        // reserve early or skip foreign-owner admission on completion.
+        if hid_busy() {
+            return false;
+        }
+        #[cfg(feature = "usb-webusb")]
+        unsafe {
+            !crate::transport::webusb::block_competitor()
+                || crate::transport::webusb::try_preempt::<P>(true, false)
+        }
+        #[cfg(not(feature = "usb-webusb"))]
+        {
+            true
+        }
+    }
     fn reset(&mut self) {
         unsafe { core_ops::reset::<P>() }
     }
@@ -141,24 +158,7 @@ unsafe fn receive_packet<P: Provider>(
         return false;
     }
     if n > 0 {
-        #[cfg(feature = "usb-webusb")]
-        let admitted = {
-            use canokey_protocol::ccid::{TRANSFER, payload_length};
-            // C reserves only a bounded XfrBlock, after its complete first
-            // header. Oversized/truncated transfers cannot revoke selection.
-            let requested = transport.completed_transaction()
-                && n as usize >= HEADER
-                && packet[0] == TRANSFER
-                && payload_length((&packet[..HEADER]).try_into().unwrap())
-                    <= canokey_rust_core::runtime::ccid::FRAME as u32;
-            unsafe {
-                !crate::transport::webusb::block_competitor()
-                    || crate::transport::webusb::try_preempt::<P>(requested, false)
-            }
-        };
-        #[cfg(not(feature = "usb-webusb"))]
-        let admitted = true;
-        transport.receive_admitted(&packet[..n as usize], admitted && !hid_busy());
+        transport.receive_at(&packet[..n as usize], tick, platform);
     }
     true
 }
@@ -213,6 +213,9 @@ pub unsafe fn poll<P: Provider>() {
             return;
         }
 
+        // Consume the mailbox's arrival tick before applying main-loop time:
+        // delayed polling must not expire a continuation that arrived on time.
+        transport.timeout(io::now(), &mut platform);
         if generation != ck_ccid_io_generation() {
             return;
         }
@@ -278,7 +281,7 @@ pub unsafe fn presence_progress<P: Provider>() {
             if !crate::transport::ccid::io::take_presence(generation, &mut packet) {
                 return;
             }
-            transport.receive(&packet);
+            transport.receive_at(&packet, 0, &mut platform);
             // take_presence admits only bodyless SLOT_STATUS: execute cannot
             // invoke the backend's reset, exchange or scratch operations.
             transport.execute(

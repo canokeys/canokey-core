@@ -17,13 +17,17 @@ pub trait Policy {
     const PARAMETERS: &'static [u8];
     const SUCCESS_ERROR: u8;
     const WRITE_PARAMETERS: bool;
-    fn header_error(header: &[u8; HEADER], length: u32, active: bool) -> u8;
     fn validate(header: &[u8; HEADER], receive_error: u8) -> u8;
 }
-/// The main loop alone calls this capability. Buffered receive never constructs
-/// an application backend. Streaming begin/feed may parse into the existing
+/// The main loop alone calls this capability. Buffered receive asks for owner
+/// admission without dispatching an application. Streaming begin/feed may parse into the existing
 /// product input owner; only exchange may execute a completed command.
 pub trait Backend {
+    /// Called once after validating a complete bounded XfrBlock header.
+    /// Admission may reserve/preempt a transport owner, but cannot execute APDUs.
+    fn admit(&mut self) -> bool {
+        true
+    }
     fn reset(&mut self);
     fn slot_power(&mut self) -> bool {
         self.reset();
@@ -40,7 +44,7 @@ pub trait Backend {
 mod sealed {
     pub trait Sealed {}
 }
-/// Fixed ingress strategies keep their own storage and timeout metadata.
+/// Fixed ingress strategies keep their own payload storage.
 /// They are sealed so profiles cannot add another payload allocation or hook.
 pub trait Input: sealed::Sealed {
     const INITIAL: Self;
@@ -78,14 +82,10 @@ impl Input for Buffered {
 }
 pub struct Streaming {
     begun: bool,
-    last: u32,
 }
 impl sealed::Sealed for Streaming {}
 impl Input for Streaming {
-    const INITIAL: Self = Self {
-        begun: false,
-        last: 0,
-    };
+    const INITIAL: Self = Self { begun: false };
     const STREAMING: bool = true;
     fn clear(&mut self) {
         *self = Self::INITIAL;
@@ -109,8 +109,13 @@ impl Input for Streaming {
         self.begun = false;
     }
 }
-struct NoBackend;
+struct NoBackend {
+    admitted: bool,
+}
 impl Backend for NoBackend {
+    fn admit(&mut self) -> bool {
+        self.admitted
+    }
     fn reset(&mut self) {}
     fn exchange(&mut self, _input: &[u8], _output: &mut [u8]) -> Result<usize, ()> {
         Err(())
@@ -124,15 +129,19 @@ enum Phase {
     Reply,
     InFlight,
 }
+// Private volatile state: keep byte metadata before the buffered APDU so
+// Thumb-1 can address it directly. This is neither a wire nor an exported ABI.
+#[repr(C)]
 pub struct Transport<P: Policy, I: Input> {
     frame: Frame,
-    input: I,
+    last: u32,
     reply_len: u16,
     phase: Phase,
     error: u8,
     active: bool,
     refused: bool,
     policy: PhantomData<P>,
+    input: I,
 }
 impl<P: Policy, I: Input> Default for Transport<P, I> {
     fn default() -> Self {
@@ -143,6 +152,7 @@ impl<P: Policy, I: Input> Transport<P, I> {
     pub const fn new() -> Self {
         Self {
             frame: Frame::new(),
+            last: 0,
             input: I::INITIAL,
             reply_len: 0,
             phase: Phase::Idle,
@@ -180,40 +190,48 @@ impl<P: Policy, I: Input> Transport<P, I> {
     pub fn presence_reply(&self) -> bool {
         self.phase == Phase::Reply && self.frame.header[0] == SLOT_STATUS
     }
-    fn receive_inner(&mut self, bytes: &[u8], admitted: bool, backend: &mut impl Backend) {
+    /// Reassemble the envelope before asking the facade to reserve an owner.
+    /// The admission callback runs once, only for a valid bounded XfrBlock;
+    /// refusal remains latched while its declared body is drained. A partial
+    /// header must neither preempt another transport nor claim application IO.
+    pub fn receive_at(&mut self, bytes: &[u8], now: u32, backend: &mut impl Backend) {
+        if bytes.is_empty() || !self.can_receive() {
+            return;
+        }
+        if self.timeout(now, backend) {
+            return;
+        }
+        self.last = now;
         if self.phase == Phase::Idle {
-            // Buffered USB messages require a complete first header. Streaming
-            // products deliberately accept a header fragmented across packets.
-            if !I::STREAMING && bytes.len() < HEADER {
-                return;
-            }
             self.frame = Frame::new();
             self.error = 0x00;
-            self.refused = !admitted;
+            self.refused = false;
             self.phase = Phase::Receiving;
             self.input.finished();
         }
         let error = &mut self.error;
         let input = &mut self.input;
-        let active = self.active;
-        let refused = self.refused;
-        let mut store = !refused
-            && self.frame.header[0] == TRANSFER
-            && self.frame.length() <= apdu::SHORT_FRAME_BYTES as u32;
+        let refused = &mut self.refused;
+        let mut store = !*refused && *error == 0x00 && self.frame.header[0] == TRANSFER;
         let trailing = self.frame.feed(bytes, |fragment| match fragment {
             Fragment::Header(header) => {
                 let length = payload_length(header);
                 // Streaming may claim the application input owner here, so all
                 // header-only scope/RFU checks must precede begin/feed. Buffered
-                // ingress cannot enter a backend until final dispatch.
-                let header_error = P::header_error(header, length, active);
-                *error = if I::STREAMING {
-                    P::validate(header, header_error)
-                } else {
-                    header_error
-                };
-                store =
-                    !refused && header[0] == TRANSFER && length <= apdu::SHORT_FRAME_BYTES as u32;
+                // ingress only asks for owner admission; application dispatch
+                // remains deferred until the declared body has completed.
+                let header_error =
+                    if header[0] == TRANSFER && length > apdu::SHORT_FRAME_BYTES as u32 {
+                        BAD_LENGTH
+                    } else {
+                        0x00
+                    };
+                *error = P::validate(header, header_error);
+                store = header[0] == TRANSFER && *error == 0x00;
+                if store {
+                    *refused = !backend.admit();
+                    store = !*refused;
+                }
                 if I::STREAMING && store && *error == 0x00 {
                     if input.begin(length as usize, backend) {
                         backend.arm(
@@ -226,12 +244,12 @@ impl<P: Policy, I: Input> Transport<P, I> {
                 }
             }
             Fragment::Body { offset, bytes } => {
-                if store && (!I::STREAMING || *error == 0x00) {
+                if store && *error == 0x00 {
                     input.feed(offset, bytes, backend);
                 }
             }
         });
-        if I::STREAMING && trailing != 0 {
+        if trailing != 0 {
             self.error = BAD_LENGTH;
         }
         if self.frame.complete() {
@@ -363,16 +381,18 @@ impl<P: Policy> Transport<P, Buffered> {
     pub fn idle(&self, _now: u32) -> bool {
         self.completed_transaction()
     }
+    /// Clock-free caller: receive at tick zero. USB facades use the timestamped
+    /// receive_at entry point and service timeout from their loop.
     pub fn receive(&mut self, bytes: &[u8]) {
         self.receive_admitted(bytes, true);
     }
-    /// Latch admission at the first packet; subsequent changes cannot publish
-    /// a refused request into a foreign owner's input or response workspace.
+    /// Admission is sampled when the complete header arrives. Once refused,
+    /// later packets cannot publish this request into another owner's workspace.
     pub fn receive_admitted(&mut self, bytes: &[u8], admitted: bool) {
         if bytes.is_empty() || !self.can_receive() {
             return;
         }
-        self.receive_inner(bytes, admitted, &mut NoBackend);
+        self.receive_at(bytes, 0, &mut NoBackend { admitted });
     }
 }
 impl<P: Policy> Transport<P, Streaming> {
@@ -380,29 +400,32 @@ impl<P: Policy> Transport<P, Streaming> {
         self.completed_transaction()
     }
     pub fn receive(&mut self, bytes: &[u8], now: u32, backend: &mut impl Backend) {
-        if bytes.is_empty() || !self.can_receive() {
-            return;
-        }
-        if self.receiving() && now.wrapping_sub(self.input.last) >= RECEIVE_TIMEOUT_MS {
-            self.timeout(now, backend);
-            return;
-        }
-        self.input.last = now;
-        self.receive_inner(bytes, true, backend);
+        self.receive_at(bytes, now, backend);
     }
-    pub fn timeout(&mut self, now: u32, backend: &mut impl Backend) {
-        if self.receiving() && now.wrapping_sub(self.input.last) >= RECEIVE_TIMEOUT_MS {
+}
+impl<P: Policy, I: Input> Transport<P, I> {
+    /// Expiry revokes a live RX owner, but a known envelope must still drain
+    /// its declared body before one error reply. Reinterpreting its late tail
+    /// as another header could otherwise execute unauthenticated power/APDUs.
+    /// Return true only when an incomplete header was discarded.
+    #[inline(never)]
+    pub fn timeout(&mut self, now: u32, backend: &mut impl Backend) -> bool {
+        if self.receiving()
+            && self.error == 0x00
+            && !self.refused
+            && now.wrapping_sub(self.last) >= RECEIVE_TIMEOUT_MS
+        {
             if self.input.pending() {
                 backend.reset();
-                self.input.finished();
             }
+            self.input.clear();
             if !self.frame.has_header() {
                 self.phase = Phase::Idle;
-            } else {
-                self.error = BAD_LENGTH;
-                self.phase = Phase::Queued;
+                return true;
             }
+            self.error = BAD_LENGTH;
         }
+        false
     }
 }
 

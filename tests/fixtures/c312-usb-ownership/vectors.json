@@ -1888,6 +1888,147 @@
           "expected": ""
         }
       ]
+    },
+    {
+      "id": "fragmented-header-completion-rechecks-WebUSB-owner",
+      "transport": "webusb",
+      "oracle_rows": [
+        "E01",
+        "E30",
+        "E32"
+      ],
+      "preconditions": "Fresh throwaway authenticator; configured USB; active CCID slot after literal PowerOn. One CCID poll followed by WebUSB poll after each event; endpoint bulk response is completed after observation. No physical USB timing claim.",
+      "steps": [
+        {
+          "setup": "c102000001000100",
+          "expected": "ff"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "62000000000001000000",
+          "expected": "",
+          "expected_ccid": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+        },
+        {
+          "setup": "4100000001000a00",
+          "expected": ""
+        },
+        {
+          "out": "00a4040005f000000000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000b00",
+          "expected": ""
+        },
+        {
+          "out": "0020000006313233343536",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "6f00000000",
+          "expected": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        },
+        {
+          "ccid": "000b000000",
+          "expected": "",
+          "expected_ccid": "8002000000000b0081006700",
+          "expected_ccid_c": ""
+        },
+        {
+          "setup": "4100000001000400",
+          "expected": ""
+        },
+        {
+          "out": "00200000",
+          "expected": ""
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "setup": "c101000001000001",
+          "expected": "6a82",
+          "expected_c": "9000"
+        },
+        {
+          "in": true,
+          "expected": ""
+        },
+        {
+          "out": "",
+          "expected": ""
+        }
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "A partial header preserves WebUSB PIN authority. Completing its valid bounded XfrBlock header performs ownership admission exactly once, preempts the completed WebUSB context and returns 6700 for the empty APDU. The following WebUSB command cannot recover prior selection/PIN. Pinned C discards both header pieces and retains WebUSB authority."
+      }
     }
   ]
 }

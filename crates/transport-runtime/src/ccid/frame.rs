@@ -33,29 +33,31 @@ impl Frame {
     }
     /// Deliver only declared bytes. Header and body callbacks borrow disjoint
     /// product input state synchronously and cannot retain a reference to Frame.
-    /// Return the trailing byte count for the product's final-packet policy.
+    /// Return the trailing byte count for common final-packet validation.
     pub fn feed(&mut self, mut bytes: &[u8], mut consume: impl FnMut(Fragment<'_>)) -> usize {
-        while !bytes.is_empty() && !self.complete() {
+        if !self.has_header() {
+            let offset = usize::from(self.header_bytes);
+            let length = bytes.len().min(HEADER - offset);
+            self.header[offset..offset + length].copy_from_slice(&bytes[..length]);
+            self.header_bytes += length as u8;
+            bytes = &bytes[length..];
             if !self.has_header() {
-                let offset = usize::from(self.header_bytes);
-                let length = bytes.len().min(HEADER - offset);
-                self.header[offset..offset + length].copy_from_slice(&bytes[..length]);
-                self.header_bytes += length as u8;
-                bytes = &bytes[length..];
-                if self.has_header() {
-                    self.remaining = self.length();
-                    consume(Fragment::Header(&self.header));
-                }
-            } else {
-                let length = bytes.len().min(self.remaining as usize);
-                let offset = (self.length() - self.remaining) as usize;
-                consume(Fragment::Body {
-                    offset,
-                    bytes: &bytes[..length],
-                });
-                self.remaining -= length as u32;
-                bytes = &bytes[length..];
+                return 0;
             }
+            self.remaining = self.length();
+            consume(Fragment::Header(&self.header));
+        }
+        // Each input slice contains at most one header suffix and one body
+        // span. Declared-body accounting stays separate from the header so a
+        // full u32 payload cannot wrap when ten header bytes are included.
+        let length = bytes.len().min(self.remaining as usize);
+        if length != 0 {
+            consume(Fragment::Body {
+                offset: (self.length() - self.remaining) as usize,
+                bytes: &bytes[..length],
+            });
+            self.remaining -= length as u32;
+            bytes = &bytes[length..];
         }
         bytes.len()
     }

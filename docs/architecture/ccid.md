@@ -24,7 +24,39 @@ expectations in `expected_ccid_c` and literal corrected Rust expectations in
 are excluded from C/Rust wire-parity totals. Saved historical reports remain
 unchanged. No response normalization or broad exception is applied.
 
-The two ingress strategies still differ in first-header fragmentation, trailing
-bytes and receive deadline. These remain open convergence work; a shared card
-policy alone does not establish complete CCID behavioral parity or physical
-USB/timing acceptance.
+Both ingress strategies now reassemble the ten-byte header and reject bytes
+beyond dwLength with BAD_LENGTH, retaining the shared slot/control error
+precedence. CCID 1.1 section 6 defines the message header, not a complete-header
+first-packet restriction; section 5.2.1 even permits an eight-byte endpoint.
+The chosen receiver accepts split headers without treating their prefix as
+permission to claim another transport's workspace.
+
+After the complete bounded XfrBlock header validates, Backend::admit runs once.
+CanoKey checks HID and WebUSB ownership there; a fragmented header cannot bypass
+or perform this admission early. Refusal stays latched while the declared body
+drains. Buffered receive does not dispatch an application; streaming begin/feed
+can reserve and parse the product's existing input owner. Power still validates
+its entire envelope before its separate slot_power admission.
+
+The shared local receive deadline is 2000 ms, using wrapping u32 arrival ticks;
+it is not a timeout mandated by CCID. Partial headers expire silently because
+no response slot/sequence is known. A valid partial body that expires loses its
+RX backing and execution permission, but its declared bytes still drain before
+one BAD_LENGTH reply. Rejected/refused envelopes retain CanoKey's complete-drain
+rule; they have no application input owner to revoke. Late body bytes must
+never become independently executable power/APDU headers. USB reset aborts the
+drain. No new request/response allocation is introduced: the buffered owner adds
+one four-byte clock; streaming moves its existing clock to Transport. Only
+successful streaming begin authorizes a timeout to reset application state.
+
+Both USB facades process the mailbox arrival tick before checking current loop
+time. This accepts a continuation that arrived before the deadline even if the
+loop runs later. Presence progress remains a transport-only bodyless slot-status
+path: it never expires a session or consumes power/APDU packets.
+
+The archived short-header recovery inputs retain literal C expectations in
+expected_c and intentional Rust differences linked here. Separate successful
+fragmentation and WebUSB completion inputs establish actual reassembly and
+ownership revocation; these are excluded from C/Rust wire-parity totals.
+Historical reports remain unchanged. Physical USB/timing acceptance and the
+CanoKey complete product stack/resource gates remain open.

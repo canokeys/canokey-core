@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Single-slot short-APDU card contract shared by buffered and streamed ingress.
 use super::Policy;
-use canokey_protocol::{apdu::SHORT_FRAME_BYTES, ccid::*};
+use canokey_protocol::ccid::*;
 
 /// CanoKey card identity, automatic voltage selection and read-only parameters.
 /// ICC power commands reset the application owner. As in the CanoKey card, a
@@ -13,13 +13,6 @@ impl Policy for ShortApdu {
     const PARAMETERS: &'static [u8] = T1;
     const SUCCESS_ERROR: u8 = SUCCESS_ERROR;
     const WRITE_PARAMETERS: bool = false;
-    fn header_error(header: &[u8; HEADER], length: u32, _active: bool) -> u8 {
-        if header[0] == TRANSFER && length > SHORT_FRAME_BYTES as u32 {
-            BAD_LENGTH
-        } else {
-            0x00
-        }
-    }
     fn validate(header: &[u8; HEADER], receive_error: u8) -> u8 {
         // Slot and control-envelope errors precede transport input rejection.
         let command = header[0];

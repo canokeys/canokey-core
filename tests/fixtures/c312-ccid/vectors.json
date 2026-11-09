@@ -1722,9 +1722,15 @@
         },
         {
           "packet": "62000000000001000000",
-          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+          "expected": "",
+          "expected_c": "801100000000010081003bf71100008131fe6543616e6f6b657999"
         }
-      ]
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the partial header instead of discarding it. The following independent PowerOn bytes complete that original header and are validated with their literal slot/length/RFU fields; they cannot invoke slot power as a new command."
+      }
     },
     {
       "id": "header-short2-independent-message-recovery",
@@ -1739,9 +1745,15 @@
         },
         {
           "packet": "62000000000001000000",
-          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+          "expected": "",
+          "expected_c": "801100000000010081003bf71100008131fe6543616e6f6b657999"
         }
-      ]
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the partial header instead of discarding it. The following independent PowerOn bytes complete that original header and are validated with their literal slot/length/RFU fields; they cannot invoke slot power as a new command."
+      }
     },
     {
       "id": "header-short3-independent-message-recovery",
@@ -1756,9 +1768,15 @@
         },
         {
           "packet": "62000000000001000000",
-          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+          "expected": "",
+          "expected_c": "801100000000010081003bf71100008131fe6543616e6f6b657999"
         }
-      ]
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the partial header instead of discarding it. The following independent PowerOn bytes complete that original header and are validated with their literal slot/length/RFU fields; they cannot invoke slot power as a new command."
+      }
     },
     {
       "id": "header-short4-independent-message-recovery",
@@ -1773,9 +1791,15 @@
         },
         {
           "packet": "62000000000001000000",
-          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+          "expected": "",
+          "expected_c": "801100000000010081003bf71100008131fe6543616e6f6b657999"
         }
-      ]
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the partial header instead of discarding it. The following independent PowerOn bytes complete that original header and are validated with their literal slot/length/RFU fields; they cannot invoke slot power as a new command."
+      }
     },
     {
       "id": "header-short5-independent-message-recovery",
@@ -1790,9 +1814,15 @@
         },
         {
           "packet": "62000000000001000000",
-          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+          "expected": "80000000006200420500",
+          "expected_c": "801100000000010081003bf71100008131fe6543616e6f6b657999"
         }
-      ]
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the partial header instead of discarding it. The following independent PowerOn bytes complete that original header and are validated with their literal slot/length/RFU fields; they cannot invoke slot power as a new command."
+      }
     },
     {
       "id": "header-short6-independent-message-recovery",
@@ -1807,9 +1837,15 @@
         },
         {
           "packet": "62000000000001000000",
-          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+          "expected": "80000000000062410100",
+          "expected_c": "801100000000010081003bf71100008131fe6543616e6f6b657999"
         }
-      ]
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the partial header instead of discarding it. The following independent PowerOn bytes complete that original header and are validated with their literal slot/length/RFU fields; they cannot invoke slot power as a new command."
+      }
     },
     {
       "id": "header-short7-independent-message-recovery",
@@ -1824,9 +1860,15 @@
         },
         {
           "packet": "62000000000001000000",
-          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+          "expected": "80000000000001410100",
+          "expected_c": "801100000000010081003bf71100008131fe6543616e6f6b657999"
         }
-      ]
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the partial header instead of discarding it. The following independent PowerOn bytes complete that original header and are validated with their literal slot/length/RFU fields; they cannot invoke slot power as a new command."
+      }
     },
     {
       "id": "header-short8-independent-message-recovery",
@@ -1841,9 +1883,15 @@
         },
         {
           "packet": "62000000000001000000",
-          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+          "expected": "80000000000001410800",
+          "expected_c": "801100000000010081003bf71100008131fe6543616e6f6b657999"
         }
-      ]
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the partial header instead of discarding it. The following independent PowerOn bytes complete that original header and are validated with their literal slot/length/RFU fields; they cannot invoke slot power as a new command."
+      }
     },
     {
       "id": "header-short9-independent-message-recovery",
@@ -1858,9 +1906,15 @@
         },
         {
           "packet": "62000000000001000000",
-          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999"
+          "expected": "80000000000001410800",
+          "expected_c": "801100000000010081003bf71100008131fe6543616e6f6b657999"
         }
-      ]
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the partial header instead of discarding it. The following independent PowerOn bytes complete that original header and are validated with their literal slot/length/RFU fields; they cannot invoke slot power as a new command."
+      }
     },
     {
       "id": "error-family-61",
@@ -2252,6 +2306,213 @@
           "expected": "800200000000070081006986"
         }
       ]
+    },
+    {
+      "id": "fragmented-power-header-1",
+      "oracle_rows": [
+        "E01"
+      ],
+      "preconditions": "Fresh authenticator storage, inactive slot; no application callback before the complete CCID header.",
+      "steps": [
+        {
+          "packet": "62",
+          "expected": ""
+        },
+        {
+          "packet": "000000000001000000",
+          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999",
+          "expected_c": ""
+        }
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the ten-byte header across packets; pinned C discards each first packet shorter than ten bytes."
+      }
+    },
+    {
+      "id": "fragmented-power-header-2",
+      "oracle_rows": [
+        "E01"
+      ],
+      "preconditions": "Fresh authenticator storage, inactive slot; no application callback before the complete CCID header.",
+      "steps": [
+        {
+          "packet": "6200",
+          "expected": ""
+        },
+        {
+          "packet": "0000000001000000",
+          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999",
+          "expected_c": ""
+        }
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the ten-byte header across packets; pinned C discards each first packet shorter than ten bytes."
+      }
+    },
+    {
+      "id": "fragmented-power-header-3",
+      "oracle_rows": [
+        "E01"
+      ],
+      "preconditions": "Fresh authenticator storage, inactive slot; no application callback before the complete CCID header.",
+      "steps": [
+        {
+          "packet": "620000",
+          "expected": ""
+        },
+        {
+          "packet": "00000001000000",
+          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999",
+          "expected_c": ""
+        }
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the ten-byte header across packets; pinned C discards each first packet shorter than ten bytes."
+      }
+    },
+    {
+      "id": "fragmented-power-header-4",
+      "oracle_rows": [
+        "E01"
+      ],
+      "preconditions": "Fresh authenticator storage, inactive slot; no application callback before the complete CCID header.",
+      "steps": [
+        {
+          "packet": "62000000",
+          "expected": ""
+        },
+        {
+          "packet": "000001000000",
+          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999",
+          "expected_c": ""
+        }
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the ten-byte header across packets; pinned C discards each first packet shorter than ten bytes."
+      }
+    },
+    {
+      "id": "fragmented-power-header-5",
+      "oracle_rows": [
+        "E01"
+      ],
+      "preconditions": "Fresh authenticator storage, inactive slot; no application callback before the complete CCID header.",
+      "steps": [
+        {
+          "packet": "6200000000",
+          "expected": ""
+        },
+        {
+          "packet": "0001000000",
+          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999",
+          "expected_c": ""
+        }
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the ten-byte header across packets; pinned C discards each first packet shorter than ten bytes."
+      }
+    },
+    {
+      "id": "fragmented-power-header-6",
+      "oracle_rows": [
+        "E01"
+      ],
+      "preconditions": "Fresh authenticator storage, inactive slot; no application callback before the complete CCID header.",
+      "steps": [
+        {
+          "packet": "620000000000",
+          "expected": ""
+        },
+        {
+          "packet": "01000000",
+          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999",
+          "expected_c": ""
+        }
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the ten-byte header across packets; pinned C discards each first packet shorter than ten bytes."
+      }
+    },
+    {
+      "id": "fragmented-power-header-7",
+      "oracle_rows": [
+        "E01"
+      ],
+      "preconditions": "Fresh authenticator storage, inactive slot; no application callback before the complete CCID header.",
+      "steps": [
+        {
+          "packet": "62000000000001",
+          "expected": ""
+        },
+        {
+          "packet": "000000",
+          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999",
+          "expected_c": ""
+        }
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the ten-byte header across packets; pinned C discards each first packet shorter than ten bytes."
+      }
+    },
+    {
+      "id": "fragmented-power-header-8",
+      "oracle_rows": [
+        "E01"
+      ],
+      "preconditions": "Fresh authenticator storage, inactive slot; no application callback before the complete CCID header.",
+      "steps": [
+        {
+          "packet": "6200000000000100",
+          "expected": ""
+        },
+        {
+          "packet": "0000",
+          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999",
+          "expected_c": ""
+        }
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the ten-byte header across packets; pinned C discards each first packet shorter than ten bytes."
+      }
+    },
+    {
+      "id": "fragmented-power-header-9",
+      "oracle_rows": [
+        "E01"
+      ],
+      "preconditions": "Fresh authenticator storage, inactive slot; no application callback before the complete CCID header.",
+      "steps": [
+        {
+          "packet": "620000000000010000",
+          "expected": ""
+        },
+        {
+          "packet": "00",
+          "expected": "801100000000010081003bf71100008131fe6543616e6f6b657999",
+          "expected_c": ""
+        }
+      ],
+      "difference": {
+        "disposition": "intentional difference",
+        "decision": "docs/architecture/ccid.md",
+        "reason": "Rust reassembles the ten-byte header across packets; pinned C discards each first packet shorter than ten bytes."
+      }
     }
   ]
 }

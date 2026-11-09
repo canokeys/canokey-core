@@ -12,8 +12,14 @@ struct Mock {
     disarms: usize,
     fail: bool,
     refuse_power: bool,
+    admission_calls: usize,
+    refuse_input: bool,
 }
 impl Backend for Mock {
+    fn admit(&mut self) -> bool {
+        self.admission_calls += 1;
+        !self.refuse_input
+    }
     fn reset(&mut self) {
         self.resets += 1;
     }
@@ -119,7 +125,7 @@ fn short261_every_split_and_packet_boundary() {
     apdu.push(0);
     let wire = frame(TRANSFER, &apdu);
     assert_eq!(wire.len(), 271);
-    for split in core::iter::once(0).chain(HEADER..=wire.len()) {
+    for split in 0..=wire.len() {
         let (mut t, mut m) = start();
         t.receive(&wire[..split]);
         t.receive(&wire[split..]);
@@ -138,12 +144,15 @@ fn short261_every_split_and_packet_boundary() {
     }
 }
 #[test]
-fn truncated_first_header_is_discarded_before_independent_message() {
+fn fragmented_header_waits_for_completion_before_power_or_reply() {
     for length in 1..HEADER {
         let (mut t, mut m) = (Transport::new(), Mock::default());
-        t.receive(&frame(POWER_ON, &[])[..length]);
-        assert!(t.completed_transaction());
-        t.receive(&frame(POWER_ON, &[]));
+        let wire = frame(POWER_ON, &[]);
+        t.receive(&wire[..length]);
+        assert!(t.receiving());
+        assert!(!t.queued());
+        assert_eq!(m.power_cycles, 0);
+        t.receive(&wire[length..]);
         let reply = finish(&mut t, &mut m, false);
         assert_eq!(&reply[HEADER..], ATR);
         assert_eq!((reply[7], reply[8]), (0, SUCCESS_ERROR));
@@ -164,7 +173,10 @@ fn parameters_preserve_atr_timing_and_cover_the_extension_interval() {
     let reply = finish(&mut transport, &mut backend, false);
     // CCID 1.1 section 6.1.8: Fi/Di, checksum/convention, guard,
     // BWI/CWI, clock stop, IFSC, NAD. Literal timing is independent of T1.
-    assert_eq!(&reply[HEADER..], &[0x11, 0x10, 0x00, 0x65, 0x00, 0xfe, 0x00]);
+    assert_eq!(
+        &reply[HEADER..],
+        &[0x11, 0x10, 0x00, 0x65, 0x00, 0xfe, 0x00]
+    );
     assert_eq!(reply[HEADER + 3], ATR[8]);
     assert_eq!(reply[HEADER + 5], ATR[7]);
     // ISO 7816-3: BWT = 11 ETU + 2^BWI * 960 * 372/f; Fi372/Di1,
@@ -207,7 +219,7 @@ fn oversized_and_slot_payloads_drain_fully_before_one_reply_and_recover() {
             let mut output = [0; HEADER + REPLY];
             for chunk in wire[..wire.len() - 1].chunks(64) {
                 t.receive(chunk);
-                // There is no receive clock/deadline to expire between chunks.
+                // The clock-free helper keeps a fixed arrival tick for this drain.
                 t.execute(false, &mut m, &mut output);
                 assert!(t.reply(&output).is_none());
             }
@@ -307,4 +319,36 @@ fn pending_in_is_immutable_and_busy_power_preserves_card_context() {
     assert!(!t.can_receive());
     t.completed();
     assert!(t.can_receive());
+}
+
+#[test]
+fn complete_header_admits_once_and_refusal_remains_latched_through_drain() {
+    for split in 1..HEADER {
+        let (mut transport, mut backend) = start();
+        let body = [0x5a; 120];
+        let wire = frame(TRANSFER, &body);
+        transport.receive_at(&wire[..split], 0, &mut backend);
+        assert_eq!(backend.admission_calls, 0);
+        backend.refuse_input = true;
+        transport.receive_at(&wire[split..64], 1, &mut backend);
+        assert_eq!(backend.admission_calls, 1);
+        backend.refuse_input = false;
+        transport.timeout(3001, &mut backend);
+        assert!(transport.receiving());
+        transport.receive_at(&wire[64..], 3002, &mut backend);
+        assert_eq!(backend.admission_calls, 1);
+        assert_eq!(
+            &finish(&mut transport, &mut backend, false)[HEADER..],
+            &[0x64, 0x00]
+        );
+        assert_eq!((backend.executions, backend.resets), (0, 0));
+    }
+    for (length, slot) in [(262, 0x00), (4, 0x01)] {
+        let mut transport = Transport::new();
+        let mut backend = Mock::default();
+        let mut wire = frame(TRANSFER, &vec![0x00; length]);
+        wire[SLOT_OFFSET] = slot;
+        transport.receive_at(&wire, 0, &mut backend);
+        assert_eq!(backend.admission_calls, 0);
+    }
 }

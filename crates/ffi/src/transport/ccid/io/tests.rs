@@ -162,9 +162,6 @@ fn normal_exchange() {
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     packet(&POWER[3..]);
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
-    assert_eq!(controller().length, 0);
-    packet(&POWER);
-    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     {
         let c = controller();
         assert_eq!(c.length, 27);
@@ -186,6 +183,44 @@ fn normal_exchange() {
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
 }
 
+fn receive_deadlines() {
+    use canokey_protocol::ccid::{BAD_LENGTH, COMMAND_FAILED, HEADER};
+    // Expire a header without invoking power/reset or publishing a reply.
+    packet(&POWER[..3]);
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
+    controller().now = controller().now.wrapping_add(2000);
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
+    assert_eq!(controller().length, 0);
+    normal_exchange();
+
+    // A continuation arrives in the mailbox before the deadline. The loop
+    // runs later: admission must use arrival time before servicing loop time.
+    packet(&SELECT[..12]);
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
+    controller().now = controller().now.wrapping_add(1999);
+    packet(&SELECT[12..]);
+    controller().now = controller().now.wrapping_add(2);
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
+    assert_eq!(controller().length, 12);
+    assert_eq!(controller().saved[8], canokey_protocol::ccid::SUCCESS_ERROR);
+    complete();
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
+
+    // The deadline aborts execution; the error waits for the declared drain.
+    packet(&SELECT[..12]);
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
+    controller().now = controller().now.wrapping_add(2000);
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
+    assert_eq!(controller().length, 0);
+    packet(&SELECT[12..]);
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
+    assert_eq!(controller().length, HEADER);
+    assert_eq!(&controller().saved[7..9], &[COMMAND_FAILED, BAD_LENGTH]);
+    complete();
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
+    normal_exchange();
+}
+
 #[cfg(not(any(
     feature = "admin",
     feature = "pass",
@@ -201,6 +236,7 @@ fn ccid_controller_leases_timer_reset_and_fragmentation() {
     unsafe {
         configure();
         normal_exchange();
+        receive_deadlines();
         packet(&[]);
         crate::transport::ccid::poll::<crate::platform::Native>();
         assert_ne!(ck_ccid_io_idle(), 0);
