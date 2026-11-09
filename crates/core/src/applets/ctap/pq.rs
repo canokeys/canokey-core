@@ -9,7 +9,9 @@ use canokey_ctap::streaming as shared;
 use canokey_protocol::response::StatusWord as Sw;
 #[cfg(test)]
 use shared::FRAMING_BYTES;
-pub use shared::{Framing, Mode, Pending};
+#[cfg(test)]
+use shared::Mode;
+pub use shared::{Framing, Pending};
 
 struct Profile;
 impl<B: Backends> shared::Profile<B> for Profile {

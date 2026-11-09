@@ -6,7 +6,7 @@ use crate::{
     ports::{KeyOperation, Platform, alg},
     runtime::workspace::Workspace,
 };
-use canokey_ctap::response::credential::{self as reply, Body, Envelope, Fields};
+use canokey_ctap::response::credential::{self as reply, Body, Envelope};
 use canokey_ctap::{authorization, session::Boundary};
 
 mod selection;
@@ -716,6 +716,82 @@ fn append_extensions(
     Ok(auth_len)
 }
 
+struct PqConstruction<'r, 'p, 'w, B: crate::ports::Backends>(
+    core::marker::PhantomData<(&'r (), Platform<'p, B>, Workspace<'w>)>,
+);
+impl<'r, 'p, 'w, B: crate::ports::Backends> canokey_ctap::streaming::reply::Construction
+    for PqConstruction<'r, 'p, 'w, B>
+{
+    type Request = Signing<'r>;
+    type Workspace = Workspace<'w>;
+    type Platform = Platform<'p, B>;
+    type Error = Status;
+    #[inline(always)]
+    fn invalid() -> Status {
+        Status::Other
+    }
+    #[inline(always)]
+    fn fields<'a>(
+        request: &'a Signing<'r>,
+    ) -> canokey_ctap::streaming::reply::CredentialFields<'a> {
+        canokey_ctap::streaming::reply::CredentialFields {
+            id: request.id,
+            client_hash: request.client_hash,
+            algorithm: request.algorithm,
+            count: request.count,
+            details: request.uv && request.details,
+            blob_key: request.id[1] & resident::LARGE_BLOB_KEY != 0,
+        }
+    }
+    #[inline(always)]
+    fn buffers<'a>(
+        workspace: &'a mut Workspace<'w>,
+    ) -> canokey_ctap::streaming::reply::Buffers<'a> {
+        canokey_ctap::streaming::reply::Buffers {
+            key: &mut workspace.key.bytes,
+            input: workspace.input,
+            output: workspace.output,
+        }
+    }
+    #[inline(always)]
+    fn certificate(platform: &mut Platform<'p, B>) -> Result<usize, Status> {
+        super::attestation::certificate(platform)
+    }
+    #[inline(always)]
+    fn extensions(
+        platform: &mut Platform<'p, B>,
+        request: &Signing<'r>,
+        workspace: &mut Workspace<'w>,
+        cursor: usize,
+    ) -> Result<usize, Status> {
+        auth_data::extend::<AuthData<'_, 'r, 'p, 'w, B>>(platform, request, workspace, cursor)
+    }
+    #[inline(always)]
+    fn user<'a>(
+        request: &Signing<'r>,
+        key: &'a mut [u8],
+        platform: &mut Platform<'p, B>,
+    ) -> Result<Option<resident::Entry<'a>>, Status> {
+        load_user(request.user_slot, key, platform)
+    }
+    #[inline(always)]
+    fn blob_key(
+        request: &Signing<'r>,
+        output: &mut [u8; canokey_ctap::credential::KEY_BYTES],
+        platform: &mut Platform<'p, B>,
+    ) -> Result<(), Status> {
+        credential::large_blob_key(request.id, request.rp, output, platform)
+    }
+    #[inline(always)]
+    fn wipe(platform: &Platform<'p, B>, bytes: &mut [u8]) {
+        platform.memory.wipe(bytes);
+    }
+    #[inline(always)]
+    fn attested(output: &mut [u8], id: &credential::Id) {
+        attested_header(output, id);
+    }
+}
+
 fn respond_mldsa_assertion(
     request: &Signing<'_>,
     w: &mut Workspace,
@@ -723,58 +799,11 @@ fn respond_mldsa_assertion(
     response: &mut Option<super::Response>,
     auth_len: usize,
 ) -> Result<usize, Status> {
-    let params = crate::ports::mldsa::parameters(request.algorithm).ok_or(Status::Other)?;
-    let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
-    w.input[auth_len..auth_len + 32].copy_from_slice(request.client_hash);
-    w.input[auth_len + 32..auth_len + 64].copy_from_slice(&w.key.bytes[..32]);
-    let user = load_user(request.user_slot, &mut w.key.bytes, p)?;
-    w.output[0] = 0;
-    let mut e = Encoder::new(&mut w.output[1..]);
-    reply::start_fields(
-        &mut e,
-        Fields {
-            make: false,
-            user: user.is_some(),
-            count: request.count,
-            blob_key: has_blob_key,
-        },
-        request.id,
-        Body::External(auth_len),
-    )
-    .map_err(|_| Status::Other)?;
-    e.finish().map_err(|_| Status::Other)?;
-    let prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
-    let mut tail = Encoder::new(&mut w.output[prefix..]);
-    let signature_at = crate::runtime::workspace::OUTPUT_BYTES
-        - reply::signature_header(&mut tail, params.signature_bytes);
-    reply::tail_fields(&mut tail, user.is_some(), request.count, |e| {
-        super::encoding::user(e, user.as_ref().unwrap(), request.uv && request.details)
-    })
-    .map_err(|_| Status::Other)?;
-    if has_blob_key {
-        let mut key = [0; 32];
-        credential::large_blob_key(request.id, request.rp, &mut key, p)?;
-        reply::blob_key(&mut tail, false, &key);
-        p.memory.wipe(&mut key);
-    }
-    tail.finish().map_err(|_| Status::Other)?;
-    let output = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
-    *response = Some(super::Response::Pending(super::pq::Pending {
-        algorithm: request.algorithm,
-        mode: super::pq::Mode::Assert,
-        prefix,
-        auth: auth_len,
-        public_at: 0,
-        // The generated signature follows the key-3 byte-string header.  `prefix`
-        // points at the start of that header, so inserting at it would place the
-        // signature before its own CBOR length prefix.
-        signature_at,
-        certificate: None,
-        output,
-        hash_prefix: (prefix, auth_len),
-        hash_suffix: (prefix, auth_len),
-    }));
-    Ok(output + auth_len + params.signature_bytes)
+    let (plan, length) = canokey_ctap::streaming::reply::assertion::<PqConstruction<'_, '_, '_, _>>(
+        p, request, w, auth_len,
+    )?;
+    *response = Some(super::Response::Pending(plan));
+    Ok(length)
 }
 
 fn respond_mldsa_make(
@@ -784,69 +813,12 @@ fn respond_mldsa_make(
     response: &mut Option<super::Response>,
     auth_prefix: usize,
 ) -> Result<usize, Status> {
-    let params = crate::ports::mldsa::parameters(request.algorithm).ok_or(Status::Other)?;
-    let cert_len = super::attestation::certificate(p)?;
-    // Extensions are encoded once for classic and streamed keys. The large
-    // public key is spliced between the COSE header and these extension bytes.
-    let auth_end = auth_data::extend::<AuthData<'_, '_, '_, '_, _>>(p, request, w, auth_prefix)?;
-    let extension_len = auth_end - auth_prefix;
-    let mut cose = [0u8; 32];
-    let mut ce = Encoder::new(&mut cose[..]);
-    super::encoding::mldsa_public_header(&mut ce, request.algorithm).map_err(|_| Status::Other)?;
-    let cose_prefix_len = 32 - ce.writer().len();
-    let auth_prefix_len = auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES + cose_prefix_len;
-    let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
-    w.output[0] = 0;
-    let mut e = Encoder::new(&mut w.output[1..]);
-    reply::start_fields(
-        &mut e,
-        Fields {
-            make: true,
-            user: false,
-            count: 0,
-            blob_key: has_blob_key,
-        },
-        request.id,
-        Body::External(auth_prefix_len + params.public_bytes + extension_len),
-    )
-    .map_err(|_| Status::Other)?;
-    e.finish().map_err(|_| Status::Other)?;
-    let auth_start = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
-    w.output[auth_start..auth_start + auth_prefix].copy_from_slice(&w.input[..auth_prefix]);
-    attested_header(&mut w.output[auth_start..], request.id);
-    let cose_at = auth_start + auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES;
-    let public_at = cose_at + cose_prefix_len;
-    w.output[cose_at..public_at].copy_from_slice(&cose[..cose_prefix_len]);
-    w.output[public_at..public_at + extension_len].copy_from_slice(&w.input[auth_prefix..auth_end]);
-    let mut tail = Encoder::new(&mut w.output[public_at + extension_len..]);
-    reply::statement_prefix(&mut tail, true, None).map_err(|_| Status::Other)?;
-    tail.finish().map_err(|_| Status::Other)?;
-    // Stream::attest inserts the encoded DER signature here, exactly once.
-    let signature_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
-    reply::certificate_body(&mut tail, Body::External(cert_len));
-    tail.finish().map_err(|_| Status::Other)?;
-    let cert_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
-    if has_blob_key {
-        let mut key = [0; 32];
-        credential::large_blob_key(request.id, request.rp, &mut key, p)?;
-        reply::blob_key(&mut tail, true, &key);
-        p.memory.wipe(&mut key);
-    }
-    tail.finish().map_err(|_| Status::Other)?;
-    let output = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
-    w.input[..32].copy_from_slice(request.client_hash);
-    w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
-    *response = Some(super::Response::Pending(super::pq::Pending {
-        algorithm: request.algorithm,
-        mode: super::pq::Mode::Make,
-        prefix: auth_start,
-        auth: 0,
-        public_at,
-        signature_at,
-        certificate: Some((cert_at, cert_len)),
-        output,
-        hash_prefix: (auth_start, auth_prefix_len),
-        hash_suffix: (public_at, extension_len),
-    }));
-    Ok(output + params.public_bytes + cert_len)
+    let (plan, length) = canokey_ctap::streaming::reply::make::<PqConstruction<'_, '_, '_, _>>(
+        p,
+        request,
+        w,
+        auth_prefix,
+    )?;
+    *response = Some(super::Response::Pending(plan));
+    Ok(length)
 }

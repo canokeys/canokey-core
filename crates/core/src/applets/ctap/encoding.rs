@@ -5,14 +5,14 @@ use super::resident;
 use super::wire::cose;
 use super::{credential, settings::Sm2};
 use crate::ports::alg;
+#[cfg(test)]
+use canokey_ctap::response::encoding::mldsa_public_header;
 use canokey_protocol::cbor::{EncodeError, Encoder};
 
 use canokey_ctap::response::encoding as shared;
 #[cfg(test)]
 use canokey_ctap::response::encoding::{ATTESTATION, CERTIFICATE, MAKE_HEADER, descriptor};
-pub(super) use canokey_ctap::response::encoding::{
-    management_header, management_tail, mldsa_public_header, user,
-};
+pub(super) use canokey_ctap::response::encoding::{management_header, management_tail, user};
 /// Fixed P-256 agreement response, including the CTAP status byte.
 /// Typed capacities make the coordinate sizes and final offsets static.
 pub(super) fn key_agreement(
