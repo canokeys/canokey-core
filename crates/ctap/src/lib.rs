@@ -19,6 +19,8 @@ pub mod session;
 pub mod settings;
 pub mod signing;
 pub mod status;
+#[cfg(feature = "streaming")]
+pub mod streaming;
 pub mod workspace;
 
 pub mod info;

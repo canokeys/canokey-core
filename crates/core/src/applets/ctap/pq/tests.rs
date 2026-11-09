@@ -2,6 +2,7 @@
 extern crate std;
 use super::*;
 use crate::ports::*;
+use crate::ports::{DigestOperation as Hash, StreamOperation as Op};
 use sha2::{Digest, Sha256};
 use std::{
     cell::{Cell, RefCell},
@@ -195,7 +196,7 @@ fn staged(plan: Pending, memory: &Backend) -> SessionWorkspace {
 fn erased(stream: &Stream<'_>) {
     assert!(stream.crypto.bytes.iter().all(|&b| b == 0));
     assert!(stream.framing.bytes.iter().all(|&b| b == 0));
-    assert_eq!(stream.framing.material, [0; 64]);
+    assert_eq!(*stream.framing.material(), [0; 64]);
 }
 
 #[test]
@@ -220,9 +221,9 @@ fn framing_stays_in_place_and_every_segment_boundary_reads_exactly() {
                 let length = Stream::prepare(plan, &mut w, &mut p).unwrap();
                 let mut stream = w.ctap_stream().unwrap();
                 assert_eq!(stream.framing.bytes.as_ptr() as usize, output_at);
-                assert_eq!(stream.framing.material, [0; 64]);
+                assert_eq!(*stream.framing.material(), [0; 64]);
                 assert!(
-                    stream.framing.bytes[stream.framing.length..]
+                    stream.framing.bytes[stream.framing.length()..]
                         .iter()
                         .all(|&b| b == 0)
                 );
@@ -365,7 +366,7 @@ fn short_or_failed_generated_read_does_not_advance_response() {
                 stream.read(0, &mut [0; 64], &mut p),
                 Err(Sw::UNABLE_TO_PROCESS)
             );
-            assert_eq!(stream.framing.emitted, 0);
+            assert_eq!(stream.framing.emitted(), 0);
             stream.close(&mut p);
             erased(&stream);
         }
@@ -394,7 +395,7 @@ fn full_capacity_insertion_preserves_both_sides_and_overflow_is_non_mutating() {
     assert_eq!(w.classic_with(&memory).output.as_slice(), original);
     Stream::transfer(plan, &mut w, &mut p).unwrap();
     let stream = w.ctap_stream().unwrap();
-    assert_eq!(stream.framing.length, FRAMING_BYTES);
+    assert_eq!(stream.framing.length(), FRAMING_BYTES);
     assert_eq!(
         &stream.framing.bytes[..plan.prefix],
         &original[..plan.prefix]

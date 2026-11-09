@@ -179,7 +179,7 @@ SM2 signs its ZA-prefixed digest with fixed-width output. Native results must be
 64 bytes before encoding. Product capabilities borrow existing key, transcript
 and output backing, preserving primitive error mapping and fault checks. The
 engine does not select attestation keys, commit resident records or publish a
-response; those stages and PQ streaming remain to migrate.
+response; provisioned ordinary signing/certificate assembly remains to migrate.
 
 `registration::execute` owns create/commit/respond transaction sequencing after
 successful authorization and presence. An explicit commit profile preserves
@@ -199,3 +199,29 @@ skips key access for an admitted zero certificate length and preserves product
 record/source errors. Source capabilities admit the exact private-key length;
 callers retain erasure on partial reads and certificate reload/signing owners.
 Strict PQ registration still requires both materials without self fallback.
+
+
+With the explicit `streaming` feature, `streaming` owns the ML-DSA response
+engine. It stages clientDataHash/seed into the existing 768-byte framing view,
+initializes public generation or streamed assertions, and reads five sequential
+framing/generated/framing/certificate/framing segments without retaining a
+complete public key, signature or certificate. Registration hashes the public
+key through a 128-byte window, aborts hash and public primitives before P-256
+attestation, inserts DER/CBOR framing in place, then reopens the same public seed
+for response emission. Seed staging is wiped after initialization on every exit;
+failed initialization closes the primitive and erases all session views. A read
+failure leaves the response cursor unchanged, and the outer owner must close
+rather than retry a partially consumed native stream.
+
+Product adapters retain workspace variant transitions and strict provisioned
+material/error projections. Pending offsets are internal metadata produced by
+an admitted response builder, never unvalidated wire values. The framing struct
+keeps the same C representation and field order for the product's aliased
+workspace. vLEI does not enable this feature or admit PQ algorithms; the shared
+capability does not change product GetInfo or algorithm policy. PQ segmented
+public-key/authenticatorData construction and strict material admission remain
+product orchestration work. Portable engine tests run with:
+
+```sh
+cargo test -p canokey-ctap --features streaming
+```

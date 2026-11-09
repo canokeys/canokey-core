@@ -25,7 +25,7 @@ ndef = ["canokey-ports/ndef"]
 dynamic-backend = ["canokey-ports/dynamic-backend"]
 static-backend = ["canokey-ports/static-backend"]
 admin = ["canokey-ports/admin"]
-ctap = ["canokey-ports/ctap"]
+ctap = ["canokey-ports/ctap", "canokey-ctap/streaming"]
 openpgp = ["canokey-ports/openpgp"]
 piv = ["canokey-ports/piv"]
 
