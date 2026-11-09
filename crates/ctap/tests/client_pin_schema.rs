@@ -29,18 +29,8 @@ fn command_requirements_scope_and_error_order_cover_every_field_subset() {
                         None
                     };
                     assert_eq!(
-                        admit(
-                            command,
-                            seen,
-                            permissions,
-                            rp,
-                            ValidationOrder::RequiredFirst
-                        ),
+                        admit(command, seen, permissions, rp),
                         missing.or(scope).map_or(Ok(()), Err)
-                    );
-                    assert_eq!(
-                        admit(command, seen, permissions, rp, ValidationOrder::ScopeFirst),
-                        scope.or(missing).map_or(Ok(()), Err)
                     );
                 }
             }

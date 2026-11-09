@@ -64,50 +64,21 @@ pub enum Error {
     UnauthorizedPermission,
 }
 
-/// Preserve first-error policy: incremental schemas finish required-field
-/// checks before scope checks; borrowed schemas check scope before extraction.
-#[derive(Clone, Copy)]
-pub enum ValidationOrder {
-    RequiredFirst,
-    ScopeFirst,
-}
-
-pub fn admit(
-    command: Command,
-    seen: u16,
-    permissions: u16,
-    rp_present: bool,
-    order: ValidationOrder,
-) -> Result<(), Error> {
-    let required = || {
-        if seen & command.required() != command.required() {
-            Err(Error::MissingParameter)
-        } else {
-            Ok(())
-        }
-    };
-    let scope = || {
-        if command == Command::Token && seen & SCOPE_FIELDS != 0x00 {
-            return Err(Error::InvalidParameter);
-        }
-        if command == Command::TokenPermissions
-            && permissions & PERMISSION_RP != 0x00
-            && !rp_present
-        {
-            return Err(Error::MissingParameter);
-        }
-        Ok(())
-    };
-    match order {
-        ValidationOrder::RequiredFirst => {
-            required()?;
-            scope()
-        }
-        ValidationOrder::ScopeFirst => {
-            scope()?;
-            required()
-        }
+/// After structural/field validation, require all command fields before scope
+/// checks. A legacy token carrying forbidden scope but missing agreement/hash
+/// reports MissingParameter; complete requests with scope report InvalidParameter.
+/// This admission is independent of parser ownership and has no state effects.
+pub fn admit(command: Command, seen: u16, permissions: u16, rp_present: bool) -> Result<(), Error> {
+    if seen & command.required() != command.required() {
+        return Err(Error::MissingParameter);
     }
+    if command == Command::Token && seen & SCOPE_FIELDS != 0x00 {
+        return Err(Error::InvalidParameter);
+    }
+    if command == Command::TokenPermissions && permissions & PERMISSION_RP != 0x00 && !rp_present {
+        return Err(Error::MissingParameter);
+    }
+    Ok(())
 }
 
 /// Products select available bits, unavailable defined bits, and treatment of

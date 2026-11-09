@@ -903,3 +903,12 @@ existing output owner invokes the shared outlined extension stage after public
 output. Failed extension output is provisional and must be erased by the outer
 owner before returning an error. Signing/publication require successful assembly;
 no separate complete response or key buffer is introduced.
+
+
+ClientPIN required/scope admission uses the shared `request::admit` without a
+product ordering profile. After structural and individual field checks, require
+command fields before rejecting forbidden legacy-token scope or missing RP for
+permissioned MC/GA tokens. A legacy getPINToken request missing agreement/hash
+and carrying scope reports MissingParameter; a complete legacy request with scope
+reports InvalidParameter. The admission engine performs no crypto, storage,
+presence or token mutation. Product permission capabilities remain explicit.

@@ -86,7 +86,6 @@ impl Parser {
             f.seen,
             u16::from(f.params.permissions),
             f.params.rp_len != 0,
-            schema::ValidationOrder::RequiredFirst,
         )
         .map_err(schema_error)?;
         if f.params.subcommand == wire::GET_AGREEMENT {
@@ -307,6 +306,29 @@ mod tests {
 #[cfg(test)]
 mod schema_tests {
     use super::*;
+
+    mod admission_cases {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../ctap/tests/fixtures/client_pin_admission.rs"
+        ));
+    }
+
+    #[test]
+    fn required_scope_matrix_matches_wire_status_at_every_fragment_boundary() {
+        for (bytes, expected) in admission_cases::legacy_token_cases() {
+            for split in 0..=bytes.len() {
+                let mut parser = Parser::new();
+                parser.consume(&bytes[..split]);
+                parser.consume(&bytes[split..]);
+                assert_eq!(
+                    parser.finish().err().map(|error| error as u8),
+                    expected,
+                    "split={split} bytes={bytes:?}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn incremental_first_errors_survive_every_fragment_boundary() {
