@@ -47,7 +47,13 @@ The independent `ctap` feature links no C CTAP dispatcher or applet. It is a
 - clientPIN (`06`) protocols 1 and 2: getPinRetries, getKeyAgreement, setPIN,
   changePIN, legacy getPinToken and getPinUvAuthTokenUsingPinWithPermissions.
   GetInfo reports the actual configured-PIN flag and protocols `[1, 2]`.
-- GetInfo is encoded once with minicbor into the shared response workspace.
+- GetInfo's product capabilities are declared in `crates/core/codegen/ctap.rs`.
+  The host-only `canokey-ctap::schema::get_info` compiler owns standard field
+  identifiers, map/array counts, PIN protocol order and algorithm envelopes.
+  It coalesces fixed bytes into immutable Flash fragments; the shared runtime
+  encoder writes them and current state directly into the response workspace.
+  `forcePINChange` is present only when true. Product capability declarations
+  do not install command implementations or enable algorithms.
   It reports resident credentials, ES256/Ed25519/ML-DSA-65/ML-DSA-44/SM2, credential management,
   largeBlobs and the implemented extensions. The AAGUID is
   `244eb29e-e090-4e49-81fe-1f20f8d3b8f4`.
