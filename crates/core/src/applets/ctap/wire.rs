@@ -31,8 +31,6 @@ pub(super) mod pin_protocol {
     pub const SESSION_ATTEMPTS: u8 = canokey_ctap::client_pin::retry::POWER_CYCLE_ATTEMPTS;
     pub const GET_RETRIES: u8 = Command::Retries as u8;
     pub const GET_AGREEMENT: u8 = Command::Agreement as u8;
-    pub const SET_PIN: u8 = Command::Set as u8;
-    pub const CHANGE_PIN: u8 = Command::Change as u8;
     pub const GET_TOKEN: u8 = Command::Token as u8;
     pub const GET_TOKEN_PERMISSIONS: u8 = Command::TokenPermissions as u8;
     pub const LABEL_PROTOCOL: i8 = request::LABEL_PROTOCOL;

@@ -70,6 +70,12 @@ validated ECDH-to-protocol-KDF pipeline. Generation candidates and x-coordinate
 scratch remain in existing owner buffers; products keep private-key cache,
 readiness/publication points, primitive validation/errors and zeroization.
 
+`client_pin::operation` owns standard state admission, agreement, authenticated
+new-PIN preparation and Set/Change/Token sequencing. Its synchronous backend
+lends existing secret/record scratch or uses existing zeroizing value types.
+Product transactions retain durable retry/refund timing, policy/deadline checks,
+error mapping and token publication; a prepared current verifier is not authority.
+
 `client_pin::response` emits standard agreement, retries and encrypted-token
 CBOR fragments into existing product outputs. Core encrypts directly in its
 response backing and installs the shared prefix after success; bounded writers

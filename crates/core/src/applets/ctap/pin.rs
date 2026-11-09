@@ -5,16 +5,18 @@ use super::wire::pin_protocol::{
     MAX_PIN_BYTES, MAX_RETRIES, MIN_CODE_POINTS, PIN_HASH_BYTES, SESSION_ATTEMPTS,
 };
 use super::{
-    Session, Status,
     client_pin::Parameters,
     crypto::{equal, mac, verify_mac},
+    Session, Status,
 };
 use crate::{
-    ports::{KeyMaterial, KeyOperation, Platform, Record, alg},
+    ports::{alg, KeyMaterial, KeyOperation, Platform, Record},
     runtime::workspace::Workspace,
 };
 use canokey_ctap::client_pin::{self as shared_pin, agreement, response, retry, token};
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
+
+mod operation;
 
 pub(super) struct PinCrypto<'a, 'p, B: crate::ports::Backends>(pub(super) &'a mut Platform<'p, B>);
 impl<B: crate::ports::Backends> shared_pin::Derivation for PinCrypto<'_, '_, B> {
@@ -364,116 +366,21 @@ impl Session {
         let mut shared = [0; 64];
         let mut record = [0; RECORD_BYTES];
         let result = (|| {
-            load(p, &mut record)?;
-            let configured = record[PIN_LENGTH] != 0;
-            if cp.subcommand == wire::SET_PIN {
-                if configured {
-                    return Err(Status::PinAuthInvalid);
-                }
-            } else {
-                if !configured {
-                    return Err(Status::PinNotSet);
-                }
-                if record[RETRIES] == 0 {
-                    return Err(Status::PinBlocked);
-                }
-                if self.pin_attempts == 0 {
-                    return Err(Status::PinAuthBlocked);
-                }
-            }
-            self.decapsulate(cp.protocol, &cp.agreement, &mut shared, w, p)?;
-            let new_len = wire::new_pin_bytes(cp.protocol);
-            let hash_len = wire::auth_bytes(cp.protocol);
-            if cp.subcommand == wire::SET_PIN || cp.subcommand == wire::CHANGE_PIN {
-                w.input[..new_len].copy_from_slice(&cp.new_pin[..new_len]);
-                let n = if cp.subcommand == wire::CHANGE_PIN {
-                    w.input[new_len..new_len + hash_len].copy_from_slice(&cp.pin_hash[..hash_len]);
-                    new_len + hash_len
-                } else {
-                    new_len
-                };
-                verify_mac(&shared[..32], &cp.auth[..hash_len], &w.input[..n], p)?;
-            }
-            let aes_key: &[u8; 32] = shared[32..].try_into().unwrap();
-            if cp.subcommand != wire::SET_PIN {
-                retry::verify(&mut CurrentPin {
+            let command = shared_pin::request::Command::decode(u64::from(cp.subcommand))
+                .ok_or(Status::InvalidSubcommand)?;
+            let kind = shared_pin::operation::Kind::from_command(command)
+                .ok_or(Status::InvalidSubcommand)?;
+            shared_pin::operation::execute(
+                kind,
+                &mut operation::Operation {
                     session: self,
                     parameters: cp,
-                    record: &mut record,
-                    aes_key,
+                    workspace: w,
                     platform: p,
-                })?;
-                self.pin_attempts = SESSION_ATTEMPTS;
-                // Correct current PIN restores retries even if the new PIN
-                // subsequently fails policy validation.
-                record[RETRIES] = MAX_RETRIES;
-                p.storage
-                    .replace_at(
-                        Record::CtapPin,
-                        RETRIES as u32,
-                        &record[RETRIES..RETRIES + 1],
-                    )
-                    .map_err(|_| Status::Other)?;
-            }
-            if cp.subcommand == wire::GET_TOKEN || cp.subcommand == wire::GET_TOKEN_PERMISSIONS {
-                if record[FLAGS] & FORCE_CHANGE != 0 {
-                    return Err(if cp.subcommand == wire::GET_TOKEN {
-                        Status::PinInvalid
-                    } else {
-                        Status::PinPolicy
-                    });
-                }
-                self.clear_token(p.memory);
-                p.crypto
-                    .random(&mut self.token)
-                    .map_err(|_| Status::Other)?;
-                let n = shared_pin::cipher::encrypt(
-                    cipher_protocol(cp.protocol),
-                    aes_key,
-                    &self.token,
-                    &mut w.output[TOKEN_RESPONSE_HEADER_BYTES..],
-                    &mut PinCrypto(p),
-                )
-                .map_err(cipher_error)?;
-                w.output[0] = 0x00;
-                w.output[1..TOKEN_RESPONSE_HEADER_BYTES]
-                    .copy_from_slice(&response::token_prefix(cipher_protocol(cp.protocol)));
-                self.token_started = p.device.now();
-                self.token_used = self.token_started;
-                if cp.subcommand == wire::GET_TOKEN_PERMISSIONS && cp.rp_len != 0 {
-                    p.crypto
-                        .sha256(&cp.rp[..cp.rp_len], &mut self.rp_binding)
-                        .map_err(|_| Status::Other)?;
-                    self.rp_bound = true;
-                }
-                self.permissions = if cp.subcommand == wire::GET_TOKEN {
-                    wire::PERMISSION_RP
-                } else {
-                    cp.permissions
-                };
-                return Ok(TOKEN_RESPONSE_HEADER_BYTES + n);
-            }
-            decrypt(cp.protocol, aes_key, &mut cp.new_pin[..new_len], p)?;
-            let unpadded =
-                shared_pin::unpad_pin((&cp.new_pin[..wire::PADDED_PIN_BYTES]).try_into().unwrap());
-            let pin = shared_pin::validate_pin(unpadded, usize::from(record[MIN_PIN_LENGTH]))
-                .ok_or(Status::PinPolicy)?;
-            let count = pin.chars().count();
-            let mut digest = [0; 32];
-            let hash = p
-                .crypto
-                .sha256(pin.as_bytes(), &mut digest)
-                .map_err(|_| Status::Other);
-            record[..PIN_HASH_BYTES].copy_from_slice(&digest[..PIN_HASH_BYTES]);
-            p.memory.wipe(&mut digest);
-            hash?;
-            record[RETRIES] = MAX_RETRIES;
-            record[PIN_LENGTH] = count as u8;
-            record[FLAGS] &= !FORCE_CHANGE;
-            save(&record, p)?;
-            self.clear_token(p.memory);
-            w.output[0] = 0;
-            Ok(1)
+                    shared: &mut shared,
+                    record: &mut record,
+                },
+            )
         })();
         p.memory.wipe(&mut cp.new_pin);
         p.memory.wipe(&mut cp.pin_hash);
