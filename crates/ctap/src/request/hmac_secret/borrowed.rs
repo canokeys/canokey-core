@@ -20,10 +20,11 @@ fn agreement<'a, R: Reader<'a>>(
     point: &mut [u8; POINT_BYTES],
 ) -> Result<(), R::Error> {
     let mut seen = 0x00;
+    let mut previous = None;
     for _ in 0..reader.map()? {
-        let key = Key::<R::Error>::borrowed(reader)?;
+        let key = Key::<R::Error>::borrowed_ordered(reader, &mut previous)?;
         let Some(field) = key.and_then(|key| Field::decode(i64::from(key))) else {
-            reader.item()?;
+            reader.skip_unknown()?;
             continue;
         };
         if let Some(expected) = field.scalar() {
@@ -31,10 +32,13 @@ fn agreement<'a, R: Reader<'a>>(
                 return Err(R::Error::INVALID_PARAMETER);
             }
         } else {
-            let coordinate = reader.bytes()?;
-            if coordinate.len() != COORDINATE_BYTES {
-                return Err(R::Error::INVALID_PARAMETER);
-            }
+            let coordinate = reader.bytes_checked(|length| {
+                if length == COORDINATE_BYTES {
+                    Ok(())
+                } else {
+                    Err(R::Error::INVALID_PARAMETER)
+                }
+            })?;
             let offset = field.coordinate_offset().unwrap();
             point[offset..offset + COORDINATE_BYTES].copy_from_slice(coordinate);
         }
@@ -50,33 +54,38 @@ impl<'a> Parameters<'a> {
     /// Decoding only checks structure; point validation waits for actual ECDH.
     pub fn decode<R: Reader<'a>>(bytes: &'a [u8]) -> Result<Self, R::Error> {
         let mut reader = R::new(bytes);
+        let parameters = Self::read(&mut reader)?;
+        if !reader.done() {
+            return Err(R::Error::INVALID_CBOR);
+        }
+        Ok(parameters)
+    }
+    pub fn read<R: Reader<'a>>(reader: &mut R) -> Result<Self, R::Error> {
         let mut point = [0x00; POINT_BYTES];
         let (mut salt, mut auth, mut protocol, mut seen) = (&[][..], &[][..], Protocol::One, 0x00);
+        let mut previous = None;
         for _ in 0..reader.map()? {
-            match Key::<R::Error>::borrowed(&mut reader)? {
+            match Key::<R::Error>::borrowed_ordered(reader, &mut previous)? {
                 Some(KEY_AGREEMENT) => {
-                    agreement(&mut reader, &mut point)?;
+                    agreement(reader, &mut point)?;
                     seen |= 0x01;
                 }
                 Some(SALT_ENC) => {
-                    salt = reader.bytes()?;
-                    admit_body::<R::Error>(SALT_ENC, salt.len())?;
+                    salt =
+                        reader.bytes_checked(|length| admit_body::<R::Error>(SALT_ENC, length))?;
                     seen |= 0x02;
                 }
                 Some(SALT_AUTH) => {
-                    auth = reader.bytes()?;
-                    admit_body::<R::Error>(SALT_AUTH, auth.len())?;
+                    auth =
+                        reader.bytes_checked(|length| admit_body::<R::Error>(SALT_AUTH, length))?;
                     seen |= 0x04;
                 }
                 Some(PIN_PROTOCOL) => {
-                    let raw = reader.item()?;
-                    let value = R::new(raw)
-                        .uint()
-                        .map_err(|_| R::Error::INVALID_PARAMETER)?;
+                    let value = reader.parameter_uint()?;
                     protocol = Protocol::decode(value).ok_or(R::Error::INVALID_PARAMETER)?;
                 }
                 _ => {
-                    reader.item()?;
+                    reader.skip_unknown()?;
                 }
             }
         }

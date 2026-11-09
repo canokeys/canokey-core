@@ -12,6 +12,8 @@ pub const CRED_BLOB_BYTES: usize = 32;
 pub const RP_ID_MAX: usize = 254;
 
 pub const MAX_LIST: usize = 16;
+/// CTAP clientDataHash is SHA-256, independently of the credential algorithm.
+pub const CLIENT_DATA_HASH_BYTES: usize = 32;
 // Keep scalar state before contiguous zero-filled request buffers.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -99,14 +101,14 @@ struct Map<E: Error> {
     previous_len: usize,
     seen_text: bool,
     field: Option<Field>,
-    previous_text: [u8; 32],
+    previous_text: [u8; stream::TEXT_KEY_BYTES],
 }
 impl<E: Error> Map<E> {
     const fn new(context: Context) -> Self {
         Self {
             context,
             previous_int: None,
-            previous_text: [0; 32],
+            previous_text: [0x00; stream::TEXT_KEY_BYTES],
             previous_len: 0,
             seen_text: false,
             field: None,
@@ -121,7 +123,7 @@ struct Fields<E: Error, const ALGORITHMS: usize> {
     seen: u8,
     body: Option<(Field, usize)>,
     key_body: bool,
-    key: [u8; 32],
+    key: [u8; stream::TEXT_KEY_BYTES],
     key_len: usize,
     skip: u8,
     item_type: bool,
@@ -213,19 +215,7 @@ impl<E: Error, const ALGORITHMS: usize, const LIMIT: u16> Parser<E, ALGORITHMS, 
         }
         // Empty pinUvAuthParam is a presence-gated PIN-state probe and does
         // not require a protocol. Nonempty authentication still requires one.
-        if f.params.auth_len.is_some_and(|n| n != 0) && f.params.protocol == 0 {
-            return Err(E::MISSING_PARAMETER);
-        }
-        if f.params.auth_len.is_some_and(|n| {
-            n != 0
-                && n != if f.params.protocol == crate::client_pin::Protocol::One as u8 {
-                    crate::client_pin::Protocol::One.auth_bytes()
-                } else {
-                    crate::client_pin::Protocol::Two.auth_bytes()
-                }
-        }) {
-            return Err(E::PIN_AUTH_INVALID);
-        }
+        schema::admit_auth::<E>(f.params.protocol, f.params.auth_len)?;
         if f.params.make && f.params.hmac.is_some() && !f.params.hmac_secret {
             return Err(E::MISSING_PARAMETER);
         }
@@ -378,14 +368,13 @@ impl<E: Error, const ALGORITHMS: usize> Fields<E, ALGORITHMS> {
         let bounded = self.key_len <= self.key.len();
         let key = &self.key[..self.key_len.min(self.key.len())];
         let map = &mut self.maps[self.level];
-        if map.seen_text
-            && (self.key_len < map.previous_len
-                || (bounded
-                    && self.key_len == map.previous_len
-                    && key <= &map.previous_text[..map.previous_len]))
-        {
-            return Err(E::INVALID_CBOR);
-        }
+        stream::text_key_order::<E>(
+            map.seen_text,
+            map.previous_len,
+            &map.previous_text[..map.previous_len.min(map.previous_text.len())],
+            self.key_len,
+            key,
+        )?;
         map.previous_len = self.key_len;
         map.previous_text[..key.len()].copy_from_slice(key);
         map.seen_text = true;
@@ -418,7 +407,12 @@ impl<E: Error, const ALGORITHMS: usize> Fields<E, ALGORITHMS> {
         }
         match field {
             Field::ClientHash => {
-                self.bytes(field, event, 32, 32)?;
+                self.bytes(
+                    field,
+                    event,
+                    CLIENT_DATA_HASH_BYTES as u16,
+                    CLIENT_DATA_HASH_BYTES as u16,
+                )?;
                 self.seen |= 1;
             }
             Field::Rp => {
@@ -496,9 +490,7 @@ impl<E: Error, const ALGORITHMS: usize> Fields<E, ALGORITHMS> {
             Field::Algorithm => {
                 self.item_algorithm_seen = true;
                 let key = Key::parse(event)?;
-                self.item_algorithm = i32::try_from(key.argument)
-                    .ok()
-                    .map(|n| if key.negative { -1 - n } else { n });
+                self.item_algorithm = key.signed_i32();
             }
             Field::DescriptorId => {
                 let Event::Bytes(n) = *event else {

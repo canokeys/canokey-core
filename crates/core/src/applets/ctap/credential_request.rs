@@ -73,4 +73,25 @@ mod option_tests {
             }
         }
     }
+    mod cbor_cases {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../ctap/tests/fixtures/credential_cbor.rs"
+        ));
+    }
+    #[test]
+    fn cbor_order_and_unknown_values_match_shared_cases_at_every_split() {
+        for (make, bytes, expected) in cbor_cases::cases() {
+            for split in 0..=bytes.len() {
+                let mut parser = Parser::new(make);
+                parser.consume(&bytes[..split]);
+                parser.consume(&bytes[split..]);
+                assert_eq!(
+                    parser.finish().err().map(|status| status as u8),
+                    expected,
+                    "make={make} split={split} bytes={bytes:02x?}"
+                );
+            }
+        }
+    }
 }

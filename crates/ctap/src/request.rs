@@ -31,6 +31,7 @@ pub fn parameterless(
 }
 
 pub mod agreement;
+pub mod borrowed;
 pub mod credential;
 pub mod hmac_secret;
 pub mod stream;

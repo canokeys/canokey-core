@@ -52,6 +52,28 @@ pub(super) fn admit_option<E: crate::request::Error>(make: bool, field: Field) -
         _ => Ok(()),
     }
 }
+
+#[inline(always)]
+pub(super) fn admit_auth<E: crate::request::Error>(
+    protocol: u8,
+    length: Option<usize>,
+) -> Result<(), E> {
+    if length.is_some_and(|length| length != 0) && protocol == 0 {
+        return Err(E::MISSING_PARAMETER);
+    }
+    if length.is_some_and(|length| {
+        length != 0
+            && length
+                != if protocol == crate::client_pin::Protocol::One as u8 {
+                    crate::client_pin::Protocol::One.auth_bytes()
+                } else {
+                    crate::client_pin::Protocol::Two.auth_bytes()
+                }
+    }) {
+        return Err(E::PIN_AUTH_INVALID);
+    }
+    Ok(())
+}
 // Compact records carry a byte length instead of a fat slice pointer. Build
 // names and lengths from the same literals so the two arrays cannot drift.
 pub(crate) fn text_field(context: Context, key: &[u8], make: bool) -> Field {

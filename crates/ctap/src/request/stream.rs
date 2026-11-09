@@ -4,6 +4,53 @@
 use super::Error;
 use canokey_protocol::cbor::{self, Event};
 
+/// CanoKey retains at most this many bytes of a text map key. Longer unknown
+/// keys still require UTF-8 and nondecreasing length, but equal-length spellings
+/// are not compared, matching the bounded streaming/C compatibility contract.
+pub const TEXT_KEY_BYTES: usize = 32;
+
+#[inline(always)]
+pub(crate) fn text_key_order<E: Error>(
+    seen: bool,
+    previous_len: usize,
+    previous: &[u8],
+    length: usize,
+    key: &[u8],
+) -> Result<(), E> {
+    if seen
+        && (length < previous_len
+            || (length <= TEXT_KEY_BYTES && length == previous_len && key <= previous))
+    {
+        return Err(E::INVALID_CBOR);
+    }
+    Ok(())
+}
+
+pub struct TextOrder<'a> {
+    previous: Option<&'a str>,
+}
+impl<'a> TextOrder<'a> {
+    pub const fn new() -> Self {
+        Self { previous: None }
+    }
+    pub fn next<R: super::credential::borrowed::Reader<'a>>(
+        &mut self,
+        reader: &mut R,
+    ) -> Result<&'a str, R::Error> {
+        let key = reader.text()?;
+        let previous = self.previous.unwrap_or("");
+        text_key_order::<R::Error>(
+            self.previous.is_some(),
+            previous.len(),
+            previous.as_bytes(),
+            key.len(),
+            key.as_bytes(),
+        )?;
+        self.previous = Some(key);
+        Ok(key)
+    }
+}
+
 pub struct Decoder<E: Error, const LIMIT: u16> {
     decoder: cbor::Decoder,
     error: Option<E>,
@@ -79,25 +126,34 @@ impl<E: Error> Key<E> {
     pub fn borrowed<'a, R: super::credential::borrowed::Reader<'a, Error = E>>(
         reader: &mut R,
     ) -> Result<Option<i8>, E> {
-        let raw = reader.item()?;
-        let major = raw[0] >> 5;
-        if major > 0x01 {
-            return Err(E::UNEXPECTED_TYPE);
-        }
-        let argument = match raw.len() {
-            1 => u64::from(raw[0] & 0x1f),
-            2 => u64::from(raw[1]),
-            3 => u64::from(u16::from_be_bytes(raw[1..].try_into().unwrap())),
-            5 => u64::from(u32::from_be_bytes(raw[1..].try_into().unwrap())),
-            9 => u64::from_be_bytes(raw[1..].try_into().unwrap()),
-            _ => return Err(E::INVALID_CBOR),
-        };
+        Ok(Self::borrowed_full(reader)?.integer())
+    }
+    pub fn borrowed_ordered<'a, R: super::credential::borrowed::Reader<'a, Error = E>>(
+        reader: &mut R,
+        previous: &mut Option<Self>,
+    ) -> Result<Option<i8>, E> {
+        Self::borrowed_full(reader)?.admit_order(previous)
+    }
+    fn borrowed_full<'a, R: super::credential::borrowed::Reader<'a, Error = E>>(
+        reader: &mut R,
+    ) -> Result<Self, E> {
+        let (negative, argument) = reader.integer()?;
         Ok(Self {
-            negative: major == 0x01,
+            negative,
             argument,
             error: core::marker::PhantomData,
-        }
-        .integer())
+        })
+    }
+    pub fn borrowed_i32<'a, R: super::credential::borrowed::Reader<'a, Error = E>>(
+        reader: &mut R,
+    ) -> Result<Option<i32>, E> {
+        Ok(Self::borrowed_full(reader)?.signed_i32())
+    }
+    #[inline(always)]
+    pub fn signed_i32(self) -> Option<i32> {
+        i32::try_from(self.argument)
+            .ok()
+            .map(|value| if self.negative { -1 - value } else { value })
     }
     // Preserve the full 64-bit ordering even for unrecognized field labels.
     // One call boundary avoids duplicating the comparison in every schema.
@@ -107,13 +163,17 @@ impl<E: Error> Key<E> {
         event: &canokey_protocol::cbor::Event<'_>,
         previous: &mut Option<Self>,
     ) -> Result<Option<i8>, E> {
-        let key = Self::parse(event)?;
-        if previous.is_some_and(|old| (key.negative, key.argument) <= (old.negative, old.argument))
+        Self::parse(event)?.admit_order(previous)
+    }
+    #[inline(always)]
+    fn admit_order(self, previous: &mut Option<Self>) -> Result<Option<i8>, E> {
+        if previous
+            .is_some_and(|old| (self.negative, self.argument) <= (old.negative, old.argument))
         {
             return Err(E::INVALID_CBOR);
         }
-        *previous = Some(key);
-        Ok(key.integer())
+        *previous = Some(self);
+        Ok(self.integer())
     }
     pub fn parse(event: &canokey_protocol::cbor::Event<'_>) -> Result<Self, E> {
         match *event {
