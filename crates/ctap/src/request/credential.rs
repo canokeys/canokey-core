@@ -789,6 +789,7 @@ mod tests {
                 (Context::Extensions, b"largeBlobKey") if make => Field::LargeBlobKey,
                 (Context::Extensions, b"minPinLength") if make => Field::MinPinLength,
                 (Context::Extensions, b"credProtect") if make => Field::Protection,
+                (Context::Rp, _) => Field::TextOnly,
                 _ => Field::Ignore,
             }
         }

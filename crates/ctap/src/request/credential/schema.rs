@@ -97,7 +97,13 @@ pub(crate) fn text_field(context: Context, key: &[u8], make: bool) -> Field {
             return field;
         }
     }
-    Field::Ignore
+    // CanoKey validates every RP value as text, including unknown metadata.
+    // User metadata has no corresponding map-wide type requirement.
+    if context == Context::Rp {
+        Field::TextOnly
+    } else {
+        Field::Ignore
+    }
 }
 
 /// CTAP makeCredential/getAssertion integer labels (CTAP 2.2 section 6).

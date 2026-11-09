@@ -77,16 +77,17 @@ pub struct Request<'a, P: Profile<'a>> {
 fn entity<'a, R: Reader<'a>>(bytes: &'a [u8], user: bool) -> Result<&'a [u8], R::Error> {
     let mut r = R::new(bytes);
     let mut id = None;
+    let context = if user {
+        schema::Context::User
+    } else {
+        schema::Context::Rp
+    };
     for _ in 0..r.map()? {
-        match r.text()? {
-            "id" => {
-                id = Some(if user {
-                    r.bytes()?
-                } else {
-                    r.text()?.as_bytes()
-                })
-            }
-            "name" | "displayName" | "icon" => {
+        let key = r.text()?;
+        match schema::text_field(context, key.as_bytes(), true) {
+            Field::Rp => id = Some(r.text()?.as_bytes()),
+            Field::UserId => id = Some(r.bytes()?),
+            Field::TextOnly | Field::Name | Field::Display => {
                 r.text()?;
             }
             _ => {
@@ -111,8 +112,8 @@ impl<'a, P: Profile<'a>> Request<'a, P> {
         let (mut user_name, mut user_display) = (None, None);
         let mut extensions = P::Extensions::default();
         for _ in 0..r.map()? {
-            let key = r.uint()?;
-            match schema::root_field(i8::try_from(key).ok(), make) {
+            let key = crate::request::stream::Key::<ParseError<'a, P>>::borrowed(&mut r)?;
+            match schema::root_field(key, make) {
                 Field::ClientHash => hash = Some(r.bytes()?),
                 Field::Rp if make => {
                     rp = Some(

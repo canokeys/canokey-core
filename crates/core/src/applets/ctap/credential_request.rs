@@ -51,4 +51,26 @@ mod option_tests {
             }
         }
     }
+
+    mod label_cases {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../ctap/tests/fixtures/credential_labels.rs"
+        ));
+    }
+    #[test]
+    fn integer_labels_and_entity_fields_match_shared_cases_at_every_split() {
+        for (make, bytes, expected) in label_cases::cases() {
+            for split in 0..=bytes.len() {
+                let mut parser = Parser::new(make);
+                parser.consume(&bytes[..split]);
+                parser.consume(&bytes[split..]);
+                assert_eq!(
+                    parser.finish().err().map(|status| status as u8),
+                    expected,
+                    "make={make} split={split} bytes={bytes:02x?}"
+                );
+            }
+        }
+    }
 }
