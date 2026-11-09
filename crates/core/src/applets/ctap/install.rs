@@ -9,7 +9,7 @@ impl Session {
         // select attestation material through the shared admission functions.
         // Only boot installation restores the volatile retry allowance.
         // Transport/session reset must not bypass temporary PIN lockout.
-        self.pin_attempts = super::wire::pin_protocol::SESSION_ATTEMPTS;
+        self.pin_attempts.reset();
         self.sm2 = Sm2::DEFAULT;
     }
 }

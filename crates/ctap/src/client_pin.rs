@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! PIN/UV protocol key derivation and PIN text rules, without session policy.
+//! PIN/UV state, derivation and PIN rules with borrowed primitive capabilities.
 
 pub mod agreement;
 pub mod authentication;
@@ -8,7 +8,9 @@ pub mod operation;
 pub mod request;
 pub mod response;
 pub mod retry;
+mod state;
 pub mod token;
+pub use state::Session;
 
 pub const KEY_BYTES: usize = 32;
 pub const MAX_PIN_BYTES: usize = 63;

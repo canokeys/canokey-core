@@ -247,7 +247,9 @@ APDU preemption clears that authorization session. Token permissions/RP binding
 are retained in RAM, never in transport/PKE storage. Each command expires tokens after 30 seconds without successful authentication
 or ten minutes from issuance, using the shared `client_pin::token::lifetime_remaining`
 engine over wrapping tick differences. The limits live in the shared CTAP crate;
-products retain the clock origins and revocation/wipe owners. Ordinary queries
+the common PIN session owns agreement/token material and clock origins, while
+products supply erasure and optional native metadata. The power-cycle retry
+allowance has its own common owner outside connection reset. Ordinary queries
 never refresh these deadlines. The shared authorization helper requires a
 nonzero permission mask with every requested bit, checks any supplied RP binding,
 then verifies the MAC once. Product ordering and partial-permission profiles are

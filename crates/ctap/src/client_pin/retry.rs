@@ -4,6 +4,37 @@
 pub const MAX_RETRIES: u8 = 8;
 pub const POWER_CYCLE_ATTEMPTS: u8 = 3;
 
+/// Power-cycle state survives connection/session resets and re-agreement.
+/// Only boot, successful PIN proof or authorized persistent PIN reset refunds it.
+pub struct Attempts {
+    remaining: u8,
+}
+impl Attempts {
+    pub const fn new() -> Self {
+        Self {
+            remaining: POWER_CYCLE_ATTEMPTS,
+        }
+    }
+    pub fn remaining(&self) -> u8 {
+        self.remaining
+    }
+    pub fn blocked(&self) -> bool {
+        self.remaining == 0
+    }
+    pub fn rejected(&mut self, durable_remaining: u8) -> Rejection {
+        self.remaining = self.remaining.saturating_sub(1);
+        rejection(durable_remaining, self.remaining)
+    }
+    pub fn reset(&mut self) {
+        self.remaining = POWER_CYCLE_ATTEMPTS;
+    }
+}
+impl Default for Attempts {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The adapter updates its existing record before persisting the charge. A
 /// persistence error may already be durable; it must fail closed without a
 /// comparison, refund or grant. Comparison may decrypt into owner-held scratch.

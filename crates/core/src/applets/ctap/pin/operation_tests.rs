@@ -254,11 +254,13 @@ fn change_refunds_before_new_pin_policy_and_stops_at_each_uncertain_write() {
             let memory = Backend::default();
             let mut device = Backend::default();
             let mut session = Session::new();
-            session.pin_attempts = 1;
+            session.pin_attempts.rejected(7);
+            session.pin_attempts.rejected(6);
             session
-                .pin_token
+                .pin
+                .token
                 .with_secret_mut(|secret| secret.fill(0x99));
-            session.pin_token.permissions = PERMISSION_CONFIG;
+            session.pin.token.permissions = PERMISSION_CONFIG;
             let mut backing = SessionWorkspace::new();
             backing.classic_with(&memory).output.fill(0xee);
             let mut command = Ok(super::super::Command::ClientPin(Parameters {
@@ -320,15 +322,15 @@ fn change_refunds_before_new_pin_policy_and_stops_at_each_uncertain_write() {
             );
             let retained = matches!(fault, Fault::Policy | Fault::WrongPin);
             assert_eq!(
-                session.pin_token.with_secret(|secret| *secret),
+                session.pin.token.with_secret(|secret| *secret),
                 [if retained { 0x99 } else { 0x00 }; 32]
             );
             assert_eq!(
-                session.pin_token.permissions,
+                session.pin.token.permissions,
                 if retained { PERMISSION_CONFIG } else { 0x00 }
             );
             assert_eq!(
-                session.pin_attempts,
+                session.pin_attempts.remaining(),
                 if fault == Fault::WrongPin {
                     0
                 } else if matches!(
@@ -341,7 +343,7 @@ fn change_refunds_before_new_pin_policy_and_stops_at_each_uncertain_write() {
                 }
             );
             assert_eq!(
-                session.agreement_ready,
+                session.pin.agreement_ready(),
                 matches!(fault, Fault::None | Fault::Policy)
             );
             let charged_only = matches!(
@@ -441,7 +443,7 @@ fn lazy_decapsulation_generates_once_without_exporting_a_response() {
     assert_eq!(session.key_agreement(&mut w, &mut p), Ok(81));
 
     assert!(w.key.bytes.iter().chain(w.input.iter()).all(|&b| b == 0));
-    assert_eq!(session.agreement, [7; 32]);
+    assert_eq!(session.pin.with_private(|private| *private), [7; 32]);
     session.reset(&memory);
     session.key_agreement(&mut w, &mut p).unwrap();
     drop(p);
@@ -452,9 +454,10 @@ fn lazy_decapsulation_generates_once_without_exporting_a_response() {
 fn failed_lazy_key_generation_clears_command_workspace_and_authorization() {
     let mut session = Session::new();
     session
-        .pin_token
+        .pin
+        .token
         .with_secret_mut(|secret| secret.fill(0x55));
-    session.pin_token.permissions = 0x20;
+    session.pin.token.permissions = 0x20;
     let mut backing = SessionWorkspace::new();
     let memory = Backend::default();
     let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
@@ -484,10 +487,10 @@ fn failed_lazy_key_generation_clears_command_workspace_and_authorization() {
         super::super::Response::Error(Status::Other)
     ));
     let w = backing.classic_with(&memory);
-    assert!(!session.agreement_ready);
-    assert_eq!(session.agreement, [0; 32]);
-    assert_eq!(session.pin_token.with_secret(|secret| *secret), [0; 32]);
-    assert_eq!(session.pin_token.permissions, 0);
+    assert!(!session.pin.agreement_ready());
+    assert_eq!(session.pin.with_private(|private| *private), [0; 32]);
+    assert_eq!(session.pin.token.with_secret(|secret| *secret), [0; 32]);
+    assert_eq!(session.pin.token.permissions, 0);
     assert!(
         w.key
             .bytes
@@ -665,9 +668,10 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
             let mut device = Backend::default();
             let mut session = Session::new();
             session
-                .pin_token
+                .pin
+                .token
                 .with_secret_mut(|secret| secret.fill(0x99));
-            session.pin_token.permissions = PERMISSION_CONFIG;
+            session.pin.token.permissions = PERMISSION_CONFIG;
             let mut backing = SessionWorkspace::new();
             let w = backing.classic_with(&memory);
             w.output.fill(0xee);
@@ -699,10 +703,10 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
                 let prefix = if protocol == wire::V1 { 0 } else { 16 };
                 assert_eq!(&w.output[5..5 + prefix], &[0x55; 16][..prefix]);
                 assert_eq!(&w.output[5 + prefix..5 + length], &[0x66; 32]);
-                assert_eq!(session.pin_token.with_secret(|secret| *secret), [0x55; 32]);
-                assert_eq!(session.pin_token.permissions, wire::PERMISSION_CREDENTIALS);
+                assert_eq!(session.pin.token.with_secret(|secret| *secret), [0x55; 32]);
+                assert_eq!(session.pin.token.permissions, wire::PERMISSION_CREDENTIALS);
                 assert_eq!(
-                    session.pin_token.rp_id().unwrap().as_slice(),
+                    session.pin.token.rp_id().unwrap().as_slice(),
                     Sha256::digest(b"example.com").as_slice()
                 );
             } else {
@@ -718,24 +722,24 @@ fn cbc_and_rng_failures_preserve_durable_charge_and_erase_session_outputs() {
                 // while Other also resets prior token authority in execute.
                 let retained = fault == Fault::WrongPin;
                 assert_eq!(
-                    session.pin_token.with_secret(|secret| *secret),
+                    session.pin.token.with_secret(|secret| *secret),
                     [if retained { 0x99 } else { 0x00 }; 32]
                 );
                 assert_eq!(
-                    session.pin_token.permissions,
+                    session.pin.token.permissions,
                     if retained { PERMISSION_CONFIG } else { 0x00 }
                 );
-                assert!(session.pin_token.rp_id().is_none());
+                assert!(session.pin.token.rp_id().is_none());
                 assert_eq!(
-                    session.pin_attempts,
+                    session.pin_attempts.remaining(),
                     if retained {
                         SESSION_ATTEMPTS - 1
                     } else {
                         SESSION_ATTEMPTS
                     }
                 );
-                assert_eq!(session.agreement, [0x00; 32]);
-                assert!(!session.agreement_ready);
+                assert_eq!(session.pin.with_private(|private| *private), [0x00; 32]);
+                assert!(!session.pin.agreement_ready());
                 assert!(w.output.iter().all(|&byte| byte == 0x00));
             }
             assert!(
@@ -811,15 +815,16 @@ fn token_admission_preserves_primitive_order_and_refreshes_only_successful_use()
                     for bound in [None, Some(rp), Some([0x52; 32])] {
                         for fail_mac in [false, true] {
                             let mut session = Session::new();
-                            session.pin_attempts = 3;
+                            session.pin_attempts.reset();
                             session
-                                .pin_token
+                                .pin
+                                .token
                                 .with_secret_mut(|secret| secret.fill(0x61));
-                            session.pin_token.permissions = granted;
-                            session.pin_token.issued = 0;
-                            session.pin_token.last_used = 1;
+                            session.pin.token.permissions = granted;
+                            session.pin.token.issued = 0;
+                            session.pin.token.last_used = 1;
                             if let Some(bound) = bound {
-                                session.pin_token.bind_rp(Some(bound));
+                                session.pin.token.bind_rp(Some(bound));
                             }
                             let mut crypto = Backend {
                                 fail_mac,
@@ -861,11 +866,11 @@ fn token_admission_preserves_primitive_order_and_refreshes_only_successful_use()
                             );
                             assert_eq!(crypto.mac_calls, usize::from(admitted));
                             assert_eq!(
-                                session.pin_token.last_used,
+                                session.pin.token.last_used,
                                 if expected.is_ok() { 7 } else { 1 }
                             );
-                            assert_eq!(session.pin_token.rp_id().is_some(), bound.is_some());
-                            assert_eq!(session.pin_token.permissions, granted);
+                            assert_eq!(session.pin.token.rp_id().is_some(), bound.is_some());
+                            assert_eq!(session.pin.token.permissions, granted);
                         }
                     }
                 }
@@ -888,9 +893,10 @@ fn public_generation_and_export_failures_do_not_publish_or_retain_authority() {
             let mut device = Backend::default();
             let mut session = Session::new();
             session
-                .pin_token
+                .pin
+                .token
                 .with_secret_mut(|secret| secret.fill(0x99));
-            session.pin_token.permissions = PERMISSION_CONFIG;
+            session.pin.token.permissions = PERMISSION_CONFIG;
             let mut backing = SessionWorkspace::new();
             let workspace = backing.classic_with(&memory);
             workspace.output.fill(0xee);
@@ -912,15 +918,15 @@ fn public_generation_and_export_failures_do_not_publish_or_retain_authority() {
                     response,
                     super::super::Response::Error(Status::Other)
                 ));
-                assert_eq!(session.pin_token.with_secret(|secret| *secret), [0x00; 32]);
-                assert_eq!(session.pin_token.permissions, 0x00);
+                assert_eq!(session.pin.token.with_secret(|secret| *secret), [0x00; 32]);
+                assert_eq!(session.pin.token.permissions, 0x00);
                 assert!(workspace.output.iter().all(|byte| *byte == 0x00));
             } else {
                 assert!(matches!(response, super::super::Response::Prepared(81)));
-                assert_eq!(session.pin_token.with_secret(|secret| *secret), [0x99; 32]);
-                assert_eq!(session.pin_token.permissions, PERMISSION_CONFIG);
+                assert_eq!(session.pin.token.with_secret(|secret| *secret), [0x99; 32]);
+                assert_eq!(session.pin.token.permissions, PERMISSION_CONFIG);
             }
-            assert_eq!(session.agreement_ready, !failed);
+            assert_eq!(session.pin.agreement_ready(), !failed);
             assert!(
                 workspace
                     .key
@@ -954,9 +960,10 @@ fn ecdh_failure_and_short_output_precede_internal_protocol_admission_and_kdf() {
             let mut device = Backend::default();
             let mut session = Session::new();
             session
-                .pin_token
+                .pin
+                .token
                 .with_secret_mut(|secret| secret.fill(0x99));
-            session.pin_token.permissions = PERMISSION_CONFIG;
+            session.pin.token.permissions = PERMISSION_CONFIG;
             let mut backing = SessionWorkspace::new();
             let workspace = backing.classic_with(&memory);
             workspace.output.fill(0xee);
@@ -990,13 +997,13 @@ fn ecdh_failure_and_short_output_precede_internal_protocol_admission_and_kdf() {
             assert!(
                 matches!(response, super::super::Response::Error(status) if status == expected)
             );
-            assert_eq!(session.agreement_ready, !reset);
+            assert_eq!(session.pin.agreement_ready(), !reset);
             assert_eq!(
-                session.pin_token.with_secret(|secret| *secret),
+                session.pin.token.with_secret(|secret| *secret),
                 [if reset { 0x00 } else { 0x99 }; 32]
             );
             assert_eq!(
-                session.pin_token.permissions,
+                session.pin.token.permissions,
                 if reset { 0x00 } else { PERMISSION_CONFIG }
             );
             assert!(
@@ -1050,14 +1057,15 @@ fn parsed_point_rejection_never_reaches_kdf_decrypt_retry_or_token_commit() {
             };
             let mut device = Backend::default();
             let mut session = Session::new();
-            session.agreement_ready = true;
-            session.agreement[..32].fill(0x07);
+            session.pin.commit_agreement();
+            session.pin.with_private_mut(|private| private.fill(0x07));
             session
-                .pin_token
+                .pin
+                .token
                 .with_secret_mut(|secret| secret.fill(0x99));
-            session.pin_token.permissions = PERMISSION_CONFIG;
-            let agreement = session.agreement;
-            let attempts = session.pin_attempts;
+            session.pin.token.permissions = PERMISSION_CONFIG;
+            let agreement = session.pin.with_private(|private| *private);
+            let attempts = session.pin_attempts.remaining();
             let mut backing = SessionWorkspace::new();
             let workspace = backing.classic_with(&memory);
             workspace.input.fill(0xee);
@@ -1085,11 +1093,11 @@ fn parsed_point_rejection_never_reaches_kdf_decrypt_retry_or_token_commit() {
             assert!(
                 matches!(response, super::super::Response::Error(status) if status as u8 == expected)
             );
-            assert_eq!(session.agreement, agreement);
-            assert!(session.agreement_ready);
-            assert_eq!(session.pin_attempts, attempts);
-            assert_eq!(session.pin_token.with_secret(|secret| *secret), [0x99; 32]);
-            assert_eq!(session.pin_token.permissions, PERMISSION_CONFIG);
+            assert_eq!(session.pin.with_private(|private| *private), agreement);
+            assert!(session.pin.agreement_ready());
+            assert_eq!(session.pin_attempts.remaining(), attempts);
+            assert_eq!(session.pin.token.with_secret(|secret| *secret), [0x99; 32]);
+            assert_eq!(session.pin.token.permissions, PERMISSION_CONFIG);
             // Session::execute enters the credential workspace owner only for
             // admitted ClientPIN commands. Parse failures leave caller-owned
             // staging untouched; transport/runtime cleanup owns that backing.
@@ -1148,10 +1156,11 @@ fn wrong_pin_retains_standard_token_but_third_mismatch_blocks_its_use() {
             let mut device = Backend::default();
             let mut session = Session::new();
             session
-                .pin_token
+                .pin
+                .token
                 .with_secret_mut(|secret| secret.fill(0x99));
-            session.pin_token.permissions = PERMISSION_CONFIG;
-            session.pin_token.bind_rp(Some([0x5a; 32]));
+            session.pin.token.permissions = PERMISSION_CONFIG;
+            session.pin.token.bind_rp(Some([0x5a; 32]));
             let mut backing = SessionWorkspace::new();
             let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut storage,
@@ -1182,17 +1191,17 @@ fn wrong_pin_retains_standard_token_but_third_mismatch_blocks_its_use() {
                 assert!(
                     matches!(response, super::super::Response::Error(error) if error == status)
                 );
-                assert!(!session.agreement_ready);
-                assert_eq!(session.agreement, [0x00; 32]);
-                assert_eq!(session.pin_token.with_secret(|secret| *secret), [0x99; 32]);
-                assert_eq!(session.pin_token.permissions, PERMISSION_CONFIG);
+                assert!(!session.pin.agreement_ready());
+                assert_eq!(session.pin.with_private(|private| *private), [0x00; 32]);
+                assert_eq!(session.pin.token.with_secret(|secret| *secret), [0x99; 32]);
+                assert_eq!(session.pin.token.permissions, PERMISSION_CONFIG);
                 assert_eq!(
-                    session.pin_token.rp_id().copied().unwrap_or([0x00; 32]),
+                    session.pin.token.rp_id().copied().unwrap_or([0x00; 32]),
                     [0x5a; 32]
                 );
-                assert!(session.pin_token.rp_id().is_some());
+                assert!(session.pin.token.rp_id().is_some());
                 assert_eq!(
-                    (session.pin_token.issued, session.pin_token.last_used),
+                    (session.pin.token.issued, session.pin.token.last_used),
                     (0, 0)
                 );
                 assert_eq!(platform.crypto.generated, usize::from(attempt));
@@ -1244,8 +1253,29 @@ fn wrong_pin_retains_standard_token_but_third_mismatch_blocks_its_use() {
                     Status::PinAuthBlocked
                 })
             );
-            assert!(session.agreement_ready);
-            assert_eq!(session.agreement, [0x07; 32]);
+            assert!(session.pin.agreement_ready());
+            assert_eq!(session.pin.with_private(|private| *private), [0x07; 32]);
+            assert_eq!(platform.crypto.agreed, agreed);
+            assert_eq!(platform.storage.retries_written.len(), charged);
+
+            // Connection cleanup erases both secrets without refunding the
+            // power-cycle allowance held outside the shared connection owner.
+            session.reset(&memory);
+            assert!(session.pin_attempts.blocked());
+            assert!(!session.pin.agreement_ready());
+            assert_eq!(session.pin.with_private(|private| *private), [0x00; 32]);
+            assert_eq!(session.pin.token.with_secret(|secret| *secret), [0x00; 32]);
+            assert_eq!(session.pin.token.permissions, 0x00);
+            assert!(session.pin.token.rp_id().is_none());
+            assert_eq!((session.pin.token.issued, session.pin.token.last_used), (0, 0));
+            assert_eq!(
+                session.client_pin(
+                    &mut parameters,
+                    &mut backing.classic_with(&memory),
+                    &mut platform,
+                ),
+                result
+            );
             assert_eq!(platform.crypto.agreed, agreed);
             assert_eq!(platform.storage.retries_written.len(), charged);
         }

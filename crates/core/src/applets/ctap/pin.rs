@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! PIN protocol crypto and compact durable retries. Request PKE is already gone.
 use super::wire::pin_protocol as wire;
-use super::wire::pin_protocol::{
-    MAX_PIN_BYTES, MAX_RETRIES, MIN_CODE_POINTS, PIN_HASH_BYTES, SESSION_ATTEMPTS,
-};
+use super::wire::pin_protocol::{MAX_PIN_BYTES, MAX_RETRIES, MIN_CODE_POINTS, PIN_HASH_BYTES};
 use super::{
     Session, Status,
     client_pin::Parameters,
@@ -15,6 +13,9 @@ use crate::{
 };
 use canokey_ctap::client_pin::{self as shared_pin, agreement, response, retry, token};
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
+
+#[cfg(test)]
+use canokey_ctap::client_pin::retry::POWER_CYCLE_ATTEMPTS as SESSION_ATTEMPTS;
 
 mod operation;
 
@@ -185,7 +186,7 @@ impl<B: crate::ports::Backends> agreement::Generation for KeyGeneration<'_, '_, 
     type Error = Status;
     type Output = ();
     fn ready(&self) -> bool {
-        self.session.agreement_ready
+        self.session.pin.agreement_ready()
     }
     fn generate(&mut self) -> Result<bool, Status> {
         self.platform
@@ -196,14 +197,16 @@ impl<B: crate::ports::Backends> agreement::Generation for KeyGeneration<'_, '_, 
         Ok(true)
     }
     fn commit(&mut self) -> Result<(), Status> {
-        self.session
-            .agreement
-            .copy_from_slice(&self.key.bytes[..32]);
-        self.session.agreement_ready = true;
+        self.session.pin.with_private_mut(|private| {
+            private.copy_from_slice(&self.key.bytes[..32]);
+        });
+        self.session.pin.commit_agreement();
         Ok(())
     }
     fn restore(&mut self) -> Result<(), Status> {
-        self.key.bytes[..32].copy_from_slice(&self.session.agreement);
+        self.session
+            .pin
+            .with_private(|private| self.key.bytes[..32].copy_from_slice(private));
         Ok(())
     }
 }
@@ -253,14 +256,15 @@ struct CurrentPin<'a, 'p, B: crate::ports::Backends> {
 }
 impl<B: crate::ports::Backends> canokey_ctap::session::PinAgreement for CurrentPin<'_, '_, B> {
     fn erase_agreement(&mut self) {
-        self.session.agreement_ready = false;
-        self.platform.memory.wipe(&mut self.session.agreement);
+        self.session
+            .pin
+            .clear_agreement(|bytes| self.platform.memory.wipe(bytes));
     }
     fn permissions(&self) -> u16 {
-        u16::from(self.session.pin_token.permissions)
+        u16::from(self.session.pin.token.permissions)
     }
     fn retain_permissions(&mut self, permissions: u16) {
-        self.session.pin_token.permissions = permissions as u8;
+        self.session.pin.token.permissions = permissions as u8;
     }
 }
 impl<B: crate::ports::Backends> retry::Verification for CurrentPin<'_, '_, B> {
@@ -296,16 +300,16 @@ impl<B: crate::ports::Backends> retry::Verification for CurrentPin<'_, '_, B> {
         ))
     }
     fn rejected(&mut self) -> Status {
-        self.session.pin_attempts -= 1;
+        let rejection = self.session.pin_attempts.rejected(self.record[RETRIES]);
         canokey_ctap::session::lose_pin_agreement(self);
-        match retry::rejection(self.record[RETRIES], self.session.pin_attempts) {
+        match rejection {
             retry::Rejection::Blocked => Status::PinBlocked,
             retry::Rejection::PowerCycleBlocked => Status::PinAuthBlocked,
             retry::Rejection::Invalid => Status::PinInvalid,
         }
     }
     fn accepted(&mut self) -> Result<(), Status> {
-        self.session.pin_attempts = SESSION_ATTEMPTS;
+        self.session.pin_attempts.reset();
         self.record[RETRIES] = MAX_RETRIES;
         self.platform
             .storage
@@ -344,7 +348,7 @@ impl Session {
     ) -> Result<(), Status> {
         // ECDH validates the peer point in the primitive backend. Generating
         // our private key does not require exporting a public response first.
-        if !self.agreement_ready {
+        if !self.pin.agreement_ready() {
             w.clear(p.memory);
         }
         self.agreement_key(w, p)?;
@@ -427,13 +431,14 @@ impl Session {
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
         self.expire_token(p.device.now(), p.memory);
-        if self.pin_attempts == 0 {
+        if self.pin_attempts.blocked() {
             return Err(Status::PinAuthBlocked);
         }
         if !matches!(protocol, wire::V1 | wire::V2) || auth.len() != wire::auth_bytes(protocol) {
             return Err(Status::PinAuthInvalid);
         }
-        self.pin_token
+        self.pin
+            .token
             .authorize(
                 u16::from(permission),
                 rp,
@@ -445,7 +450,7 @@ impl Session {
                 token::Error::Scope => Status::PinAuthInvalid,
                 token::Error::Mac(status) => status,
             })?;
-        self.pin_token.mark_used(p.device.now());
+        self.pin.token.mark_used(p.device.now());
         Ok(())
     }
     // Reuse the expiry/erasure paths across applet admission and reset entrypoints.
@@ -453,13 +458,12 @@ impl Session {
     pub(super) fn expire_token(&mut self, now: u32, memory: &(impl crate::ports::Memory + ?Sized)) {
         // Successful authorization refreshes the idle window only. Issuance
         // fixes the absolute lifetime; unauthenticated requests refresh neither.
-        if self.pin_token.permissions != 0 && self.pin_token.remaining_ms(now).is_none() {
+        if self.pin.token.permissions != 0 && self.pin.token.remaining_ms(now).is_none() {
             self.clear_token(memory);
         }
     }
-    #[inline(never)]
     pub(super) fn clear_token(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
-        self.pin_token.clear(|bytes| memory.wipe(bytes));
+        self.pin.token.clear(|bytes| memory.wipe(bytes));
     }
 }
 
@@ -483,25 +487,27 @@ mod tests {
             ] {
                 let mut session = Session::new();
                 session
-                    .pin_token
+                    .pin
+                    .token
                     .with_secret_mut(|secret| secret.fill(0xa5));
-                session.pin_token.permissions = PERMISSION_CONFIG;
-                session.pin_token.bind_rp(Some([0x5a; 32]));
-                session.pin_token.issued = start;
-                session.pin_token.last_used = start.wrapping_add(last_used);
-                session.pin_attempts = 1;
+                session.pin.token.permissions = PERMISSION_CONFIG;
+                session.pin.token.bind_rp(Some([0x5a; 32]));
+                session.pin.token.issued = start;
+                session.pin.token.last_used = start.wrapping_add(last_used);
+                session.pin_attempts.rejected(7);
+                session.pin_attempts.rejected(6);
                 session.expire_token(start.wrapping_add(elapsed), &Wipe);
-                assert_eq!(session.pin_token.permissions == 0, expired);
+                assert_eq!(session.pin.token.permissions == 0, expired);
                 assert_eq!(
-                    session.pin_token.with_secret(|secret| *secret) == [0; 32],
+                    session.pin.token.with_secret(|secret| *secret) == [0; 32],
                     expired
                 );
                 assert_eq!(
-                    session.pin_token.rp_id().copied().unwrap_or([0x00; 32]) == [0; 32],
+                    session.pin.token.rp_id().copied().unwrap_or([0x00; 32]) == [0; 32],
                     expired
                 );
-                assert_eq!(session.pin_token.rp_id().is_some(), !expired);
-                assert_eq!(session.pin_attempts, 1);
+                assert_eq!(session.pin.token.rp_id().is_some(), !expired);
+                assert_eq!(session.pin_attempts.remaining(), 1);
             }
         }
     }

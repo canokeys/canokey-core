@@ -2,6 +2,9 @@
 //! Sole token backing and metadata, shared by standard and product permissions.
 use super::super::KEY_BYTES;
 use super::{Error, MissingRp, Scope};
+use crate::client_pin::state::AGREEMENT_READY;
+
+const RP_BOUND: u8 = 0x01;
 
 // Private token followed by public SHA-256 RP binding. This is volatile owner
 // storage, not a wire/record layout. Contiguity permits one complete erasure.
@@ -12,12 +15,17 @@ const MATERIAL_BYTES: usize = KEY_BYTES + KEY_BYTES;
 /// return a borrowed token. The outer owner must clear on failed publication,
 /// reset and expiry; a product with automatic erasure calls clear from Drop.
 /// Permission width reflects the actual wire field or native extension bits.
+// Keep byte metadata within Thumb-1's immediate load/store range, with clocks
+// before the word-aligned material backing. This volatile layout has no C ABI.
+#[repr(C)]
 pub struct Token<Permissions = u16> {
-    material: [u8; MATERIAL_BYTES],
     pub permissions: Permissions,
+    // Shared connection flags fill this existing metadata byte. Token-only
+    // erasure clears RP scope while retaining the agreement readiness bit.
+    pub(in crate::client_pin) flags: u8,
     pub issued: u32,
     pub last_used: u32,
-    rp_bound: bool,
+    material: [u8; MATERIAL_BYTES],
 }
 impl<P: Copy> Token<P> {
     pub const fn empty(no_permissions: P) -> Self {
@@ -29,7 +37,7 @@ impl<P: Copy> Token<P> {
             permissions,
             issued: now,
             last_used: now,
-            rp_bound: false,
+            flags: 0x00,
         }
     }
     /// Issuance fixes both clock origins; re-agreement must never call this.
@@ -46,16 +54,15 @@ impl<P: Copy> Token<P> {
         super::lifetime_remaining(now, self.issued, self.last_used)
     }
     pub fn rp_id(&self) -> Option<&[u8; KEY_BYTES]> {
-        self.rp_bound
-            .then(|| (&self.material[RP_OFFSET..]).try_into().unwrap())
+        (self.flags & RP_BOUND != 0x00).then(|| (&self.material[RP_OFFSET..]).try_into().unwrap())
     }
     pub fn bind_rp(&mut self, rp: Option<[u8; KEY_BYTES]>) {
         if let Some(rp) = rp {
             self.material[RP_OFFSET..].copy_from_slice(&rp);
-            self.rp_bound = true;
+            self.flags |= RP_BOUND;
         } else {
             self.material[RP_OFFSET..].fill(0x00);
-            self.rp_bound = false;
+            self.flags &= !RP_BOUND;
         }
     }
     /// Hash directly into the sole RP backing. Failed partial output remains
@@ -65,7 +72,11 @@ impl<P: Copy> Token<P> {
         hash: impl FnOnce(&mut [u8; KEY_BYTES]) -> Result<(), E>,
     ) -> Result<(), E> {
         let result = hash((&mut self.material[RP_OFFSET..]).try_into().unwrap());
-        self.rp_bound = result.is_ok();
+        if result.is_ok() {
+            self.flags |= RP_BOUND;
+        } else {
+            self.flags &= !RP_BOUND;
+        }
         result
     }
     /// A primitive may consume a secret synchronously, but cannot export its loan.
@@ -87,10 +98,11 @@ impl<P: Copy> Token<P> {
 }
 
 impl<P: Copy + From<u8>> Token<P> {
-    #[inline(always)]
+    // Whole-session reset and token-only revocation share the same erasure body.
+    #[inline(never)]
     pub fn clear(&mut self, mut wipe: impl FnMut(&mut [u8])) {
         wipe(&mut self.material);
-        self.rp_bound = false;
+        self.flags &= AGREEMENT_READY;
         self.permissions = P::from(0x00);
         self.issued = 0;
         self.last_used = 0;

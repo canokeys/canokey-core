@@ -230,11 +230,9 @@ impl Response {
 // explicit volatile layout is neither serialized nor exposed through a C ABI.
 #[repr(C)]
 pub struct Session {
-    pin_token: canokey_ctap::client_pin::token::Token<u8>,
-    agreement: [u8; 32],
+    pin: canokey_ctap::client_pin::Session<u8>,
     pub(crate) presence: crate::runtime::presence::Request,
-    agreement_ready: bool,
-    pin_attempts: u8,
+    pin_attempts: canokey_ctap::client_pin::retry::Attempts,
     sm2: settings::Sm2,
     upload: large_blob::Upload,
     management: management::Cursor,
@@ -244,11 +242,9 @@ pub struct Session {
 impl Session {
     pub const fn new() -> Self {
         Self {
-            pin_token: canokey_ctap::client_pin::token::Token::empty(0x00),
-            agreement: [0x00; 32],
+            pin: canokey_ctap::client_pin::Session::empty(0x00),
             presence: crate::runtime::presence::Request::new(),
-            agreement_ready: false,
-            pin_attempts: wire::pin_protocol::SESSION_ATTEMPTS,
+            pin_attempts: canokey_ctap::client_pin::retry::Attempts::new(),
             sm2: settings::Sm2::DEFAULT,
             upload: large_blob::Upload::new(),
             management: management::Cursor::new(),
@@ -261,9 +257,7 @@ impl Session {
         self.assertion.hmac.clear(memory);
         self.management = management::Cursor::new();
         memory.wipe(&mut self.assertion.client_hash);
-        memory.wipe(&mut self.agreement);
-        self.agreement_ready = false;
-        self.clear_token(memory);
+        self.pin.clear(|bytes| memory.wipe(bytes));
     }
     pub fn execute(
         &mut self,
@@ -392,7 +386,7 @@ impl Session {
                 .remove(crate::ports::Record::ctap_group(index).unwrap())
                 .map_err(|_| Status::Other)?;
         }
-        self.pin_attempts = wire::pin_protocol::SESSION_ATTEMPTS;
+        self.pin_attempts.reset();
         Ok(())
     }
     fn selection(

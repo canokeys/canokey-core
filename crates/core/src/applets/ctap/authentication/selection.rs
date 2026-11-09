@@ -91,11 +91,11 @@ impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, B> {
     fn consume_presence(&mut self) {
         // Successful normal UP consumes standard grants except LBW. Silent
         // assertions keep the authorization used for interactive assertions.
-        self.session.pin_token.permissions = canokey_ctap::client_pin::token::after_presence(
-            u16::from(self.session.pin_token.permissions),
+        self.session.pin.token.permissions = canokey_ctap::client_pin::token::after_presence(
+            u16::from(self.session.pin.token.permissions),
             u16::from(pin::PERMISSION_LARGE_BLOB_WRITE),
         ) as u8;
-        if self.session.pin_token.permissions == 0 {
+        if self.session.pin.token.permissions == 0 {
             self.session.clear_token(self.platform.memory);
         }
     }

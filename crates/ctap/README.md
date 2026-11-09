@@ -116,11 +116,18 @@ propagating errors. `client_pin::retry` sequences durable charge before current
 PIN comparison and classifies rejection without owning records, secrets or
 storage. Product adapters retain restore/policy/deadline and grant commit points.
 
-`client_pin::token` checks permission/RP scope in explicit product-selected MAC
-order and provides wrapping lifetime windows and successful-UP permission
-retention. It stores no token/secret/session and does not commit usage, RP binding
-or cleanup. Products retain expiry origins/limits, error mapping, protocol
-admission and the original publication/authority transition points.
+`client_pin::Session` owns the sole private agreement and token/RP backing.
+`client_pin::token::Token` holds permissions and issuance/use clocks, checks all
+requested permissions and RP scope before MAC, and provides the standard wrapping
+idle/absolute lifetime. Successful authentication explicitly commits usage/RP;
+rejection does not. Token revocation preserves agreement, agreement loss preserves
+the standard token, and full session reset erases both. Primitive loans cannot
+escape the synchronous call. Products supply erasure and retain native identity,
+protocol metadata and any additional context deadline.
+
+`client_pin::retry::Attempts` owns the volatile power-cycle allowance separately
+from the connection session. Connection reset and re-agreement never refund it;
+boot, a successful PIN proof or authorized persistent PIN reset does.
 
 No capability retains a product storage/application/transport borrow across
 calls. IRQs publish mailbox state; only the serialized owner enters applet code.
@@ -141,8 +148,8 @@ not qualify hardware, native cleanup under Linux sanitizers or resource budgets.
 
 `selection` sequences ordinary credential-list selection, exclusion disclosure,
 normal presence, successful-UP consumption and response work. `listed` preserves
-first-match, parse-tail and inspect-all profiles without owning IDs, keys or
-records. Product adapters retain resident scan/count order, silent deadline
+first usable match while validating any borrowed list tail, without owning IDs,
+keys or records. Product adapters retain resident scan/count order, silent deadline
 checks, storage errors and commit points. The operation is consumed after UP; an adapter may borrow its existing assertion
 and publish it into a continuation only after success, without allocating another
 session or secret backing. Cancellation during exclusion is mapped by
