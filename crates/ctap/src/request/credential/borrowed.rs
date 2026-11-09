@@ -37,15 +37,22 @@ pub struct Options {
     pub uv: bool,
 }
 impl Options {
-    fn decode<'a, R: Reader<'a>>(bytes: &'a [u8]) -> Result<Self, R::Error> {
+    fn decode<'a, R: Reader<'a>>(bytes: &'a [u8], make: bool) -> Result<Self, R::Error> {
         let mut r = R::new(bytes);
         let mut options = Self::default();
         for _ in 0..r.map()? {
             let key = r.text()?;
-            match key {
-                "rk" => options.rk = r.boolean()?,
-                "up" => options.up = Some(r.boolean()?),
-                "uv" => options.uv = r.boolean()?,
+            let field = schema::text_field(schema::Context::Options, key.as_bytes(), make);
+            match field {
+                Field::Resident | Field::Up | Field::Uv => {
+                    let value = r.boolean()?;
+                    schema::admit_option::<R::Error>(make, field)?;
+                    match field {
+                        Field::Resident => options.rk = value,
+                        Field::Up => options.up = Some(value),
+                        _ => options.uv = value,
+                    }
+                }
                 _ => {
                     r.item()?;
                 }
@@ -131,7 +138,7 @@ impl<'a, P: Profile<'a>> Request<'a, P> {
                 Field::Algorithms => algorithms = Some(r.item()?),
                 Field::List => list = Some(r.item()?),
                 Field::Extensions => extensions = P::extensions(r.item()?, make)?,
-                Field::Options => options = Options::decode::<P::Reader>(r.item()?)?,
+                Field::Options => options = Options::decode::<P::Reader>(r.item()?, make)?,
                 Field::Auth => auth = Some(r.bytes()?),
                 Field::Protocol => protocol = Some(r.uint()?),
                 // Enterprise attestation is not advertised by this profile.

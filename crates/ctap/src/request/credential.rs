@@ -527,10 +527,8 @@ impl<E: Error, const ALGORITHMS: usize> Fields<E, ALGORITHMS> {
                 let Event::Bool(value) = *event else {
                     return Err(E::UNEXPECTED_TYPE);
                 };
+                schema::admit_option::<E>(self.params.make, field)?;
                 match field {
-                    // These options are command-specific even when false.
-                    Field::Resident if !self.params.make => return Err(E::UNSUPPORTED_OPTION),
-                    Field::Up if self.params.make => return Err(E::INVALID_OPTION),
                     Field::Resident => self.params.resident = value,
                     Field::Uv => self.params.uv = value,
                     Field::LargeBlobKey => self.params.large_blob_key = value,

@@ -784,7 +784,7 @@ A nonempty list with no usable matching IDs returns `NO_CREDENTIALS`; it must
 not fall back to discovery. The shared mixed-algorithm fixture checks both
 discovery forms and rejects an unknown nonempty list.
 
-For makeCredential/getAssertion, empty `pinUvAuthParam` is a user-presence-gated
+For admitted makeCredential/getAssertion requests, empty `pinUvAuthParam` is a user-presence-gated
 PIN-state probe even when `pinUvAuthProtocol` is omitted: it returns `PIN_INVALID`
 when a PIN exists and `PIN_NOT_SET` otherwise. Nonempty authentication requires
 a protocol; a protocol/authentication-length mismatch returns `PIN_AUTH_INVALID`.
@@ -793,6 +793,14 @@ Credential options are command-specific: makeCredential rejects explicit `up`
 with `INVALID_OPTION`, and getAssertion rejects explicit `rk` with
 `UNSUPPORTED_OPTION`, regardless of their boolean value. Omitted options retain
 the command defaults; getAssertion continues to support `up: false`.
+Both shared parsers apply these command-key rules after boolean type validation.
+Silent getAssertion with hmac-secret returns `UNSUPPORTED_OPTION` before PIN-policy
+IO, RP hashing, presence or token verification, even with empty authentication.
+Other invalid semantic options also reject before that PIN-state probe. The
+shared authorization engine has no ordering profile; the Core adapter validates
+before loading PIN policy. Full dispatch can still load product SM2 settings.
+Request rejection leaves existing agreement/token authority intact and the
+outer credential owner erases workspace input, output and key bytes.
 
 Resident getAssertion/getNextAssertion enumeration preserves the legacy descending
 record-slot order. The cursor is an exclusive upper slot bound, including slot

@@ -42,6 +42,16 @@ pub(super) enum Field {
     HmacSecretMc,
     Enterprise,
 }
+/// Command-only option keys are rejected independently of their boolean value.
+/// Both parsers call after checking the field type and before publishing options.
+#[inline(always)]
+pub(super) fn admit_option<E: crate::request::Error>(make: bool, field: Field) -> Result<(), E> {
+    match field {
+        Field::Resident if !make => Err(E::UNSUPPORTED_OPTION),
+        Field::Up if make => Err(E::INVALID_OPTION),
+        _ => Ok(()),
+    }
+}
 // Compact records carry a byte length instead of a fat slice pointer. Build
 // names and lengths from the same literals so the two arrays cannot drift.
 pub(super) fn text_field(context: Context, key: &[u8], make: bool) -> Field {

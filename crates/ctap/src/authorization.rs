@@ -1,16 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! MakeCredential/GetAssertion PIN/UV admission before credential selection.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SecretOrder {
-    BeforePolicy,
-    AfterEmptyAuthentication,
-}
-/// Borrowed/streamed schemas retain their own option admission. These choices
-/// preserve runtime error/read precedence without installing another engine.
-pub struct Profile {
-    pub secret_order: SecretOrder,
-    pub reject_assertion_resident: bool,
-}
 pub struct Request {
     pub make: bool,
     pub up: bool,
@@ -53,21 +42,31 @@ pub trait Backend {
     fn presence(&mut self) -> Result<(), Self::Error>;
     fn verify(&mut self) -> Result<Self::Authorization, Self::Error>;
 }
-fn silent_secret(request: &Request) -> Result<(), RuleError> {
+/// Pure request admission before policy IO, presence or token verification.
+/// Parsed command-only option keys are rejected by the shared schema even when
+/// false; these checks also protect callers with already-owned semantic fields.
+#[inline]
+pub fn validate(request: &Request) -> Result<(), RuleError> {
     if !request.make && !request.up && request.secret {
         return Err(RuleError::UnsupportedOption);
+    }
+    if !request.make && request.resident {
+        return Err(RuleError::UnsupportedOption);
+    }
+    if (request.make && request.large_blob_key && !request.resident)
+        || (request.uv && request.auth_length.is_none())
+        || (request.make && !request.up)
+    {
+        return Err(RuleError::InvalidOption);
     }
     Ok(())
 }
 #[inline]
 pub fn authorize<B: Backend>(
     request: &Request,
-    profile: Profile,
     backend: &mut B,
 ) -> Result<Option<B::Authorization>, Error<B::Error>> {
-    if profile.secret_order == SecretOrder::BeforePolicy {
-        silent_secret(request)?;
-    }
+    validate(request)?;
     let policy = backend.policy().map_err(Error::Backend)?;
     if request.auth_length == Some(0) {
         backend.presence().map_err(Error::Backend)?;
@@ -77,18 +76,6 @@ pub fn authorize<B: Backend>(
             RuleError::PinNotSet
         }
         .into());
-    }
-    if profile.secret_order == SecretOrder::AfterEmptyAuthentication {
-        silent_secret(request)?;
-    }
-    if request.make && request.large_blob_key && !request.resident {
-        return Err(RuleError::InvalidOption.into());
-    }
-    if (request.uv && request.auth_length.is_none())
-        || (request.make && !request.up)
-        || (profile.reject_assertion_resident && !request.make && request.resident)
-    {
-        return Err(RuleError::InvalidOption.into());
     }
     if request.auth_length.is_some() {
         if !policy.pin_set {

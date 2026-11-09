@@ -26,3 +26,29 @@ impl Parser {
             .finish_with(&canokey_ports::default_memory(), Command::Credential)
     }
 }
+
+#[cfg(test)]
+mod option_tests {
+    use super::*;
+    mod cases {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../ctap/tests/fixtures/credential_options.rs"
+        ));
+    }
+    #[test]
+    fn command_options_match_shared_cases_at_every_fragment_boundary() {
+        for (make, bytes, expected) in cases::cases() {
+            for split in 0..=bytes.len() {
+                let mut parser = Parser::new(make);
+                parser.consume(&bytes[..split]);
+                parser.consume(&bytes[split..]);
+                assert_eq!(
+                    parser.finish().err().map(|status| status as u8),
+                    expected,
+                    "make={make} split={split} bytes={bytes:?}"
+                );
+            }
+        }
+    }
+}

@@ -48,6 +48,19 @@ impl Session {
         if params.make && params.algorithm.is_none() {
             return Err(Status::UnsupportedAlgorithm);
         }
+        // Reject pure request constraints before policy IO or RP hashing. The
+        // authorization engine reuses the same rule for every direct caller.
+        let admission = authorization::Request {
+            make: params.make,
+            up: params.up,
+            uv: params.uv,
+            resident: params.resident,
+            auth_length: params.auth_len,
+            secret: params.hmac.is_some(),
+            large_blob_key: params.large_blob_key,
+        };
+        authorization::validate(&admission)
+            .map_err(|rule| authorization_error(rule.into()))?;
         let mut policy = [0; pin::RECORD_BYTES];
         pin::load(p, &mut policy)?;
         let pin_set = policy[pin::PIN_LENGTH] != 0;
@@ -66,20 +79,7 @@ impl Session {
         p.memory.wipe(&mut policy);
         hash_result.map_err(|_| Status::Other)?;
         let uv = authorization::authorize(
-            &authorization::Request {
-                make: params.make,
-                up: params.up,
-                uv: params.uv,
-                resident: params.resident,
-                auth_length: params.auth_len,
-                secret: params.hmac.is_some(),
-                large_blob_key: params.large_blob_key,
-            },
-            authorization::Profile {
-                secret_order: authorization::SecretOrder::AfterEmptyAuthentication,
-                // The streamed schema rejects rk on GetAssertion before entry.
-                reject_assertion_resident: false,
-            },
+            &admission,
             &mut CredentialAuthorization {
                 session: self,
                 parameters: params,
@@ -821,3 +821,6 @@ fn respond_mldsa_make(
     *response = Some(super::Response::Pending(plan));
     Ok(length)
 }
+
+#[cfg(test)]
+mod tests;
