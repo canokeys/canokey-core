@@ -24,7 +24,7 @@ use canokey_protocol::{
 };
 use canokey_rust_core::runtime::nfc::request::{Backend as ReceiveBackend, Rejection, Request};
 use canokey_rust_core::runtime::{
-    nfc::{Event, Link},
+    nfc::{Event, Link, ResponseBudget},
     nfc_io::{Chip, Io},
 };
 #[cfg(test)]
@@ -83,7 +83,7 @@ static mut LENGTH: usize = 0;
 static mut SENT: usize = 0;
 static mut MORE: bool = false;
 static mut REQUEST: Request = Request::new();
-static mut BUDGET: u32 = 0;
+static mut BUDGET: ResponseBudget = ResponseBudget::new();
 struct Stager<P>(core::marker::PhantomData<P>);
 impl<P: Provider> ReceiveBackend for Stager<P> {
     fn prepare(&mut self, prefix: &[u8; apdu::EXTENDED_HEADER_BYTES]) -> Result<(), Rejection> {
@@ -297,7 +297,7 @@ unsafe fn reset_link<P: Provider>() {
         LENGTH = 0;
         SENT = 0;
         MORE = false;
-        BUDGET = 0;
+        BUDGET = ResponseBudget::new();
         (&mut *core::ptr::addr_of_mut!(REQUEST)).reset(&mut Stager::<P>(core::marker::PhantomData));
         ck_core_reset::<P>();
     }
@@ -358,10 +358,7 @@ unsafe fn execute<P: Provider>(continuation: Option<&[u8]>) {
             )
         } else {
             let outcome = dispatch::<P>(&mut *core::ptr::addr_of_mut!(REQUEST), buffer);
-            BUDGET = outcome
-                .info
-                .filter(|info| outcome.fido && info.extended)
-                .map_or(0, |info| info.le.unwrap_or(65536));
+            (&mut *core::ptr::addr_of_mut!(BUDGET)).begin(outcome.info.as_ref(), outcome.fido);
             outcome.length
         };
         with_io(|io, _, now| {
@@ -380,8 +377,7 @@ unsafe fn execute<P: Provider>(continuation: Option<&[u8]>) {
             fault();
             return;
         }
-        BUDGET -= BUDGET.min((n - 2) as u32);
-        MORE = BUDGET != 0 && *buffer.add(n - 2) == apdu::MORE_DATA_SW1;
+        MORE = (&mut *core::ptr::addr_of_mut!(BUDGET)).consume(n - 2, *buffer.add(n - 2));
         LENGTH = if MORE { n - 2 } else { n };
         SENT = 0;
         PENDING = true;
@@ -392,8 +388,7 @@ unsafe fn next_response<P: Provider>() {
         if SENT == LENGTH && MORE {
             // The existing engine owns response sources/offsets. This request
             // merely continues its stream; no NFC-specific APDU engine exists.
-            let mut command = apdu::GET_RESPONSE;
-            command[4] = BUDGET.min(256) as u8;
+            let command = (&*core::ptr::addr_of!(BUDGET)).continuation();
             execute::<P>(Some(&command));
             return;
         }

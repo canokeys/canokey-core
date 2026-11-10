@@ -1,8 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ISO-DEP Link, WTX execution and RF recovery without owning APDU backing.
+pub mod request;
 use canokey_protocol::nfc::{self, Block, Packet};
 pub const COMMAND_LIMIT: usize = canokey_protocol::apdu::SHORT_FRAME_BYTES;
 pub const MAX_RETRANSMITS: u8 = 2;
+/// Extended FIDO responses span RF I-blocks while the APDU engine retains its
+/// ordinary short response source. Short APDUs still expose 61xx to the reader.
+pub struct ResponseBudget(u32);
+impl ResponseBudget {
+    pub const fn new() -> Self {
+        Self(0)
+    }
+    #[inline]
+    pub fn begin(&mut self, info: Option<&canokey_protocol::apdu::CommandInfo>, fido: bool) {
+        self.0 = info
+            .filter(|info| fido && info.extended)
+            .map_or(0, |info| info.le.unwrap_or(65536));
+    }
+    #[inline]
+    pub fn consume(&mut self, payload: usize, sw1: u8) -> bool {
+        self.0 -= self.0.min(payload as u32);
+        self.0 != 0 && sw1 == canokey_protocol::apdu::MORE_DATA_SW1
+    }
+    #[inline]
+    pub fn continuation(&self) -> [u8; 5] {
+        let mut command = canokey_protocol::apdu::GET_RESPONSE;
+        command[4] = self.0.min(256) as u8;
+        command
+    }
+}
+impl Default for ResponseBudget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Wire(nfc::Error),

@@ -329,7 +329,7 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
             self.close_response(p);
         }
         self.owner = Some(P::NFC);
-        if prefix[..2] != [apdu::CLA_FIDO, apdu::FIDO_CBOR_INS] || prefix[4] != 0 {
+        if !crate::nfc::request::message_prefix(prefix) {
             return Err(Sw::WRONG_LENGTH);
         }
         if !self.router.fido_selected(p) {
@@ -338,7 +338,7 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
         // Only an admitted FIDO MSG replaces input. A different large command
         // is drained before applet dispatch and must preserve its old cursor.
         self.abort_input(p);
-        if header.p1 & 0x7f != 0 || header.p2 != 0 {
+        if !crate::nfc::request::message_parameters(header) {
             return Err(Sw::WRONG_P1P2);
         }
         self.router.command_limit(header)
