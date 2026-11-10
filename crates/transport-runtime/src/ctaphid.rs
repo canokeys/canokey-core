@@ -284,4 +284,4 @@ impl<P: Profile> Session<P> {
 }
 
 mod execution;
-pub use execution::{Execution, ExecutionPolicy, Incoming, Progress, classify_error};
+pub use execution::{Execution, ExecutionPolicy, Incoming, Progress, classify_error, foreign_error};

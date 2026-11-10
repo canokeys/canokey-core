@@ -30,6 +30,17 @@ pub fn classify_error<P: ExecutionPolicy>(cid: u32, command: u8, executing: Opti
         Error::Busy
     }
 }
+/// Foreign CANCEL cannot cancel the active card operation. Continuations cannot
+/// start a command; both are drained silently. Other initial headers get only a
+/// transport error, without parsing a body or acquiring the application owner.
+#[inline]
+pub fn foreign_error<P: ExecutionPolicy>(cid: u32, command: u8) -> Option<Error> {
+    if command & wire::CMD_INIT_BIT != 0x00 && command != wire::CANCEL {
+        Some(classify_error::<P>(cid, command, None))
+    } else {
+        None
+    }
+}
 pub struct Execution<P: ExecutionPolicy> {
     cid: u32,
     epoch: u32,

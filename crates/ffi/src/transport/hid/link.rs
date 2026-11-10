@@ -128,11 +128,9 @@ pub unsafe fn ck_hid_foreign_progress() {
         let Some((cid, command, _)) = peek_header(epoch) else {
             return;
         };
-        // CANCEL belongs to its HID operation, never to the unrelated APDU.
-        // Continuations cannot start a new command and are silently drained.
-        if command & wire::CMD_INIT_BIT != 0 && command != wire::CANCEL {
-            let error =
-                canokey_transport_runtime::ctaphid::classify_error::<CanoKey>(cid, command, None);
+        if let Some(error) =
+            canokey_transport_runtime::ctaphid::foreign_error::<CanoKey>(cid, command)
+        {
             send_control(cid, wire::ERROR, error as u8, epoch);
         }
         ck_hid_io_consume(epoch);

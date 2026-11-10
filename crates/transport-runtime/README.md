@@ -98,3 +98,11 @@ CanoKey records keepalive publication after synchronous send; vLEI uses the
 existing pre-submit timestamp. Endpoint busy/timeout, mailbox consumption and
 main-loop cleanup remain in product facades. Ending execution invalidates its
 CID while retaining abandonment until suppressed output is released.
+
+`ctaphid::foreign_error<P>` shares the CanoKey header policy while another
+transport executes: initial commands receive Busy/Channel, while CANCEL and
+continuations are drained without cancelling that foreign operation. Facades
+retain the mailbox while IN is busy or reset/configuration prevents service.
+This path only borrows transport mailboxes and control output, never an
+application, parser or reset capability. vLEI's post-execution CCID status drain
+leaves HID reports for normal polling rather than treating them as competitors.
