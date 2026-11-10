@@ -36,7 +36,10 @@ The shared-code extraction changed 47 target/regression artifacts referenced by
 each affected behavior has an explicit remaining revalidation item. Historical
 fixture evidence, behavior dispositions, source inventory and hunk mappings are
 unchanged. Current hashes make the draft inspectable, but do not renew its
-behavior acceptance. The draft reports 1609 unreviewed source units and 140 open
+behavior acceptance. Deferred registration additionally updates the current
+identities of two existing targets across G6/C2/C3/T16/T17/T18; its
+[scoped review](deferred-registration-20261110.md) adds six explicit pending
+revalidation items. The draft reports 1609 unreviewed source units and 146 open
 items; the strict release gate remains closed.
 
 From Core, validate the exact source objects and records:

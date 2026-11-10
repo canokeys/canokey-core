@@ -268,7 +268,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18"
+          "sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
@@ -341,7 +341,8 @@
       ],
       "remaining": [
         "CIU request-path stack and PKE/RF acceptance is open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs, crates/host/src/pcsc.rs, crates/protocol/src/ctaphid.rs, tests/card/src/bin/usb_sessions/envelopes.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs, crates/host/src/pcsc.rs, crates/protocol/src/ctaphid.rs, tests/card/src/bin/usb_sessions/envelopes.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted."
       ]
     },
     {
@@ -2573,7 +2574,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18"
+          "sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051"
         },
         {
           "path": "crates/protocol/src/cbor.rs",
@@ -2653,7 +2654,8 @@
         "Broader canonical/duplicate/invalid-UTF8/unknown-label and malformed-error precedence comparisons remain.",
         "Classify C one-shot reader-failure successes before claiming source-error parity; preserve raw outcomes and Rust fail-closed behavior.",
         "CIU call-path stack/PKE and physical transport acceptance remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/credential_request.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/request_decoder.rs, crates/core/src/runtime/engine.rs, crates/core/tests/streaming.rs, crates/ffi/src/transport/nfc.rs, crates/protocol/src/cbor.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/credential_request.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/request_decoder.rs, crates/core/src/runtime/engine.rs, crates/core/tests/streaming.rs, crates/ffi/src/transport/nfc.rs, crates/protocol/src/cbor.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted."
       ]
     },
     {
@@ -2663,11 +2665,11 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18"
+          "sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
-          "sha256": "18b86b3713f540fb93f11da475b5950942884ee4e7ff52a90f965087d8a5c67d"
+          "sha256": "97348367d85c8ed2b7f72763c4a414f7df440448fb6a705949953ec36593bd56"
         },
         {
           "path": "crates/core/src/applets/ctap/message.rs",
@@ -2806,7 +2808,8 @@
       "remaining": [
         "E58 covers first/second negative/zero/one-byte reads for classical/PQ MC and largeBlobs on five facades and U2F on CCID/WebUSB/native MSG/NFC. T19 now adds extended-NFC aggregation/retry faults; broader offsets/certificate lengths and close/cancel schedules remain open.",
         "Paired executing cancellation, broader native open/seek/close and physical storage, arbitrary IRQ/withheld endpoint faults, USB/RF/WTX, CIU stack/PKE and Linux LeakSanitizer remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted."
       ]
     },
     {
@@ -2816,11 +2819,11 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18"
+          "sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
-          "sha256": "18b86b3713f540fb93f11da475b5950942884ee4e7ff52a90f965087d8a5c67d"
+          "sha256": "97348367d85c8ed2b7f72763c4a414f7df440448fb6a705949953ec36593bd56"
         },
         {
           "path": "crates/core/src/applets/ctap/message.rs",
@@ -2965,7 +2968,8 @@
       "remaining": [
         "E58 covers first/second negative/zero/one-byte reads for classical/PQ MC and largeBlobs on five facades and U2F on CCID/WebUSB/native MSG/NFC. Extended-NFC aggregation/retry faults have the T19 companion; broader offsets/certificate lengths and close/cancel schedules remain open.",
         "Paired executing cancellation, broader native open/seek/close and physical storage, arbitrary IRQ/withheld endpoint faults, USB/RF/WTX, CIU stack/PKE and Linux LeakSanitizer remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted."
       ]
     },
     {
@@ -2975,7 +2979,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18"
+          "sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051"
         },
         {
           "path": "crates/core/src/applets/ctap/message.rs",
@@ -3005,7 +3009,8 @@
       ],
       "remaining": [
         "E57 executes buffered getKeyAgreement Le1, exact256/257 assertions and finite/full source output. Broader buffered error/constant combinations, cancellation and physical/resource acceptance remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted."
       ]
     },
     {
@@ -3015,11 +3020,11 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18"
+          "sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
-          "sha256": "18b86b3713f540fb93f11da475b5950942884ee4e7ff52a90f965087d8a5c67d"
+          "sha256": "97348367d85c8ed2b7f72763c4a414f7df440448fb6a705949953ec36593bd56"
         },
         {
           "path": "crates/core/src/applets/ctap/u2f.rs",
@@ -3117,7 +3122,8 @@
       ],
       "remaining": [
         "broader native open/seek/close and physical fault injection, arbitrary cancellation/IRQ schedules and physical/CIU acceptance remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted."
       ]
     },
     {
@@ -9553,7 +9559,7 @@
       },
       "crates/core/src/applets/ctap/mod.rs": {
         "previous_sha256": "4059a28c598c956dd46339665e3d18ebc99f9c62765658a06b2f933e68b16ce1",
-        "current_sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18",
+        "current_sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051",
         "behaviors": [
           "G6",
           "C2",
@@ -9957,7 +9963,7 @@
       },
       "crates/core/src/applets/ctap/applet.rs": {
         "previous_sha256": "c9f463a313646e71de44fd471970b57142104748b20766c19f25b164e57e7a7a",
-        "current_sha256": "18b86b3713f540fb93f11da475b5950942884ee4e7ff52a90f965087d8a5c67d",
+        "current_sha256": "97348367d85c8ed2b7f72763c4a414f7df440448fb6a705949953ec36593bd56",
         "behaviors": [
           "C3",
           "T16",
@@ -9987,6 +9993,44 @@
           "C1-RETRIES"
         ]
       }
-    }
+    },
+    "follow_up_changes": [
+      {
+        "implementation": "91b1f71190f74a0484f10a6b08b7c878fb4b9259",
+        "status": "pending; no behavior, source-hunk or release approval granted",
+        "review": "docs/sync/deferred-registration-20261110.md",
+        "artifacts": {
+          "crates/core/src/applets/ctap/mod.rs": {
+            "previous_sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18",
+            "current_sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051",
+            "behaviors": [
+              "G6",
+              "C2",
+              "C3",
+              "T16",
+              "T17",
+              "T18"
+            ]
+          },
+          "crates/core/src/applets/ctap/applet.rs": {
+            "previous_sha256": "18b86b3713f540fb93f11da475b5950942884ee4e7ff52a90f965087d8a5c67d",
+            "current_sha256": "97348367d85c8ed2b7f72763c4a414f7df440448fb6a705949953ec36593bd56",
+            "behaviors": [
+              "C3",
+              "T16",
+              "T18"
+            ]
+          }
+        },
+        "behaviors": [
+          "G6",
+          "C2",
+          "C3",
+          "T16",
+          "T17",
+          "T18"
+        ]
+      }
+    ]
   }
 }
