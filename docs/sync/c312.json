@@ -82,11 +82,19 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
+          "sha256": "249ea9202bc4d66fc75c3c22f77816e95f048a2dfd150592c8c4495647a214ac"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
           "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+        },
+        {
+          "path": "crates/ctap/src/config.rs",
+          "sha256": "e658ddb2719f9baf020428167c6437349fa53a1e3098110e1fb5891379f0474b"
+        },
+        {
+          "path": "crates/core/src/config.rs",
+          "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
         }
       ],
       "regressions": [
@@ -105,7 +113,8 @@
         }
       ],
       "remaining": [
-        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -115,11 +124,19 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
+          "sha256": "249ea9202bc4d66fc75c3c22f77816e95f048a2dfd150592c8c4495647a214ac"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
           "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+        },
+        {
+          "path": "crates/ctap/src/config.rs",
+          "sha256": "e658ddb2719f9baf020428167c6437349fa53a1e3098110e1fb5891379f0474b"
+        },
+        {
+          "path": "crates/core/src/config.rs",
+          "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
         }
       ],
       "regressions": [
@@ -138,7 +155,8 @@
         }
       ],
       "remaining": [
-        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -148,7 +166,7 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
+          "sha256": "249ea9202bc4d66fc75c3c22f77816e95f048a2dfd150592c8c4495647a214ac"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
@@ -157,6 +175,14 @@
         {
           "path": "crates/ffi/src/transport/nfc.rs",
           "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+        },
+        {
+          "path": "crates/ctap/src/config.rs",
+          "sha256": "e658ddb2719f9baf020428167c6437349fa53a1e3098110e1fb5891379f0474b"
+        },
+        {
+          "path": "crates/core/src/config.rs",
+          "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
         }
       ],
       "regressions": [
@@ -182,7 +208,8 @@
       ],
       "remaining": [
         "Full-product physical NFC capability acceptance is open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -192,7 +219,7 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
+          "sha256": "249ea9202bc4d66fc75c3c22f77816e95f048a2dfd150592c8c4495647a214ac"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
@@ -201,6 +228,14 @@
         {
           "path": "crates/core/src/applets/ctap/pq.rs",
           "sha256": "543ba125523674bb3061a24addf2c64d919d8ec75878aca5527474120c1f24f2"
+        },
+        {
+          "path": "crates/ctap/src/config.rs",
+          "sha256": "e658ddb2719f9baf020428167c6437349fa53a1e3098110e1fb5891379f0474b"
+        },
+        {
+          "path": "crates/core/src/config.rs",
+          "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
         }
       ],
       "regressions": [
@@ -219,7 +254,8 @@
         }
       ],
       "remaining": [
-        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/core/src/applets/ctap/pq.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/core/src/applets/ctap/pq.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -229,11 +265,19 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
+          "sha256": "249ea9202bc4d66fc75c3c22f77816e95f048a2dfd150592c8c4495647a214ac"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
           "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+        },
+        {
+          "path": "crates/ctap/src/config.rs",
+          "sha256": "e658ddb2719f9baf020428167c6437349fa53a1e3098110e1fb5891379f0474b"
+        },
+        {
+          "path": "crates/core/src/config.rs",
+          "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
         }
       ],
       "regressions": [
@@ -252,7 +296,8 @@
         }
       ],
       "remaining": [
-        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -262,7 +307,7 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
+          "sha256": "249ea9202bc4d66fc75c3c22f77816e95f048a2dfd150592c8c4495647a214ac"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
@@ -295,6 +340,14 @@
         {
           "path": "crates/host/src/pcsc.rs",
           "sha256": "334d6147bbb0c177c189f0dd9a67f2cb23937200342f7acfa744fdda611ef062"
+        },
+        {
+          "path": "crates/ctap/src/config.rs",
+          "sha256": "e658ddb2719f9baf020428167c6437349fa53a1e3098110e1fb5891379f0474b"
+        },
+        {
+          "path": "crates/core/src/config.rs",
+          "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
         }
       ],
       "regressions": [
@@ -354,7 +407,8 @@
       "remaining": [
         "CIU request-path stack and PKE/RF acceptance is open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs, crates/host/src/pcsc.rs, crates/protocol/src/ctaphid.rs, tests/card/src/bin/usb_sessions/envelopes.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted."
+        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -364,11 +418,19 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
+          "sha256": "249ea9202bc4d66fc75c3c22f77816e95f048a2dfd150592c8c4495647a214ac"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
           "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+        },
+        {
+          "path": "crates/ctap/src/config.rs",
+          "sha256": "e658ddb2719f9baf020428167c6437349fa53a1e3098110e1fb5891379f0474b"
+        },
+        {
+          "path": "crates/core/src/config.rs",
+          "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
         }
       ],
       "regressions": [
@@ -387,7 +449,8 @@
         }
       ],
       "remaining": [
-        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -397,7 +460,7 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
+          "sha256": "249ea9202bc4d66fc75c3c22f77816e95f048a2dfd150592c8c4495647a214ac"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
@@ -406,6 +469,14 @@
         {
           "path": "crates/core/codegen/release.rs",
           "sha256": "09e00a059c8eab7c5d9ac0df893ec811de35b532be31e26700ef17c01d52265f"
+        },
+        {
+          "path": "crates/ctap/src/config.rs",
+          "sha256": "e658ddb2719f9baf020428167c6437349fa53a1e3098110e1fb5891379f0474b"
+        },
+        {
+          "path": "crates/core/src/config.rs",
+          "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
         }
       ],
       "regressions": [
@@ -424,7 +495,8 @@
         }
       ],
       "remaining": [
-        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -434,11 +506,19 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
+          "sha256": "249ea9202bc4d66fc75c3c22f77816e95f048a2dfd150592c8c4495647a214ac"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
           "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+        },
+        {
+          "path": "crates/ctap/src/config.rs",
+          "sha256": "e658ddb2719f9baf020428167c6437349fa53a1e3098110e1fb5891379f0474b"
+        },
+        {
+          "path": "crates/core/src/config.rs",
+          "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
         }
       ],
       "regressions": [
@@ -457,7 +537,8 @@
         }
       ],
       "remaining": [
-        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -552,7 +633,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
+          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
           "id": "explicit_selection"
         },
         {
@@ -584,7 +665,8 @@
       "remaining": [
         "E64/E65/E66 cover listed AID/rejection, disabled-target, CLA/P1/Case2E/Case4E, grant and EF matrices. Further header/body/inline mutations, pending/config transitions, volatile native-HID state and physical acceptance remain open.",
         "E63 after-WTX differences, mixed NFC source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-ccid/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-ccid/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -604,7 +686,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
+          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
           "id": "explicit_selection_and_power_and_irq"
         }
       ],
@@ -624,7 +706,8 @@
       ],
       "remaining": [
         "Physical USB slot-reset acceptance remains open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, tests/card/src/bin/usb_sessions.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, tests/card/src/bin/usb_sessions.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -656,7 +739,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
+          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
           "id": "ccid_drain"
         },
         {
@@ -693,7 +776,8 @@
       ],
       "remaining": [
         "Complete the E02-E04 matrix and physical USB acceptance; archived dual CCID cases cover a subset.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/core/src/runtime/usb/descriptors.rs, crates/ffi/src/transport/ccid/mod.rs, crates/protocol/src/ccid.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-ccid/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/core/src/runtime/usb/descriptors.rs, crates/ffi/src/transport/ccid/mod.rs, crates/protocol/src/ccid.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-ccid/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -1068,7 +1152,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
+          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
           "id": "ccid_drain"
         },
         {
@@ -1104,7 +1188,8 @@
       ],
       "remaining": [
         "Complete physical USB delayed-fragment/reset acceptance.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/core/tests/ccid.rs, crates/ffi/src/transport/ccid/mod.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-ccid/vectors.json, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/core/tests/ccid.rs, crates/ffi/src/transport/ccid/mod.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-ccid/vectors.json, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -1173,7 +1258,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
+          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
           "id": "ownership_and_pending-power_and_irq-staging_and_presence"
         },
         {
@@ -1198,7 +1283,8 @@
       ],
       "remaining": [
         "Dual C/Rust busy/auxiliary queue schedules and physical USB acceptance remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/hid/link.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-hid-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/hid/link.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-hid-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -1233,7 +1319,7 @@
         },
         {
           "path": "tests/card/src/bin/behavior.rs",
-          "sha256": "f3b470db232b5159150fb76bf4820607a1765284a879922076da8862b01a0878",
+          "sha256": "3f893d904e6b69bf0d36ba8abf9bd4e6342b1121babfdf9df00d4b92773afef9",
           "id": "response_cleanup"
         }
       ],
@@ -1259,7 +1345,8 @@
       ],
       "remaining": [
         "Extend absent-Le comparison to remaining OpenPGP/direct applet cases and WebUSB.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, tests/fixtures/c312-ccid/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, tests/fixtures/c312-ccid/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -1287,7 +1374,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
+          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
           "id": "ownership_and_pending-native-MSG-two3000ms-gaps"
         },
         {
@@ -1346,7 +1433,8 @@
       ],
       "remaining": [
         "Recorded same/other-CID controls retain exact output and foreign MSG is refused without advancing it. CID1/E43 is an intentional isolation difference; broader channel/withheld-IN/endpoint/IRQ and physical USB schedules remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/hid/link.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-hid-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/hid/link.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-hid-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -1423,7 +1511,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
+          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
           "id": "preemption: expired-Hold-continuation-exclusion and aborted-WebUSB-reservation-preserves-CCID-PIN"
         },
         {
@@ -1466,7 +1554,8 @@
       ],
       "remaining": [
         "Beyond the explicit E32 serialized schedule: HID ownership, auxiliary/in-flight endpoint contention, failure/IRQ races and physical USB acceptance remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/tests/webusb.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/usb.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/tests/webusb.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/usb.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -1504,7 +1593,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
+          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
           "id": "preemption: expired-Hold-continuation-exclusion and aborted-WebUSB-reservation-preserves-CCID-PIN"
         },
         {
@@ -1535,7 +1624,8 @@
       ],
       "remaining": [
         "Beyond the explicit E32 serialized schedule: HID ownership, auxiliary/in-flight endpoint contention, failure/IRQ races and physical USB acceptance remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/tests/webusb.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/usb.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/tests/webusb.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/usb.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -1834,7 +1924,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/hid.rs",
-          "sha256": "0bc03875390d41455770b18d863db93789d77b7e5b4b8ae40d9c2ee434b35b40",
+          "sha256": "339d65e1fc46b916ad260decea134fbd7f98e188dcfbadb6a8c7c37c77f5265b",
           "id": "presence_same_CID_INIT_unwind_and_replay"
         },
         {
@@ -1865,7 +1955,8 @@
       ],
       "remaining": [
         "Physical USB, withheld IN and endpoint/IRQ acceptance remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/hid/link/tests.rs, tests/card/src/bin/hid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/hid/link/tests.rs, tests/card/src/bin/hid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -1890,7 +1981,7 @@
         },
         {
           "path": "tests/card/src/bin/hid.rs",
-          "sha256": "0bc03875390d41455770b18d863db93789d77b7e5b4b8ae40d9c2ee434b35b40",
+          "sha256": "339d65e1fc46b916ad260decea134fbd7f98e188dcfbadb6a8c7c37c77f5265b",
           "id": "foreign_busy_then_executing_CANCEL"
         },
         {
@@ -1922,7 +2013,8 @@
       "remaining": [
         "Physical USB, withheld IN and endpoint/IRQ acceptance remain open.",
         "Executing invalid-CID/disabled/unknown-command error ordering and adversarial flood schedules still require literal C comparison; no complete S4 claim.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/hid/link/tests.rs, tests/card/src/bin/hid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/hid/link/tests.rs, tests/card/src/bin/hid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -2367,7 +2459,7 @@
         },
         {
           "path": "tests/card/src/bin/hid.rs",
-          "sha256": "0bc03875390d41455770b18d863db93789d77b7e5b4b8ae40d9c2ee434b35b40",
+          "sha256": "339d65e1fc46b916ad260decea134fbd7f98e188dcfbadb6a8c7c37c77f5265b",
           "id": "empty-C0-after-drained-generator-INIT-reset"
         },
         {
@@ -2404,7 +2496,8 @@
       ],
       "remaining": [
         "Pending C0 P1/P2/body/CLA differences are now explicit L8/E53; malformed trailer preserves the source on both. Other command/error combinations and physical USB acceptance remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/message.rs, tests/card/src/bin/hid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/message.rs, tests/card/src/bin/hid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -2499,7 +2592,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
+          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
           "id": "ownership_and_pending-preemption-power_and_irq"
         },
         {
@@ -2536,7 +2629,8 @@
       "remaining": [
         "Complete remaining takeover/IRQ/endpoint-failure schedules and physical/CIU acceptance.",
         "L8/CID1 intentionally preserve Rust response isolation; remaining physical/source acceptance is separate.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/hid/link.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-hid-ownership/vectors.json, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/hid/link.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-hid-ownership/vectors.json, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -2546,11 +2640,19 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/credential_request.rs",
-          "sha256": "fc1335dc13ed25c0a77f9ef54cac208a5754e89c44efb81da004b468144d2543"
+          "sha256": "4292697f5b6ebc34e96b121f68d68345fb3a36e71016dcad1ce13bc5e78bae69"
         },
         {
           "path": "crates/core/src/applets/ctap/authentication.rs",
           "sha256": "4734648764244fa238cbc31a16157eabe53bdb2c50a7b2088dcc053482883d3d"
+        },
+        {
+          "path": "crates/ctap/src/config.rs",
+          "sha256": "e658ddb2719f9baf020428167c6437349fa53a1e3098110e1fb5891379f0474b"
+        },
+        {
+          "path": "crates/core/src/config.rs",
+          "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
         }
       ],
       "regressions": [
@@ -2586,7 +2688,8 @@
         }
       ],
       "remaining": [
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/authentication.rs, crates/core/src/applets/ctap/credential_request.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/authentication.rs, crates/core/src/applets/ctap/credential_request.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: Owned parser CBOR and algorithm capacities now use the shared derivations; the CanoKey capacities remain 1295 CBOR bytes and 64 algorithms. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -2596,11 +2699,11 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/credential_request.rs",
-          "sha256": "fc1335dc13ed25c0a77f9ef54cac208a5754e89c44efb81da004b468144d2543"
+          "sha256": "4292697f5b6ebc34e96b121f68d68345fb3a36e71016dcad1ce13bc5e78bae69"
         },
         {
           "path": "crates/core/src/applets/ctap/request_decoder.rs",
-          "sha256": "eec674e089f2d9869c9aa2ed1e460e9028243bd265999bcdebb3c8958d6987b1"
+          "sha256": "575385ef29545fc19538040db2ab82ab7cefbd7effd7c82fd66895d013cf870f"
         },
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
@@ -2617,6 +2720,14 @@
         {
           "path": "crates/ffi/src/transport/nfc.rs",
           "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+        },
+        {
+          "path": "crates/ctap/src/config.rs",
+          "sha256": "e658ddb2719f9baf020428167c6437349fa53a1e3098110e1fb5891379f0474b"
+        },
+        {
+          "path": "crates/core/src/config.rs",
+          "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
         }
       ],
       "regressions": [
@@ -2691,7 +2802,8 @@
         "Classify C one-shot reader-failure successes before claiming source-error parity; preserve raw outcomes and Rust fail-closed behavior.",
         "CIU call-path stack/PKE and physical transport acceptance remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/credential_request.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/request_decoder.rs, crates/core/src/runtime/engine.rs, crates/core/tests/streaming.rs, crates/ffi/src/transport/nfc.rs, crates/protocol/src/cbor.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted."
+        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
+        "2026-11-10 shared-contract review: Owned parser CBOR and algorithm capacities now use the shared derivations; the CanoKey capacities remain 1295 CBOR bytes and 64 algorithms. The CBOR decoder now uses RequestConfig; its CanoKey limit remains 1295 bytes. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -2743,7 +2855,7 @@
         },
         {
           "path": "tests/card/src/bin/behavior.rs",
-          "sha256": "f3b470db232b5159150fb76bf4820607a1765284a879922076da8862b01a0878",
+          "sha256": "3f893d904e6b69bf0d36ba8abf9bd4e6342b1121babfdf9df00d4b92773afef9",
           "id": "source-backed-getinfo-250-byte-chunk"
         },
         {
@@ -2851,7 +2963,8 @@
         "E58 covers first/second negative/zero/one-byte reads for classical/PQ MC and largeBlobs on five facades and U2F on CCID/WebUSB/native MSG/NFC. T19 now adds extended-NFC aggregation/retry faults; broader offsets/certificate lengths and close/cancel schedules remain open.",
         "Paired executing cancellation, broader native open/seek/close and physical storage, arbitrary IRQ/withheld endpoint faults, USB/RF/WTX, CIU stack/PKE and Linux LeakSanitizer remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted."
+        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -2903,7 +3016,7 @@
         },
         {
           "path": "tests/card/src/bin/behavior.rs",
-          "sha256": "f3b470db232b5159150fb76bf4820607a1765284a879922076da8862b01a0878",
+          "sha256": "3f893d904e6b69bf0d36ba8abf9bd4e6342b1121babfdf9df00d4b92773afef9",
           "id": "source-backed-getinfo-250-byte-chunk"
         },
         {
@@ -3017,7 +3130,8 @@
         "E58 covers first/second negative/zero/one-byte reads for classical/PQ MC and largeBlobs on five facades and U2F on CCID/WebUSB/native MSG/NFC. Extended-NFC aggregation/retry faults have the T19 companion; broader offsets/certificate lengths and close/cancel schedules remain open.",
         "Paired executing cancellation, broader native open/seek/close and physical storage, arbitrary IRQ/withheld endpoint faults, USB/RF/WTX, CIU stack/PKE and Linux LeakSanitizer remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted."
+        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -3086,11 +3200,15 @@
         },
         {
           "path": "crates/ports/src/contracts/storage.rs",
-          "sha256": "42e129fc3ebde8f42adda38cab8329e99a5ea91f95d29b1bbbdd3979084274a2"
+          "sha256": "afb95f4f517926364695807675caa3a089a756c71e4dbc9c5e82a73512cb7f74"
         },
         {
           "path": "crates/ffi/src/platform/storage.rs",
-          "sha256": "9fcb85d3f52b6bbd96f98d1b6a438f014995c6869abf86b756edbf0729fe0502"
+          "sha256": "7433ec90571644ed95b5edc7ff2a6fe6a23b627e9176f88d7d75ea3231474cd7"
+        },
+        {
+          "path": "crates/ports/src/canokey.rs",
+          "sha256": "2a84252599a8e45c44b0e28702bae4941007c0101d883ecc8162a1dd346a56d8"
         }
       ],
       "regressions": [
@@ -3101,7 +3219,7 @@
         },
         {
           "path": "tests/card/src/storage.rs",
-          "sha256": "bb982420ab94bfe4caceb4e861a243010b96178f79c586c1e97aa433e4e7fbe2",
+          "sha256": "b260bf370fab7ee7349e45b11e8a176ca240053d29af878d0393dcc4702b563b",
           "id": "E58-real-prefix-and-poisoned-suffix"
         },
         {
@@ -3183,7 +3301,8 @@
       "remaining": [
         "broader native open/seek/close and physical fault injection, arbitrary cancellation/IRQ schedules and physical/CIU acceptance remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted."
+        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
+        "2026-11-10 shared-contract review: Persisted Record values moved to ports::canokey; Storage signatures and numeric ABI remain unchanged. Only the persisted Record import namespace changed. The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -3236,7 +3355,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
+          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
           "id": "E59-disjoint-controls-and-pending-native-IN"
         }
       ],
@@ -3268,7 +3387,8 @@
       ],
       "remaining": [
         "Physical USB/RF, arbitrary endpoint/IRQ schedules, every import/decipher continuation and CIU runtime stack/PKE remain open. Broader session and source audit, prior unresolved wire behaviors are separate blockers.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/hid/command.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/usb.rs, tests/card/src/bin/usb_sessions.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/hid/command.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/usb.rs, tests/card/src/bin/usb_sessions.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -3786,7 +3906,15 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/pin.rs",
-          "sha256": "62ca766a1e2bb09352052632b4d7e39890aebff7a4fc1471a1e398f22f8b3095"
+          "sha256": "3cd691f5aeb9a8e2b1ce976c9e3f30a8e7da6ccc8da95b03c9f1c40ffa827173"
+        },
+        {
+          "path": "crates/ctap/src/client_pin/state.rs",
+          "sha256": "8c8e5561727defae152b9a92077630d9412546ff4cc5501c5d3f42032e0b713a"
+        },
+        {
+          "path": "crates/ctap/src/client_pin/token/state.rs",
+          "sha256": "50efd3db24ddd046fb6ca7a3627bff0558fb7388372830ce50137d1470e92b64"
         }
       ],
       "regressions": [
@@ -3811,7 +3939,8 @@
         }
       ],
       "remaining": [
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/pin.rs, tests/fixtures/c312-correctness/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/pin.rs, tests/fixtures/c312-correctness/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 shared-contract review: Token metadata and mutation use the Session owner API; mutable private-key loans revoke readiness until commit. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
       ]
     },
     {
@@ -10135,6 +10264,105 @@
         "crates/ffi/src/transport/nfc.rs": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
       },
       "scope": "Constant sourcing only; no disposition or remaining obligation changed."
+    }
+  },
+  "shared_contract_review": {
+    "record_parent": "1937fde5bcce7a7501734f8c36ec9ec481fe91d1",
+    "status": "pending; no behavior, source-hunk or release approval granted",
+    "scope": "Update inspectable draft artifact identities after the six shared-contract review fixes. Preserve all historical evidence, pinned C source inventory, hunk dispositions and remaining acceptance obligations. The moved CanoKey record definition is an explicit T18 target.",
+    "artifacts": {
+      "crates/core/codegen/ctap.rs": {
+        "previous_sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819",
+        "current_sha256": "249ea9202bc4d66fc75c3c22f77816e95f048a2dfd150592c8c4495647a214ac",
+        "behaviors": [
+          "G1",
+          "G2",
+          "G3",
+          "G4",
+          "G5",
+          "G6",
+          "G7",
+          "G8",
+          "G9"
+        ]
+      },
+      "tests/card/src/bin/usb_sessions.rs": {
+        "previous_sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
+        "current_sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
+        "behaviors": [
+          "A2",
+          "A3",
+          "T1",
+          "T7",
+          "L5",
+          "L6",
+          "L2",
+          "L7",
+          "L1",
+          "L10"
+        ]
+      },
+      "tests/card/src/bin/behavior.rs": {
+        "previous_sha256": "f3b470db232b5159150fb76bf4820607a1765284a879922076da8862b01a0878",
+        "current_sha256": "3f893d904e6b69bf0d36ba8abf9bd4e6342b1121babfdf9df00d4b92773afef9",
+        "behaviors": [
+          "T9-LE",
+          "C3",
+          "T16"
+        ]
+      },
+      "tests/card/src/bin/hid.rs": {
+        "previous_sha256": "0bc03875390d41455770b18d863db93789d77b7e5b4b8ae40d9c2ee434b35b40",
+        "current_sha256": "339d65e1fc46b916ad260decea134fbd7f98e188dcfbadb6a8c7c37c77f5265b",
+        "behaviors": [
+          "L4",
+          "L9",
+          "T15"
+        ]
+      },
+      "crates/core/src/applets/ctap/credential_request.rs": {
+        "previous_sha256": "fc1335dc13ed25c0a77f9ef54cac208a5754e89c44efb81da004b468144d2543",
+        "current_sha256": "4292697f5b6ebc34e96b121f68d68345fb3a36e71016dcad1ce13bc5e78bae69",
+        "behaviors": [
+          "C1",
+          "C2"
+        ]
+      },
+      "crates/core/src/applets/ctap/request_decoder.rs": {
+        "previous_sha256": "eec674e089f2d9869c9aa2ed1e460e9028243bd265999bcdebb3c8958d6987b1",
+        "current_sha256": "575385ef29545fc19538040db2ab82ab7cefbd7effd7c82fd66895d013cf870f",
+        "behaviors": [
+          "C2"
+        ]
+      },
+      "crates/ports/src/contracts/storage.rs": {
+        "previous_sha256": "42e129fc3ebde8f42adda38cab8329e99a5ea91f95d29b1bbbdd3979084274a2",
+        "current_sha256": "afb95f4f517926364695807675caa3a089a756c71e4dbc9c5e82a73512cb7f74",
+        "behaviors": [
+          "T18"
+        ]
+      },
+      "crates/ffi/src/platform/storage.rs": {
+        "previous_sha256": "9fcb85d3f52b6bbd96f98d1b6a438f014995c6869abf86b756edbf0729fe0502",
+        "current_sha256": "7433ec90571644ed95b5edc7ff2a6fe6a23b627e9176f88d7d75ea3231474cd7",
+        "behaviors": [
+          "T18"
+        ]
+      },
+      "tests/card/src/storage.rs": {
+        "previous_sha256": "bb982420ab94bfe4caceb4e861a243010b96178f79c586c1e97aa433e4e7fbe2",
+        "current_sha256": "b260bf370fab7ee7349e45b11e8a176ca240053d29af878d0393dcc4702b563b",
+        "behaviors": [
+          "T18"
+        ]
+      },
+      "crates/core/src/applets/ctap/pin.rs": {
+        "previous_sha256": "62ca766a1e2bb09352052632b4d7e39890aebff7a4fc1471a1e398f22f8b3095",
+        "current_sha256": "3cd691f5aeb9a8e2b1ce976c9e3f30a8e7da6ccc8da95b03c9f1c40ffa827173",
+        "behaviors": [
+          "C1-RETRIES"
+        ]
+      }
     }
   }
 }
