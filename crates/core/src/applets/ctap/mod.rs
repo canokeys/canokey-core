@@ -495,6 +495,7 @@ pub enum Command {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Status {
+    RequestTooLarge = canokey_ctap::status::Status::RequestTooLarge as u8,
     LargeBlobFull = canokey_ctap::status::Status::LargeBlobFull as u8,
     IntegrityFailure = canokey_ctap::status::Status::IntegrityFailure as u8,
     InvalidSequence = canokey_ctap::status::Status::InvalidSequence as u8,

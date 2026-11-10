@@ -217,7 +217,9 @@ unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outco
                     match rejection {
                         Rejection::Status(sw) => (Reply::Status(sw), None),
                         Rejection::TooLarge => {
-                            buffer.write(0x39); // CTAP2_ERR_REQUEST_TOO_LARGE.
+                            buffer.write(
+                                canokey_rust_core::applets::ctap::Status::RequestTooLarge as u8,
+                            );
                             buffer.add(1).write(0x90);
                             buffer.add(2).write(0);
                             return Outcome {

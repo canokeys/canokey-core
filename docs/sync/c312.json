@@ -156,7 +156,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
         }
       ],
       "regressions": [
@@ -172,6 +172,12 @@
           "sha256": "f54c81edbbd24c668b9be43cbd66dd453c3bcd676c3e2cd0972e66bf80fc11df",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "128 extracted pinned-C schema executions with explicit storage/configuration stubs; 32 expected wide-ID failures; not firmware/transport execution"
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -268,7 +274,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051"
+          "sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
@@ -284,7 +290,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
         },
         {
           "path": "crates/host/src/pcsc.rs",
@@ -337,6 +343,12 @@
           "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -699,7 +711,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
@@ -757,6 +769,12 @@
           "sha256": "43afedd41da56f2a6ff7608b50451d98829bbfdd84e62cbb34b1bd26df8856e4",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "41 actual Rust production-dispatch injections and generic failed-close publication regression; not C transport or physical acceptance."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -913,7 +931,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
         }
       ],
       "regressions": [
@@ -940,6 +958,12 @@
           "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -1336,7 +1360,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
         }
       ],
       "regressions": [
@@ -1352,6 +1376,12 @@
           "sha256": "27270f305b89b6c1a457d87c81d3b8975830e061deb94799c52d16532463c552",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "Exact mechanical source transformation for this follow-up and identical merge-parent delta only. Not acceptance of the earlier58-hunk NFC implementation or physical transport."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -2574,7 +2604,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051"
+          "sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89"
         },
         {
           "path": "crates/protocol/src/cbor.rs",
@@ -2586,7 +2616,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
         }
       ],
       "regressions": [
@@ -2647,6 +2677,12 @@
           "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -2665,7 +2701,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051"
+          "sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
@@ -2803,6 +2839,12 @@
           "sha256": "46a2e0311fe1a3215d4a7ba5ce8117dfaee9d7ddf9a27c75b0fe0844c869eca7",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "Corrects the lower native service gap missed by mock-level injection; no new source-audit approvals."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -2819,7 +2861,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051"
+          "sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
@@ -2963,6 +3005,12 @@
           "sha256": "c302beff220a79d9c9bc0597f7df8e3d8d20d1ca5226b0bfda31b8d5e1964913",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "72 C/90 Rust extended-NFC file-fault/recovery checks, finite/unlimited Le and source-preserving R-block retries; not physical acceptance."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -2979,7 +3027,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051"
+          "sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89"
         },
         {
           "path": "crates/core/src/applets/ctap/message.rs",
@@ -3005,6 +3053,12 @@
           "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -3020,7 +3074,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051"
+          "sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
@@ -3118,6 +3172,12 @@
           "sha256": "46a2e0311fe1a3215d4a7ba5ce8117dfaee9d7ddf9a27c75b0fe0844c869eca7",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "Corrects the lower native service gap missed by mock-level injection; no new source-audit approvals."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -3222,7 +3282,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
         }
       ],
       "regressions": [
@@ -3260,6 +3320,12 @@
           "sha256": "c302beff220a79d9c9bc0597f7df8e3d8d20d1ca5226b0bfda31b8d5e1964913",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "Gzip JSON:72 C/90 Rust independent fault/recovery checks across three extended encodings; actual PKE request staging and RF control/source-read invariants."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -3323,7 +3389,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
         }
       ],
       "regressions": [
@@ -3355,6 +3421,12 @@
           "sha256": "23f09849e39766758041a075a20f7f113d053d6bcba3b4daae782aee5851829a",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "124 literal NFC cases; new28 E62 cases/105 events equal C/Rust; prior Rust fails all28."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -3374,7 +3446,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
         }
       ],
       "regressions": [
@@ -3411,6 +3483,12 @@
           "sha256": "ba3cc760329751d83dd73fa7033d48597422b912466607141722cb21a24dde51",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "15 cases per side:11 normal equal initial RF contracts,4 unresolved after-WTX observations; continuation/selection and deferred C2 separately asserted."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -3664,7 +3742,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
         }
       ],
       "regressions": [
@@ -3686,6 +3764,12 @@
           "sha256": "13730d44739cb27b879ea82d5336a954f8c9aab5e1022dee1dbe51d703475b6a",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
           "scope": "980 literal cases/550 repaired old failures; all equal-output."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -3780,7 +3864,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
         }
       ],
       "regressions": [
@@ -3806,6 +3890,12 @@
           "sha256": "e302385ea1cb602fcd85f4db66a58f5945d5ea9ed8e15530606b84f683c7f9fe",
           "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
           "scope": "540 literal paired NFC cases: pinned C540, repaired Rust540 with identical outputs. Five real retained contexts, malformed boundaries and70 RF split/retry schedules. Physical/WTX/resource acceptance remains open."
+        },
+        {
+          "path": "docs/sync/evidence/protocol-values-20261110.json",
+          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
         }
       ],
       "remaining": [
@@ -9527,7 +9617,7 @@
       },
       "crates/ffi/src/transport/nfc.rs": {
         "previous_sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d",
-        "current_sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535",
+        "current_sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d",
         "behaviors": [
           "G3",
           "G6",
@@ -9559,7 +9649,7 @@
       },
       "crates/core/src/applets/ctap/mod.rs": {
         "previous_sha256": "4059a28c598c956dd46339665e3d18ebc99f9c62765658a06b2f933e68b16ce1",
-        "current_sha256": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051",
+        "current_sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89",
         "behaviors": [
           "G6",
           "C2",
@@ -10031,6 +10121,20 @@
           "T18"
         ]
       }
-    ]
+    ],
+    "protocol_values_follow_up_20261110": {
+      "source_review": "docs/sync/evidence/protocol-values-20261110.json",
+      "previous_source_sha256": {
+        "crates/ctap/src/status.rs": "cfc924fcc4fb659745da7d6a94be413a38cf880cda8aed2fe3c143536aa3a9c9",
+        "crates/core/src/applets/ctap/mod.rs": "f0fa39db43ffe16613b7bb843ac655c75fac4a041fb5449eeecc9e8b7cc08051",
+        "crates/ffi/src/transport/nfc.rs": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+      },
+      "current_source_sha256": {
+        "crates/ctap/src/status.rs": "0fcf08c6d1b171ba5c9b96b79850f472ba6cf5311061d702dffd40d60da772a9",
+        "crates/core/src/applets/ctap/mod.rs": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89",
+        "crates/ffi/src/transport/nfc.rs": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+      },
+      "scope": "Constant sourcing only; no disposition or remaining obligation changed."
+    }
   }
 }
