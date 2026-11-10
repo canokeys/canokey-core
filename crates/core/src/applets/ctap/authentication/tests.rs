@@ -72,8 +72,7 @@ fn silent_secret_rejection_precedes_policy_rp_crypto_and_probe_with_outer_erasur
         let mut session = Session::new();
         session
             .pin
-            .token
-            .with_secret_mut(|secret| secret.fill(0x55));
+            .with_token_secret_mut(|secret| secret.fill(0x55));
         session.pin.commit_agreement();
         let mut backing = SessionWorkspace::new();
         let workspace = backing.classic();
@@ -103,6 +102,9 @@ fn silent_secret_rejection_precedes_policy_rp_crypto_and_probe_with_outer_erasur
                 .all(|byte| *byte == 0x00)
         );
         assert!(session.pin.agreement_ready());
-        assert_eq!(session.pin.token.with_secret(|secret| *secret), [0x55; 32]);
+        assert_eq!(
+            session.pin.token().with_secret(|secret| *secret),
+            [0x55; 32]
+        );
     }
 }

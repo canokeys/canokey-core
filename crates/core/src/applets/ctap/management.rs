@@ -624,13 +624,11 @@ mod tests {
                 memory: &canokey_ports::default_memory(),
             };
             let mut session = Session::new();
-            session.pin.token.permissions = CREDENTIAL_MANAGEMENT_PERMISSION;
-            session.pin.token.issued = 1;
-            session.pin.token.last_used = 1;
+            session.pin.start_token(CREDENTIAL_MANAGEMENT_PERMISSION, 1);
+            session.pin.mark_token_used(1);
             session
                 .pin
-                .token
-                .bind_rp(Some([if case == 1 { 0x08 } else { 0x07 }; 32]));
+                .bind_token_rp(Some([if case == 1 { 0x08 } else { 0x07 }; 32]));
             let mut backing = crate::runtime::workspace::SessionWorkspace::new();
             let result = session.manage(&parameters, &mut backing.classic(), &mut platform);
             assert_eq!(
@@ -642,7 +640,7 @@ mod tests {
                 }
             );
             assert_eq!(
-                session.pin.token.last_used,
+                session.pin.token().last_used(),
                 match case {
                     3 => 20,
                     4 => 0,

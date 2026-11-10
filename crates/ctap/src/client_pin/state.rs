@@ -11,7 +11,7 @@ use super::{KEY_BYTES, token};
 #[repr(C)]
 pub struct Session<Permissions = u16> {
     agreement_ready: bool,
-    pub token: token::Token<Permissions>,
+    pub(crate) token: token::Token<Permissions>,
     private: [u8; KEY_BYTES],
 }
 impl<P: Copy> Session<P> {
@@ -21,6 +21,51 @@ impl<P: Copy> Session<P> {
             private: [0x00; KEY_BYTES],
             agreement_ready: false,
         }
+    }
+    /// Read-only view of the session-owned token; callers cannot replace it or
+    /// bypass issuance clocks by assigning metadata.
+    ///
+    /// ```compile_fail
+    /// use canokey_ctap::client_pin::{Session, token::Token};
+    /// let mut session = Session::empty(0x00u8);
+    /// session.token = Token::empty(0x00);
+    /// ```
+    #[inline]
+    pub fn token(&self) -> &token::Token<P> {
+        &self.token
+    }
+    #[inline]
+    pub fn start_token(&mut self, permissions: P, now: u32) {
+        self.token.start(permissions, now);
+    }
+    #[inline]
+    pub fn mark_token_used(&mut self, now: u32) {
+        self.token.mark_used(now);
+    }
+    #[inline]
+    pub fn retain_token_permissions(&mut self, permissions: P)
+    where
+        P: core::ops::BitAnd<Output = P>,
+    {
+        self.token.retain_permissions(permissions);
+    }
+    #[inline]
+    pub fn bind_token_rp(&mut self, rp: Option<[u8; KEY_BYTES]>) {
+        self.token.bind_rp(rp);
+    }
+    #[inline]
+    pub fn prepare_token_rp<E>(
+        &mut self,
+        hash: impl FnOnce(&mut [u8; KEY_BYTES]) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.token.prepare_rp(hash)
+    }
+    #[inline]
+    pub fn with_token_secret_mut<T>(
+        &mut self,
+        primitive: impl FnOnce(&mut [u8; KEY_BYTES]) -> T,
+    ) -> T {
+        self.token.with_secret_mut(primitive)
     }
     pub fn agreement_ready(&self) -> bool {
         self.agreement_ready
@@ -42,6 +87,8 @@ impl<P: Copy> Session<P> {
         primitive(&self.private)
     }
     pub fn with_private_mut<T>(&mut self, primitive: impl FnOnce(&mut [u8; KEY_BYTES]) -> T) -> T {
+        // A partial or failed overwrite is no longer an established agreement.
+        self.agreement_ready = false;
         primitive(&mut self.private)
     }
     pub fn clear_agreement(&mut self, wipe: impl FnOnce(&mut [u8])) {
@@ -50,6 +97,10 @@ impl<P: Copy> Session<P> {
     }
 }
 impl<P: Copy + From<u8>> Session<P> {
+    #[inline]
+    pub fn clear_token(&mut self, wipe: impl FnMut(&mut [u8])) {
+        self.token.clear(wipe);
+    }
     pub fn clear(&mut self, mut wipe: impl FnMut(&mut [u8])) {
         self.clear_agreement(&mut wipe);
         self.token.clear(wipe);
@@ -79,6 +130,7 @@ mod tests {
             Err::<(), _>(())
         });
         assert!(result.is_err());
+        assert!(!owner.agreement_ready());
         let mut lengths = [0; 2];
         let mut wipes = 0;
         owner.clear(|bytes| {
@@ -159,6 +211,9 @@ mod tests {
             [0x73; KEY_BYTES]
         );
         assert_eq!(empty.with_private(|private| *private), [0x00; KEY_BYTES]);
+        established.with_private_mut(|private| private.fill(0x74));
+        assert!(!established.agreement_ready());
+        established.commit_agreement();
         established.token = token::Token::empty(0x00);
         established.token.clear(|bytes| bytes.fill(0x00));
         assert!(established.agreement_ready());

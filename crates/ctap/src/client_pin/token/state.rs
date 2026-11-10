@@ -14,12 +14,18 @@ const MATERIAL_BYTES: usize = KEY_BYTES + KEY_BYTES;
 /// Permission width reflects the actual wire field or native extension bits.
 // Keep byte metadata within Thumb-1's immediate load/store range, with clocks
 // before the word-aligned material backing. This volatile layout has no C ABI.
+///
+/// ```compile_fail
+/// use canokey_ctap::client_pin::token::Token;
+/// let mut token = Token::empty(0x00u8);
+/// token.issued = 123;
+/// ```
 #[repr(C)]
 pub struct Token<Permissions = u16> {
-    pub permissions: Permissions,
+    pub(crate) permissions: Permissions,
     rp_bound: bool,
-    pub issued: u32,
-    pub last_used: u32,
+    pub(crate) issued: u32,
+    pub(crate) last_used: u32,
     material: [u8; MATERIAL_BYTES],
 }
 impl<P: Copy> Token<P> {
@@ -34,6 +40,26 @@ impl<P: Copy> Token<P> {
             last_used: now,
             rp_bound: false,
         }
+    }
+    #[inline]
+    pub fn permissions(&self) -> P {
+        self.permissions
+    }
+    #[inline]
+    pub fn issued(&self) -> u32 {
+        self.issued
+    }
+    #[inline]
+    pub fn last_used(&self) -> u32 {
+        self.last_used
+    }
+    /// Revocation can only remove grants; new grants require issuance.
+    #[inline]
+    pub fn retain_permissions(&mut self, permissions: P)
+    where
+        P: core::ops::BitAnd<Output = P>,
+    {
+        self.permissions = self.permissions & permissions;
     }
     /// Issuance fixes both clock origins; re-agreement must never call this.
     /// The caller publishes the complete grant only after crypto/IO succeeds.
@@ -149,6 +175,18 @@ impl<P: Copy + Into<u16>> Token<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn permission_retention_cannot_grant_authority_or_refresh_either_clock() {
+        let mut owner = Token::new(0x0103u16, 123);
+        owner.mark_used(124);
+        owner.retain_permissions(0x0104);
+        assert_eq!(owner.permissions(), 0x0100);
+        assert_eq!((owner.issued(), owner.last_used()), (123, 124));
+        owner.retain_permissions(0x0003);
+        assert_eq!(owner.permissions(), 0x0000);
+        assert_eq!((owner.issued(), owner.last_used()), (123, 124));
+    }
 
     #[test]
     fn clear_erases_both_backings_and_authority_after_partial_primitives() {

@@ -224,8 +224,8 @@ fn configuration_streams_exact_authenticated_map_at_every_split() {
         message.extend_from_slice(&params);
         for split in 0..=request.len() {
             let mut session = Session::new();
-            session.pin.token.permissions = 0x20;
-            session.pin.token.with_secret_mut(|secret| secret.fill(7));
+            session.pin.start_token(0x20, session.pin.token().issued());
+            session.pin.with_token_secret_mut(|secret| secret.fill(7));
             let mut store = Backend {
                 record: vec![0; 20],
                 ..Backend::default()
@@ -249,7 +249,7 @@ fn configuration_streams_exact_authenticated_map_at_every_split() {
             assert_eq!(&store.record[16..20], &[8, 6, 8, 18]); // force + two RPs
             assert_eq!(&store.record[20..52], &Sha256::digest("例".as_bytes())[..]);
             assert_eq!(&store.record[52..], &Sha256::digest([b'a'; 24])[..]);
-            assert_eq!(session.pin.token.permissions, 0); // raising minimum revokes token
+            assert_eq!(session.pin.token().permissions(), 0); // raising minimum revokes token
         }
     }
 }
@@ -322,7 +322,7 @@ fn policy_is_monotonic_atomic_and_can_disable_always_uv_without_pin() {
         0x37
     );
     store.fail = true;
-    session.pin.token.permissions = 0x20;
+    session.pin.start_token(0x20, session.pin.token().issued());
     assert_eq!(
         run(
             &mut session,
@@ -334,7 +334,7 @@ fn policy_is_monotonic_atomic_and_can_disable_always_uv_without_pin() {
         0x7f
     );
     assert_eq!(store.record, saved);
-    assert_eq!(session.pin.token.permissions, 0);
+    assert_eq!(session.pin.token().permissions(), 0);
 }
 #[test]
 fn rejected_auth_never_writes_or_refreshes_and_success_refreshes_idle_only() {
@@ -358,8 +358,10 @@ fn rejected_auth_never_writes_or_refreshes_and_success_refreshes_idle_only() {
         ] {
             let mut session = Session::new();
             session.pin.commit_agreement();
-            session.pin.token.permissions = permissions;
-            session.pin.token.with_secret_mut(|secret| secret.fill(7));
+            session
+                .pin
+                .start_token(permissions, session.pin.token().issued());
+            session.pin.with_token_secret_mut(|secret| secret.fill(7));
             let mut store = Backend {
                 record: vec![0; 20],
                 ..Backend::default()
@@ -379,13 +381,13 @@ fn rejected_auth_never_writes_or_refreshes_and_success_refreshes_idle_only() {
             );
             assert_eq!(store.writes, usize::from(expected == 0));
             assert_eq!(
-                session.pin.token.last_used,
+                session.pin.token().last_used(),
                 if expected == 0 { now } else { 0 }
             );
-            assert_eq!(session.pin.token.issued, 0);
+            assert_eq!(session.pin.token().issued(), 0);
             assert!(session.pin.agreement_ready());
             assert_eq!(
-                session.pin.token.with_secret(|secret| *secret),
+                session.pin.token().with_secret(|secret| *secret),
                 if now >= 30_000 {
                     [0x00; 32]
                 } else {
@@ -499,10 +501,9 @@ fn token_authorization_refresh_and_expiry_follow_successful_uses_across_wrap() {
         for start in [0u32, u32::MAX - 10_000] {
             for invalid_attempt in [false, true] {
                 let mut session = Session::new();
-                session.pin.token.with_secret_mut(|secret| secret.fill(7));
-                session.pin.token.permissions = pin::PERMISSION_CONFIG;
-                session.pin.token.issued = start;
-                session.pin.token.last_used = start;
+                session.pin.with_token_secret_mut(|secret| secret.fill(7));
+                session.pin.start_token(pin::PERMISSION_CONFIG, start);
+                session.pin.mark_token_used(start);
                 let mut store = Backend::default();
                 let mut crypto = Backend {
                     expected_message: vec![1, 2, 3],
@@ -532,7 +533,7 @@ fn token_authorization_refresh_and_expiry_follow_successful_uses_across_wrap() {
                         authorize(&mut session, 20_000, false),
                         Err(Status::PinAuthInvalid)
                     );
-                    assert_eq!(session.pin.token.last_used, start);
+                    assert_eq!(session.pin.token().last_used(), start);
                     assert_eq!(
                         authorize(&mut session, 30_001, true),
                         Err(Status::PinAuthInvalid)
@@ -540,16 +541,16 @@ fn token_authorization_refresh_and_expiry_follow_successful_uses_across_wrap() {
                 } else {
                     for elapsed in (29_000..600_000).step_by(29_000) {
                         assert_eq!(authorize(&mut session, elapsed, true), Ok(()));
-                        assert_eq!(session.pin.token.last_used, start.wrapping_add(elapsed));
-                        assert_eq!(session.pin.token.issued, start);
+                        assert_eq!(session.pin.token().last_used(), start.wrapping_add(elapsed));
+                        assert_eq!(session.pin.token().issued(), start);
                     }
                     assert_eq!(
                         authorize(&mut session, 600_000, true),
                         Err(Status::PinAuthInvalid)
                     );
                 }
-                assert_eq!(session.pin.token.permissions, 0);
-                assert_eq!(session.pin.token.with_secret(|secret| *secret), [0; 32]);
+                assert_eq!(session.pin.token().permissions(), 0);
+                assert_eq!(session.pin.token().with_secret(|secret| *secret), [0; 32]);
                 assert_eq!(store.writes, 0);
             }
         }

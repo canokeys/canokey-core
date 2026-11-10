@@ -124,13 +124,12 @@ impl<B: crate::ports::Backends> operation::Backend for Operation<'_, '_, '_, B> 
         self.session.clear_token(p.memory);
         self.session
             .pin
-            .token
-            .with_secret_mut(|secret| p.crypto.random(secret))
+            .with_token_secret_mut(|secret| p.crypto.random(secret))
             .map_err(|_| Status::Other)?;
         let n = self
             .session
             .pin
-            .token
+            .token()
             .with_secret(|secret| {
                 shared_pin::cipher::encrypt(
                     cipher_protocol(cp.protocol),
@@ -146,7 +145,7 @@ impl<B: crate::ports::Backends> operation::Backend for Operation<'_, '_, '_, B> 
             .copy_from_slice(&response::token_prefix(cipher_protocol(cp.protocol)));
         let issued = p.device.now();
         if cp.subcommand == wire::GET_TOKEN_PERMISSIONS && cp.rp_len != 0 {
-            self.session.pin.token.prepare_rp(|rp| {
+            self.session.pin.prepare_token_rp(|rp| {
                 p.crypto
                     .sha256(&cp.rp[..cp.rp_len], rp)
                     .map_err(|_| Status::Other)
@@ -157,7 +156,7 @@ impl<B: crate::ports::Backends> operation::Backend for Operation<'_, '_, '_, B> 
         } else {
             cp.permissions
         };
-        self.session.pin.token.start(permissions, issued);
+        self.session.pin.start_token(permissions, issued);
         Ok(TOKEN_RESPONSE_HEADER_BYTES + n)
     }
 }
