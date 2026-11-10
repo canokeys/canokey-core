@@ -121,6 +121,9 @@ if(CANOKEY_VIRTUAL_CARD)
     add_test(NAME virtual-pcsc COMMAND "${PCSC_TEST_PYTHON}"
       "${CANOKEY_ROOT}/tests/integration/pcsc_normal.py" "${HOST_PCSC_IMAGE}")
     set_tests_properties(virtual-pcsc PROPERTIES TIMEOUT 60 RESOURCE_LOCK virtual-card-udp)
+    add_test(NAME virtual-pcsc-recovery COMMAND "${PCSC_TEST_PYTHON}"
+      "${CANOKEY_ROOT}/tests/integration/pcsc_recovery.py" "${HOST_PCSC_IMAGE}")
+    set_tests_properties(virtual-pcsc-recovery PROPERTIES TIMEOUT 60 RESOURCE_LOCK virtual-card-udp)
     add_test(NAME virtual-oath-regressions COMMAND "${PCSC_TEST_PYTHON}"
       "${CANOKEY_ROOT}/tests/integration/oath_regressions.py" "${HOST_REGRESSION_IMAGE}")
     set_tests_properties(virtual-oath-regressions PROPERTIES TIMEOUT 60 RESOURCE_LOCK virtual-card-udp)
@@ -146,10 +149,10 @@ if(CANOKEY_VIRTUAL_CARD)
       endif()
       # Python/extension shutdown is not a native leak oracle. Dedicated native
       # crypto tests retain LeakSanitizer; bounds checks remain active here.
-      set_tests_properties(virtual-pcsc virtual-oath-regressions PROPERTIES ENVIRONMENT
+      set_tests_properties(virtual-pcsc virtual-pcsc-recovery virtual-oath-regressions PROPERTIES ENVIRONMENT
         "${asan_preload}=${asan_runtime};ASAN_OPTIONS=detect_leaks=0:abort_on_error=1")
       if(APPLE)
-        set_property(TEST virtual-pcsc virtual-oath-regressions APPEND PROPERTY ENVIRONMENT
+        set_property(TEST virtual-pcsc virtual-pcsc-recovery virtual-oath-regressions APPEND PROPERTY ENVIRONMENT
           "__PYVENV_LAUNCHER__=${Python3_EXECUTABLE}")
       endif()
     endif()

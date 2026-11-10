@@ -212,13 +212,6 @@ def run(library):
                 key.verify(answer[2]+digest, answer[3])
                 assert AuthenticatorData(answer[2]).counter > counter
                 counter = AuthenticatorData(answer[2]).counter
-            # A committed counter with a lost acknowledgement makes storage
-            # uncertain. SELECT fails closed; the host-only reboot hook must
-            # reopen durable storage before the client attempts selection.
-            card.cmd('inject counter lost acknowledgement', 0xef, 2, data=b'4f')
-            ctap(2, request, expected=0x7f)
-            card.cmd('selection before recovery', 0xa4, 4,
-                     data=bytes.fromhex('a0000006472f0001'), status=0x6a82)
             card.cmd('magic reboot', 0xee, data=bytes.fromhex('1256abf0'))
             card.cmd('reselect after reboot', 0xa4, 4, data=bytes.fromhex('a0000006472f0001'))
             answer = ctap(2, request)
