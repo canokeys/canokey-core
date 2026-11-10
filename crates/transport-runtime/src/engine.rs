@@ -381,23 +381,21 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
             return Err(Sw::WRONG_LENGTH);
         }
         let h = info.header;
-        if h.is_get_response() {
-            // A response poll does not replace an unfinished input command.
-            // With no pending response C returns6986 and retains that chain.
+        let eject = !h.is_get_response() && self.router.is_eject(h, p);
+        let response_route = crate::frame::ResponseRoute::begin(
+            h,
+            !eject && self.router.output_busy(),
+            &mut self.response,
+            &mut RoutedSource(&mut self.router, p),
+        )?;
+        if response_route == crate::frame::ResponseRoute::Continuation {
             self.route = FrameRoute::GetResponse;
             return Ok(());
         }
-        if self.router.is_eject(h, p) {
-            self.close_response(p);
+        if eject {
             self.reroute(FrameRoute::Eject, p);
             return Ok(());
         }
-        if self.router.output_busy() {
-            return Err(Sw::CONDITIONS_NOT_SATISFIED);
-        }
-        // Any new command abandons an unread response. GET RESPONSE took
-        // the earlier branch so it can continue using the existing backing.
-        self.close_response(p);
         if h.is_select_by_name() {
             let route = FrameRoute::Select {
                 aid: [0x00; crate::frame::Selection::AID_BYTES],
@@ -493,26 +491,19 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
             }
         };
         self.frame = None;
-        // C's shared response-chain epilogue gives Case1 no response allowance;
-        // direct applet handlers retain their own absent-Le policy. Encoded
-        // short Le00 is already256 and must remain distinct from absent Le.
-        let le = info.le.unwrap_or_else(|| {
-            if info.header.is_get_response() {
-                0
-            } else {
-                self.router.absent_le(info)
-            }
-        });
         let route = core::mem::replace(&mut self.route, FrameRoute::None);
+        if matches!(route, FrameRoute::GetResponse) {
+            return match crate::frame::ResponseRoute::continuation(info, &self.response) {
+                Ok(le) => Reply::Data(le),
+                Err(sw) => Reply::Status(sw),
+            };
+        }
+        // Direct applet handlers retain their own absent-Le policy. GET
+        // RESPONSE's distinct zero budget is resolved by the shared route.
+        let le = info.le.unwrap_or_else(|| self.router.absent_le(info));
         let result = match route {
             FrameRoute::Eject => self.router.eject(p).map(|()| (0, Sw::SUCCESS)),
-            FrameRoute::GetResponse => {
-                return if self.response.active() {
-                    Reply::Data(le)
-                } else {
-                    Reply::Status(Sw::COMMAND_NOT_ALLOWED)
-                };
-            }
+            FrameRoute::GetResponse => unreachable!(),
             FrameRoute::Select { aid, selection } => {
                 let transport = self.transport();
                 let selected = selection
