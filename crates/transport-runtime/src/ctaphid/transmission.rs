@@ -15,7 +15,7 @@ impl TransmissionDeadline {
         Self { sent_at: 0 }
     }
 
-    /// Publish only after a successful submission, using its completion tick.
+    /// Publish only after a successful submission, using the tick after send returns.
     pub fn sent(&mut self, now: u32) {
         self.sent_at = now;
     }

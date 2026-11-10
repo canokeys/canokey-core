@@ -24,7 +24,6 @@ impl Profile<CONTROL_BUFFER_BYTES> for CanoKey {
         landing: true,
     };
     const DEVICE: &'static [u8] = descriptors::DEVICE;
-    const ACK_CURRENT_CONFIGURATION: bool = true;
     fn reset(&mut self) {
         let landing = self.landing;
         *self = Self::INITIAL;

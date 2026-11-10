@@ -3,6 +3,8 @@
 #![forbid(unsafe_code)]
 use canokey_protocol::usb::*;
 pub mod descriptors;
+mod lifecycle;
+pub use lifecycle::Lifecycle;
 
 // USB 2.0 chapter 9 and HID 1.11 descriptor types and fixed request fields.
 const DESCRIPTOR_DEVICE: u8 = 0x01;
@@ -69,7 +71,6 @@ pub trait Profile<const BUFFER: usize>: Sized {
     type Descriptor;
     const INITIAL: Self;
     const DEVICE: &'static [u8];
-    const ACK_CURRENT_CONFIGURATION: bool;
     fn reset(&mut self);
     fn string(index: u8, configuration: &Self::Configuration) -> Option<&'static [u8]>;
     fn idle(&mut self, slot: usize) -> &mut u8;
@@ -162,8 +163,8 @@ impl<P: Profile<BUFFER>, const BUFFER: usize> Device<P, BUFFER> {
                     && self.address != 0x00 =>
             {
                 let enabled = s.value != 0x0000;
-                if P::ACK_CURRENT_CONFIGURATION && self.configured == enabled {
-                    // Some product profiles acknowledge repetition without
+                if self.configured == enabled {
+                    // Repetition acknowledges the current configuration without
                     // resetting endpoint leases or application sessions.
                     Reply::Status
                 } else {

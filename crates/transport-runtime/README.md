@@ -109,6 +109,16 @@ or hardware reset. Execution callbacks only latch abandonment; the serialized
 main loop resets application state. Waiting for IN completion must release the
 USB IRQ lock and all execution borrows before delaying.
 
+`usb::Lifecycle` gates class IO on cleanup of the current global USB mailbox
+generation. IRQ configuration/reset closes class OUT, IN submission and OUT
+rearm; the main loop captures the generation, cleans each installed transport,
+then acknowledges only if no new reset occurred. Repeated acknowledgement
+cannot rearm twice. HID-only pipe reset and card-power session changes retain
+their independent generations. Boot enumeration services cleanup without
+dispatching application commands before self-checks. Repeated selection of the
+current USB configuration is acknowledged without resetting leases or sessions
+in both products; identity and optional interface capabilities remain profiles.
+
 `ctaphid::foreign_error<P>` shares the CanoKey header policy while another
 transport executes: initial commands receive Busy/Channel, while CANCEL and
 continuations are drained without cancelling that foreign operation. Facades

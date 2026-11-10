@@ -68,7 +68,8 @@ const CONFIGURATION: Configuration = Configuration::new(INTERFACES);
 static mut DEVICE: Device = Device::new();
 // CCID's mailbox generation advances on every global USB lifecycle reset.
 // Class callbacks stay closed until the main loop has cleaned that generation.
-static mut SERVICED_GENERATION: u32 = 0;
+static mut LIFECYCLE: canokey_transport_runtime::usb::Lifecycle =
+    canokey_transport_runtime::usb::Lifecycle::new();
 static mut TX: [Tx; 4] = [Tx::EMPTY; 4];
 static mut HALTED: u8 = 0;
 static mut SUSPENDED: bool = false;
@@ -170,7 +171,7 @@ unsafe fn endpoints(enabled: bool) {
 }
 
 unsafe fn ready() -> bool {
-    unsafe { DEVICE.configured && SERVICED_GENERATION == ck_ccid_io_generation() }
+    unsafe { (&*core::ptr::addr_of!(LIFECYCLE)).ready(DEVICE.configured, ck_ccid_io_generation()) }
 }
 
 pub(crate) fn service_generation() -> u32 {
@@ -181,11 +182,12 @@ pub(crate) fn service_generation() -> u32 {
 /// Reopen reception only after all cleanup completed without another reset.
 pub(crate) fn service_complete(generation: u32) -> bool {
     usb_locked(|| unsafe {
-        if generation != ck_ccid_io_generation() {
+        let Some(changed) = (&mut *core::ptr::addr_of_mut!(LIFECYCLE))
+            .complete(generation, ck_ccid_io_generation())
+        else {
             return false;
-        }
-        if SERVICED_GENERATION != generation {
-            SERVICED_GENERATION = generation;
+        };
+        if changed {
             if DEVICE.configured {
                 for ep in EP_KEYBOARD..=EP_CCID {
                     if INTERFACES.endpoint(ep as u16) {
