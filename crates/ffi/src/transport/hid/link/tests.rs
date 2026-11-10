@@ -162,7 +162,7 @@ fn hid_link_interrupt_leases_progress_and_cancellation() {
         assert_eq!(controller().sent, 1);
         assert_ne!(ck_hid_busy(), 0);
         packet(&PACKET);
-        controller().now = TX_TIMEOUT_MS;
+        controller().now = TransmissionDeadline::TIMEOUT_MS;
         let before = controller().resets;
         poll();
         assert_eq!(controller().resets, before + 1);

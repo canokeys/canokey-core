@@ -3,14 +3,15 @@
 //! state. Core execution may call progress, so no state borrow crosses a poll.
 use crate::composition::Provider;
 use canokey_protocol::ctaphid::{self as wire, Error};
-use canokey_transport_runtime::ctaphid::{Execution as SharedExecution, ExecutionPolicy, Incoming};
+use canokey_transport_runtime::ctaphid::{
+    Execution as SharedExecution, ExecutionPolicy, Incoming, TransmissionDeadline,
+};
 struct CanoKey;
 impl ExecutionPolicy for CanoKey {
     const MALFORMED_INIT_ERROR: Error = Error::Length;
 }
 type Execution = SharedExecution<CanoKey>;
 
-const TX_TIMEOUT_MS: u32 = 1000;
 #[cfg(not(all(test, not(feature = "usb-device"))))]
 use super::command::{poll as ck_hid_poll, reset as ck_hid_reset};
 #[cfg(all(test, not(feature = "usb-device")))]
@@ -27,7 +28,7 @@ use tests::{ck_hid_poll, ck_hid_reset, device_delay, device_get_tick};
 static mut OUTGOING: [u8; 64] = [0; 64];
 static mut CONTROL: [u8; 64] = [0; 64];
 struct Link {
-    sent_at: u32,
+    deadline: TransmissionDeadline,
     active: bool,
     retained: bool,
     transmitting: bool,
@@ -37,7 +38,7 @@ struct Link {
 impl Link {
     const fn new() -> Self {
         Self {
-            sent_at: 0,
+            deadline: TransmissionDeadline::new(),
             active: false,
             retained: false,
             transmitting: false,
@@ -107,7 +108,7 @@ unsafe fn send_control(cid: u32, command: u8, value: u8, epoch: u32) {
             execution().abandon();
             return;
         }
-        LINK.sent_at = device_get_tick();
+        (&mut *core::ptr::addr_of_mut!(LINK.deadline)).sent(device_get_tick());
         LINK.transmitting = true;
     }
 }
@@ -146,7 +147,7 @@ pub unsafe fn ck_hid_progress() -> u8 {
         let mut idle = ck_hid_io_idle() != 0;
         if !idle
             && LINK.transmitting
-            && device_get_tick().wrapping_sub(LINK.sent_at) >= TX_TIMEOUT_MS
+            && (&*core::ptr::addr_of!(LINK.deadline)).expired(device_get_tick())
         {
             execution().abandon();
         }
@@ -195,7 +196,7 @@ pub unsafe fn ck_hid_progress() -> u8 {
 pub unsafe fn ck_hid_execution_end() {
     unsafe {
         while ck_hid_io_reset_pending() == 0 && ck_hid_io_idle() == 0 {
-            if device_get_tick().wrapping_sub(LINK.sent_at) >= TX_TIMEOUT_MS {
+            if (&*core::ptr::addr_of!(LINK.deadline)).expired(device_get_tick()) {
                 execution().abandon();
                 break;
             }
@@ -256,7 +257,9 @@ pub unsafe fn poll<P: Provider>() -> u8 {
             return 0;
         }
         if ck_hid_io_idle() == 0 {
-            if LINK.transmitting && device_get_tick().wrapping_sub(LINK.sent_at) >= TX_TIMEOUT_MS {
+            if LINK.transmitting
+                && (&*core::ptr::addr_of!(LINK.deadline)).expired(device_get_tick())
+            {
                 ck_hid_reset::<P>();
                 LINK.active = false;
                 LINK.retained = false;
@@ -308,7 +311,7 @@ pub unsafe fn poll<P: Provider>() -> u8 {
                 LINK = Link::new();
                 return 0;
             }
-            LINK.sent_at = device_get_tick();
+            (&mut *core::ptr::addr_of_mut!(LINK.deadline)).sent(device_get_tick());
             LINK.transmitting = true;
         }
         ck_hid_io_receive();

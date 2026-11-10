@@ -88,16 +88,26 @@ existing request/response arrays. No payload storage is allocated by Session.
 classification. Product command support is checked independently. INIT needs no
 payload loan; vLEI PING borrows only the free existing array, retains it through
 endpoint completion, and erases only that array on release. Card dispatch and
-deferred execution wait for the HID owner, including queued/final IN reports.
+deferred execution wait for the logical HID owner, including queued/final IN
+reports until completion or the transmission stall deadline.
 
 `ctaphid::Execution<P>` holds execution CID/generation, cancellation,
 abandonment and keepalive timestamps. It classifies only a borrowed report or
 peeked header and cannot call applications or IO. INIT retention and CANCEL
 latching are shared; a static policy preserves malformed-INIT error selection.
-CanoKey records keepalive publication after synchronous send; vLEI uses the
-existing pre-submit timestamp. Endpoint busy/timeout, mailbox consumption and
-main-loop cleanup remain in product facades. Ending execution invalidates its
+Both facades record keepalive publication after successful submission.
+Endpoint busy, mailbox consumption and main-loop cleanup remain in product
+facades. Ending execution invalidates its
 CID while retaining abandonment until suppressed output is released.
+
+`ctaphid::TransmissionDeadline` shares CanoKey's wrapping 1000 ms IN stall
+deadline. Facades timestamp successful submission and own their pending flags;
+execution-end draining also checks elapsed time for an initially busy endpoint.
+Expiry releases logical request/input/response ownership, but never releases the
+controller's report pointer. OUTGOING and CONTROL stay intact until IN completion
+or hardware reset. Execution callbacks only latch abandonment; the serialized
+main loop resets application state. Waiting for IN completion must release the
+USB IRQ lock and all execution borrows before delaying.
 
 `ctaphid::foreign_error<P>` shares the CanoKey header policy while another
 transport executes: initial commands receive Busy/Channel, while CANCEL and
