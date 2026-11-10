@@ -129,19 +129,24 @@ impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, B> {
             );
         }
         let algorithm = params.algorithm.ok_or(Status::UnsupportedAlgorithm)?;
-        canokey_ctap::registration::execute(
-            params.resident,
-            Registration {
-                session,
-                params,
-                workspace: self.workspace,
-                platform: p,
-                rp,
-                uv,
-                min_pin_length: self.min_pin_length,
-                algorithm,
-            },
-        )
+        let mut registration = Registration {
+            session,
+            params,
+            workspace: self.workspace,
+            platform: p,
+            rp,
+            uv,
+            min_pin_length: self.min_pin_length,
+            algorithm,
+        };
+        let (length, pending) =
+            canokey_ctap::registration::prepare(params.resident, &mut registration)?;
+        let pending = pending.map_credential(|_| ());
+        // The staged record identifies its target. Both response kinds publish
+        // in Applet::complete, in this same serialized turn after Command returns.
+        registration.session.pending_registration =
+            super::super::registration::Pending::new(pending);
+        Ok(length)
     }
 }
 
@@ -158,7 +163,7 @@ struct Registration<'a, 'p, B: crate::ports::Backends> {
 impl<B: crate::ports::Backends> canokey_ctap::registration::Backend for Registration<'_, '_, B> {
     type Error = Status;
     type Credential = credential::Id;
-    type Publication = crate::ports::Record;
+    type Publication = super::super::registration::Publication;
     type Output = usize;
     #[inline(always)]
     fn create(&mut self) -> Result<Self::Credential, Status> {
@@ -207,7 +212,7 @@ impl<B: crate::ports::Backends> canokey_ctap::registration::Backend for Registra
         const {
             assert!(crate::ports::key_layout::SIZE - COPY_OFFSET >= resident::COPY_BYTES);
         }
-        resident::prepare(
+        let record = resident::prepare(
             params,
             id,
             rp,
@@ -216,15 +221,20 @@ impl<B: crate::ports::Backends> canokey_ctap::registration::Backend for Registra
                 .try_into()
                 .unwrap(),
             p,
-        )
+        )?;
+        super::super::registration::publication(record).map_err(|error| {
+            use canokey_ports::Storage as _;
+            p.storage.stage_abort();
+            error
+        })
     }
     #[inline(always)]
     fn commit(&mut self, _: &Self::Credential, record: &Self::Publication) -> Result<(), Status> {
-        use canokey_ports::Storage as _;
-        self.platform
-            .storage
-            .stage_commit(*record)
-            .map_err(|_| Status::Other)
+        canokey_ctap::registration::Publisher::commit(
+            &mut super::super::registration::Publisher(self.platform.storage),
+            &(),
+            record,
+        )
     }
     #[inline(always)]
     fn abort(&mut self, _: &Self::Publication) {
@@ -241,7 +251,7 @@ impl<B: crate::ports::Backends> canokey_ctap::registration::Backend for Registra
         let algorithm = self.algorithm;
         let uv = self.uv;
         let min_pin_length = self.min_pin_length;
-        let length = respond(
+        respond(
             &Signing {
                 id,
                 rp,
@@ -265,16 +275,6 @@ impl<B: crate::ports::Backends> canokey_ctap::registration::Backend for Registra
             w,
             p,
             &mut session.auth_response,
-        )?;
-        // A PQ framing plan is not a prepared response: public hashing,
-        // attestation and reopening must succeed before resident publication.
-        if let Some(super::super::Response::Pending(plan)) = &session.auth_response {
-            let plan = *plan;
-            let length = super::super::pq::Stream::prepare(plan, self.workspace, p)?;
-            session.auth_response = Some(super::super::Response::Stream(length));
-            Ok(length)
-        } else {
-            Ok(length)
-        }
+        )
     }
 }

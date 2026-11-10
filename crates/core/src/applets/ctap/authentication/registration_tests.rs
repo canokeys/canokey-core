@@ -338,18 +338,28 @@ fn actual_registration_stages_before_signing_and_publishes_only_after_complete_c
                 let mut device = DeviceFixture;
                 let memory = canokey_ports::default_memory();
                 let mut workspace = SessionWorkspace::new();
-                let mut session = Session::new();
+                let mut applet = super::super::Applet::new();
                 let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                     storage: &mut disk,
                     crypto: &mut crypto,
                     device: &mut device,
                     memory: &memory,
                 };
-                let response = session.execute(
+                applet.dispatch(
                     &mut Ok(super::super::Command::Credential(request(algorithm))),
                     &mut workspace,
                     &mut platform,
                 );
+                if applet.session.pending_registration.is_resident() {
+                    // Publication waits for complete after Command returns.
+                    // PQ public generation has not started at this boundary.
+                    assert!(!trace.borrow().contains(&"public-open"));
+                    assert!(!trace.borrow().contains(&"commit"));
+                    assert!(applet.session.pending_registration.is_resident());
+                    trace.borrow_mut().push("command-returned");
+                }
+                applet.complete(&mut workspace, &mut platform, None);
+                let response = &applet.response;
                 if cfg!(feature = "ctap-restrict-algorithms") && algorithm != -7 {
                     assert!(matches!(
                         response,
@@ -358,7 +368,7 @@ fn actual_registration_stages_before_signing_and_publishes_only_after_complete_c
                     assert!(trace.borrow().is_empty());
                     assert_eq!(disk.group, old);
                     assert!(disk.stage.is_empty());
-                    assert!(session.auth_response.is_none());
+                    assert!(applet.session.auth_response.is_none());
                     continue;
                 }
                 if fault == Fault::None {
@@ -371,7 +381,7 @@ fn actual_registration_stages_before_signing_and_publishes_only_after_complete_c
                         matches!(response, super::super::Response::Error(Status::Other)),
                         "algorithm={algorithm} existing={existing} fault={fault:?}"
                     );
-                    assert!(session.auth_response.is_none());
+                    assert!(applet.session.auth_response.is_none());
                     let view = workspace.classic_with(&memory);
                     assert!(
                         view.key
@@ -387,10 +397,13 @@ fn actual_registration_stages_before_signing_and_publishes_only_after_complete_c
                 let committed = matches!(fault, Fault::None | Fault::Uncertain);
                 assert_eq!(disk.group != old, committed);
                 assert!(disk.stage.is_empty());
+                assert!(!applet.session.pending_registration.is_resident());
                 if let Some(at) = events.iter().position(|e| *e == "commit") {
                     assert!(events[..at].contains(&"signed"));
+                    assert!(events[..at].contains(&"command-returned"));
                     if algorithm != -7 {
                         assert_eq!(crypto.opens, 2);
+                        assert!(events[..at].contains(&"command-returned"));
                     }
                 }
                 if fault != Fault::None {
@@ -398,5 +411,87 @@ fn actual_registration_stages_before_signing_and_publishes_only_after_complete_c
                 }
             }
         }
+    }
+}
+
+#[test]
+fn abandoning_deferred_registration_discards_staging_and_seed_once() {
+    // Each action interrupts the real command/response boundary. PQ primitives
+    // have not started; repeated close must never publish or double-abort.
+    for (algorithm, action) in [-7, -49, -48].into_iter().flat_map(|algorithm| {
+        ["close", "reset", "replace"]
+            .into_iter()
+            .map(move |action| (algorithm, action))
+    }) {
+        let trace = Trace::default();
+        let old = Some(populated_group());
+        let mut disk = Disk {
+            group: old.clone(),
+            stage: Vec::new(),
+            fault: Fault::None,
+            trace: trace.clone(),
+        };
+        let mut crypto = Primitives {
+            fault: Fault::None,
+            trace: trace.clone(),
+            opens: 0,
+        };
+        let mut device = DeviceFixture;
+        let memory = canokey_ports::default_memory();
+        let mut workspace = SessionWorkspace::new();
+        let mut applet = super::super::Applet::new();
+        let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+            storage: &mut disk,
+            crypto: &mut crypto,
+            device: &mut device,
+            memory: &memory,
+        };
+        applet.dispatch(
+            &mut Ok(super::super::Command::Credential(request(algorithm))),
+            &mut workspace,
+            &mut platform,
+        );
+        if cfg!(feature = "ctap-restrict-algorithms") && algorithm != -7 {
+            assert!(trace.borrow().is_empty());
+            continue;
+        }
+        assert!(!matches!(applet.response, super::super::Response::Error(_)));
+        assert!(applet.session.pending_registration.is_resident());
+        assert!(
+            workspace
+                .classic_with(&memory)
+                .input
+                .iter()
+                .any(|byte| *byte != 0x00)
+        );
+        match action {
+            "close" => applet.close(&mut workspace, &mut platform),
+            "reset" => applet.reset(&mut workspace, &mut platform),
+            "replace" => applet.dispatch(
+                &mut Err(Status::InvalidCommand),
+                &mut workspace,
+                &mut platform,
+            ),
+            _ => unreachable!(),
+        }
+        applet.close(&mut workspace, &mut platform);
+        applet.complete(&mut workspace, &mut platform, None);
+        assert!(!applet.session.pending_registration.is_resident());
+        let view = workspace.classic_with(&memory);
+        assert!(
+            view.key
+                .bytes
+                .iter()
+                .chain(view.input.iter())
+                .chain(view.output.iter())
+                .all(|byte| *byte == 0x00)
+        );
+        assert_eq!(disk.group, old);
+        assert!(disk.stage.is_empty());
+        assert_eq!(crypto.opens, 0);
+        let events = trace.borrow();
+        assert_eq!(events.iter().filter(|event| **event == "abort").count(), 1);
+        assert!(!events.contains(&"commit"));
+        assert!(!events.contains(&"public-open"));
     }
 }

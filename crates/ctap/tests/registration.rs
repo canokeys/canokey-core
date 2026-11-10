@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use canokey_ctap::registration::{self, Backend};
+use canokey_ctap::registration::{self, Backend, Publisher};
 use std::{cell::RefCell, rc::Rc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,6 +78,15 @@ impl Backend for Fixture {
         Ok(37)
     }
 }
+impl Publisher<Credential, ()> for Fixture {
+    type Error = Failure;
+    fn commit(&mut self, credential: &Credential, publication: &()) -> Result<(), Failure> {
+        Backend::commit(self, credential, publication)
+    }
+    fn abort(&mut self, publication: &()) {
+        Backend::abort(self, publication);
+    }
+}
 #[test]
 fn resident_publication_requires_successful_response_and_discards_only_unpublished_state() {
     for (failure, expected, durable) in [
@@ -152,4 +161,137 @@ fn nonresident_credentials_never_prepare_or_publish_storage() {
         assert!(!state.durable);
         assert!(!state.staged);
     }
+}
+
+#[test]
+fn deferred_response_releases_request_owner_before_commit_and_preserves_failure_order() {
+    for failure in [
+        None,
+        Some(Failure::Respond),
+        Some(Failure::Commit),
+        Some(Failure::Uncertain),
+    ] {
+        let state = Rc::new(RefCell::new(State::default()));
+        let mut request = Fixture {
+            state: state.clone(),
+            failure: None,
+        };
+        let (output, pending) = registration::prepare(true, &mut request).unwrap();
+        assert_eq!(output, 37);
+        assert!(state.borrow().staged);
+        assert!(!state.borrow().durable);
+        drop(request);
+        state.borrow_mut().events.push("prepare-response");
+        let mut publisher = Fixture {
+            state: state.clone(),
+            failure,
+        };
+        let prepared = if failure == Some(Failure::Respond) {
+            Err(Failure::Respond)
+        } else {
+            Ok(output)
+        };
+        assert_eq!(
+            pending.finish(prepared, &mut publisher),
+            failure.map_or(Ok(37), Err)
+        );
+        let state = state.borrow();
+        assert_eq!(
+            &state.events[..5],
+            [
+                "create",
+                "stage",
+                "respond",
+                "drop-backend",
+                "prepare-response"
+            ]
+        );
+        assert!(!state.staged);
+        assert_eq!(
+            state.durable,
+            failure.is_none() || failure == Some(Failure::Uncertain)
+        );
+        if failure == Some(Failure::Respond) {
+            assert!(!state.events.contains(&"commit"));
+        }
+        assert_eq!(state.events.contains(&"abort"), failure.is_some());
+        assert_eq!(state.events.last(), Some(&"drop-credential"));
+    }
+}
+
+#[test]
+fn cancelling_deferred_work_never_publishes_and_nonresident_never_touches_staging() {
+    for resident in [false, true] {
+        let state = Rc::new(RefCell::new(State::default()));
+        let mut backend = Fixture {
+            state: state.clone(),
+            failure: None,
+        };
+        let (_, pending) = registration::prepare(resident, &mut backend).unwrap();
+        pending.cancel(&mut backend);
+        let state = state.borrow();
+        assert!(!state.durable);
+        assert!(!state.staged);
+        assert_eq!(state.events.contains(&"abort"), resident);
+        assert!(!state.events.contains(&"commit"));
+    }
+}
+
+#[test]
+fn publication_can_drop_redundant_credential_before_deferred_work() {
+    struct RecordPublisher(Rc<RefCell<State>>);
+    impl Publisher<(), ()> for RecordPublisher {
+        type Error = Failure;
+        fn commit(&mut self, _: &(), _: &()) -> Result<(), Failure> {
+            let mut state = self.0.borrow_mut();
+            assert!(state.staged);
+            state.events.push("record-commit");
+            state.durable = true;
+            state.staged = false;
+            Ok(())
+        }
+        fn abort(&mut self, _: &()) {
+            unreachable!()
+        }
+    }
+    let state = Rc::new(RefCell::new(State::default()));
+    let mut backend = Fixture {
+        state: state.clone(),
+        failure: None,
+    };
+    let (output, pending) = registration::prepare(true, &mut backend).unwrap();
+    let mut slot = pending.map_credential(|_| ());
+    let pending = slot.take();
+    assert!(!slot.is_resident());
+    assert_eq!(state.borrow().events.last(), Some(&"drop-credential"));
+    assert!(!state.borrow().durable);
+    assert_eq!(
+        pending.finish(Ok(output), &mut RecordPublisher(state.clone())),
+        Ok(37)
+    );
+    assert!(state.borrow().durable);
+    // A second drain is idle and cannot publish the same stage again.
+    assert_eq!(
+        slot.take()
+            .finish(Ok(output), &mut RecordPublisher(state.clone())),
+        Ok(37)
+    );
+    assert_eq!(
+        state
+            .borrow()
+            .events
+            .iter()
+            .filter(|event| **event == "record-commit")
+            .count(),
+        1
+    );
+    assert_eq!(
+        state
+            .borrow()
+            .events
+            .iter()
+            .filter(|event| **event == "drop-credential")
+            .count(),
+        1
+    );
 }

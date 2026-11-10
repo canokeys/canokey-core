@@ -193,14 +193,24 @@ impl Applet {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) {
-        if let Response::Pending(plan) = self.response {
-            self.response = match super::pq::Stream::prepare(plan, w, p) {
-                Ok(n) => Response::Stream(n),
-                Err(error) => {
-                    self.session.reset(p.memory);
-                    Response::Error(error)
-                }
-            };
+        let prepared = if let Response::Pending(plan) = self.response {
+            // Request/Command frames have returned. Only this staged record
+            // capability survives until public hashing/signing/reopen succeeds.
+            super::pq::Stream::prepare(plan, w, p).map(|length| {
+                self.response = Response::Stream(length);
+            })
+        } else {
+            Ok(())
+        };
+        if let Err(error) = self
+            .session
+            .pending_registration
+            .finish(prepared, p.storage)
+        {
+            self.close(w, p);
+            w.wipe_active(p.memory);
+            self.session.reset(p.memory);
+            self.response = Response::Error(error);
         }
     }
     pub fn close(
@@ -208,8 +218,13 @@ impl Applet {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) {
+        let staged = self.session.pending_registration.abort(p.storage);
         if let Some(mut stream) = w.ctap_stream() {
             stream.close(p);
+        } else if staged || matches!(self.response, Response::Pending(_)) {
+            // A deferred response still keeps its seed in classic input until
+            // prepare transfers it. Closing before that transfer must erase it.
+            w.wipe_active(p.memory);
         }
 
         self.response = Response::Constant(&[]);

@@ -699,6 +699,17 @@ transport execution guard still covers both stages, including keepalive and
 cancellation. Classic crypto still runs while its semantic command is live;
 this boundary does not establish a bound for all crypto call paths.
 
+Both classic and PQ resident registrations stage their complete group before
+response construction and publish in `Applet::complete` after command frames
+return. The retained transaction owns one nonzero record ID, with no request,
+workspace or PKE loan. PQ public hashing, attestation and stream reopening must
+succeed before publication; classic signing completes during command dispatch.
+There is no transport yield between these phases. Preparation/commit errors,
+close, reset and command replacement discard unpublished staging and erase
+response backing. An uncertain commit may already have published, so cleanup
+never compensates by deleting the destination. Shared synchronous consumers
+continue to use `canokey_ctap::registration::execute`.
+
 Applet deselection clears both resident assertion and credential-management
 continuations as well as volatile PIN authorization and key agreement. The
 `ctap-normal` APDU fixture verifies this through SELECT ADMIN / SELECT FIDO,

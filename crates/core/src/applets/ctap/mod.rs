@@ -29,6 +29,7 @@ pub mod message;
 mod pin;
 pub(crate) mod pq;
 pub(crate) mod provision;
+mod registration;
 mod request_decoder;
 mod resident;
 #[cfg(test)]
@@ -239,6 +240,7 @@ pub struct Session {
     management: management::Cursor,
     assertion: resident::Assertion,
     auth_response: Option<Response>,
+    pending_registration: registration::Pending,
 }
 impl Session {
     pub const fn new() -> Self {
@@ -251,6 +253,7 @@ impl Session {
             management: management::Cursor::new(),
             assertion: resident::Assertion::new(),
             auth_response: None,
+            pending_registration: registration::Pending::empty(),
         }
     }
     pub fn reset(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
@@ -266,6 +269,9 @@ impl Session {
         workspace: &mut crate::runtime::workspace::SessionWorkspace,
         p: &mut crate::ports::Platform<'_, impl crate::ports::Backends>,
     ) -> Response {
+        if self.pending_registration.abort(p.storage) {
+            workspace.wipe_active(p.memory);
+        }
         let mut classic = workspace.classic_with(p.memory);
         self.expire_token(p.device.now(), p.memory);
         self.auth_response = None;
@@ -371,6 +377,7 @@ impl Session {
         &mut self,
         p: &mut crate::ports::Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
+        self.pending_registration.abort(p.storage);
         self.abort_blob(p);
         self.reset(p.memory);
         // Provisioned attestation material and SM2 identifiers survive reset.
