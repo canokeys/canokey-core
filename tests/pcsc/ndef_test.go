@@ -144,11 +144,27 @@ func commandTests(readOnlyMode bool, app *Applet) func(C) {
 		So(err, ShouldBeNil)
 		return code
 	}
-	readFile := func(offset uint16, len uint16) (data []byte, code uint16) {
-		So(len, ShouldBeGreaterThan, 0)
-		data, code, err := app.SendWithGetResponse([]byte{0x00, 0xB0, byte(offset >> 8), byte(offset & 0xFF), 0x00, byte(len >> 8), byte(len & 0xFF)})
-		So(err, ShouldBeNil)
-		return
+	readFile := func(offset uint16, length uint16) (data []byte, code uint16) {
+		const shortReadLimit = 256
+		So(length, ShouldBeGreaterThan, 0)
+		// CCID accepts short APDUs. Advance the file offset for larger reads;
+		// Le=0x00 requests exactly 256 bytes in each READ BINARY command.
+		for length > 0 {
+			chunkLength := length
+			if chunkLength > shortReadLimit {
+				chunkLength = shortReadLimit
+			}
+			chunk, status, err := app.SendWithGetResponse([]byte{0x00, 0xB0, byte(offset >> 8), byte(offset), byte(chunkLength)})
+			So(err, ShouldBeNil)
+			if err != nil || status != 0x9000 {
+				return nil, status
+			}
+			So(len(chunk), ShouldEqual, chunkLength)
+			data = append(data, chunk...)
+			offset += chunkLength
+			length -= chunkLength
+		}
+		return data, 0x9000
 	}
 	writeFile := func(offset uint16, data []byte) (code uint16) {
 		len := len(data)
