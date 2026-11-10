@@ -957,6 +957,11 @@ fn applet_streams() {
         const WRONG_P1P2: u16 = 0x6a86;
         const NO_PENDING_RESPONSE: u16 = 0x6986;
         const OBJECT_REMAINDER: &[u8] = &[0x01, 0x07, 0x90, 0x00];
+        // GENERAL AUTHENTICATE management witness template (7C 02 80 00),
+        // split between its outer header and empty witness selector.
+        const AUTH_PREFIX: &[u8] = b"\x10\x87\x0a\x9b\x02\x7c\x02";
+        const AUTH_SUFFIX: &[u8] = b"\x00\x87\x0a\x9b\x02\x80\x00\x00";
+        const AUTH_WITNESS: &[u8] = b"\x00\x87\x0a\x9b\x04\x7c\x02\x80\x00\x00";
         ccid_apdu(SELECT, SUCCESS);
         ccid_apdu(READ_OBJECT, 0x6102);
         ccid_apdu(EXTENDED_VERSION, WRONG_LENGTH);
@@ -968,6 +973,14 @@ fn applet_streams() {
         ccid_apdu(READ_OBJECT, 0x6102);
         ccid_send(ccid_wire::TRANSFER, REST);
         assert_eq!(&ccid_read()[ccid_wire::HEADER..], OBJECT_REMAINDER);
+        // The same boundary applies to an accepted command prefix. Outer
+        // rejection preserves it; core failure must allow a fresh full command.
+        ccid_apdu(AUTH_PREFIX, SUCCESS);
+        ccid_apdu(EXTENDED_VERSION, WRONG_LENGTH);
+        ccid_apdu(AUTH_SUFFIX, SUCCESS);
+        ccid_apdu(AUTH_PREFIX, SUCCESS);
+        ccid_apdu(INVALID_VERSION, WRONG_P1P2);
+        ccid_apdu(AUTH_WITNESS, SUCCESS);
         ccid_apdu(SELECT, 0x9000);
         ccid_apdu(VERIFY_PIN, 0x9000);
         ccid_apdu(SELECT, 0x9000);

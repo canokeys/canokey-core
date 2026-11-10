@@ -29,6 +29,8 @@ AID = bytes.fromhex("a000000308000010000100")
 PIN = b"123456\xff\xff"
 KEY = bytes(range(1, 9)) * 3
 IDS = [0x11, 0x53, 0x14, 0xE0, 0xE1, 7, 5, 0x16, 0x15]
+# ISO 7816 extended case 2: CLA/GET VERSION/P1/P2, zero marker, Le16=1.
+CCID_EXTENDED_GET_VERSION = bytes.fromhex("00fd0000000001")
 
 
 def aes(key, b, decrypt=False):
@@ -791,7 +793,7 @@ def pq_replacement(c):
             # Extended case 2 Le=1 is rejected before core entry. The following
             # GET RESPONSE must continue the pending public-key stream.
             with c.step("ccid_rejection_keeps_pq_response", 0xFD, 0x00, 0x00):
-                answer, sw1, sw2 = c.wire.transmit(bytes.fromhex("00fd0000000001"))
+                answer, sw1, sw2 = c.wire.transmit(CCID_EXTENDED_GET_VERSION)
                 assert not answer and (sw1, sw2) == (0x67, 0x00)
         # Leave at least one response fragment unread for every algorithm;
         # only draining the final fragment may publish the staged key.
@@ -1259,7 +1261,18 @@ def interruptions(c):
                empty, cla=0x10) == b""
     answer = raw("empty_final_fragment_finishes_stream", 0x87, 0xFF, 0x9A, le=256)
     public.verify(fields(fields(answer)[0x7C])[0x82], b"")
-    for rejected, status in (("00fd0000000001", 0x6700), ("80fd000000", 0x6E00)):
+    if c.hardware:
+        raw("stream_before_ccid_rejection", 0x87, 0xFF, 0x9A, empty[:2], cla=0x10)
+        with c.step("ccid_rejection_keeps_stream_prefix", 0xFD, 0x00, 0x00):
+            answer, sw1, sw2 = c.wire.transmit(CCID_EXTENDED_GET_VERSION)
+            assert not answer and (sw1, sw2) == (0x67, 0x00)
+        answer = c.cmd("stream_finishes_after_ccid_rejection", 0x87, 0xFF, 0x9A, empty[2:])
+        public.verify(fields(fields(answer)[0x7C])[0x82], b"")
+    else:
+        c.report.setdefault("transport_only_omissions", []).append("CCID rejection during streamed signing")
+    # Valid short GET VERSION with P1=1 reaches core; unsupported CLA is also
+    # a core dispatch error. Both cancel the previous streamed command.
+    for rejected, status in (("00fd010000", 0x6A86), ("80fd000000", 0x6E00)):
         raw("stream_before_rejected_command", 0x87, 0xFF, 0x9A, empty[:2], cla=0x10)
         answer, a, b = c.wire.transmit(bytes.fromhex(rejected))
         assert not answer and (a << 8 | b) == status
