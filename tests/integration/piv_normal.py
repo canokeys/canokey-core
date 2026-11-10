@@ -777,27 +777,46 @@ def pq_seed_lifecycle(c):
 
 
 def pq_replacement(c):
+    # A direct core host has no CCID framing validator. Exercise its command
+    # failure path on both transports; outer rejection requires actual CCID.
+    interruptions = ["select", "reset", "core_error"]
+    if c.hardware:
+        interruptions.append("ccid_rejected")
+    else:
+        c.report.setdefault("transport_only_omissions", []).append("CCID rejection during PQ generation")
+
+    def interrupt_generation(body, algorithm, interruption):
+        c.raw(f"pending_pq_{algorithm:02x}_{interruption}", 0x47, 0, 0x95, body, le=256, status=0x61FF)
+        if interruption == "ccid_rejected":
+            # Extended case 2 Le=1 is rejected before core entry. The following
+            # GET RESPONSE must continue the pending public-key stream.
+            with c.step("ccid_rejection_keeps_pq_response", 0xFD, 0x00, 0x00):
+                answer, sw1, sw2 = c.wire.transmit(bytes.fromhex("00fd0000000001"))
+                assert not answer and (sw1, sw2) == (0x67, 0x00)
+        # Leave at least one response fragment unread for every algorithm;
+        # only draining the final fragment may publish the staged key.
+        for _ in range({0xE2: 5, 0xE3: 2, 0xE4: 3, 0xE5: 1}[algorithm]):
+            c.raw(f"partial_pq_public_{interruption}", 0xC0, le=256, status=0x61FF)
+        if interruption == "reset":
+            c.wire.command("RESET")
+        elif interruption == "core_error":
+            # Valid short GET VERSION, invalid P1: reaches PIV and closes the
+            # previous response even though dispatch returns WRONG_P1P2.
+            c.raw("core_error_abandons_pq_response", 0xFD, 1, le=256, status=0x6A86)
+            c.raw("closed_pq_response", 0xC0, le=256, status=0x6986)
+        c.select()
+
     for algorithm in (0xE2, 0xE3, 0xE4, 0xE5):
         body = tlv(0xAC, tlv(0x80, bytes([algorithm])))
-        c.raw("pending_new_pq_key", 0x47, 0, 0x95, body, le=256, status=0x61FF)
-        c.wire.command("RESET")
-        c.select()
-        c.cmd("aborted_new_pq_key_absent", 0xF7, 0, 0x95, status=0x6A88)
-        c.auth()
+        for interruption in interruptions:
+            interrupt_generation(body, algorithm, interruption)
+            c.cmd("aborted_new_pq_key_absent", 0xF7, 0, 0x95, status=0x6A88)
+            c.auth()
         c.generate(0, 0x95)
         c.cmd("name_before_pq_replacement", 0xF5, 1, 0x95, b"M\0")
         before = c.cmd("key_before_pq_replacement", 0xF7, 0, 0x95)
-        for interruption in ("select", "reset", "rejected"):
-            c.raw("pending_pq_replacement", 0x47, 0, 0x95, body, le=256, status=0x61FF)
-            for _ in range({0xE2: 5, 0xE3: 2, 0xE4: 3, 0xE5: 1}[algorithm]):
-                c.raw("partial_pq_public", 0xC0, le=256, status=0x61FF)
-            if interruption == "reset":
-                c.wire.command("RESET")
-            elif interruption == "rejected":
-                answer, a, b = c.wire.transmit(bytes.fromhex("00fd0000000001"))
-                assert not answer and (a, b) == (0x67, 0)
-                c.raw("rejected_command_abandons_pq_response", 0xC0, le=256, status=0x6986)
-            c.select()
+        for interruption in interruptions:
+            interrupt_generation(body, algorithm, interruption)
             assert c.cmd("aborted_pq_keeps_key", 0xF7, 0, 0x95) == before
             assert c.cmd("aborted_pq_keeps_name", 0xF5, 0, 0x95) == b"M\0"
             c.auth()

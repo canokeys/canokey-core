@@ -948,6 +948,26 @@ fn applet_streams() {
         const QUERY_PIN: &[u8] = &[0, 0x20, 0, 0x80];
         const READ_OBJECT: &[u8] = &[0, 0xcb, 0x3f, 0xff, 5, 0x5c, 3, 0x5f, 0xc1, 5, 1];
         const DISCOVERY: &[u8] = &[0, 0xcb, 0x3f, 0xff, 3, 0x5c, 1, 0x7e, 1];
+        // ISO 7816 extended case 2 (Le=1) is rejected by CCID before core
+        // dispatch. Valid short GET VERSION with P1=1 instead fails in PIV.
+        const EXTENDED_VERSION: &[u8] = b"\x00\xfd\x00\x00\x00\x00\x01";
+        const INVALID_VERSION: &[u8] = b"\x00\xfd\x01\x00\x00";
+        const SUCCESS: u16 = 0x9000;
+        const WRONG_LENGTH: u16 = 0x6700;
+        const WRONG_P1P2: u16 = 0x6a86;
+        const NO_PENDING_RESPONSE: u16 = 0x6986;
+        const OBJECT_REMAINDER: &[u8] = &[0x01, 0x07, 0x90, 0x00];
+        ccid_apdu(SELECT, SUCCESS);
+        ccid_apdu(READ_OBJECT, 0x6102);
+        ccid_apdu(EXTENDED_VERSION, WRONG_LENGTH);
+        ccid_send(ccid_wire::TRANSFER, REST);
+        assert_eq!(&ccid_read()[ccid_wire::HEADER..], OBJECT_REMAINDER);
+        ccid_apdu(READ_OBJECT, 0x6102);
+        ccid_apdu(INVALID_VERSION, WRONG_P1P2);
+        ccid_apdu(REST, NO_PENDING_RESPONSE);
+        ccid_apdu(READ_OBJECT, 0x6102);
+        ccid_send(ccid_wire::TRANSFER, REST);
+        assert_eq!(&ccid_read()[ccid_wire::HEADER..], OBJECT_REMAINDER);
         ccid_apdu(SELECT, 0x9000);
         ccid_apdu(VERIFY_PIN, 0x9000);
         ccid_apdu(SELECT, 0x9000);
