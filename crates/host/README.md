@@ -166,10 +166,16 @@ the core explicitly clears transient data before handing off the shared buffer.
 
 
 The external vendor power-loss tests are patched by
-`tests/pcsc/fido2_rust_atomic_records.patch` for the Rust storage contract.
+`tests/pcsc/fido2_rust_atomic_records.patch` and
+`tests/pcsc/fido2_rust_group_records.patch` for the Rust storage contract.
 Legacy `ctap_dm`/`ctap_dc` files no longer exist; numeric records `50`/`51`
-represent the first two residents, each with atomic metadata. The tests require
+hold groups of four credentials. Deletion tests cross the group boundary.
+The tests require
 `OTHER` on an actual injected error, then reopen storage and verify creation or
 deletion before/after commit against discovery, management counts and signatures.
+The host-only reboot cookie is intercepted before applet dispatch, so the test
+client sends it without SELECT, including after reconnection. A lost commit
+acknowledgement makes storage uncertain and SELECT fails closed until reboot
+reopens the durable image. Normal CTAP requests still select FIDO before use.
 They do not fake legacy multi-file commit points or skip the recovery cases.
 These host tests do not establish physical LittleFS power-cut durability.

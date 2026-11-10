@@ -1,0 +1,26 @@
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -201,9 +201,10 @@
+             from smartcard.scard import SCARD_LEAVE_CARD
+             self._conn.disconnect()
+             self._conn.connect(disposition=SCARD_LEAVE_CARD)
+-            # Reconnection can clear selection. Retry SELECT directly to avoid
+-            # recursing through _select when SELECT itself was interrupted.
+-            if apdu[:4] != b"\x00\xa4\x04\x00":
++            # Recover storage before selecting FIDO. The host intercepts this
++            # reboot cookie even when a lost commit acknowledgement blocks SELECT.
++            reboot = bytes.fromhex("00EE0000041256ABF0")
++            if apdu[:4] != b"\x00\xa4\x04\x00" and bytes(apdu) != reboot:
+                 self._select()
+             return super().apdu_exchange(apdu,protocol)
+ 
+@@ -413,8 +414,7 @@
+         from smartcard.Exceptions import NoCardException, CardConnectionException
+ 
+         if "solokeys" in sys.argv or "canokeys" in sys.argv:
+-            # The test hook is routed through FIDO just like CTAP commands.
+-            self.dev._select()
++            # The host recovery hook reopens uncertain storage without SELECT.
+             header = b"\x00\xee\x00\x00\x04"
+             data = b"\x12\x56\xab\xf0"
+             resp, sw1, sw2 = self.dev.apdu_exchange(header + data)

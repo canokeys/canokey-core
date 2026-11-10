@@ -25,6 +25,7 @@ pushd fido2-tests
 apply_patch_if_missing 'def _bind_client' tests/conftest.py 1 . ../tests/pcsc/fido2_retry_ctap2_init.patch
 apply_patch_if_missing 'connect(disposition=SCARD_LEAVE_CARD)' tests/conftest.py 1 . ../tests/pcsc/fido2_pcsc_selection.patch
 apply_patch_if_missing '# Match the virtual reader transport' tests/conftest.py 1 . ../tests/pcsc/fido2_transport_aid.patch
+apply_patch_if_missing '# Recover storage before selecting FIDO.' tests/conftest.py 1 . ../tests/pcsc/fido2_pcsc_reboot.patch
 if ! grep -Fq '# Rust grouped credential records' tests/vendor/canokeys/test_power_loss.py; then
   apply_patch_if_missing '# Rust atomic credential records' tests/vendor/canokeys/test_power_loss.py 1 . ../tests/pcsc/fido2_rust_atomic_records.patch
   apply_patch_if_missing '# Rust grouped credential records' tests/vendor/canokeys/test_power_loss.py 1 . ../tests/pcsc/fido2_rust_group_records.patch

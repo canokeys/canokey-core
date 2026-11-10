@@ -21,6 +21,7 @@ GET_INFO = bytes.fromhex("80100000010400")  # CTAP authenticatorGetInfo.
 SW_SUCCESS = (0x90, 0x00)
 SW_NO_APPLET = (0x6A, 0x82)
 GET_INFO_RESPONSE = bytes.fromhex("00A0")  # CTAP success followed by an empty CBOR map.
+REBOOT = bytes.fromhex("00EE0000041256ABF0")  # Host-only recovery cookie, intercepted before applet dispatch.
 
 
 class Connection:
@@ -44,7 +45,13 @@ class Connection:
         if self.fail_next:
             self.fail_next = False
             raise CardConnectionException("injected connection loss")
+        if apdu == REBOOT:
+            self.card.uncertain = False
+            self.card.selected = False
+            return [], *SW_SUCCESS
         if apdu[:4] == SELECT_HEADER:
+            if self.card.uncertain:
+                return [], *SW_NO_APPLET
             expected = bytes.fromhex("00A4040008A0000006472F0001") if self.card.nfc else FIDO_SELECT
             if apdu != expected:
                 self.card.selected = False
@@ -75,7 +82,7 @@ class SelectionTests(unittest.TestCase):
         environment = patch.dict("os.environ", {"CANOKEY_TEST_NFC": "0"})
         environment.start()
         self.addCleanup(environment.stop)
-        self.card = SimpleNamespace(selected=False, nfc=False)
+        self.card = SimpleNamespace(selected=False, nfc=False, uncertain=False)
         self.old = Connection(self.card)
         self.client_type(self.old, "old reader")
         self.connection = Connection(self.card)
@@ -111,10 +118,29 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.client.apdu_exchange(FIDO_SELECT)[1:], SW_SUCCESS)
         self.assertEqual(self.connection.sent, [FIDO_SELECT, FIDO_SELECT])
 
-    def test_reboot_hook_selects_after_power_loss(self):
+    def test_reboot_hook_recovers_without_applet_selection(self):
         self.card.selected = False
         with patch.object(sys, "argv", ["test", "canokeys"]):
             self.assertTrue(self.reboot(SimpleNamespace(dev=self.client)))
+
+    def test_reboot_precedes_selection_after_lost_commit_acknowledgement(self):
+        self.card.uncertain = True
+        self.connection.sent.clear()
+        with patch.object(sys, "argv", ["test", "canokeys"]):
+            self.assertTrue(self.reboot(SimpleNamespace(dev=self.client)))
+        self.assertEqual(self.connection.sent, [REBOOT])
+        self.assertFalse(self.card.uncertain)
+        self.client._select()
+        self.assertTrue(self.card.selected)
+
+    def test_reboot_reconnect_does_not_select_uncertain_storage(self):
+        self.card.uncertain = True
+        self.connection.sent.clear()
+        self.connection.fail_next = True
+        with patch.object(sys, "argv", ["test", "canokeys"]):
+            self.assertTrue(self.reboot(SimpleNamespace(dev=self.client)))
+        self.assertEqual(self.connection.sent, [REBOOT, REBOOT])
+        self.assertFalse(self.card.uncertain)
 
 
 if __name__ == "__main__":
