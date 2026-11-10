@@ -23,6 +23,8 @@ jobs:
         cargo clippy -p canokey-rust-host --all-targets --features ctap-restrict-algorithms --
         -D warnings -A clippy::all -D clippy::correctness -D clippy::suspicious
         -A clippy::drop_non_drop
+    - name: Test shared mechanisms without product applets
+      run: cargo test -p canokey-transport-runtime -p canokey-ports --features canokey-ports/ctap
     - run: python3 tests/check_rust_profiles.py
     - name: Test synchronization gate and validate draft records (not release acceptance)
       run: |

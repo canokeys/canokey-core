@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use canokey_protocol::nfc::{self, Block, Packet};
-use canokey_rust_core::runtime::nfc::{Error, Event, Execution, Link};
+use canokey_transport_runtime::nfc::{Error, Event, Execution, Link};
 #[test]
 fn literal_wire_lengths_and_optional_fields() {
     assert_eq!(
@@ -125,7 +125,7 @@ fn control_ack_cache_and_unsolicited_ack_preserve_input() {
     assert!(!link.dirty());
     let initial_ack = Event::Send(Packet::acknowledgement(1));
     assert_eq!(link.receive(&[0x13, 0, 0], &mut input), Ok(initial_ack));
-    for _ in 0..=canokey_rust_core::runtime::nfc::MAX_RETRANSMITS {
+    for _ in 0..=canokey_transport_runtime::nfc::MAX_RETRANSMITS {
         // Repeated input ACKs do not consume the response-retransmit budget,
         // including a chained I-block whose accepted payload was empty.
         assert_eq!(link.receive(&[0x13, 0, 0], &mut input), Ok(initial_ack));
@@ -197,7 +197,7 @@ fn waiting_echo_wraparound_and_field_cancellation() {
 
 #[test]
 fn recovery_preserves_clean_activation_and_does_not_timeout_crypto() {
-    use canokey_rust_core::runtime::nfc::{HardwareAction, Recovery};
+    use canokey_transport_runtime::nfc::{HardwareAction, Recovery};
     let mut r = Recovery::new(0);
     let config = r.poll(0, false, false).unwrap();
     assert_eq!(config.operation, HardwareAction::ConfigureInterrupts);
@@ -217,7 +217,7 @@ fn recovery_preserves_clean_activation_and_does_not_timeout_crypto() {
 }
 #[test]
 fn forced_recovery_retries_and_cannot_be_cancelled_by_field_irqs() {
-    use canokey_rust_core::runtime::nfc::{HardwareAction, Recovery};
+    use canokey_transport_runtime::nfc::{HardwareAction, Recovery};
     let mut r = Recovery::new(0);
     r.fault();
     let silence = r.poll(1, false, false).unwrap();
@@ -245,7 +245,7 @@ fn forced_recovery_retries_and_cannot_be_cancelled_by_field_irqs() {
 }
 #[test]
 fn irq_error_priority_matches_native_register_contract() {
-    use canokey_rust_core::runtime::nfc::{Irq, irq};
+    use canokey_transport_runtime::nfc::{Irq, irq};
     assert_eq!(
         irq([0x50, 0, 0]),
         Irq::Activity {
@@ -262,7 +262,8 @@ fn irq_error_priority_matches_native_register_contract() {
 
 mod registers {
     use super::*;
-    use canokey_rust_core::runtime::nfc_io::{Chip, Io};
+    use canokey_transport_runtime::nfc_io::{Chip, NoPolling};
+    type Io = canokey_transport_runtime::nfc_io::Io<NoPolling>;
     #[derive(Default)]
     struct Fake {
         flags: [u8; 3],
@@ -692,7 +693,7 @@ mod registers {
 }
 
 mod provisioning {
-    use canokey_rust_core::runtime::{
+    use canokey_transport_runtime::{
         nfc_io::Chip,
         nfc_provision::{Provision, configure},
     };

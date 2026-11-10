@@ -41,6 +41,7 @@ if CMake cannot discover the headers. The root Rust toolchain is pinned.
 
 ```sh
 cargo test -p canokey-protocol
+cargo test -p canokey-transport-runtime -p canokey-ports --features canokey-ports/ctap
 cargo test -p canokey-rust-core --features admin,pass,oath,openpgp,piv,ctap,ndef
 python3 tests/check_rust_profiles.py
 python3 tests/test_rust_transports.py
@@ -60,6 +61,12 @@ formatting, Clippy correctness/suspicious lints and supported applet/transport
 profiles. Style-only Clippy lints are not yet enforced; explicit adapter drops
 are allowed to end borrows before workspace erasure. Host/std and supported
 firmware feature profiles are checked in separate Cargo invocations.
+
+Shared transport tests use only fake request/response and chip backends; they
+cover CTAPHID framing, channels, timeouts and final IN completion, ISO-DEP
+retransmission/WTX, register recovery and NFC provisioning without a product
+applet. Ports tests check configuration defaults, exact-read fallback and staged
+transaction cleanup. Product tests retain applet policy and adapter integration.
 
 `cargo test -p canokey-ports` checks the committed C projection of record IDs,
 board-information selectors and chip-ID size against the Rust contracts. After
