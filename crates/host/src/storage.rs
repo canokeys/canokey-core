@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Host-only durable record image. This is not a LittleFS durability oracle.
-use canokey_ports::{Record, stage_operation as stage};
+use canokey_ports::canokey::Record;
+use canokey_ports::stage_operation as stage;
 use std::os::unix::fs::OpenOptionsExt;
 use std::{
     fs::{self, File, OpenOptions},

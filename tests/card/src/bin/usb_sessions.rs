@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Real USB, CCID, HID, WebUSB and applets with direct Rust capability fakes.
 #[cfg(feature = "piv")]
-use canokey_ports::{Record, Storage};
+use canokey_ports::{Storage, canokey::Record};
 use canokey_protocol::{ccid as ccid_wire, ctaphid as hid_wire, usb as usb_wire};
 use canokey_rust_ffi::{
     ck_hid_executing,

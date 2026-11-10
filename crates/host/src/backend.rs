@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Host capabilities lock callback state per operation, never across Core entry.
 use super::{PKE_BYTES, device_get_tick, host, progress, touched};
+use canokey_ports::canokey::Record;
 use canokey_ports::{
-    BackendTypes, Device, MemoryBackend, Platform, Record, Storage, StorageError,
-    stage_operation as stage,
+    BackendTypes, Device, MemoryBackend, Platform, Storage, StorageError, stage_operation as stage,
 };
 use canokey_rust_ffi::composition::{Provider, Staging, hid};
 

@@ -32,3 +32,9 @@ workspace cleanup that has no borrowed `Platform`.
 No native crypto algorithm or optimization flags changed. Direct calls do not
 establish on-device timing or total call-path stack usage; those still require
 CIU measurements.
+
+CanoKey persisted IDs and its 100-credential capacity live under
+`canokey_ports::canokey::Record`. The `Storage` service uses this product ABI;
+other products can use a path-based engine and their own resident limits.
+These IDs are not protocol-wide CTAP requirements. Moving the Rust namespace
+does not change any record number or generated C ABI value.

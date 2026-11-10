@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use canokey_ports::{Record, Storage, StorageError};
+use canokey_ports::{Storage, StorageError, canokey::Record};
 
 // Match the historical in-memory fixture's record and unpublished-object limits.
 const RECORD_BYTES: usize = 32768;

@@ -683,7 +683,7 @@ fn response_cleanup() {
                 }
                 #[cfg(feature = "openpgp")]
                 {
-                    use canokey_ports::{Record, Storage};
+                    use canokey_ports::{Storage, canokey::Record};
                     let payload = (0..600).map(|i| (i * 7 + 1) as u8).collect::<Vec<_>>();
                     f.card
                         .records

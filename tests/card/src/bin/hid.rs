@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Full HID framing and applet execution with direct Rust capability fakes.
-use canokey_ports::{Record, Storage};
+use canokey_ports::{Storage, canokey::Record};
 use canokey_protocol::ctaphid as wire;
 use canokey_protocol::response::StatusWord;
 use canokey_rust_ffi::{

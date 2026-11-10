@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native fixture storage projection for the imported ck_platform_* ABI.
 //! CIU and Rust host compositions own their storage adapters separately.
-use canokey_ports::{Record, Storage, StorageError};
+use canokey_ports::canokey::Record;
+use canokey_ports::{Storage, StorageError};
 
 #[cfg(any(
     feature = "storage",

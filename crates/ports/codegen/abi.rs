@@ -4,13 +4,14 @@
 extern crate std;
 use std::{string::String, vec::Vec};
 #[cfg(not(test))]
+#[path = "../src/canokey.rs"]
+mod canokey;
+#[cfg(not(test))]
 #[path = "../src/contracts/device.rs"]
 mod device;
-#[cfg(not(test))]
-#[path = "../src/contracts/storage.rs"]
-mod storage;
 #[cfg(test)]
-use super::{device, storage};
+use super::device;
+use crate::canokey::Record;
 
 fn header() -> String {
     let mut text = String::from(
@@ -19,15 +20,12 @@ fn header() -> String {
         #ifndef CANOKEY_PORT_ABI_H\n#define CANOKEY_PORT_ABI_H\n",
     );
     for (name, value) in [
-        ("CK_RECORD_COUNT", storage::Record::COUNT),
+        ("CK_RECORD_COUNT", Record::COUNT),
         (
             "CK_RECORD_NDEF_CAPABILITY",
-            storage::Record::NdefCapability.id() as usize,
+            Record::NdefCapability.id() as usize,
         ),
-        (
-            "CK_RECORD_NDEF_MESSAGE",
-            storage::Record::NdefMessage.id() as usize,
-        ),
+        ("CK_RECORD_NDEF_MESSAGE", Record::NdefMessage.id() as usize),
         ("CK_CHIP_ID_BYTES", device::CHIP_ID_BYTES),
         (
             "CK_BOARD_INFO_FIRMWARE",

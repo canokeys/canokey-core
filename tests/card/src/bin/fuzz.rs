@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_main]
-use canokey_ports::Record;
+use canokey_ports::canokey::Record;
 use canokey_test_card::Card;
 use std::cell::RefCell;
 

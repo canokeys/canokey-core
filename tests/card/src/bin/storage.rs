@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Real applets with the native LittleFS fault-injection fixture.
-use canokey_ports::Record;
+use canokey_ports::canokey::Record;
 use canokey_rust_ffi::{Native, composition::core};
 use std::ffi::{CString, c_char};
 use std::io::{self, BufRead, Write};

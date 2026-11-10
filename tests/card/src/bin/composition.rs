@@ -147,7 +147,7 @@ fn pointer_guards() {
 
 #[cfg(feature = "openpgp")]
 fn aliased_response_regressions() {
-    use canokey_ports::{Record, Storage};
+    use canokey_ports::{Storage, canokey::Record};
     const CERTIFICATE_BYTES: usize = 600;
     const ARENA_BYTES: usize = 272;
     // OpenPGP SELECT, certificate GET DATA, and GET RESPONSE with Le=256.

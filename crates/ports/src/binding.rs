@@ -65,7 +65,7 @@ where
 pub fn copy_to_stage(
     storage: &mut (impl crate::Storage + ?Sized),
     memory: &(impl crate::Memory + ?Sized),
-    record: crate::Record,
+    record: crate::canokey::Record,
     mut offset: u32,
     mut length: u32,
 ) -> Result<(), crate::StorageError> {

@@ -2,7 +2,7 @@
 //! In-process Rust applet fixture for the independent Python protocol oracles.
 #[cfg(feature = "ctap")]
 use canokey_ports::Device;
-use canokey_ports::{Record, Storage};
+use canokey_ports::{Storage, canokey::Record};
 use canokey_test_card::Card;
 use std::io::{self, BufRead, Write};
 const APDU_BYTES: usize = 512;

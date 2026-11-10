@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![cfg(feature = "streaming")]
 use canokey_ctap::streaming::{FRAMING_BYTES, Framing, Mode, Pending, Profile, Stream};
+use canokey_ports::canokey::Record;
 use canokey_ports::{
     BackendTypes, Crypto, CryptoError, CryptoScratch, Device, DigestOperation as Hash, HashState,
-    Memory, Platform, Record, Storage, StorageError, StreamOperation as Op, mldsa,
+    Memory, Platform, Storage, StorageError, StreamOperation as Op, mldsa,
 };
 use canokey_protocol::response::StatusWord as Sw;
 use std::{cell::RefCell, rc::Rc};

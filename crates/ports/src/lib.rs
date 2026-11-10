@@ -2,6 +2,7 @@
 //! Platform contracts and backend-independent binding policy.
 #![no_std]
 mod binding;
+pub mod canokey;
 pub mod contracts;
 mod memory;
 #[cfg(any(feature = "oath", feature = "piv"))]
