@@ -215,6 +215,94 @@ impl<R: Dispatch<C>, C, P: OwnerPolicy> crate::frame::route::Backend for Routing
     }
 }
 
+/// Borrowed finalization capabilities preserve product execution and lease ownership.
+struct Completing<'a, R, P: OwnerPolicy, H: Handoff, C> {
+    runtime: &'a mut Runtime<R, P, H>,
+    context: &'a mut C,
+}
+impl<R: Dispatch<C>, P: OwnerPolicy, H: Handoff, C>
+    crate::frame::route::Finalize<[u8; crate::frame::Selection::AID_BYTES]>
+    for Completing<'_, R, P, H, C>
+{
+    type Prepared = (u32, Sw);
+    type Reply = Reply;
+    fn continuation(&mut self, info: CommandInfo) -> Reply {
+        match crate::frame::ResponseRoute::continuation(info, &self.runtime.response) {
+            Ok(le) => Reply::Data(le),
+            Err(sw) => Reply::Status(sw),
+        }
+    }
+    fn absent_le(&self, info: CommandInfo) -> u32 {
+        self.runtime.router.absent_le(info)
+    }
+    fn select(
+        &mut self,
+        aid: &[u8; crate::frame::Selection::AID_BYTES],
+        selection: &crate::frame::Selection,
+        info: CommandInfo,
+        _: u32,
+    ) -> Result<Self::Prepared, Sw> {
+        let transport = self.runtime.transport();
+        selection
+            .finish(info.header.p2, aid)
+            .and_then(|aid| self.runtime.router.select(aid, transport, self.context))
+            .map(|total| (total, Sw::SUCCESS))
+    }
+    fn reject_select(&mut self) {
+        let transport = self.runtime.transport();
+        self.runtime.router.reject_select(transport, self.context);
+    }
+    fn retain_failed_select(&mut self) -> bool {
+        self.runtime.owner == Some(P::NFC)
+            && self.runtime.chain.active()
+            && self.runtime.router.fido_selected(self.context)
+    }
+    fn reset_chain(&mut self) {
+        self.runtime.chain.reset();
+    }
+    fn end_frame(&mut self, info: CommandInfo) -> Result<bool, Sw> {
+        let last = !self.runtime.router.chain_header(info.header).chained();
+        self.runtime.router.end_frame(last, self.context)?;
+        Ok(last)
+    }
+    fn command(&mut self, info: CommandInfo, le: u32) -> Result<Self::Prepared, Sw> {
+        self.runtime
+            .router
+            .finish(info.header.unchained(), le, self.context)
+    }
+    fn special(&mut self, _: CommandInfo, _: u32) -> Result<Self::Prepared, Sw> {
+        self.runtime
+            .router
+            .eject(self.context)
+            .map(|()| (0, Sw::SUCCESS))
+    }
+    fn abort_input(&mut self) {
+        self.runtime.abort_input(self.context);
+    }
+    fn close_response(&mut self) {
+        self.runtime.router.close_response(self.context);
+    }
+    fn publish(&mut self, (total, status): Self::Prepared, le: u32) -> Reply {
+        if total == 0 {
+            self.runtime.router.close_response(self.context);
+            return Reply::Status(status);
+        }
+        // Close an undrained source before publishing its replacement cursor.
+        if self.runtime.response.active() {
+            self.runtime.close_response(self.context);
+        }
+        if self.runtime.response.start(total, status) {
+            Reply::Data(le)
+        } else {
+            self.runtime.close_response(self.context);
+            Reply::Status(Sw::UNABLE_TO_PROCESS)
+        }
+    }
+    fn status(&mut self, status: Sw) -> Reply {
+        Reply::Status(status)
+    }
+}
+
 // Keep transport cursors before the large router on Thumb-1. This is an
 // internal layout choice, not a serialized or public C ABI.
 #[repr(C)]
@@ -497,76 +585,15 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
         };
         self.frame = None;
         let route = core::mem::replace(&mut self.route, FrameRoute::None);
-        if matches!(route, FrameRoute::GetResponse) {
-            return match crate::frame::ResponseRoute::continuation(info, &self.response) {
-                Ok(le) => Reply::Data(le),
-                Err(sw) => Reply::Status(sw),
-            };
-        }
-        // Direct applet handlers retain their own absent-Le policy. GET
-        // RESPONSE's distinct zero budget is resolved by the shared route.
-        let le = info.le.unwrap_or_else(|| self.router.absent_le(info));
-        let result = match route {
-            FrameRoute::Special => self.router.eject(p).map(|()| (0, Sw::SUCCESS)),
-            FrameRoute::GetResponse => unreachable!(),
-            FrameRoute::Select { aid, selection } => {
-                let transport = self.transport();
-                let selected = selection
-                    .finish(info.header.p2, &aid)
-                    .and_then(|aid| self.router.select(aid, transport, p));
-                if let Err(sw) = selected {
-                    self.router.reject_select(transport, p);
-                    if self.owner == Some(P::NFC)
-                        && self.chain.active()
-                        && self.router.fido_selected(p)
-                    {
-                        return Reply::Status(sw);
-                    }
-                } else {
-                    self.chain.reset();
-                }
-                selected.map(|n| (n, Sw::SUCCESS))
-            }
-            FrameRoute::Command => {
-                let last = !self.router.chain_header(info.header).chained();
-                if let Err(sw) = self.router.end_frame(last, p) {
-                    self.abort_input(p);
-                    return Reply::Status(sw);
-                }
-                if !last {
-                    return Reply::Status(Sw::SUCCESS);
-                }
-                self.router.finish(info.header.unchained(), le, p)
-            }
-            FrameRoute::None => Err(Sw::WRONG_LENGTH),
-        };
-        match result {
-            Ok((0, sw)) => {
-                self.router.close_response(p);
-                Reply::Status(sw)
-            }
-            Ok((total, sw)) => {
-                // A command cannot replace an undrained response lease. Close
-                // the previous source before publishing the new cursor.
-                if self.response.active() {
-                    self.close_response(p);
-                }
-                if self.response.start(total, sw) {
-                    Reply::Data(le)
-                } else {
-                    // Keep the source lease fail-closed even if a future
-                    // caller violates the close-before-start contract.
-                    self.close_response(p);
-                    Reply::Status(Sw::UNABLE_TO_PROCESS)
-                }
-            }
-            Err(sw) => {
-                self.abort_input(p);
-                self.router.close_response(p);
-                Reply::Status(sw)
-            }
-        }
+        route.finish(
+            info,
+            &mut Completing {
+                runtime: self,
+                context: p,
+            },
+        )
     }
+
     pub fn receive<C>(&mut self, owner: u8, frame: &[u8], p: &mut C) -> Reply
     where
         R: Dispatch<C>,

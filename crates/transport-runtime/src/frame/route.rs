@@ -29,6 +29,32 @@ pub trait Backend {
     fn consume(&mut self, bytes: &[u8]) -> Result<(), StatusWord>;
 }
 
+/// Complete-envelope capabilities. Prepared commands may be deferred to the
+/// owner's later execution phase; finalization never retains an input lease.
+pub trait Finalize<A> {
+    type Prepared;
+    type Reply;
+    fn continuation(&mut self, info: CommandInfo) -> Self::Reply;
+    fn absent_le(&self, info: CommandInfo) -> u32;
+    fn select(
+        &mut self,
+        aid: &A,
+        selection: &Selection,
+        info: CommandInfo,
+        le: u32,
+    ) -> Result<Self::Prepared, StatusWord>;
+    fn reject_select(&mut self);
+    fn retain_failed_select(&mut self) -> bool;
+    fn reset_chain(&mut self);
+    fn end_frame(&mut self, info: CommandInfo) -> Result<bool, StatusWord>;
+    fn command(&mut self, info: CommandInfo, le: u32) -> Result<Self::Prepared, StatusWord>;
+    fn special(&mut self, info: CommandInfo, le: u32) -> Result<Self::Prepared, StatusWord>;
+    fn abort_input(&mut self);
+    fn close_response(&mut self);
+    fn publish(&mut self, prepared: Self::Prepared, le: u32) -> Self::Reply;
+    fn status(&mut self, status: StatusWord) -> Self::Reply;
+}
+
 /// The owner chooses inline SELECT backing or lends a separate closed output
 /// allocation. Route metadata never allocates another logical request buffer.
 pub enum Route<A> {
@@ -100,6 +126,54 @@ impl<A: Default> Route<A> {
             Self::Command => backend.consume(bytes),
             Self::GetResponse | Self::Special => Ok(()),
             Self::None => Err(StatusWord::WRONG_LENGTH),
+        }
+    }
+    /// Call only after the complete envelope and any input-source close have
+    /// succeeded. Error cleanup order and intentional input retention are common
+    /// to synchronous execution and a product's deferred command publication.
+    #[inline]
+    pub fn finish<B: Finalize<A>>(self, info: CommandInfo, backend: &mut B) -> B::Reply {
+        if matches!(self, Self::GetResponse) {
+            return backend.continuation(info);
+        }
+        let le = info.le.unwrap_or_else(|| backend.absent_le(info));
+        let result = match self {
+            Self::GetResponse => unreachable!(),
+            Self::Select { aid, selection } => {
+                let selected = backend.select(&aid, &selection, info, le);
+                if let Err(status) = selected {
+                    backend.reject_select();
+                    if backend.retain_failed_select() {
+                        return backend.status(status);
+                    }
+                } else {
+                    backend.reset_chain();
+                }
+                selected
+            }
+            Self::Command => {
+                let last = match backend.end_frame(info) {
+                    Ok(last) => last,
+                    Err(status) => {
+                        backend.abort_input();
+                        return backend.status(status);
+                    }
+                };
+                if !last {
+                    return backend.status(StatusWord::SUCCESS);
+                }
+                backend.command(info, le)
+            }
+            Self::Special => backend.special(info, le),
+            Self::None => Err(StatusWord::WRONG_LENGTH),
+        };
+        match result {
+            Ok(prepared) => backend.publish(prepared, le),
+            Err(status) => {
+                backend.abort_input();
+                backend.close_response();
+                backend.status(status)
+            }
         }
     }
 }

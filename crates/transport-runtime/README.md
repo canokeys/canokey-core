@@ -4,11 +4,15 @@ This `no_std` crate forbids unsafe code and depends only on `canokey-protocol`.
 It owns mechanisms used by product facades, without an application registry,
 native bindings, persistent storage or heap allocation.
 
-`frame::route::Route<A>` owns ordinary APDU start/data routing: extended
+`frame::route::Route<A>` owns ordinary APDU start/data/finalization routing: extended
 admission, NFC MSG input restart, GET RESPONSE, SELECT chain retention and
-consumer dispatch. A call-scoped backend supplies capabilities and storage;
+consumer dispatch. Finalization shares continuation, selection rejection and
+retention, intermediate-chain acknowledgement, command commit and ordered error
+cleanup. Call-scoped backends supply capabilities and storage;
 `A` is inline public-AID backing or `()` when the product lends closed output
-storage. Core Runtime and vLEI Binding both use this control flow. Product
+storage. Core Runtime and vLEI Binding both use this control flow. A product
+may prepare a command for execution after its RX borrow ends; the finalizer
+retains no Application reference or input-source loan. Product
 asynchronous polling retains its separate execution ownership and cannot let
 a second staged NFC request replace a pending command's body.
 
