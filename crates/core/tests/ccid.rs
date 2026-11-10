@@ -69,6 +69,22 @@ fn start() -> (Transport, Mock) {
     (t, m)
 }
 #[test]
+fn foreign_hid_owner_after_header_admission_prevents_exchange() {
+    let (mut transport, mut backend) = start();
+    let wire = frame(TRANSFER, &[0x00, 0x03, 0x00, 0x00]);
+    transport.receive_at(&wire[..HEADER], 0, &mut backend);
+    assert_eq!(backend.admission_calls, 1);
+    transport.receive_at(&wire[HEADER..], 1, &mut backend);
+    let reply = finish(&mut transport, &mut backend, true);
+    assert_eq!(&reply[HEADER..], [0x64, 0x00]);
+    assert_eq!(
+        (backend.executions, backend.arms, backend.disarms),
+        (0, 0, 0)
+    );
+    assert_eq!(reply[7..9], [0x00, SUCCESS_ERROR]);
+}
+
+#[test]
 fn foreign_refusal_drains_and_stays_latched_when_admission_changes() {
     let (mut t, mut m) = start();
     let wire = frame(TRANSFER, &[0x5a; 120]);

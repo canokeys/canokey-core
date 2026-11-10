@@ -4,14 +4,9 @@ use canokey_ports::RequestLimits;
 use canokey_protocol::ctaphid::{self as wire, Error, REPORT_SIZE};
 use canokey_transport_runtime::ctaphid::{Backend, Completion, Profile, Response, Session};
 
-// Three HID packet windows stay inline; larger requests use PKE staging.
-const INLINE: usize = 192;
-pub fn preserves_context(command: u8, length: usize) -> bool {
-    length <= INLINE
-        && (matches!(command, wire::PING | wire::WINK)
-            || (command == wire::CBOR && length == 0)
-            || (command == wire::MSG && length < canokey_protocol::apdu::EXTENDED_HEADER_BYTES))
-}
+pub use canokey_transport_runtime::ctaphid::preserves_context;
+// Larger requests use PKE staging; context-preserving controls stay inline.
+const INLINE: usize = canokey_transport_runtime::ctaphid::INLINE_CONTROL_BYTES;
 /// One exclusive applet session, acquired before touching request scratch.
 /// begin must reject other active transports and retain yielded card context.
 /// close releases request storage, not the transport transaction. The caller

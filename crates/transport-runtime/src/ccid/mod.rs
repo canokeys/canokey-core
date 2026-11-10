@@ -209,8 +209,9 @@ impl<P: Policy> Transport<P> {
                 }
                 SLOT_STATUS => {}
                 TRANSFER => {
-                    if self.refused {
-                        // A foreign owner keeps its workspace; no backend is entered.
+                    if self.refused || hid_busy {
+                        // HID controls can start after header admission. Check
+                        // the current owner again before entering the backend.
                         output[HEADER..HEADER + MIN_REPLY_BYTES].copy_from_slice(&[0x64, 0x00]);
                         length = MIN_REPLY_BYTES;
                     } else {

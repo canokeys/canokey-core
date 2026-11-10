@@ -5,6 +5,14 @@ use core::marker::PhantomData;
 
 pub const TIMEOUT_MS: u32 = 800;
 pub const KEEPALIVE_INTERVAL_MS: u32 = 100;
+// CanoKey keeps three report windows inline while another applet owns scratch.
+pub const INLINE_CONTROL_BYTES: usize = 192;
+pub fn preserves_context(command: u8, length: usize) -> bool {
+    length <= INLINE_CONTROL_BYTES
+        && (matches!(command, wire::PING | wire::WINK)
+            || (command == wire::CBOR && length == 0)
+            || (command == wire::MSG && length < canokey_protocol::apdu::EXTENDED_HEADER_BYTES))
+}
 const INVALID_CHANNEL: u32 = 0x0000_0000;
 const FIRST_CHANNEL: u32 = 0x0000_0001;
 const INTERFACE_VERSION: u8 = 0x02;

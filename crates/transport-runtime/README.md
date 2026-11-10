@@ -71,6 +71,9 @@ lease. `Polling<P>` handles asynchronous status/cancel with only a five-byte
 prefix and cannot borrow a backend. Header progress and remaining u32 payload
 are separate counters, so UINT32_MAX payloads cannot overflow header addition.
 Neither ingress strategy admits extended APDUs; NFC admission is independent.
+Completed TRANSFER dispatch checks HID ownership again: a context-preserving
+HID control can start after CCID header admission. Refusal returns `6400`
+without arming or entering the backend; slot-status polling remains available.
 
 
 `ctaphid::Session<P>` owns channel allocation, framing, receipt timestamps,
@@ -81,6 +84,11 @@ profiles retain channel registration/wrap, CANCEL and timeout boundary policy.
 cannot acquire an application or request parser. CanoKey keeps its existing
 192-byte inline/PKE staging and native continuation owner; vLEI borrows its
 existing request/response arrays. No payload storage is allocated by Session.
+`preserves_context` shares CanoKey's 192-byte inline control bound and command
+classification. Product command support is checked independently. INIT needs no
+payload loan; vLEI PING borrows only the free existing array, retains it through
+endpoint completion, and erases only that array on release. Card dispatch and
+deferred execution wait for the HID owner, including queued/final IN reports.
 
 `ctaphid::Execution<P>` holds execution CID/generation, cancellation,
 abandonment and keepalive timestamps. It classifies only a borrowed report or
