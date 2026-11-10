@@ -3,6 +3,8 @@
 use canokey_protocol::apdu::{CommandInfo, Error, FrameDecoder, FrameEvent, Header};
 use canokey_protocol::response::{Response, Source, StatusWord};
 
+pub mod route;
+
 /// GET RESPONSE retains the current input and output leases. Every other
 /// admitted command closes unread output before routing or consuming its body.
 #[derive(Clone, Copy, PartialEq, Eq)]

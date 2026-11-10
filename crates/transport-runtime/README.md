@@ -4,6 +4,20 @@ This `no_std` crate forbids unsafe code and depends only on `canokey-protocol`.
 It owns mechanisms used by product facades, without an application registry,
 native bindings, persistent storage or heap allocation.
 
+`frame::route::Route<A>` owns ordinary APDU start/data routing: extended
+admission, NFC MSG input restart, GET RESPONSE, SELECT chain retention and
+consumer dispatch. A call-scoped backend supplies capabilities and storage;
+`A` is inline public-AID backing or `()` when the product lends closed output
+storage. Core Runtime and vLEI Binding both use this control flow. Product
+asynchronous polling retains its separate execution ownership and cannot let
+a second staged NFC request replace a pending command's body.
+
+`nfc::request::Request` validates bounded inline/staged envelopes and drains
+rejected RF input. The owner supplies the sole staging lease: transient PKE
+plus complete semantic parsing in Core, or the existing bounded request array
+in vLEI. `nfc::ResponseBudget` shares extended Le and automatic GET RESPONSE
+accounting. Neither mechanism enables extended CCID admission.
+
 - `nfc` provides ISO-DEP Link, execution/WTX and recovery state.
 - `nfc_io::Io<P>` owns the IRQ frame mailbox, RF turn and recovery. `Chip` is
   synchronous borrowed IO; `Polling` is a static, pure product capability.

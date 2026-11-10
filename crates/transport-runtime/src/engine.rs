@@ -132,15 +132,87 @@ impl<R: Dispatch<C>, C> Source for RoutedSource<'_, R, C> {
     }
 }
 
-enum FrameRoute {
-    None,
-    Select {
-        aid: [u8; crate::frame::Selection::AID_BYTES],
-        selection: crate::frame::Selection,
-    },
-    GetResponse,
-    Eject,
-    Command,
+type FrameRoute = crate::frame::route::Route<[u8; crate::frame::Selection::AID_BYTES]>;
+
+struct Routing<'a, R, C, P> {
+    owner: Option<u8>,
+    chain: &'a mut apdu::CommandChain,
+    response: &'a mut Response,
+    router: &'a mut R,
+    context: &'a mut C,
+    policy: PhantomData<P>,
+}
+impl<R: Dispatch<C>, C, P: OwnerPolicy> crate::frame::route::Backend for Routing<'_, R, C, P> {
+    type Aid = [u8; crate::frame::Selection::AID_BYTES];
+    fn nfc(&self) -> bool {
+        self.owner == Some(P::NFC)
+    }
+    fn selected(&self) -> bool {
+        self.router.selected()
+    }
+    fn fido_selected(&mut self) -> bool {
+        self.router.fido_selected(self.context)
+    }
+    fn extended_allowed(&self, header: Header) -> bool {
+        let owner = self.owner.unwrap_or(P::INVALID);
+        (owner == P::EXTENDED_USB || owner == P::NFC)
+            && self.owner.is_none_or(|current| current == owner)
+            && !self.router.output_busy()
+            && (header.is_select_by_name() || self.router.allows_extended(header))
+    }
+    fn chain_active(&self) -> bool {
+        self.chain.active()
+    }
+    fn restart_message(&mut self) {
+        self.abort_input();
+    }
+    // This small adapter must not retain a separate routing-view call frame.
+    #[inline(always)]
+    fn abort_input(&mut self) {
+        self.chain.reset();
+        self.router.abort_command(self.context);
+    }
+    fn special(&mut self, header: Header) -> bool {
+        self.router.is_eject(header, self.context)
+    }
+    fn response_route(
+        &mut self,
+        header: Header,
+        special: bool,
+    ) -> Result<crate::frame::ResponseRoute, Sw> {
+        crate::frame::ResponseRoute::begin(
+            header,
+            !special && self.router.output_busy(),
+            self.response,
+            &mut RoutedSource(self.router, self.context),
+        )
+    }
+    fn begin_command(&mut self, info: CommandInfo) -> Result<(), Sw> {
+        let header = info.header;
+        let limit = self.router.command_limit(header)?;
+        let mut chain_info = info;
+        chain_info.header = self.router.chain_header(header);
+        let step = self
+            .chain
+            .accept(chain_info, limit)
+            .map_err(|_| Sw::WRONG_LENGTH)?;
+        if step.restarted {
+            self.router.abort_command(self.context);
+            self.router.begin_command(header, self.context)?;
+        }
+        Ok(())
+    }
+    fn select_data(
+        &mut self,
+        aid: &mut Self::Aid,
+        selection: &mut crate::frame::Selection,
+        bytes: &[u8],
+    ) {
+        selection.consume(bytes, aid);
+    }
+    fn consume(&mut self, bytes: &[u8]) -> Result<(), Sw> {
+        self.router.consume(bytes, self.context)
+    }
 }
 
 // Keep transport cursors before the large router on Thumb-1. This is an
@@ -350,107 +422,40 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
             apdu::Transport::Usb
         }
     }
-    fn extended_allowed(&self, owner: u8, header: Header) -> bool {
-        (owner == P::EXTENDED_USB || owner == P::NFC)
-            && self.owner.is_none_or(|current| current == owner)
-            && !self.router.output_busy()
-            && (header.is_select_by_name() || self.router.allows_extended(header))
-    }
     #[inline(never)]
     fn start<C>(&mut self, info: CommandInfo, p: &mut C) -> Result<(), Sw>
     where
         R: Dispatch<C>,
     {
-        if info.extended
-            && self.owner == Some(P::NFC)
-            && info.header.unchained().cla == apdu::CLA_FIDO
-            && info.header.ins == apdu::FIDO_CBOR_INS
-        {
-            // NFC extended MSG restarts input even when CLA starts a new chain.
-            self.chain.reset();
-            self.router.abort_command(p);
-        }
-        if info.extended
-            && !info.header.is_select_by_name()
-            && !info.header.is_get_response()
-            && !self.router.selected()
-        {
-            return Err(Sw::FILE_NOT_FOUND);
-        }
-        if info.extended && !self.extended_allowed(self.owner.unwrap_or(P::INVALID), info.header) {
-            return Err(Sw::WRONG_LENGTH);
-        }
-        let h = info.header;
-        let eject = !h.is_get_response() && self.router.is_eject(h, p);
-        let response_route = crate::frame::ResponseRoute::begin(
-            h,
-            !eject && self.router.output_busy(),
-            &mut self.response,
-            &mut RoutedSource(&mut self.router, p),
+        self.route = FrameRoute::begin(
+            info,
+            &mut Routing::<R, C, P> {
+                owner: self.owner,
+                chain: &mut self.chain,
+                response: &mut self.response,
+                router: &mut self.router,
+                context: p,
+                policy: PhantomData,
+            },
         )?;
-        if response_route == crate::frame::ResponseRoute::Continuation {
-            self.route = FrameRoute::GetResponse;
-            return Ok(());
-        }
-        if eject {
-            self.reroute(FrameRoute::Eject, p);
-            return Ok(());
-        }
-        if h.is_select_by_name() {
-            let route = FrameRoute::Select {
-                aid: [0x00; crate::frame::Selection::AID_BYTES],
-                selection: crate::frame::Selection::new(),
-            };
-            if self.owner == Some(P::NFC) && self.chain.active() && self.router.fido_selected(p) {
-                // Unknown AID, invalid P2 and disabled NDEF preserve NFC's
-                // FIDO chain. Successful selection closes it in the router.
-                self.route = route;
-            } else {
-                self.reroute(route, p);
-            }
-            return Ok(());
-        }
-        if !self.router.selected() {
-            return Err(Sw::FILE_NOT_FOUND);
-        }
-        let limit = self.router.command_limit(h)?;
-        let mut chain_info = info;
-        chain_info.header = self.router.chain_header(h);
-        let step = self
-            .chain
-            .accept(chain_info, limit)
-            .map_err(|_| Sw::WRONG_LENGTH)?;
-        if step.restarted {
-            self.router.abort_command(p);
-            self.router.begin_command(h, p)?;
-        }
-        // Header and chain bit stay in FrameDecoder until end_frame; the
-        // route retains only the selected consumer, not a second header copy.
-        self.route = FrameRoute::Command;
         Ok(())
-    }
-    fn reroute<C>(&mut self, route: FrameRoute, p: &mut C)
-    where
-        R: Dispatch<C>,
-    {
-        self.chain.reset();
-        self.router.abort_command(p);
-        self.route = route;
     }
     #[inline(never)]
     fn data<C>(&mut self, bytes: &[u8], p: &mut C) -> Result<(), Sw>
     where
         R: Dispatch<C>,
     {
-        match &mut self.route {
-            FrameRoute::Select { aid, selection } => {
-                selection.consume(bytes, aid);
-                Ok(())
-            }
-            FrameRoute::Command => self.router.consume(bytes, p),
-            FrameRoute::GetResponse | FrameRoute::Eject => Ok(()),
-            FrameRoute::None => Err(Sw::WRONG_LENGTH),
-        }
+        self.route.data(
+            bytes,
+            &mut Routing::<R, C, P> {
+                owner: self.owner,
+                chain: &mut self.chain,
+                response: &mut self.response,
+                router: &mut self.router,
+                context: p,
+                policy: PhantomData,
+            },
+        )
     }
     /// Ephemeral input may be packet-sized or a complete short APDU. Neither the
     /// frame nor the logical command is reassembled by this runtime.
@@ -502,7 +507,7 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
         // RESPONSE's distinct zero budget is resolved by the shared route.
         let le = info.le.unwrap_or_else(|| self.router.absent_le(info));
         let result = match route {
-            FrameRoute::Eject => self.router.eject(p).map(|()| (0, Sw::SUCCESS)),
+            FrameRoute::Special => self.router.eject(p).map(|()| (0, Sw::SUCCESS)),
             FrameRoute::GetResponse => unreachable!(),
             FrameRoute::Select { aid, selection } => {
                 let transport = self.transport();
