@@ -31,6 +31,14 @@ Changed inputs, absent artifacts, missing baseline rows, duplicate reviews or
 nonexistent hunks are errors. Unmapped hunks and nonempty `remaining` entries
 fail the release check. Implementation and acceptance are separate decisions.
 
+The shared-code extraction changed 47 target/regression artifacts referenced by
+62 behaviors. `artifact_revalidation` records their previous and current hashes;
+each affected behavior has an explicit remaining revalidation item. Historical
+fixture evidence, behavior dispositions, source inventory and hunk mappings are
+unchanged. Current hashes make the draft inspectable, but do not renew its
+behavior acceptance. The draft reports 1609 unreviewed source units and 140 open
+items; the strict release gate remains closed.
+
 From Core, validate the exact source objects and records:
 
 ```sh

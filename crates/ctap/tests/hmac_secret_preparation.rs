@@ -133,9 +133,14 @@ fn both_protocols_commit_only_decrypted_salts_and_aes_key_then_erase_all_capacit
             // Output must still see every plaintext salt and the complete AES
             // key after that key overwrites the compacted ciphertext tail.
             let mut output = [0x00; 80];
-            let written = prepared.output(&[0x24; 32], &mut output, &mut crypto).unwrap();
+            let written = prepared
+                .output(&[0x24; 32], &mut output, &mut crypto)
+                .unwrap();
             assert_eq!(written, length + protocol.iv_bytes());
-            assert_eq!(&output[..protocol.iv_bytes()], vec![0x42; protocol.iv_bytes()]);
+            assert_eq!(
+                &output[..protocol.iv_bytes()],
+                vec![0x42; protocol.iv_bytes()]
+            );
             assert_eq!(&output[protocol.iv_bytes()..written], vec![0x88; length]);
             let mut captured = Vec::new();
             prepared.clear(|bytes| {

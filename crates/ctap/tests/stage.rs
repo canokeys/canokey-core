@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+// Preserve the frozen differential projection byte-for-byte.
+#[rustfmt::skip]
 #[path = "fixtures/stage_80a497b4.rs"]
 mod before;
 use canokey_ctap::{

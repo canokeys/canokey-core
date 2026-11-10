@@ -25,8 +25,8 @@ pub mod status;
 pub mod streaming;
 pub mod workspace;
 
-pub mod management;
 pub mod info;
+pub mod management;
 #[cfg(feature = "schema")]
 extern crate std;
 #[cfg(feature = "schema")]

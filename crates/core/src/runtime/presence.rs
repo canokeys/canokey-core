@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Main-loop presence operation; no C callback may reenter the core.
 #![forbid(unsafe_code)]
+#[cfg(all(presence_applet, any(feature = "ctap", test)))]
+pub use canokey_ctap::presence::Error;
 #[cfg(presence_applet)]
-pub use canokey_ctap::presence::{Error, Request};
+pub use canokey_ctap::presence::Request;
 #[cfg(feature = "admin")]
 const LONG_TOUCH_MS: u32 = 500;
 #[cfg(feature = "admin")]

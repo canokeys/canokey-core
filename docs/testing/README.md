@@ -227,6 +227,13 @@ uses `--structure-only`; that validates records without granting release
 acceptance. Gate regressions run with `python3 -m unittest discover -s tests
 -p test_c312_sync.py -v`. The CIU platform companion must pass separately.
 
+The full host CI and its deb-producing job use Ubuntu 24.04 together. The pinned
+pinentry 1.2.1 mock requires libassuan API 2; binary deb, GnuPG and FIDO caches
+include the distribution to prevent reuse across incompatible runner ABIs.
+Formatting skips only the frozen parser/resident/staging oracle modules; their
+source bytes remain fixed. The ordinary shared ClientPIN cases are formatted
+with the rest of the workspace.
+
 ## Fuzzing
 
 `CANOKEY_FUZZING` builds `apdu-fuzzer`, a Rust/libfuzzer-sys harness that drives the

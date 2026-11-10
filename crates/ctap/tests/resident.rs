@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 use canokey_ctap::resident::{self, Entry, FIELD_COUNT, FIXED_BYTES, ID_BYTES, MAX_BYTES};
 
+// Preserve the frozen differential projections byte-for-byte.
+#[rustfmt::skip]
 #[path = "fixtures/resident_core_cd92e240.rs"]
 mod core_reference;
+#[rustfmt::skip]
 #[path = "fixtures/resident_vlei_63470c9.rs"]
 mod vlei_reference;
 

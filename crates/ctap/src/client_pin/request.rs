@@ -2,8 +2,8 @@
 //! ClientPIN field admission, independent of owned/borrowed CBOR decoding.
 use super::Protocol;
 
-pub mod stream;
 pub mod borrowed;
+pub mod stream;
 
 pub const LABEL_PROTOCOL: i8 = 0x01;
 pub const LABEL_SUBCOMMAND: i8 = 0x02;

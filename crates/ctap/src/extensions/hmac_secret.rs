@@ -90,11 +90,7 @@ impl Prepared {
             )?;
             let encoded = &mut self.secrets.0[..ciphertext.len()];
             encoded.copy_from_slice(ciphertext);
-            backend.decrypt(
-                protocol,
-                (&keys[KEY_BYTES..]).try_into().unwrap(),
-                encoded,
-            )?;
+            backend.decrypt(protocol, (&keys[KEY_BYTES..]).try_into().unwrap(), encoded)?;
             self.secrets.0[AES_KEY_OFFSET..].copy_from_slice(&keys[KEY_BYTES..]);
             self.protocol = protocol;
             // Only one or two SHA-256 salts can pass salt_length admission.

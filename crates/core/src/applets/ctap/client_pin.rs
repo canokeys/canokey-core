@@ -132,6 +132,7 @@ impl stream::Output<Status> for Parameters {
 }
 
 #[cfg(test)]
+#[rustfmt::skip]
 mod reference;
 
 #[cfg(test)]

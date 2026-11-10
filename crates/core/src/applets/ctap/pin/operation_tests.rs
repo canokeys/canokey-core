@@ -1267,7 +1267,10 @@ fn wrong_pin_retains_standard_token_but_third_mismatch_blocks_its_use() {
             assert_eq!(session.pin.token.with_secret(|secret| *secret), [0x00; 32]);
             assert_eq!(session.pin.token.permissions, 0x00);
             assert!(session.pin.token.rp_id().is_none());
-            assert_eq!((session.pin.token.issued, session.pin.token.last_used), (0, 0));
+            assert_eq!(
+                (session.pin.token.issued, session.pin.token.last_used),
+                (0, 0)
+            );
             assert_eq!(
                 session.client_pin(
                     &mut parameters,

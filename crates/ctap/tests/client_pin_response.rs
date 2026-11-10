@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use canokey_ctap::client_pin::{agreement, response, Protocol};
+use canokey_ctap::client_pin::{Protocol, agreement, response};
 
 fn point() -> [u8; 64] {
     core::array::from_fn(|index| index as u8)
@@ -108,11 +108,7 @@ fn complete_responses_preserve_bounded_output_and_stop_at_first_sink_failure() {
             let mut calls = 0;
             let result = emit_case(case, |_| {
                 calls += 1;
-                if calls == fail_at {
-                    Err(())
-                } else {
-                    Ok(())
-                }
+                if calls == fail_at { Err(()) } else { Ok(()) }
             });
             assert_eq!(result, Err(()));
             assert_eq!(calls, fail_at);

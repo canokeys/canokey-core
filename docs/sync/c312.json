@@ -82,83 +82,17 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "d71d5c4ff1a3873873e58e528948f596397baa2e025013f17d82549112523f54"
+          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94"
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94",
-          "id": "schema_matches_executed_pinned_c_vectors"
-        }
-      ],
-      "evidence": [
-        {
-          "path": "tests/fixtures/c312-getinfo/report.json",
-          "sha256": "f54c81edbbd24c668b9be43cbd66dd453c3bcd676c3e2cd0972e66bf80fc11df",
-          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "128 extracted pinned-C schema executions with explicit storage/configuration stubs; 32 expected wide-ID failures; not firmware/transport execution"
-        }
-      ],
-      "remaining": []
-    },
-    {
-      "id": "G2",
-      "behavior": "GetInfo omits forcePINChange when false and selects top-level map21/map22.",
-      "disposition": "implemented",
-      "targets": [
-        {
-          "path": "crates/core/codegen/ctap.rs",
-          "sha256": "d71d5c4ff1a3873873e58e528948f596397baa2e025013f17d82549112523f54"
-        },
-        {
-          "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94"
-        }
-      ],
-      "regressions": [
-        {
-          "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94",
-          "id": "schema_matches_executed_pinned_c_vectors"
-        }
-      ],
-      "evidence": [
-        {
-          "path": "tests/fixtures/c312-getinfo/report.json",
-          "sha256": "f54c81edbbd24c668b9be43cbd66dd453c3bcd676c3e2cd0972e66bf80fc11df",
-          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "128 extracted pinned-C schema executions with explicit storage/configuration stubs; 32 expected wide-ID failures; not firmware/transport execution"
-        }
-      ],
-      "remaining": []
-    },
-    {
-      "id": "G3",
-      "behavior": "GetInfo transports declares nfc,usb for the NFC+USB product and follows installed transport features.",
-      "disposition": "implemented",
-      "targets": [
-        {
-          "path": "crates/core/codegen/ctap.rs",
-          "sha256": "d71d5c4ff1a3873873e58e528948f596397baa2e025013f17d82549112523f54"
-        },
-        {
-          "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94"
-        },
-        {
-          "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
-        }
-      ],
-      "regressions": [
-        {
-          "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94",
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -171,7 +105,78 @@
         }
       ],
       "remaining": [
-        "Full-product physical NFC capability acceptance is open."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
+    },
+    {
+      "id": "G2",
+      "behavior": "GetInfo omits forcePINChange when false and selects top-level map21/map22.",
+      "disposition": "implemented",
+      "targets": [
+        {
+          "path": "crates/core/codegen/ctap.rs",
+          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
+        },
+        {
+          "path": "crates/core/src/applets/ctap/info.rs",
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+        }
+      ],
+      "regressions": [
+        {
+          "path": "crates/core/src/applets/ctap/info.rs",
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+          "id": "schema_matches_executed_pinned_c_vectors"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "tests/fixtures/c312-getinfo/report.json",
+          "sha256": "f54c81edbbd24c668b9be43cbd66dd453c3bcd676c3e2cd0972e66bf80fc11df",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "128 extracted pinned-C schema executions with explicit storage/configuration stubs; 32 expected wide-ID failures; not firmware/transport execution"
+        }
+      ],
+      "remaining": [
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
+    },
+    {
+      "id": "G3",
+      "behavior": "GetInfo transports declares nfc,usb for the NFC+USB product and follows installed transport features.",
+      "disposition": "implemented",
+      "targets": [
+        {
+          "path": "crates/core/codegen/ctap.rs",
+          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
+        },
+        {
+          "path": "crates/core/src/applets/ctap/info.rs",
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+        },
+        {
+          "path": "crates/ffi/src/transport/nfc.rs",
+          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
+        }
+      ],
+      "regressions": [
+        {
+          "path": "crates/core/src/applets/ctap/info.rs",
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+          "id": "schema_matches_executed_pinned_c_vectors"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "tests/fixtures/c312-getinfo/report.json",
+          "sha256": "f54c81edbbd24c668b9be43cbd66dd453c3bcd676c3e2cd0972e66bf80fc11df",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "128 extracted pinned-C schema executions with explicit storage/configuration stubs; 32 expected wide-ID failures; not firmware/transport execution"
+        }
+      ],
+      "remaining": [
+        "Full-product physical NFC capability acceptance is open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -181,21 +186,21 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "d71d5c4ff1a3873873e58e528948f596397baa2e025013f17d82549112523f54"
+          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94"
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
         },
         {
           "path": "crates/core/src/applets/ctap/pq.rs",
-          "sha256": "ed8b85e088282c097b9128cec27cf18acfc218d51b32c730d4ce3a6ac2588c39"
+          "sha256": "543ba125523674bb3061a24addf2c64d919d8ec75878aca5527474120c1f24f2"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94",
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -207,7 +212,9 @@
           "scope": "128 extracted pinned-C schema executions with explicit storage/configuration stubs; 32 expected wide-ID failures; not firmware/transport execution"
         }
       ],
-      "remaining": []
+      "remaining": [
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/core/src/applets/ctap/pq.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
     },
     {
       "id": "G5",
@@ -216,17 +223,17 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "d71d5c4ff1a3873873e58e528948f596397baa2e025013f17d82549112523f54"
+          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94"
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94",
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -238,7 +245,9 @@
           "scope": "128 extracted pinned-C schema executions with explicit storage/configuration stubs; 32 expected wide-ID failures; not firmware/transport execution"
         }
       ],
-      "remaining": []
+      "remaining": [
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
     },
     {
       "id": "G6",
@@ -247,27 +256,27 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "d71d5c4ff1a3873873e58e528948f596397baa2e025013f17d82549112523f54"
+          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94"
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
         },
         {
           "path": "crates/protocol/src/ctaphid.rs",
-          "sha256": "2ae2c2ec0c40f5e6d1081b22886d272d6edfa43eabd84733a0c974be9ed7cbcf"
+          "sha256": "9003a5b78deb9ad92af32bbb86b652ee945d1063ffe69d64793e271d3ed00122"
         },
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "4059a28c598c956dd46339665e3d18ebc99f9c62765658a06b2f933e68b16ce1"
+          "sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
-          "sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5"
+          "sha256": "99d4de16b5e1e4e786a87c6bfa2589c542c26e8594f51c00bdd930c572565558"
         },
         {
           "path": "crates/core/src/runtime/webusb.rs",
@@ -275,22 +284,22 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
+          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
         },
         {
           "path": "crates/host/src/pcsc.rs",
-          "sha256": "d1f5088e010418643eb35690acda95dd451e961a18ad3c4aeb86ec8303c4d9fe"
+          "sha256": "334d6147bbb0c177c189f0dd9a67f2cb23937200342f7acfa744fdda611ef062"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94",
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
           "id": "schema_matches_executed_pinned_c_vectors"
         },
         {
           "path": "tests/card/src/bin/usb_sessions/envelopes.rs",
-          "sha256": "a12a5927f8bc289e33bc275e05b72306dbc3dd9689c899090fe689c0b6de9b61",
+          "sha256": "1680bab4edd59e420846a63103971bc3addd2a607df490adfab8ea3c5b5ac653",
           "id": "logical_capacity_1023_1024_1025_1295_1296_1297_actual_transports"
         },
         {
@@ -331,7 +340,8 @@
         }
       ],
       "remaining": [
-        "CIU request-path stack and PKE/RF acceptance is open."
+        "CIU request-path stack and PKE/RF acceptance is open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs, crates/host/src/pcsc.rs, crates/protocol/src/ctaphid.rs, tests/card/src/bin/usb_sessions/envelopes.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -341,17 +351,17 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "d71d5c4ff1a3873873e58e528948f596397baa2e025013f17d82549112523f54"
+          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94"
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94",
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -363,7 +373,9 @@
           "scope": "128 extracted pinned-C schema executions with explicit storage/configuration stubs; 32 expected wide-ID failures; not firmware/transport execution"
         }
       ],
-      "remaining": []
+      "remaining": [
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
     },
     {
       "id": "G8",
@@ -372,11 +384,11 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "d71d5c4ff1a3873873e58e528948f596397baa2e025013f17d82549112523f54"
+          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94"
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
         },
         {
           "path": "crates/core/codegen/release.rs",
@@ -386,7 +398,7 @@
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94",
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -398,7 +410,9 @@
           "scope": "128 extracted pinned-C schema executions with explicit storage/configuration stubs; 32 expected wide-ID failures; not firmware/transport execution"
         }
       ],
-      "remaining": []
+      "remaining": [
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
     },
     {
       "id": "G9",
@@ -407,17 +421,17 @@
       "targets": [
         {
           "path": "crates/core/codegen/ctap.rs",
-          "sha256": "d71d5c4ff1a3873873e58e528948f596397baa2e025013f17d82549112523f54"
+          "sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819"
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94"
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94",
+          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -429,7 +443,9 @@
           "scope": "128 extracted pinned-C schema executions with explicit storage/configuration stubs; 32 expected wide-ID failures; not firmware/transport execution"
         }
       ],
-      "remaining": []
+      "remaining": [
+        "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
     },
     {
       "id": "A1",
@@ -438,23 +454,23 @@
       "targets": [
         {
           "path": "crates/protocol/src/apdu.rs",
-          "sha256": "c39cbd3ffc87645b5c12400bb8a83611e80d24a026192b1bc1191e168e553864"
+          "sha256": "2327aff788ecd3a5357b3c019f10873dbb9a95320b101d56e9fe0df783b11bbe"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/host/src/pcsc.rs",
-          "sha256": "d1f5088e010418643eb35690acda95dd451e961a18ad3c4aeb86ec8303c4d9fe"
+          "sha256": "334d6147bbb0c177c189f0dd9a67f2cb23937200342f7acfa744fdda611ef062"
         },
         {
           "path": "crates/core/src/applets/ctap/apdu.rs",
-          "sha256": "5e6f1f3c9e1ecae2c432ab28f4d93fd5656e0c99cb1000edfd66f39c1756e9dc"
+          "sha256": "dafbd37c9ccb6dd039d537e374f9520561920ea75a3f1d06b8d6a051c4e24f4f"
         }
       ],
       "regressions": [
@@ -465,7 +481,7 @@
         },
         {
           "path": "tests/fixtures/c312-ccid/vectors.json",
-          "sha256": "6264826eb73cdb0fab3c83cf8a67ae0e68dc90ea728fb3cbef0d25472bd0100f",
+          "sha256": "7e9d1b03a6a45216c79039b3e90924ea518eb55618e800bc88e42fde229d0203",
           "id": "shared-literal-ccid-wire-cases"
         },
         {
@@ -502,7 +518,8 @@
       ],
       "remaining": [
         "E64/E65/E66 cover listed AID/rejection, disabled-target, CLA/P1/Case2E/Case4E, grant and EF matrices. Further header/body/inline mutations, pending/config transitions, volatile native-HID state and physical acceptance remain open.",
-        "E63 after-WTX differences, mixed NFC source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open."
+        "E63 after-WTX differences, mixed NFC source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/apdu.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/host/src/pcsc.rs, crates/protocol/src/apdu.rs, tests/fixtures/c312-ccid/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -512,22 +529,22 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         }
       ],
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "2dee9b07403370dc83e028b99e31887db6110e0b60b839930f1cbf933060c1e8",
+          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
           "id": "explicit_selection"
         },
         {
           "path": "tests/fixtures/c312-ccid/vectors.json",
-          "sha256": "6264826eb73cdb0fab3c83cf8a67ae0e68dc90ea728fb3cbef0d25472bd0100f",
+          "sha256": "7e9d1b03a6a45216c79039b3e90924ea518eb55618e800bc88e42fde229d0203",
           "id": "shared-literal-ccid-wire-cases"
         }
       ],
@@ -553,7 +570,8 @@
       ],
       "remaining": [
         "E64/E65/E66 cover listed AID/rejection, disabled-target, CLA/P1/Case2E/Case4E, grant and EF matrices. Further header/body/inline mutations, pending/config transitions, volatile native-HID state and physical acceptance remain open.",
-        "E63 after-WTX differences, mixed NFC source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open."
+        "E63 after-WTX differences, mixed NFC source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-ccid/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -563,17 +581,17 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         }
       ],
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "2dee9b07403370dc83e028b99e31887db6110e0b60b839930f1cbf933060c1e8",
+          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
           "id": "explicit_selection_and_power_and_irq"
         }
       ],
@@ -592,7 +610,8 @@
         }
       ],
       "remaining": [
-        "Physical USB slot-reset acceptance remains open."
+        "Physical USB slot-reset acceptance remains open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, tests/card/src/bin/usb_sessions.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -602,11 +621,11 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/ccid.rs",
-          "sha256": "30ca04a3a1cb16170c0c7df9450dc6f45de1c213eebfe44113c23399e8d332e3"
+          "sha256": "e46bd5b9ba7addea045391a2cb762ae9f3b797eb9afc81c28762e503719eafe1"
         },
         {
           "path": "crates/core/src/runtime/usb/descriptors.rs",
-          "sha256": "f4e598e8f82d07a3eb267cfc1dfb11c64c49bda88f39219c77bfdbbeaeb319ec"
+          "sha256": "08f6724e291e5bd178da0d38351b2e213e03d253843ec691c41c3a06bb01ecb8"
         },
         {
           "path": "docs/history/ccid-extended-removed/README.md",
@@ -614,22 +633,22 @@
         },
         {
           "path": "crates/protocol/src/ccid.rs",
-          "sha256": "357075c369720e37da5a7d35d199d61e007e00d05e336a8cba165c4542edd4f6"
+          "sha256": "0056d420640c83924e044bf2873aba2d19a0f5b8dcc5101ec06df1d6ec000e7e"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "7a313e8b990018f69146273a2609f83764dec15ce697af89430a6a015e549e81"
+          "sha256": "ed5435156347e3284b3c65ffa30787ff1c4e99831846005dd45f6185adccaa1d"
         }
       ],
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "2dee9b07403370dc83e028b99e31887db6110e0b60b839930f1cbf933060c1e8",
+          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
           "id": "ccid_drain"
         },
         {
           "path": "tests/fixtures/c312-ccid/vectors.json",
-          "sha256": "6264826eb73cdb0fab3c83cf8a67ae0e68dc90ea728fb3cbef0d25472bd0100f",
+          "sha256": "7e9d1b03a6a45216c79039b3e90924ea518eb55618e800bc88e42fde229d0203",
           "id": "shared-literal-ccid-wire-cases"
         }
       ],
@@ -660,7 +679,8 @@
         }
       ],
       "remaining": [
-        "Complete the E02-E04 matrix and physical USB acceptance; archived dual CCID cases cover a subset."
+        "Complete the E02-E04 matrix and physical USB acceptance; archived dual CCID cases cover a subset.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/core/src/runtime/usb/descriptors.rs, crates/ffi/src/transport/ccid/mod.rs, crates/protocol/src/ccid.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-ccid/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -670,19 +690,19 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/nfc.rs",
-          "sha256": "d9438cd842846deca822d88df8df3782f3176f7fc065c74d06ebd0a8851b8fa2"
+          "sha256": "854d59cd266cd6c3f8027b7452c0b8c5c7cfbe8b2e0158a335d1673cfcda28b1"
         },
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
-          "sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5"
+          "sha256": "99d4de16b5e1e4e786a87c6bfa2589c542c26e8594f51c00bdd930c572565558"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
+          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         }
       ],
       "regressions": [
@@ -693,7 +713,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions/envelopes.rs",
-          "sha256": "a12a5927f8bc289e33bc275e05b72306dbc3dd9689c899090fe689c0b6de9b61",
+          "sha256": "1680bab4edd59e420846a63103971bc3addd2a607df490adfab8ea3c5b5ac653",
           "id": "actual_nfc_applet_transport"
         },
         {
@@ -703,12 +723,12 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions/nfc_source.rs",
-          "sha256": "e01a8616a1f3bbac0967a78794ef8d77f78d0b1571f712a0b1f7fce47c2eb1ae",
+          "sha256": "07da487782a589ab1090dab76c28866edf4b855aa57c564fa82e4a5c2fffbcb7",
           "id": "nfc-source-faults-production-dispatch-41-injections"
         },
         {
           "path": "crates/core/tests/streaming.rs",
-          "sha256": "5dfee45e73497a51b1151080b896f3bf299dc22a13cdde8d704f55797b402251",
+          "sha256": "fd77ac146fc69b14b85972fcc2448c6cd1a471346e378df488e7f33d3d801554",
           "id": "source_close_failure_blocks_commit_even_after_complete_input_and_overrides_parse_error"
         }
       ],
@@ -740,7 +760,8 @@
       ],
       "remaining": [
         "Functional regression restoration remains release-blocked on physical NFC/RF/WTX and CIU resources.",
-        "Extend PKE faults/cancellation beyond the41 Rust source schedules to other CTAP commands, write/cleanup failures and paired C transport runs; broader aggregation remains."
+        "Extend PKE faults/cancellation beyond the41 Rust source schedules to other CTAP commands, write/cleanup failures and paired C transport runs; broader aggregation remains.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc.rs, crates/core/src/runtime/nfc/request.rs, crates/core/tests/streaming.rs, crates/ffi/src/transport/nfc.rs, tests/card/src/bin/usb_sessions/envelopes.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -750,11 +771,11 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
-          "sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5"
+          "sha256": "99d4de16b5e1e4e786a87c6bfa2589c542c26e8594f51c00bdd930c572565558"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/applets/ndef.rs",
@@ -773,7 +794,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions/envelopes.rs",
-          "sha256": "a12a5927f8bc289e33bc275e05b72306dbc3dd9689c899090fe689c0b6de9b61",
+          "sha256": "1680bab4edd59e420846a63103971bc3addd2a607df490adfab8ea3c5b5ac653",
           "id": "actual_nfc_applet_transport"
         },
         {
@@ -803,7 +824,8 @@
         }
       ],
       "remaining": [
-        "Complete the applet/Case2E/Le matrix and physical NFC acceptance; archived dual cases cover selected boundaries."
+        "Complete the applet/Case2E/Le matrix and physical NFC acceptance; archived dual cases cover selected boundaries.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, tests/card/src/bin/usb_sessions/envelopes.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -813,30 +835,30 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/ccid.rs",
-          "sha256": "30ca04a3a1cb16170c0c7df9450dc6f45de1c213eebfe44113c23399e8d332e3"
+          "sha256": "e46bd5b9ba7addea045391a2cb762ae9f3b797eb9afc81c28762e503719eafe1"
         },
         {
           "path": "crates/protocol/src/ccid.rs",
-          "sha256": "357075c369720e37da5a7d35d199d61e007e00d05e336a8cba165c4542edd4f6"
+          "sha256": "0056d420640c83924e044bf2873aba2d19a0f5b8dcc5101ec06df1d6ec000e7e"
         },
         {
           "path": "crates/ffi/src/transport/ccid/io.rs",
-          "sha256": "0495e111dacc2e7f881895deed065babd29b168ed147c67cb637b583ff488a5d"
+          "sha256": "630ce964f956cec6a18c92f9792fc740b2d8d285d350f02dbe31e628609421ff"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "7a313e8b990018f69146273a2609f83764dec15ce697af89430a6a015e549e81"
+          "sha256": "ed5435156347e3284b3c65ffa30787ff1c4e99831846005dd45f6185adccaa1d"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/ccid.rs",
-          "sha256": "ca202089c9aa5a75fa5d0ad53ce808d85f313ad4be9500aa924123db2b1e10ce",
+          "sha256": "5a533ec071badd7b4de48e411262d314499c0caaf8ca8aa74cc50f4163549ece",
           "id": "literal_response_families_slot_rfu_and_error_precedence"
         },
         {
           "path": "tests/fixtures/c312-ccid/vectors.json",
-          "sha256": "6264826eb73cdb0fab3c83cf8a67ae0e68dc90ea728fb3cbef0d25472bd0100f",
+          "sha256": "7e9d1b03a6a45216c79039b3e90924ea518eb55618e800bc88e42fde229d0203",
           "id": "47-shared-literal-CCID-cases"
         },
         {
@@ -846,7 +868,7 @@
         },
         {
           "path": "tests/fixtures/c312-usb-ownership/vectors.json",
-          "sha256": "18ad037dac64ffba2b836d02af28f0fbefd2e2d124c58d226d8333f6e2fe34a9",
+          "sha256": "00e64ab1b86db14c380a6e01bfd4c5d15de99f3d097950c5697ba1a91a908523",
           "id": "E32-18-literal-mixed-USB-cases-408-events"
         }
       ],
@@ -871,7 +893,8 @@
         }
       ],
       "remaining": [
-        "Complete auxiliary/busy/endpoint-race dual comparisons and physical USB acceptance."
+        "Complete auxiliary/busy/endpoint-race dual comparisons and physical USB acceptance.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/core/tests/ccid.rs, crates/ffi/src/transport/ccid/io.rs, crates/ffi/src/transport/ccid/mod.rs, crates/protocol/src/ccid.rs, tests/fixtures/c312-ccid/vectors.json, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -881,21 +904,21 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
-          "sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5"
+          "sha256": "99d4de16b5e1e4e786a87c6bfa2589c542c26e8594f51c00bdd930c572565558"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
+          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
         }
       ],
       "regressions": [
         {
           "path": "crates/ffi/src/transport/nfc/tests.rs",
-          "sha256": "efdf082321775b32b58e66642908781ea8bdf9f591427004f2d5841a31d5b7d2",
+          "sha256": "eb8de2aa80158bacc1ce7cf4e9eaf68666e1cf501cbaca264865cf62f5651642",
           "id": "nfc_link_chaining_wtx_reset_and_fido_aggregation"
         },
         {
@@ -919,7 +942,8 @@
         }
       ],
       "remaining": [
-        "Broader large-response aggregation, WTX and physical RF execution remain open."
+        "Broader large-response aggregation, WTX and physical RF execution remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs, crates/ffi/src/transport/nfc/tests.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -933,7 +957,7 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
@@ -941,13 +965,13 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "7a313e8b990018f69146273a2609f83764dec15ce697af89430a6a015e549e81"
+          "sha256": "ed5435156347e3284b3c65ffa30787ff1c4e99831846005dd45f6185adccaa1d"
         }
       ],
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions/envelopes.rs",
-          "sha256": "a12a5927f8bc289e33bc275e05b72306dbc3dd9689c899090fe689c0b6de9b61",
+          "sha256": "1680bab4edd59e420846a63103971bc3addd2a607df490adfab8ea3c5b5ac653",
           "id": "actual-WebUSB-288-289-and-applet-cases"
         },
         {
@@ -993,7 +1017,8 @@
         }
       ],
       "remaining": [
-        "Physical EP0 lifecycle acceptance and broader cross-transport/endpoint-failure schedules remain open."
+        "Physical EP0 lifecycle acceptance and broader cross-transport/endpoint-failure schedules remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/ffi/src/transport/ccid/mod.rs, tests/card/src/bin/usb_sessions/envelopes.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1003,32 +1028,32 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/ccid.rs",
-          "sha256": "30ca04a3a1cb16170c0c7df9450dc6f45de1c213eebfe44113c23399e8d332e3"
+          "sha256": "e46bd5b9ba7addea045391a2cb762ae9f3b797eb9afc81c28762e503719eafe1"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "7a313e8b990018f69146273a2609f83764dec15ce697af89430a6a015e549e81"
+          "sha256": "ed5435156347e3284b3c65ffa30787ff1c4e99831846005dd45f6185adccaa1d"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/ccid.rs",
-          "sha256": "ca202089c9aa5a75fa5d0ad53ce808d85f313ad4be9500aa924123db2b1e10ce",
+          "sha256": "5a533ec071badd7b4de48e411262d314499c0caaf8ca8aa74cc50f4163549ece",
           "id": "oversized_and_slot_payloads_drain_fully_before_one_reply_and_recover"
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "2dee9b07403370dc83e028b99e31887db6110e0b60b839930f1cbf933060c1e8",
+          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
           "id": "ccid_drain"
         },
         {
           "path": "tests/fixtures/c312-ccid/vectors.json",
-          "sha256": "6264826eb73cdb0fab3c83cf8a67ae0e68dc90ea728fb3cbef0d25472bd0100f",
+          "sha256": "7e9d1b03a6a45216c79039b3e90924ea518eb55618e800bc88e42fde229d0203",
           "id": "shared-drain-gap-recovery-cases"
         },
         {
           "path": "tests/fixtures/c312-usb-ownership/vectors.json",
-          "sha256": "18ad037dac64ffba2b836d02af28f0fbefd2e2d124c58d226d8333f6e2fe34a9",
+          "sha256": "00e64ab1b86db14c380a6e01bfd4c5d15de99f3d097950c5697ba1a91a908523",
           "id": "E32-18-literal-mixed-USB-cases-408-events"
         }
       ],
@@ -1053,7 +1078,8 @@
         }
       ],
       "remaining": [
-        "Complete physical USB delayed-fragment/reset acceptance."
+        "Complete physical USB delayed-fragment/reset acceptance.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/core/tests/ccid.rs, crates/ffi/src/transport/ccid/mod.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-ccid/vectors.json, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1067,7 +1093,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         }
       ],
       "regressions": [
@@ -1097,7 +1123,8 @@
         }
       ],
       "remaining": [
-        "Complete physical RF and dual WebUSB applet acceptance."
+        "Complete physical RF and dual WebUSB applet acceptance.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1107,26 +1134,26 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/ccid.rs",
-          "sha256": "30ca04a3a1cb16170c0c7df9450dc6f45de1c213eebfe44113c23399e8d332e3"
+          "sha256": "e46bd5b9ba7addea045391a2cb762ae9f3b797eb9afc81c28762e503719eafe1"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "7a313e8b990018f69146273a2609f83764dec15ce697af89430a6a015e549e81"
+          "sha256": "ed5435156347e3284b3c65ffa30787ff1c4e99831846005dd45f6185adccaa1d"
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
+          "sha256": "e8713f4c84d5a0cc3e2872bb9581d408a01097f20cc27059c5314ec01432ac88"
         }
       ],
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "2dee9b07403370dc83e028b99e31887db6110e0b60b839930f1cbf933060c1e8",
+          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
           "id": "ownership_and_pending-power_and_irq-staging_and_presence"
         },
         {
           "path": "tests/fixtures/c312-hid-ownership/vectors.json",
-          "sha256": "b5561d90de7116bb5b3f6c664a9a56efa8426aeaea867d8755f3ede0adc1ab91",
+          "sha256": "ad7c144fad1357c30df3f473a26255fa536ae8ee6a800d8d1780912cdee5a29a",
           "id": "E33-E34-native-MSG-envelope-and-HID-contention; E35-explicit-unresolved-output"
         }
       ],
@@ -1145,7 +1172,8 @@
         }
       ],
       "remaining": [
-        "Dual C/Rust busy/auxiliary queue schedules and physical USB acceptance remain open."
+        "Dual C/Rust busy/auxiliary queue schedules and physical USB acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/hid/link.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-hid-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1155,17 +1183,17 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         }
       ],
       "regressions": [
         {
           "path": "tests/fixtures/c312-ccid/vectors.json",
-          "sha256": "6264826eb73cdb0fab3c83cf8a67ae0e68dc90ea728fb3cbef0d25472bd0100f",
+          "sha256": "7e9d1b03a6a45216c79039b3e90924ea518eb55618e800bc88e42fde229d0203",
           "id": "PIV-absent-Le-validation-and-pending-response"
         },
         {
@@ -1205,7 +1233,8 @@
         }
       ],
       "remaining": [
-        "Extend absent-Le comparison to remaining OpenPGP/direct applet cases and WebUSB."
+        "Extend absent-Le comparison to remaining OpenPGP/direct applet cases and WebUSB.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, tests/fixtures/c312-ccid/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1215,30 +1244,30 @@
       "targets": [
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
+          "sha256": "e8713f4c84d5a0cc3e2872bb9581d408a01097f20cc27059c5314ec01432ac88"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         },
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
-          "sha256": "d9421a46ebf27a6e3203cbae1adaff1bd47b3a2382e88fd1862ba9d489763f2e"
+          "sha256": "f7cd3efa6fadc0447d658e58f78fccde6e3d68ec0080db88e10e1ca795431192"
         }
       ],
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "2dee9b07403370dc83e028b99e31887db6110e0b60b839930f1cbf933060c1e8",
+          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
           "id": "ownership_and_pending-native-MSG-two3000ms-gaps"
         },
         {
           "path": "tests/fixtures/c312-hid-ownership/vectors.json",
-          "sha256": "b5561d90de7116bb5b3f6c664a9a56efa8426aeaea867d8755f3ede0adc1ab91",
+          "sha256": "ad7c144fad1357c30df3f473a26255fa536ae8ee6a800d8d1780912cdee5a29a",
           "id": "E33-E34-native-MSG-envelope-and-HID-contention; E35-explicit-unresolved-output"
         },
         {
@@ -1291,7 +1320,8 @@
         }
       ],
       "remaining": [
-        "Recorded same/other-CID controls retain exact output and foreign MSG is refused without advancing it. CID1/E43 is an intentional isolation difference; broader channel/withheld-IN/endpoint/IRQ and physical USB schedules remain open."
+        "Recorded same/other-CID controls retain exact output and foreign MSG is refused without advancing it. CID1/E43 is an intentional isolation difference; broader channel/withheld-IN/endpoint/IRQ and physical USB schedules remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/hid/link.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-hid-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1301,11 +1331,11 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/nfc.rs",
-          "sha256": "d9438cd842846deca822d88df8df3782f3176f7fc065c74d06ebd0a8851b8fa2"
+          "sha256": "854d59cd266cd6c3f8027b7452c0b8c5c7cfbe8b2e0158a335d1673cfcda28b1"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
+          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
         }
       ],
       "regressions": [
@@ -1323,7 +1353,9 @@
           "scope": "Exact mechanical source transformation for this follow-up and identical merge-parent delta only. Not acceptance of the earlier58-hunk NFC implementation or physical transport."
         }
       ],
-      "remaining": []
+      "remaining": [
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
     },
     {
       "id": "L2",
@@ -1340,17 +1372,17 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "7a313e8b990018f69146273a2609f83764dec15ce697af89430a6a015e549e81"
+          "sha256": "ed5435156347e3284b3c65ffa30787ff1c4e99831846005dd45f6185adccaa1d"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "6ca8a4cbb8d36abedab49c7ec56c4032f0ec84afa6b760c18b33ef357be44005"
+          "sha256": "3f24900515e35b48039801c1db27c9ab38b93674a3145cc495555ce6e11e3de7"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/webusb.rs",
-          "sha256": "7039a623e36ce82ea6f5a2c6c821d4e9b7268e2f17e8deea18f99561842dedc6",
+          "sha256": "f945e5713504077a636bb5cb86228761463303b4a5506cd35009e0f8000749a0",
           "id": "completed_hold_expiry_uses_last_setup_and_wrapping_strict_boundary; status_keepalive_extends_only_completed_hold; incomplete_transactions_do_not_expire"
         },
         {
@@ -1360,12 +1392,12 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "2dee9b07403370dc83e028b99e31887db6110e0b60b839930f1cbf933060c1e8",
+          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
           "id": "preemption: expired-Hold-continuation-exclusion and aborted-WebUSB-reservation-preserves-CCID-PIN"
         },
         {
           "path": "tests/fixtures/c312-usb-ownership/vectors.json",
-          "sha256": "18ad037dac64ffba2b836d02af28f0fbefd2e2d124c58d226d8333f6e2fe34a9",
+          "sha256": "00e64ab1b86db14c380a6e01bfd4c5d15de99f3d097950c5697ba1a91a908523",
           "id": "E32-18-literal-mixed-USB-cases-408-events"
         }
       ],
@@ -1402,7 +1434,8 @@
         }
       ],
       "remaining": [
-        "Beyond the explicit E32 serialized schedule: HID ownership, auxiliary/in-flight endpoint contention, failure/IRQ races and physical USB acceptance remain open."
+        "Beyond the explicit E32 serialized schedule: HID ownership, auxiliary/in-flight endpoint contention, failure/IRQ races and physical USB acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/tests/webusb.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/usb.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1420,17 +1453,17 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "7a313e8b990018f69146273a2609f83764dec15ce697af89430a6a015e549e81"
+          "sha256": "ed5435156347e3284b3c65ffa30787ff1c4e99831846005dd45f6185adccaa1d"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "6ca8a4cbb8d36abedab49c7ec56c4032f0ec84afa6b760c18b33ef357be44005"
+          "sha256": "3f24900515e35b48039801c1db27c9ab38b93674a3145cc495555ce6e11e3de7"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/webusb.rs",
-          "sha256": "7039a623e36ce82ea6f5a2c6c821d4e9b7268e2f17e8deea18f99561842dedc6",
+          "sha256": "f945e5713504077a636bb5cb86228761463303b4a5506cd35009e0f8000749a0",
           "id": "incomplete_transactions_do_not_expire; reset_during_execution_does_not_reassign_live_workspace"
         },
         {
@@ -1440,12 +1473,12 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "2dee9b07403370dc83e028b99e31887db6110e0b60b839930f1cbf933060c1e8",
+          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
           "id": "preemption: expired-Hold-continuation-exclusion and aborted-WebUSB-reservation-preserves-CCID-PIN"
         },
         {
           "path": "tests/fixtures/c312-usb-ownership/vectors.json",
-          "sha256": "18ad037dac64ffba2b836d02af28f0fbefd2e2d124c58d226d8333f6e2fe34a9",
+          "sha256": "00e64ab1b86db14c380a6e01bfd4c5d15de99f3d097950c5697ba1a91a908523",
           "id": "E32-18-literal-mixed-USB-cases-408-events"
         }
       ],
@@ -1470,7 +1503,8 @@
         }
       ],
       "remaining": [
-        "Beyond the explicit E32 serialized schedule: HID ownership, auxiliary/in-flight endpoint contention, failure/IRQ races and physical USB acceptance remain open."
+        "Beyond the explicit E32 serialized schedule: HID ownership, auxiliary/in-flight endpoint contention, failure/IRQ races and physical USB acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/tests/webusb.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/usb.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1480,7 +1514,7 @@
       "targets": [
         {
           "path": "crates/protocol/src/ctaphid.rs",
-          "sha256": "2ae2c2ec0c40f5e6d1081b22886d272d6edfa43eabd84733a0c974be9ed7cbcf"
+          "sha256": "9003a5b78deb9ad92af32bbb86b652ee945d1063ffe69d64793e271d3ed00122"
         },
         {
           "path": "crates/protocol/src/apdu/decode.rs",
@@ -1488,11 +1522,11 @@
         },
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
-          "sha256": "d9421a46ebf27a6e3203cbae1adaff1bd47b3a2382e88fd1862ba9d489763f2e"
+          "sha256": "f7cd3efa6fadc0447d658e58f78fccde6e3d68ec0080db88e10e1ca795431192"
         },
         {
           "path": "crates/core/src/applets/ctap/message.rs",
-          "sha256": "23cc7a1fad98906e64698e815e05c9e5aa399d72a8d6808db8330ada1889db95"
+          "sha256": "e4a5ee6cc076ea1e0ae161efb43d6542c6383aa32bb6c5c81a3c0bdc9b723bef"
         }
       ],
       "regressions": [
@@ -1503,7 +1537,7 @@
         },
         {
           "path": "tests/fixtures/c312-hid-ownership/vectors.json",
-          "sha256": "b5561d90de7116bb5b3f6c664a9a56efa8426aeaea867d8755f3ede0adc1ab91",
+          "sha256": "ad7c144fad1357c30df3f473a26255fa536ae8ee6a800d8d1780912cdee5a29a",
           "id": "E33-malformed-retained-and-fifth-byte"
         },
         {
@@ -1561,7 +1595,8 @@
         }
       ],
       "remaining": [
-        "Maximum-envelope, inline/staged malformed MSG and declared cross-CID schedules have literal coverage; remaining command/parameter/error boundaries and physical USB acceptance are open."
+        "Maximum-envelope, inline/staged malformed MSG and declared cross-CID schedules have literal coverage; remaining command/parameter/error boundaries and physical USB acceptance are open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/message.rs, crates/core/src/runtime/ctaphid.rs, crates/protocol/src/ctaphid.rs, tests/fixtures/c312-hid-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1571,17 +1606,17 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
-          "sha256": "d9421a46ebf27a6e3203cbae1adaff1bd47b3a2382e88fd1862ba9d489763f2e"
+          "sha256": "f7cd3efa6fadc0447d658e58f78fccde6e3d68ec0080db88e10e1ca795431192"
         },
         {
           "path": "crates/ffi/src/transport/hid/command.rs",
-          "sha256": "8f19ed13aad1693a8ef42d10dc508dec53da9afe0e2cd2ef4da40e7bd841da0a"
+          "sha256": "e137b774210d7b6533e6b368f0683702043927af963894475ab999f77ecc8acc"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/ctaphid.rs",
-          "sha256": "da95c6e9a8b1681f8d92a913f429418000d6ce69bb7af1d7f87282dffaff8673",
+          "sha256": "2cf7ae0184b06c2b8404df71dbf1fe4da929e70d03eea74889288d2b49b4bc55",
           "id": "total_message_limit_applies_before_staging_for_all_commands"
         },
         {
@@ -1616,7 +1651,8 @@
         }
       ],
       "remaining": [
-        "WINK payloads, disabled dispatch and recorded CID schedules are now covered. CID1/E43 is an intentional isolation difference; withheld-IN/endpoint/IRQ and physical USB acceptance remain open."
+        "WINK payloads, disabled dispatch and recorded CID schedules are now covered. CID1/E43 is an intentional isolation difference; withheld-IN/endpoint/IRQ and physical USB acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/core/tests/ctaphid.rs, crates/ffi/src/transport/hid/command.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1626,17 +1662,17 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
-          "sha256": "d9421a46ebf27a6e3203cbae1adaff1bd47b3a2382e88fd1862ba9d489763f2e"
+          "sha256": "f7cd3efa6fadc0447d658e58f78fccde6e3d68ec0080db88e10e1ca795431192"
         },
         {
           "path": "crates/ffi/src/transport/hid/command.rs",
-          "sha256": "8f19ed13aad1693a8ef42d10dc508dec53da9afe0e2cd2ef4da40e7bd841da0a"
+          "sha256": "e137b774210d7b6533e6b368f0683702043927af963894475ab999f77ecc8acc"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/ctaphid.rs",
-          "sha256": "da95c6e9a8b1681f8d92a913f429418000d6ce69bb7af1d7f87282dffaff8673",
+          "sha256": "2cf7ae0184b06c2b8404df71dbf1fe4da929e70d03eea74889288d2b49b4bc55",
           "id": "channel_contention_resync_sequence_and_wrapping_timeout"
         },
         {
@@ -1665,7 +1701,8 @@
         }
       ],
       "remaining": [
-        "Additional queued-receipt timestamp/IRQ/error schedules and physical USB acceptance remain open."
+        "Additional queued-receipt timestamp/IRQ/error schedules and physical USB acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/core/tests/ctaphid.rs, crates/ffi/src/transport/hid/command.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1675,11 +1712,11 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
-          "sha256": "d9421a46ebf27a6e3203cbae1adaff1bd47b3a2382e88fd1862ba9d489763f2e"
+          "sha256": "f7cd3efa6fadc0447d658e58f78fccde6e3d68ec0080db88e10e1ca795431192"
         },
         {
           "path": "crates/ffi/src/transport/hid/command.rs",
-          "sha256": "8f19ed13aad1693a8ef42d10dc508dec53da9afe0e2cd2ef4da40e7bd841da0a"
+          "sha256": "e137b774210d7b6533e6b368f0683702043927af963894475ab999f77ecc8acc"
         }
       ],
       "regressions": [
@@ -1704,7 +1741,8 @@
         }
       ],
       "remaining": [
-        "Physical USB, withheld IN and endpoint/IRQ acceptance remain open."
+        "Physical USB, withheld IN and endpoint/IRQ acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/ffi/src/transport/hid/command.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1714,7 +1752,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
-          "sha256": "d9421a46ebf27a6e3203cbae1adaff1bd47b3a2382e88fd1862ba9d489763f2e"
+          "sha256": "f7cd3efa6fadc0447d658e58f78fccde6e3d68ec0080db88e10e1ca795431192"
         }
       ],
       "regressions": [
@@ -1725,7 +1763,7 @@
         },
         {
           "path": "crates/core/tests/ctaphid.rs",
-          "sha256": "da95c6e9a8b1681f8d92a913f429418000d6ce69bb7af1d7f87282dffaff8673",
+          "sha256": "2cf7ae0184b06c2b8404df71dbf1fe4da929e70d03eea74889288d2b49b4bc55",
           "id": "cancel_during_unknown_value_rx_is_sequence_error_before_parser_entry"
         }
       ],
@@ -1744,7 +1782,8 @@
         }
       ],
       "remaining": [
-        "Physical USB, withheld IN and endpoint/IRQ acceptance remain open."
+        "Physical USB, withheld IN and endpoint/IRQ acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/core/tests/ctaphid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1754,77 +1793,22 @@
       "targets": [
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
+          "sha256": "e8713f4c84d5a0cc3e2872bb9581d408a01097f20cc27059c5314ec01432ac88"
         },
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
-          "sha256": "d9421a46ebf27a6e3203cbae1adaff1bd47b3a2382e88fd1862ba9d489763f2e"
+          "sha256": "f7cd3efa6fadc0447d658e58f78fccde6e3d68ec0080db88e10e1ca795431192"
         }
       ],
       "regressions": [
         {
           "path": "tests/card/src/bin/hid.rs",
-          "sha256": "a396ef87c8f8faf85e380e93b0970aa76793a4602b59273d9372368e0bb3ba17",
+          "sha256": "0bc03875390d41455770b18d863db93789d77b7e5b4b8ae40d9c2ee434b35b40",
           "id": "presence_same_CID_INIT_unwind_and_replay"
         },
         {
           "path": "crates/ffi/src/transport/hid/link/tests.rs",
-          "sha256": "a0bf4e8786b34f63946c85b50c10041c53ce50dd2cb5bac3ed3bbe8bf58ab0f1",
-          "id": "hid_link_interrupt_leases_progress_and_cancellation"
-        }
-      ],
-      "evidence": [
-        {
-          "path": "tests/fixtures/c312-hid-channels/report.json",
-          "sha256": "d684cbcc39c4e35ad0108dd5041fcfcf2af198b017fcdf7b629be67b66e98e5d",
-          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "40 literal C/Rust channel/WINK/framing/disabled/CANCEL cases:36 equal-output,4 explicit unresolved CID1 cases. Event-level drained IN; no physical or arbitrary IRQ acceptance."
-        },
-        {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
-          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
-        },
-        {
-          "path": "docs/sync/evidence/hid-source-review.json",
-          "sha256": "5525464d2d3cd07e31bc3d09b2d28d476b4affe42cb487fc389a4c4e415612e6",
-          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "32 explicitly reviewed CTAPHID source units; maps mechanisms and leaves non-proven acceptance open."
-        }
-      ],
-      "remaining": [
-        "Physical USB, withheld IN and endpoint/IRQ acceptance remain open."
-      ]
-    },
-    {
-      "id": "L9",
-      "behavior": "HID progress services matching executing CANCEL and bounded competitor refusals without reentering Core; RX and idle CANCEL have separate semantics.",
-      "disposition": "implemented",
-      "targets": [
-        {
-          "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
-        },
-        {
-          "path": "crates/core/src/runtime/ctaphid.rs",
-          "sha256": "d9421a46ebf27a6e3203cbae1adaff1bd47b3a2382e88fd1862ba9d489763f2e"
-        }
-      ],
-      "regressions": [
-        {
-          "path": "tests/fixtures/c312-hid-channels/vectors.json",
-          "sha256": "2c8511033e2a28dd9ae749f2fbbda47a674a5e4dbca7bd4b66e8b569674349b6",
-          "id": "E40-E45-CID-ownership-WINK-pre-parser-errors-disabled-CANCEL"
-        },
-        {
-          "path": "tests/card/src/bin/hid.rs",
-          "sha256": "a396ef87c8f8faf85e380e93b0970aa76793a4602b59273d9372368e0bb3ba17",
-          "id": "foreign_busy_then_executing_CANCEL"
-        },
-        {
-          "path": "crates/ffi/src/transport/hid/link/tests.rs",
-          "sha256": "a0bf4e8786b34f63946c85b50c10041c53ce50dd2cb5bac3ed3bbe8bf58ab0f1",
+          "sha256": "f05116112bd2830cc9ab93ace4cc8ae1ba7578b45fe049710eebbfa977eda4ea",
           "id": "hid_link_interrupt_leases_progress_and_cancellation"
         }
       ],
@@ -1850,7 +1834,64 @@
       ],
       "remaining": [
         "Physical USB, withheld IN and endpoint/IRQ acceptance remain open.",
-        "Executing invalid-CID/disabled/unknown-command error ordering and adversarial flood schedules still require literal C comparison; no complete S4 claim."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/hid/link/tests.rs, tests/card/src/bin/hid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
+    },
+    {
+      "id": "L9",
+      "behavior": "HID progress services matching executing CANCEL and bounded competitor refusals without reentering Core; RX and idle CANCEL have separate semantics.",
+      "disposition": "implemented",
+      "targets": [
+        {
+          "path": "crates/ffi/src/transport/hid/link.rs",
+          "sha256": "e8713f4c84d5a0cc3e2872bb9581d408a01097f20cc27059c5314ec01432ac88"
+        },
+        {
+          "path": "crates/core/src/runtime/ctaphid.rs",
+          "sha256": "f7cd3efa6fadc0447d658e58f78fccde6e3d68ec0080db88e10e1ca795431192"
+        }
+      ],
+      "regressions": [
+        {
+          "path": "tests/fixtures/c312-hid-channels/vectors.json",
+          "sha256": "2c8511033e2a28dd9ae749f2fbbda47a674a5e4dbca7bd4b66e8b569674349b6",
+          "id": "E40-E45-CID-ownership-WINK-pre-parser-errors-disabled-CANCEL"
+        },
+        {
+          "path": "tests/card/src/bin/hid.rs",
+          "sha256": "0bc03875390d41455770b18d863db93789d77b7e5b4b8ae40d9c2ee434b35b40",
+          "id": "foreign_busy_then_executing_CANCEL"
+        },
+        {
+          "path": "crates/ffi/src/transport/hid/link/tests.rs",
+          "sha256": "f05116112bd2830cc9ab93ace4cc8ae1ba7578b45fe049710eebbfa977eda4ea",
+          "id": "hid_link_interrupt_leases_progress_and_cancellation"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "tests/fixtures/c312-hid-channels/report.json",
+          "sha256": "d684cbcc39c4e35ad0108dd5041fcfcf2af198b017fcdf7b629be67b66e98e5d",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "40 literal C/Rust channel/WINK/framing/disabled/CANCEL cases:36 equal-output,4 explicit unresolved CID1 cases. Event-level drained IN; no physical or arbitrary IRQ acceptance."
+        },
+        {
+          "path": "docs/sync/evidence/host-ctest.log",
+          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+        },
+        {
+          "path": "docs/sync/evidence/hid-source-review.json",
+          "sha256": "5525464d2d3cd07e31bc3d09b2d28d476b4affe42cb487fc389a4c4e415612e6",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "32 explicitly reviewed CTAPHID source units; maps mechanisms and leaves non-proven acceptance open."
+        }
+      ],
+      "remaining": [
+        "Physical USB, withheld IN and endpoint/IRQ acceptance remain open.",
+        "Executing invalid-CID/disabled/unknown-command error ordering and adversarial flood schedules still require literal C comparison; no complete S4 claim.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/hid/link/tests.rs, tests/card/src/bin/hid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1860,11 +1901,11 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/usb/mod.rs",
-          "sha256": "3e7d32a461244e93f739b60c6fcc273feea36320f84fcb4fc8d16f573df08caa"
+          "sha256": "a0366564732970178db1c70d9644b7dfcf1d0e7a1c2fc0bd3120a22cf9c2e3c0"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "6ca8a4cbb8d36abedab49c7ec56c4032f0ec84afa6b760c18b33ef357be44005"
+          "sha256": "3f24900515e35b48039801c1db27c9ab38b93674a3145cc495555ce6e11e3de7"
         }
       ],
       "regressions": [
@@ -1899,7 +1940,8 @@
         }
       ],
       "remaining": [
-        "Physical DATA-toggle/controller behavior and configuration/IRQ races remain open."
+        "Physical DATA-toggle/controller behavior and configuration/IRQ races remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/usb/mod.rs, crates/ffi/src/transport/usb.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1909,15 +1951,15 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/usb/descriptors.rs",
-          "sha256": "f4e598e8f82d07a3eb267cfc1dfb11c64c49bda88f39219c77bfdbbeaeb319ec"
+          "sha256": "08f6724e291e5bd178da0d38351b2e213e03d253843ec691c41c3a06bb01ecb8"
         },
         {
           "path": "crates/core/src/runtime/usb/mod.rs",
-          "sha256": "3e7d32a461244e93f739b60c6fcc273feea36320f84fcb4fc8d16f573df08caa"
+          "sha256": "a0366564732970178db1c70d9644b7dfcf1d0e7a1c2fc0bd3120a22cf9c2e3c0"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "6ca8a4cbb8d36abedab49c7ec56c4032f0ec84afa6b760c18b33ef357be44005"
+          "sha256": "3f24900515e35b48039801c1db27c9ab38b93674a3145cc495555ce6e11e3de7"
         }
       ],
       "regressions": [
@@ -1947,7 +1989,8 @@
         }
       ],
       "remaining": [
-        "Full product/serial/interface/BOS/MSOS busy and pending-RX/TX/IRQ schedules remain open; U4 retains a wire difference."
+        "Full product/serial/interface/BOS/MSOS busy and pending-RX/TX/IRQ schedules remain open; U4 retains a wire difference.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/usb/descriptors.rs, crates/core/src/runtime/usb/mod.rs, crates/ffi/src/transport/usb.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -1957,11 +2000,11 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/usb/mod.rs",
-          "sha256": "3e7d32a461244e93f739b60c6fcc273feea36320f84fcb4fc8d16f573df08caa"
+          "sha256": "a0366564732970178db1c70d9644b7dfcf1d0e7a1c2fc0bd3120a22cf9c2e3c0"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "6ca8a4cbb8d36abedab49c7ec56c4032f0ec84afa6b760c18b33ef357be44005"
+          "sha256": "3f24900515e35b48039801c1db27c9ab38b93674a3145cc495555ce6e11e3de7"
         }
       ],
       "regressions": [
@@ -1972,70 +2015,12 @@
         },
         {
           "path": "tests/support/c312_ccid.py",
-          "sha256": "a8c93fd0a78b43d63f27cb2e6b9fd4ea9e9acba0573a5b75379f073f3d26158e",
+          "sha256": "09208bad6e9df7c221cace7d4a265879869abd7b0363de7247f613fa2a32c89e",
           "id": "explicit-unresolved-expected_c-without-response-normalization"
         },
         {
           "path": "tests/fixtures/c312-correctness/vectors.json",
-          "sha256": "988a824de99b40cc959d140fdcbbb6e510e76259d5d5ba623b1336dbac35410f",
-          "id": "c312-correctness-wire"
-        }
-      ],
-      "evidence": [
-        {
-          "path": "tests/fixtures/c312-usb-control/report.json",
-          "sha256": "5a1ff6e119d07b6b2f1658d4930907da100162a368a53ae40ae049012314b319",
-          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "36 literal C/Rust USB-control cases:29 equal-output, five U3 GET_STATUS and two U4 busy-descriptor differences. No physical/controller/IRQ acceptance."
-        },
-        {
-          "path": "docs/sync/evidence/usb-control-source-review.json",
-          "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5",
-          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "91 explicitly reviewed source units in13 parent/file diffs, including merge duplicates; acceptance remains separately scoped."
-        },
-        {
-          "path": "docs/sync/c312-correctness-decisions.md",
-          "sha256": "d43f9badfb9530559aa254dd9667a3d097425b1a140f05a09446164efe86283d",
-          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
-          "scope": "Current correctness decisions; no source-hunk or physical acceptance is inferred."
-        },
-        {
-          "path": "tests/fixtures/c312-correctness/report.json",
-          "sha256": "179ecd518c264f6a8c8fb42c62d94ca8e3ec2cb497dfe3283fa389498c287754",
-          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
-          "scope": "Fresh paired134-case execution:117 equal,17 intentional unequal outputs. All output arrays match original reports unchanged."
-        }
-      ],
-      "remaining": []
-    },
-    {
-      "id": "U4",
-      "behavior": "Independent Rust control storage answers descriptors while a FIDO response remains retained; preserve the exact next source byte.",
-      "disposition": "intentional difference",
-      "targets": [
-        {
-          "path": "crates/core/src/runtime/usb/descriptors.rs",
-          "sha256": "f4e598e8f82d07a3eb267cfc1dfb11c64c49bda88f39219c77bfdbbeaeb319ec"
-        },
-        {
-          "path": "crates/core/src/runtime/usb/mod.rs",
-          "sha256": "3e7d32a461244e93f739b60c6fcc273feea36320f84fcb4fc8d16f573df08caa"
-        },
-        {
-          "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "6ca8a4cbb8d36abedab49c7ec56c4032f0ec84afa6b760c18b33ef357be44005"
-        }
-      ],
-      "regressions": [
-        {
-          "path": "tests/fixtures/c312-usb-control/vectors.json",
-          "sha256": "8c687c2ba3dabe830b16736ae0d23d1c810c5efa323a7b272dd528b8c71c9082",
-          "id": "E48-pending-manufacturer-configuration-stall-versus-success"
-        },
-        {
-          "path": "tests/fixtures/c312-correctness/vectors.json",
-          "sha256": "988a824de99b40cc959d140fdcbbb6e510e76259d5d5ba623b1336dbac35410f",
+          "sha256": "8e9403761bfced17bbc55aa57365fe9e3f5008ca369dd2d22c44e6b75d0c68e5",
           "id": "c312-correctness-wire"
         }
       ],
@@ -2066,7 +2051,68 @@
         }
       ],
       "remaining": [
-        "Broader descriptor/control abort and lifecycle schedules remain open."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/usb/mod.rs, crates/ffi/src/transport/usb.rs, tests/fixtures/c312-correctness/vectors.json, tests/support/c312_ccid.py. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
+    },
+    {
+      "id": "U4",
+      "behavior": "Independent Rust control storage answers descriptors while a FIDO response remains retained; preserve the exact next source byte.",
+      "disposition": "intentional difference",
+      "targets": [
+        {
+          "path": "crates/core/src/runtime/usb/descriptors.rs",
+          "sha256": "08f6724e291e5bd178da0d38351b2e213e03d253843ec691c41c3a06bb01ecb8"
+        },
+        {
+          "path": "crates/core/src/runtime/usb/mod.rs",
+          "sha256": "a0366564732970178db1c70d9644b7dfcf1d0e7a1c2fc0bd3120a22cf9c2e3c0"
+        },
+        {
+          "path": "crates/ffi/src/transport/usb.rs",
+          "sha256": "3f24900515e35b48039801c1db27c9ab38b93674a3145cc495555ce6e11e3de7"
+        }
+      ],
+      "regressions": [
+        {
+          "path": "tests/fixtures/c312-usb-control/vectors.json",
+          "sha256": "8c687c2ba3dabe830b16736ae0d23d1c810c5efa323a7b272dd528b8c71c9082",
+          "id": "E48-pending-manufacturer-configuration-stall-versus-success"
+        },
+        {
+          "path": "tests/fixtures/c312-correctness/vectors.json",
+          "sha256": "8e9403761bfced17bbc55aa57365fe9e3f5008ca369dd2d22c44e6b75d0c68e5",
+          "id": "c312-correctness-wire"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "tests/fixtures/c312-usb-control/report.json",
+          "sha256": "5a1ff6e119d07b6b2f1658d4930907da100162a368a53ae40ae049012314b319",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "36 literal C/Rust USB-control cases:29 equal-output, five U3 GET_STATUS and two U4 busy-descriptor differences. No physical/controller/IRQ acceptance."
+        },
+        {
+          "path": "docs/sync/evidence/usb-control-source-review.json",
+          "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5",
+          "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
+          "scope": "91 explicitly reviewed source units in13 parent/file diffs, including merge duplicates; acceptance remains separately scoped."
+        },
+        {
+          "path": "docs/sync/c312-correctness-decisions.md",
+          "sha256": "d43f9badfb9530559aa254dd9667a3d097425b1a140f05a09446164efe86283d",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "Current correctness decisions; no source-hunk or physical acceptance is inferred."
+        },
+        {
+          "path": "tests/fixtures/c312-correctness/report.json",
+          "sha256": "179ecd518c264f6a8c8fb42c62d94ca8e3ec2cb497dfe3283fa389498c287754",
+          "revision": "739559dd8766c360bfb4a66b82f6f4e04b105136",
+          "scope": "Fresh paired134-case execution:117 equal,17 intentional unequal outputs. All output arrays match original reports unchanged."
+        }
+      ],
+      "remaining": [
+        "Broader descriptor/control abort and lifecycle schedules remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/usb/descriptors.rs, crates/core/src/runtime/usb/mod.rs, crates/ffi/src/transport/usb.rs, tests/fixtures/c312-correctness/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -2076,7 +2122,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/usb/mod.rs",
-          "sha256": "3e7d32a461244e93f739b60c6fcc273feea36320f84fcb4fc8d16f573df08caa"
+          "sha256": "a0366564732970178db1c70d9644b7dfcf1d0e7a1c2fc0bd3120a22cf9c2e3c0"
         }
       ],
       "regressions": [
@@ -2111,7 +2157,8 @@
         }
       ],
       "remaining": [
-        "Physical USB and reset/configuration IRQ schedules remain open."
+        "Physical USB and reset/configuration IRQ schedules remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/usb/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -2121,15 +2168,15 @@
       "targets": [
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "6ca8a4cbb8d36abedab49c7ec56c4032f0ec84afa6b760c18b33ef357be44005"
+          "sha256": "3f24900515e35b48039801c1db27c9ab38b93674a3145cc495555ce6e11e3de7"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "7a313e8b990018f69146273a2609f83764dec15ce697af89430a6a015e549e81"
+          "sha256": "ed5435156347e3284b3c65ffa30787ff1c4e99831846005dd45f6185adccaa1d"
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
+          "sha256": "e8713f4c84d5a0cc3e2872bb9581d408a01097f20cc27059c5314ec01432ac88"
         },
         {
           "path": "crates/ffi/src/composition.rs",
@@ -2137,7 +2184,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/io.rs",
-          "sha256": "0495e111dacc2e7f881895deed065babd29b168ed147c67cb637b583ff488a5d"
+          "sha256": "630ce964f956cec6a18c92f9792fc740b2d8d285d350f02dbe31e628609421ff"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
@@ -2149,11 +2196,11 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         }
       ],
       "regressions": [
@@ -2267,7 +2314,8 @@
       ],
       "remaining": [
         "Named E52/E54/E55 schedules and200 real Rust erasure-callback lifecycle interrupts pass. Other retained/executing/native-abort/storage/crypto IRQ, withheld-IN and endpoint-failure schedules remain open.",
-        "Physical USB and CIU runtime acceptance remain open."
+        "Physical USB and CIU runtime acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/ccid/io.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/usb.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -2277,7 +2325,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/message.rs",
-          "sha256": "23cc7a1fad98906e64698e815e05c9e5aa399d72a8d6808db8330ada1889db95"
+          "sha256": "e4a5ee6cc076ea1e0ae161efb43d6542c6383aa32bb6c5c81a3c0bdc9b723bef"
         }
       ],
       "regressions": [
@@ -2288,7 +2336,7 @@
         },
         {
           "path": "tests/card/src/bin/hid.rs",
-          "sha256": "a396ef87c8f8faf85e380e93b0970aa76793a4602b59273d9372368e0bb3ba17",
+          "sha256": "0bc03875390d41455770b18d863db93789d77b7e5b4b8ae40d9c2ee434b35b40",
           "id": "empty-C0-after-drained-generator-INIT-reset"
         },
         {
@@ -2324,7 +2372,8 @@
         }
       ],
       "remaining": [
-        "Pending C0 P1/P2/body/CLA differences are now explicit L8/E53; malformed trailer preserves the source on both. Other command/error combinations and physical USB acceptance remain open."
+        "Pending C0 P1/P2/body/CLA differences are now explicit L8/E53; malformed trailer preserves the source on both. Other command/error combinations and physical USB acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/message.rs, tests/card/src/bin/hid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -2334,7 +2383,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/message.rs",
-          "sha256": "23cc7a1fad98906e64698e815e05c9e5aa399d72a8d6808db8330ada1889db95"
+          "sha256": "e4a5ee6cc076ea1e0ae161efb43d6542c6383aa32bb6c5c81a3c0bdc9b723bef"
         }
       ],
       "regressions": [
@@ -2345,12 +2394,12 @@
         },
         {
           "path": "tests/fixtures/c312-hid-ownership/vectors.json",
-          "sha256": "b5561d90de7116bb5b3f6c664a9a56efa8426aeaea867d8755f3ede0adc1ab91",
+          "sha256": "ad7c144fad1357c30df3f473a26255fa536ae8ee6a800d8d1780912cdee5a29a",
           "id": "E35-native-new-response-isolation"
         },
         {
           "path": "tests/fixtures/c312-correctness/vectors.json",
-          "sha256": "988a824de99b40cc959d140fdcbbb6e510e76259d5d5ba623b1336dbac35410f",
+          "sha256": "8e9403761bfced17bbc55aa57365fe9e3f5008ca369dd2d22c44e6b75d0c68e5",
           "id": "c312-correctness-wire"
         }
       ],
@@ -2386,7 +2435,9 @@
           "scope": "Fresh paired134-case execution:117 equal,17 intentional unequal outputs. All output arrays match original reports unchanged."
         }
       ],
-      "remaining": []
+      "remaining": [
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/message.rs, tests/fixtures/c312-correctness/vectors.json, tests/fixtures/c312-hid-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
     },
     {
       "id": "L1",
@@ -2395,15 +2446,15 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
+          "sha256": "e8713f4c84d5a0cc3e2872bb9581d408a01097f20cc27059c5314ec01432ac88"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
@@ -2411,23 +2462,23 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "7a313e8b990018f69146273a2609f83764dec15ce697af89430a6a015e549e81"
+          "sha256": "ed5435156347e3284b3c65ffa30787ff1c4e99831846005dd45f6185adccaa1d"
         }
       ],
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "2dee9b07403370dc83e028b99e31887db6110e0b60b839930f1cbf933060c1e8",
+          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
           "id": "ownership_and_pending-preemption-power_and_irq"
         },
         {
           "path": "tests/fixtures/c312-hid-ownership/vectors.json",
-          "sha256": "b5561d90de7116bb5b3f6c664a9a56efa8426aeaea867d8755f3ede0adc1ab91",
+          "sha256": "ad7c144fad1357c30df3f473a26255fa536ae8ee6a800d8d1780912cdee5a29a",
           "id": "E34-native-yield-retained-PIN-delayed-continuation"
         },
         {
           "path": "tests/fixtures/c312-usb-ownership/vectors.json",
-          "sha256": "18ad037dac64ffba2b836d02af28f0fbefd2e2d124c58d226d8333f6e2fe34a9",
+          "sha256": "00e64ab1b86db14c380a6e01bfd4c5d15de99f3d097950c5697ba1a91a908523",
           "id": "E32-aborted-reservation-refusal-and-admitted-takeover"
         }
       ],
@@ -2453,7 +2504,8 @@
       ],
       "remaining": [
         "Complete remaining takeover/IRQ/endpoint-failure schedules and physical/CIU acceptance.",
-        "L8/CID1 intentionally preserve Rust response isolation; remaining physical/source acceptance is separate."
+        "L8/CID1 intentionally preserve Rust response isolation; remaining physical/source acceptance is separate.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/hid/link.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-hid-ownership/vectors.json, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -2463,11 +2515,11 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/credential_request.rs",
-          "sha256": "deaadf5ee519d323a62b1ac08b8def3941a8452af67044d67aa1549db3f78d39"
+          "sha256": "fc1335dc13ed25c0a77f9ef54cac208a5754e89c44efb81da004b468144d2543"
         },
         {
           "path": "crates/core/src/applets/ctap/authentication.rs",
-          "sha256": "7f2b625f003f6443c7fce12c392d63932423d1d4a3b6d7074f742208cfbacce6"
+          "sha256": "4734648764244fa238cbc31a16157eabe53bdb2c50a7b2088dcc053482883d3d"
         }
       ],
       "regressions": [
@@ -2502,7 +2554,9 @@
           "scope": "ROM-only behavioral preservation; no new C synchronization units approved"
         }
       ],
-      "remaining": []
+      "remaining": [
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/authentication.rs, crates/core/src/applets/ctap/credential_request.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
     },
     {
       "id": "C2",
@@ -2511,27 +2565,27 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/credential_request.rs",
-          "sha256": "deaadf5ee519d323a62b1ac08b8def3941a8452af67044d67aa1549db3f78d39"
+          "sha256": "fc1335dc13ed25c0a77f9ef54cac208a5754e89c44efb81da004b468144d2543"
         },
         {
           "path": "crates/core/src/applets/ctap/request_decoder.rs",
-          "sha256": "77c336941933a999bea2abc6b1035a96208e793195d643831ca652b3ee925bd3"
+          "sha256": "eec674e089f2d9869c9aa2ed1e460e9028243bd265999bcdebb3c8958d6987b1"
         },
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "4059a28c598c956dd46339665e3d18ebc99f9c62765658a06b2f933e68b16ce1"
+          "sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18"
         },
         {
           "path": "crates/protocol/src/cbor.rs",
-          "sha256": "1d463becaf677f186699849835a163ad4e6d4e6ffb7392d52df227bbaeeb269f"
+          "sha256": "acee8a01018d0167cdb6be16b8cedd8ce13626c401444d444d464131d23c9057"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
+          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
         }
       ],
       "regressions": [
@@ -2547,12 +2601,12 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions/nfc_source.rs",
-          "sha256": "e01a8616a1f3bbac0967a78794ef8d77f78d0b1571f712a0b1f7fce47c2eb1ae",
+          "sha256": "07da487782a589ab1090dab76c28866edf4b855aa57c564fa82e4a5c2fffbcb7",
           "id": "nfc-source-faults-production-dispatch-41-injections"
         },
         {
           "path": "crates/core/tests/streaming.rs",
-          "sha256": "5dfee45e73497a51b1151080b896f3bf299dc22a13cdde8d704f55797b402251",
+          "sha256": "fd77ac146fc69b14b85972fcc2448c6cd1a471346e378df488e7f33d3d801554",
           "id": "source_close_failure_blocks_commit_even_after_complete_input_and_overrides_parse_error"
         }
       ],
@@ -2598,7 +2652,8 @@
         "Extend the41 executed Rust source schedules to other CTAP commands, malformed-body/close timing, and paired C transport cancellation/error-order comparisons.",
         "Broader canonical/duplicate/invalid-UTF8/unknown-label and malformed-error precedence comparisons remain.",
         "Classify C one-shot reader-failure successes before claiming source-error parity; preserve raw outcomes and Rust fail-closed behavior.",
-        "CIU call-path stack/PKE and physical transport acceptance remain open."
+        "CIU call-path stack/PKE and physical transport acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/credential_request.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/request_decoder.rs, crates/core/src/runtime/engine.rs, crates/core/tests/streaming.rs, crates/ffi/src/transport/nfc.rs, crates/protocol/src/cbor.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -2608,15 +2663,15 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "4059a28c598c956dd46339665e3d18ebc99f9c62765658a06b2f933e68b16ce1"
+          "sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
-          "sha256": "c9f463a313646e71de44fd471970b57142104748b20766c19f25b164e57e7a7a"
+          "sha256": "18b86b3713f540fb93f11da475b5950942884ee4e7ff52a90f965087d8a5c67d"
         },
         {
           "path": "crates/core/src/applets/ctap/message.rs",
-          "sha256": "23cc7a1fad98906e64698e815e05c9e5aa399d72a8d6808db8330ada1889db95"
+          "sha256": "e4a5ee6cc076ea1e0ae161efb43d6542c6383aa32bb6c5c81a3c0bdc9b723bef"
         },
         {
           "path": "crates/core/src/applets/ctap/large_blob.rs",
@@ -2624,7 +2679,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         }
       ],
       "regressions": [
@@ -2750,7 +2805,8 @@
       ],
       "remaining": [
         "E58 covers first/second negative/zero/one-byte reads for classical/PQ MC and largeBlobs on five facades and U2F on CCID/WebUSB/native MSG/NFC. T19 now adds extended-NFC aggregation/retry faults; broader offsets/certificate lengths and close/cancel schedules remain open.",
-        "Paired executing cancellation, broader native open/seek/close and physical storage, arbitrary IRQ/withheld endpoint faults, USB/RF/WTX, CIU stack/PKE and Linux LeakSanitizer remain open."
+        "Paired executing cancellation, broader native open/seek/close and physical storage, arbitrary IRQ/withheld endpoint faults, USB/RF/WTX, CIU stack/PKE and Linux LeakSanitizer remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -2760,15 +2816,15 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "4059a28c598c956dd46339665e3d18ebc99f9c62765658a06b2f933e68b16ce1"
+          "sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
-          "sha256": "c9f463a313646e71de44fd471970b57142104748b20766c19f25b164e57e7a7a"
+          "sha256": "18b86b3713f540fb93f11da475b5950942884ee4e7ff52a90f965087d8a5c67d"
         },
         {
           "path": "crates/core/src/applets/ctap/message.rs",
-          "sha256": "23cc7a1fad98906e64698e815e05c9e5aa399d72a8d6808db8330ada1889db95"
+          "sha256": "e4a5ee6cc076ea1e0ae161efb43d6542c6383aa32bb6c5c81a3c0bdc9b723bef"
         },
         {
           "path": "crates/core/src/applets/ctap/large_blob.rs",
@@ -2776,7 +2832,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         }
       ],
       "regressions": [
@@ -2908,7 +2964,8 @@
       ],
       "remaining": [
         "E58 covers first/second negative/zero/one-byte reads for classical/PQ MC and largeBlobs on five facades and U2F on CCID/WebUSB/native MSG/NFC. Extended-NFC aggregation/retry faults have the T19 companion; broader offsets/certificate lengths and close/cancel schedules remain open.",
-        "Paired executing cancellation, broader native open/seek/close and physical storage, arbitrary IRQ/withheld endpoint faults, USB/RF/WTX, CIU stack/PKE and Linux LeakSanitizer remain open."
+        "Paired executing cancellation, broader native open/seek/close and physical storage, arbitrary IRQ/withheld endpoint faults, USB/RF/WTX, CIU stack/PKE and Linux LeakSanitizer remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -2918,11 +2975,11 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "4059a28c598c956dd46339665e3d18ebc99f9c62765658a06b2f933e68b16ce1"
+          "sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18"
         },
         {
           "path": "crates/core/src/applets/ctap/message.rs",
-          "sha256": "23cc7a1fad98906e64698e815e05c9e5aa399d72a8d6808db8330ada1889db95"
+          "sha256": "e4a5ee6cc076ea1e0ae161efb43d6542c6383aa32bb6c5c81a3c0bdc9b723bef"
         }
       ],
       "regressions": [
@@ -2947,7 +3004,8 @@
         }
       ],
       "remaining": [
-        "E57 executes buffered getKeyAgreement Le1, exact256/257 assertions and finite/full source output. Broader buffered error/constant combinations, cancellation and physical/resource acceptance remain open."
+        "E57 executes buffered getKeyAgreement Le1, exact256/257 assertions and finite/full source output. Broader buffered error/constant combinations, cancellation and physical/resource acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -2957,11 +3015,11 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "4059a28c598c956dd46339665e3d18ebc99f9c62765658a06b2f933e68b16ce1"
+          "sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
-          "sha256": "c9f463a313646e71de44fd471970b57142104748b20766c19f25b164e57e7a7a"
+          "sha256": "18b86b3713f540fb93f11da475b5950942884ee4e7ff52a90f965087d8a5c67d"
         },
         {
           "path": "crates/core/src/applets/ctap/u2f.rs",
@@ -3058,7 +3116,8 @@
         }
       ],
       "remaining": [
-        "broader native open/seek/close and physical fault injection, arbitrary cancellation/IRQ schedules and physical/CIU acceptance remain open."
+        "broader native open/seek/close and physical fault injection, arbitrary cancellation/IRQ schedules and physical/CIU acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -3068,11 +3127,11 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         },
         {
           "path": "crates/core/src/applets/piv/protocol.rs",
@@ -3084,15 +3143,15 @@
         },
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
-          "sha256": "d9421a46ebf27a6e3203cbae1adaff1bd47b3a2382e88fd1862ba9d489763f2e"
+          "sha256": "f7cd3efa6fadc0447d658e58f78fccde6e3d68ec0080db88e10e1ca795431192"
         },
         {
           "path": "crates/ffi/src/transport/hid/command.rs",
-          "sha256": "8f19ed13aad1693a8ef42d10dc508dec53da9afe0e2cd2ef4da40e7bd841da0a"
+          "sha256": "e137b774210d7b6533e6b368f0683702043927af963894475ab999f77ecc8acc"
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12"
+          "sha256": "e8713f4c84d5a0cc3e2872bb9581d408a01097f20cc27059c5314ec01432ac88"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
@@ -3100,7 +3159,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "6ca8a4cbb8d36abedab49c7ec56c4032f0ec84afa6b760c18b33ef357be44005"
+          "sha256": "3f24900515e35b48039801c1db27c9ab38b93674a3145cc495555ce6e11e3de7"
         }
       ],
       "regressions": [
@@ -3111,7 +3170,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "2dee9b07403370dc83e028b99e31887db6110e0b60b839930f1cbf933060c1e8",
+          "sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
           "id": "E59-disjoint-controls-and-pending-native-IN"
         }
       ],
@@ -3142,7 +3201,8 @@
         }
       ],
       "remaining": [
-        "Physical USB/RF, arbitrary endpoint/IRQ schedules, every import/decipher continuation and CIU runtime stack/PKE remain open. Broader session and source audit, prior unresolved wire behaviors are separate blockers."
+        "Physical USB/RF, arbitrary endpoint/IRQ schedules, every import/decipher continuation and CIU runtime stack/PKE remain open. Broader session and source audit, prior unresolved wire behaviors are separate blockers.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/hid/command.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/usb.rs, tests/card/src/bin/usb_sessions.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -3152,11 +3212,11 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/nfc.rs",
-          "sha256": "d9438cd842846deca822d88df8df3782f3176f7fc065c74d06ebd0a8851b8fa2"
+          "sha256": "854d59cd266cd6c3f8027b7452c0b8c5c7cfbe8b2e0158a335d1673cfcda28b1"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
+          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
         }
       ],
       "regressions": [
@@ -3197,7 +3257,8 @@
         }
       ],
       "remaining": [
-        "Physical RF/WTX and its separate IRQ-local cache/turn ordering, arbitrary IRQ/cancellation, full file-fault breadth, CIU runtime stack/PKE and complete source audit remain open."
+        "Physical RF/WTX and its separate IRQ-local cache/turn ordering, arbitrary IRQ/cancellation, full file-fault breadth, CIU runtime stack/PKE and complete source audit remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -3207,7 +3268,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/nfc_io.rs",
-          "sha256": "c4bcbd4735dbf1d3f45036a94b78dd0ed4d3ed8faa1ce0023c492b21cc6ee9c7"
+          "sha256": "ec90af1367981ae2c421ccecab36cf3c34900612a87b3a07274bf07356bbf2d4"
         },
         {
           "path": "crates/protocol/src/nfc.rs",
@@ -3241,7 +3302,8 @@
         }
       ],
       "remaining": [
-        "Physical RF/WTX, CIU stack/PKE, mixed hunk19 and full source audit remain open."
+        "Physical RF/WTX, CIU stack/PKE, mixed hunk19 and full source audit remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc_io.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -3251,11 +3313,11 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/nfc_io.rs",
-          "sha256": "c4bcbd4735dbf1d3f45036a94b78dd0ed4d3ed8faa1ce0023c492b21cc6ee9c7"
+          "sha256": "ec90af1367981ae2c421ccecab36cf3c34900612a87b3a07274bf07356bbf2d4"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
+          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
         }
       ],
       "regressions": [
@@ -3271,7 +3333,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions/nfc_source.rs",
-          "sha256": "e01a8616a1f3bbac0967a78794ef8d77f78d0b1571f712a0b1f7fce47c2eb1ae",
+          "sha256": "07da487782a589ab1090dab76c28866edf4b855aa57c564fa82e4a5c2fffbcb7",
           "id": "all15-PKE-write-retry-positions"
         }
       ],
@@ -3291,7 +3353,8 @@
       ],
       "remaining": [
         "Hunk57 includes admission during live Core execution: Rust retains its existing dedicated WTX/cancellation policy; no C/Rust execution parity is claimed. WTX cache/echo and arbitrary IRQ/endpoint schedules remain open.",
-        "Mixed hunk19, physical RF/WTX, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open."
+        "Mixed hunk19, physical RF/WTX, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc_io.rs, crates/ffi/src/transport/nfc.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -3301,11 +3364,11 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/nfc_io.rs",
-          "sha256": "c4bcbd4735dbf1d3f45036a94b78dd0ed4d3ed8faa1ce0023c492b21cc6ee9c7"
+          "sha256": "ec90af1367981ae2c421ccecab36cf3c34900612a87b3a07274bf07356bbf2d4"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
+          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
         }
       ],
       "regressions": [
@@ -3321,7 +3384,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions/nfc_source.rs",
-          "sha256": "e01a8616a1f3bbac0967a78794ef8d77f78d0b1571f712a0b1f7fce47c2eb1ae",
+          "sha256": "07da487782a589ab1090dab76c28866edf4b855aa57c564fa82e4a5c2fffbcb7",
           "id": "deselect-after-real-WTX-turn"
         },
         {
@@ -3347,7 +3410,8 @@
       "remaining": [
         "Unresolved E63: after-WTX wrong multiplier/ACK/NAK/deselect differ from pinned C permissive continuation; no parity or intentional-difference disposition is approved.",
         "Mixed NFC source hunk19 includes WTX retransmission cache, cleanup and TXEN ordering. Normal echo evidence does not close it. Arbitrary IRQ/endpoint schedules remain open.",
-        "Physical RF/WTX, CIU IRQ/call-path stack/PKE, Linux sanitizer acceptance and full source audit remain open; NFCC remains oversized."
+        "Physical RF/WTX, CIU IRQ/call-path stack/PKE, Linux sanitizer acceptance and full source audit remain open; NFCC remains oversized.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc_io.rs, crates/ffi/src/transport/nfc.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -3357,13 +3421,13 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/streaming.rs",
-          "sha256": "5dfee45e73497a51b1151080b896f3bf299dc22a13cdde8d704f55797b402251",
+          "sha256": "fd77ac146fc69b14b85972fcc2448c6cd1a471346e378df488e7f33d3d801554",
           "id": "long_select_aids_defer_p2_and_deselect_until_complete_input;long_select_fragmentation_distinguishes_rejected_and_truncated_commands"
         },
         {
@@ -3388,7 +3452,8 @@
       ],
       "remaining": [
         "E64/E65/E66 cover listed AID/rejection, disabled-target, CLA/P1/Case2E/Case4E, grant and EF matrices. Further header/body/inline mutations, pending/config transitions, volatile native-HID state and physical acceptance remain open.",
-        "E63 after-WTX differences, mixed NFC source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open."
+        "E63 after-WTX differences, mixed NFC source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/tests/streaming.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -3398,7 +3463,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         }
       ],
       "regressions": [
@@ -3424,7 +3489,8 @@
       ],
       "remaining": [
         "E64/E65/E66 cover listed AID/rejection, disabled-target, CLA/P1/Case2E/Case4E, grant and EF matrices. Further header/body/inline mutations, pending/config transitions, volatile native-HID state and physical acceptance remain open.",
-        "E63 after-WTX differences, mixed NFC source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open."
+        "E63 after-WTX differences, mixed NFC source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -3434,19 +3500,19 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         },
         {
           "path": "crates/core/src/applets/admin/protocol.rs",
-          "sha256": "e836cae63cb86ff107f528a6274117e3458270f36dcc9968ea678f5563548354"
+          "sha256": "2390d0e5afbb6aa865a269b3a18fe0962d4dc409713e8acba811d17c4f4ed5cf"
         },
         {
           "path": "crates/core/src/applets/ctap/apdu.rs",
-          "sha256": "5e6f1f3c9e1ecae2c432ab28f4d93fd5656e0c99cb1000edfd66f39c1756e9dc"
+          "sha256": "dafbd37c9ccb6dd039d537e374f9520561920ea75a3f1d06b8d6a051c4e24f4f"
         },
         {
           "path": "crates/core/src/applets/openpgp/protocol.rs",
@@ -3481,7 +3547,8 @@
       "remaining": [
         "Further header/body mutations and inline-size boundaries, pending/config transitions and physical USB/RF acceptance remain open.",
         "Complete volatile authorization/native-HID equivalence after selection/config changes is not established by these APDU cases.",
-        "E63 after-WTX differences, mixed NFC cache/cleanup/TXEN source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open."
+        "E63 after-WTX differences, mixed NFC cache/cleanup/TXEN source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/admin/protocol.rs, crates/core/src/applets/ctap/apdu.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -3491,15 +3558,15 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         },
         {
           "path": "crates/core/src/applets/ctap/apdu.rs",
-          "sha256": "5e6f1f3c9e1ecae2c432ab28f4d93fd5656e0c99cb1000edfd66f39c1756e9dc"
+          "sha256": "dafbd37c9ccb6dd039d537e374f9520561920ea75a3f1d06b8d6a051c4e24f4f"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
@@ -3530,7 +3597,8 @@
       "remaining": [
         "Further pending CTAP/configuration transitions, inline-size/header/body mutations and complete volatile native-HID equivalence remain open.",
         "Physical USB/RF/WTX, total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open.",
-        "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 and the17 prior unequal literal cases are intentional correctness differences."
+        "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 and the17 prior unequal literal cases are intentional correctness differences.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/apdu.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -3540,7 +3608,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         }
       ],
       "regressions": [
@@ -3567,7 +3635,8 @@
       "remaining": [
         "Malformed/rejected staged NFC retention, full parameter/header/body mutations, pending configuration and volatile native-HID transitions still require review.",
         "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 remain open; the17 previous unequal literal cases are intentional correctness differences.",
-        "Physical USB/RF/WTX, CIU total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open."
+        "Physical USB/RF/WTX, CIU total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -3577,19 +3646,19 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c"
+          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b"
+          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
         },
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
-          "sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5"
+          "sha256": "99d4de16b5e1e4e786a87c6bfa2589c542c26e8594f51c00bdd930c572565558"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
+          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
         }
       ],
       "regressions": [
@@ -3616,7 +3685,8 @@
       "remaining": [
         "Other response-source classes, full parameter/header/body mutations, pending configuration and volatile native-HID transitions still require review.",
         "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 remain open; the17 previous unequal literal cases are intentional correctness differences.",
-        "Physical USB/RF/WTX, CIU total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open."
+        "Physical USB/RF/WTX, CIU total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     },
     {
@@ -3626,13 +3696,13 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/pin.rs",
-          "sha256": "3e3f98b70cbd93329eaaa3c18ceb6316397904be20b949127d3f8cf7843a8492"
+          "sha256": "62ca766a1e2bb09352052632b4d7e39890aebff7a4fc1471a1e398f22f8b3095"
         }
       ],
       "regressions": [
         {
           "path": "tests/fixtures/c312-correctness/vectors.json",
-          "sha256": "988a824de99b40cc959d140fdcbbb6e510e76259d5d5ba623b1336dbac35410f",
+          "sha256": "8e9403761bfced17bbc55aa57365fe9e3f5008ca369dd2d22c44e6b75d0c68e5",
           "id": "c312-correctness-wire"
         }
       ],
@@ -3650,7 +3720,9 @@
           "scope": "Paired pinned C/current Rust; output bytes unchanged from historical reports."
         }
       ],
-      "remaining": []
+      "remaining": [
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/pin.rs, tests/fixtures/c312-correctness/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
     },
     {
       "id": "CID1",
@@ -3659,13 +3731,13 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
-          "sha256": "d9421a46ebf27a6e3203cbae1adaff1bd47b3a2382e88fd1862ba9d489763f2e"
+          "sha256": "f7cd3efa6fadc0447d658e58f78fccde6e3d68ec0080db88e10e1ca795431192"
         }
       ],
       "regressions": [
         {
           "path": "tests/fixtures/c312-correctness/vectors.json",
-          "sha256": "988a824de99b40cc959d140fdcbbb6e510e76259d5d5ba623b1336dbac35410f",
+          "sha256": "8e9403761bfced17bbc55aa57365fe9e3f5008ca369dd2d22c44e6b75d0c68e5",
           "id": "c312-correctness-wire"
         }
       ],
@@ -3683,7 +3755,9 @@
           "scope": "Paired pinned C/current Rust; output bytes unchanged from historical reports."
         }
       ],
-      "remaining": []
+      "remaining": [
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, tests/fixtures/c312-correctness/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+      ]
     },
     {
       "id": "T29",
@@ -3696,11 +3770,11 @@
         },
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
-          "sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5"
+          "sha256": "99d4de16b5e1e4e786a87c6bfa2589c542c26e8594f51c00bdd930c572565558"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d"
+          "sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535"
         }
       ],
       "regressions": [
@@ -3729,7 +3803,8 @@
         }
       ],
       "remaining": [
-        "Other response-source classes, configuration/native-HID transitions, arbitrary cancellation/IRQ and physical RF/WTX/resource acceptance remain open."
+        "Other response-source classes, configuration/native-HID transitions, arbitrary cancellation/IRQ and physical RF/WTX/resource acceptance remain open.",
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
       ]
     }
   ],
@@ -9408,5 +9483,510 @@
     "Physical USB/RF/WTX and CIU call-path stack/PKE acceptance is open.",
     "Linux ASan/LeakSanitizer acceptance is open; local Docker daemon is unavailable.",
     "Unresolved E63: after-WTX wrong multiplier/ACK/NAK/deselect differ from pinned C permissive continuation; no parity or intentional-difference disposition is approved."
-  ]
+  ],
+  "artifact_revalidation": {
+    "record_parent": "ad122504abe2917d5b2613ef3d44d249ac019a3f",
+    "status": "pending; no behavior, source-hunk or release approval granted",
+    "scope": "Refresh current artifact identities so the structure-only draft is inspectable; preserve historical fixture evidence and all source-hunk mappings. Each affected behavior remains explicitly blocked until current-consumer qualification.",
+    "artifacts": {
+      "crates/core/codegen/ctap.rs": {
+        "previous_sha256": "d71d5c4ff1a3873873e58e528948f596397baa2e025013f17d82549112523f54",
+        "current_sha256": "3d514aed5b76422545da3f279d8f55a3c97e95385670d66f3ad312e69f43b819",
+        "behaviors": [
+          "G1",
+          "G2",
+          "G3",
+          "G4",
+          "G5",
+          "G6",
+          "G7",
+          "G8",
+          "G9"
+        ]
+      },
+      "crates/core/src/applets/ctap/info.rs": {
+        "previous_sha256": "fd8c51f246f5a0bd8713c9b996719330792bc49464542d578c1ed60959ad6c94",
+        "current_sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+        "behaviors": [
+          "G1",
+          "G2",
+          "G3",
+          "G4",
+          "G5",
+          "G6",
+          "G7",
+          "G8",
+          "G9"
+        ]
+      },
+      "crates/ffi/src/transport/nfc.rs": {
+        "previous_sha256": "05843b46781e8747dbdee55b565de1ed5da585edd3e62d591b69a1112277700d",
+        "current_sha256": "ef52c9b460019706de70cbe857101ab9b43b5a07ea61a8b52d42812bf083b535",
+        "behaviors": [
+          "G3",
+          "G6",
+          "T3",
+          "T4",
+          "NFC-STATE",
+          "C2",
+          "T19",
+          "T21",
+          "T22",
+          "T28",
+          "T29"
+        ]
+      },
+      "crates/core/src/applets/ctap/pq.rs": {
+        "previous_sha256": "ed8b85e088282c097b9128cec27cf18acfc218d51b32c730d4ce3a6ac2588c39",
+        "current_sha256": "543ba125523674bb3061a24addf2c64d919d8ec75878aca5527474120c1f24f2",
+        "behaviors": [
+          "G4"
+        ]
+      },
+      "crates/protocol/src/ctaphid.rs": {
+        "previous_sha256": "2ae2c2ec0c40f5e6d1081b22886d272d6edfa43eabd84733a0c974be9ed7cbcf",
+        "current_sha256": "9003a5b78deb9ad92af32bbb86b652ee945d1063ffe69d64793e271d3ed00122",
+        "behaviors": [
+          "G6",
+          "T10"
+        ]
+      },
+      "crates/core/src/applets/ctap/mod.rs": {
+        "previous_sha256": "4059a28c598c956dd46339665e3d18ebc99f9c62765658a06b2f933e68b16ce1",
+        "current_sha256": "3fce70649e2bda25df68b605dc7c9af69483a78405e1d7dd2ebe15e783a76d18",
+        "behaviors": [
+          "G6",
+          "C2",
+          "C3",
+          "T16",
+          "T17",
+          "T18"
+        ]
+      },
+      "crates/core/src/runtime/engine.rs": {
+        "previous_sha256": "e6b2e828867a5b19091e8e20f67defb67278abc8017a5ff05fcbeb888342a49c",
+        "current_sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf",
+        "behaviors": [
+          "G6",
+          "A1",
+          "A2",
+          "A3",
+          "T3",
+          "T6",
+          "T4",
+          "T5",
+          "T9-LE",
+          "L6",
+          "L3",
+          "L1",
+          "C2",
+          "L10",
+          "T23",
+          "T25",
+          "T26",
+          "T27",
+          "T28"
+        ]
+      },
+      "crates/core/src/runtime/nfc/request.rs": {
+        "previous_sha256": "fc9b5bb988e714be672f774b0a47d1080467e2ed75ae8cc01caed77b9a551be5",
+        "current_sha256": "99d4de16b5e1e4e786a87c6bfa2589c542c26e8594f51c00bdd930c572565558",
+        "behaviors": [
+          "G6",
+          "T3",
+          "T6",
+          "T4",
+          "T28",
+          "T29"
+        ]
+      },
+      "crates/host/src/pcsc.rs": {
+        "previous_sha256": "d1f5088e010418643eb35690acda95dd451e961a18ad3c4aeb86ec8303c4d9fe",
+        "current_sha256": "334d6147bbb0c177c189f0dd9a67f2cb23937200342f7acfa744fdda611ef062",
+        "behaviors": [
+          "G6",
+          "A1"
+        ]
+      },
+      "tests/card/src/bin/usb_sessions/envelopes.rs": {
+        "previous_sha256": "a12a5927f8bc289e33bc275e05b72306dbc3dd9689c899090fe689c0b6de9b61",
+        "current_sha256": "1680bab4edd59e420846a63103971bc3addd2a607df490adfab8ea3c5b5ac653",
+        "behaviors": [
+          "G6",
+          "T3",
+          "T6",
+          "T5"
+        ]
+      },
+      "crates/protocol/src/apdu.rs": {
+        "previous_sha256": "c39cbd3ffc87645b5c12400bb8a83611e80d24a026192b1bc1191e168e553864",
+        "current_sha256": "2327aff788ecd3a5357b3c019f10873dbb9a95320b101d56e9fe0df783b11bbe",
+        "behaviors": [
+          "A1"
+        ]
+      },
+      "crates/core/src/runtime/registry.rs": {
+        "previous_sha256": "e8f61f053f2688eded8463b244abb282632d30897f80e58fd4b407fc62b5042b",
+        "current_sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f",
+        "behaviors": [
+          "A1",
+          "A2",
+          "A3",
+          "T8",
+          "T9-LE",
+          "L6",
+          "L3",
+          "L1",
+          "C3",
+          "T16",
+          "L10",
+          "T24",
+          "T25",
+          "T26",
+          "T28"
+        ]
+      },
+      "crates/core/src/applets/ctap/apdu.rs": {
+        "previous_sha256": "5e6f1f3c9e1ecae2c432ab28f4d93fd5656e0c99cb1000edfd66f39c1756e9dc",
+        "current_sha256": "dafbd37c9ccb6dd039d537e374f9520561920ea75a3f1d06b8d6a051c4e24f4f",
+        "behaviors": [
+          "A1",
+          "T25",
+          "T26"
+        ]
+      },
+      "tests/fixtures/c312-ccid/vectors.json": {
+        "previous_sha256": "6264826eb73cdb0fab3c83cf8a67ae0e68dc90ea728fb3cbef0d25472bd0100f",
+        "current_sha256": "7e9d1b03a6a45216c79039b3e90924ea518eb55618e800bc88e42fde229d0203",
+        "behaviors": [
+          "A1",
+          "A2",
+          "T1",
+          "T2",
+          "T7",
+          "T9-LE"
+        ]
+      },
+      "tests/card/src/bin/usb_sessions.rs": {
+        "previous_sha256": "2dee9b07403370dc83e028b99e31887db6110e0b60b839930f1cbf933060c1e8",
+        "current_sha256": "cfad070a9fb8d1fa0c2d1600df60b6ed56a070dd50ed57c797f0885ca4888435",
+        "behaviors": [
+          "A2",
+          "A3",
+          "T1",
+          "T7",
+          "L5",
+          "L6",
+          "L2",
+          "L7",
+          "L1",
+          "L10"
+        ]
+      },
+      "crates/core/src/runtime/ccid.rs": {
+        "previous_sha256": "30ca04a3a1cb16170c0c7df9450dc6f45de1c213eebfe44113c23399e8d332e3",
+        "current_sha256": "e46bd5b9ba7addea045391a2cb762ae9f3b797eb9afc81c28762e503719eafe1",
+        "behaviors": [
+          "T1",
+          "T2",
+          "T7",
+          "L5"
+        ]
+      },
+      "crates/core/src/runtime/usb/descriptors.rs": {
+        "previous_sha256": "f4e598e8f82d07a3eb267cfc1dfb11c64c49bda88f39219c77bfdbbeaeb319ec",
+        "current_sha256": "08f6724e291e5bd178da0d38351b2e213e03d253843ec691c41c3a06bb01ecb8",
+        "behaviors": [
+          "T1",
+          "U2",
+          "U4"
+        ]
+      },
+      "crates/protocol/src/ccid.rs": {
+        "previous_sha256": "357075c369720e37da5a7d35d199d61e007e00d05e336a8cba165c4542edd4f6",
+        "current_sha256": "0056d420640c83924e044bf2873aba2d19a0f5b8dcc5101ec06df1d6ec000e7e",
+        "behaviors": [
+          "T1",
+          "T2"
+        ]
+      },
+      "crates/ffi/src/transport/ccid/mod.rs": {
+        "previous_sha256": "7a313e8b990018f69146273a2609f83764dec15ce697af89430a6a015e549e81",
+        "current_sha256": "ed5435156347e3284b3c65ffa30787ff1c4e99831846005dd45f6185adccaa1d",
+        "behaviors": [
+          "T1",
+          "T2",
+          "T5",
+          "T7",
+          "L5",
+          "L2",
+          "L7",
+          "L3",
+          "L1"
+        ]
+      },
+      "crates/core/src/runtime/nfc.rs": {
+        "previous_sha256": "d9438cd842846deca822d88df8df3782f3176f7fc065c74d06ebd0a8851b8fa2",
+        "current_sha256": "854d59cd266cd6c3f8027b7452c0b8c5c7cfbe8b2e0158a335d1673cfcda28b1",
+        "behaviors": [
+          "T3",
+          "NFC-STATE",
+          "T19"
+        ]
+      },
+      "tests/card/src/bin/usb_sessions/nfc_source.rs": {
+        "previous_sha256": "e01a8616a1f3bbac0967a78794ef8d77f78d0b1571f712a0b1f7fce47c2eb1ae",
+        "current_sha256": "07da487782a589ab1090dab76c28866edf4b855aa57c564fa82e4a5c2fffbcb7",
+        "behaviors": [
+          "T3",
+          "C2",
+          "T21",
+          "T22"
+        ]
+      },
+      "crates/core/tests/streaming.rs": {
+        "previous_sha256": "5dfee45e73497a51b1151080b896f3bf299dc22a13cdde8d704f55797b402251",
+        "current_sha256": "fd77ac146fc69b14b85972fcc2448c6cd1a471346e378df488e7f33d3d801554",
+        "behaviors": [
+          "T3",
+          "C2",
+          "T23"
+        ]
+      },
+      "crates/ffi/src/transport/ccid/io.rs": {
+        "previous_sha256": "0495e111dacc2e7f881895deed065babd29b168ed147c67cb637b583ff488a5d",
+        "current_sha256": "630ce964f956cec6a18c92f9792fc740b2d8d285d350f02dbe31e628609421ff",
+        "behaviors": [
+          "T2",
+          "L3"
+        ]
+      },
+      "crates/core/tests/ccid.rs": {
+        "previous_sha256": "ca202089c9aa5a75fa5d0ad53ce808d85f313ad4be9500aa924123db2b1e10ce",
+        "current_sha256": "5a533ec071badd7b4de48e411262d314499c0caaf8ca8aa74cc50f4163549ece",
+        "behaviors": [
+          "T2",
+          "T7"
+        ]
+      },
+      "tests/fixtures/c312-usb-ownership/vectors.json": {
+        "previous_sha256": "18ad037dac64ffba2b836d02af28f0fbefd2e2d124c58d226d8333f6e2fe34a9",
+        "current_sha256": "00e64ab1b86db14c380a6e01bfd4c5d15de99f3d097950c5697ba1a91a908523",
+        "behaviors": [
+          "T2",
+          "T7",
+          "L2",
+          "L7",
+          "L1"
+        ]
+      },
+      "crates/ffi/src/transport/nfc/tests.rs": {
+        "previous_sha256": "efdf082321775b32b58e66642908781ea8bdf9f591427004f2d5841a31d5b7d2",
+        "current_sha256": "eb8de2aa80158bacc1ce7cf4e9eaf68666e1cf501cbaca264865cf62f5651642",
+        "behaviors": [
+          "T4"
+        ]
+      },
+      "crates/ffi/src/transport/hid/link.rs": {
+        "previous_sha256": "f11498a636c0c7129ddd9c97d253ac672c2839e2592bf2ef640d8b2cee198f12",
+        "current_sha256": "e8713f4c84d5a0cc3e2872bb9581d408a01097f20cc27059c5314ec01432ac88",
+        "behaviors": [
+          "L5",
+          "L6",
+          "L4",
+          "L9",
+          "L3",
+          "L1",
+          "L10"
+        ]
+      },
+      "tests/fixtures/c312-hid-ownership/vectors.json": {
+        "previous_sha256": "b5561d90de7116bb5b3f6c664a9a56efa8426aeaea867d8755f3ede0adc1ab91",
+        "current_sha256": "ad7c144fad1357c30df3f473a26255fa536ae8ee6a800d8d1780912cdee5a29a",
+        "behaviors": [
+          "L5",
+          "L6",
+          "T10",
+          "L8",
+          "L1"
+        ]
+      },
+      "crates/core/src/runtime/ctaphid.rs": {
+        "previous_sha256": "d9421a46ebf27a6e3203cbae1adaff1bd47b3a2382e88fd1862ba9d489763f2e",
+        "current_sha256": "f7cd3efa6fadc0447d658e58f78fccde6e3d68ec0080db88e10e1ca795431192",
+        "behaviors": [
+          "L6",
+          "T10",
+          "T11",
+          "T12",
+          "T13",
+          "T14",
+          "L4",
+          "L9",
+          "L10",
+          "CID1"
+        ]
+      },
+      "crates/ffi/src/transport/usb.rs": {
+        "previous_sha256": "6ca8a4cbb8d36abedab49c7ec56c4032f0ec84afa6b760c18b33ef357be44005",
+        "current_sha256": "3f24900515e35b48039801c1db27c9ab38b93674a3145cc495555ce6e11e3de7",
+        "behaviors": [
+          "L2",
+          "L7",
+          "U1",
+          "U2",
+          "U3",
+          "U4",
+          "L3",
+          "L10"
+        ]
+      },
+      "crates/core/tests/webusb.rs": {
+        "previous_sha256": "7039a623e36ce82ea6f5a2c6c821d4e9b7268e2f17e8deea18f99561842dedc6",
+        "current_sha256": "f945e5713504077a636bb5cb86228761463303b4a5506cd35009e0f8000749a0",
+        "behaviors": [
+          "L2",
+          "L7"
+        ]
+      },
+      "crates/core/src/applets/ctap/message.rs": {
+        "previous_sha256": "23cc7a1fad98906e64698e815e05c9e5aa399d72a8d6808db8330ada1889db95",
+        "current_sha256": "e4a5ee6cc076ea1e0ae161efb43d6542c6383aa32bb6c5c81a3c0bdc9b723bef",
+        "behaviors": [
+          "T10",
+          "T15",
+          "L8",
+          "C3",
+          "T16",
+          "T17"
+        ]
+      },
+      "crates/ffi/src/transport/hid/command.rs": {
+        "previous_sha256": "8f19ed13aad1693a8ef42d10dc508dec53da9afe0e2cd2ef4da40e7bd841da0a",
+        "current_sha256": "e137b774210d7b6533e6b368f0683702043927af963894475ab999f77ecc8acc",
+        "behaviors": [
+          "T11",
+          "T12",
+          "T13",
+          "L10"
+        ]
+      },
+      "crates/core/tests/ctaphid.rs": {
+        "previous_sha256": "da95c6e9a8b1681f8d92a913f429418000d6ce69bb7af1d7f87282dffaff8673",
+        "current_sha256": "2cf7ae0184b06c2b8404df71dbf1fe4da929e70d03eea74889288d2b49b4bc55",
+        "behaviors": [
+          "T11",
+          "T12",
+          "T14"
+        ]
+      },
+      "tests/card/src/bin/hid.rs": {
+        "previous_sha256": "a396ef87c8f8faf85e380e93b0970aa76793a4602b59273d9372368e0bb3ba17",
+        "current_sha256": "0bc03875390d41455770b18d863db93789d77b7e5b4b8ae40d9c2ee434b35b40",
+        "behaviors": [
+          "L4",
+          "L9",
+          "T15"
+        ]
+      },
+      "crates/ffi/src/transport/hid/link/tests.rs": {
+        "previous_sha256": "a0bf4e8786b34f63946c85b50c10041c53ce50dd2cb5bac3ed3bbe8bf58ab0f1",
+        "current_sha256": "f05116112bd2830cc9ab93ace4cc8ae1ba7578b45fe049710eebbfa977eda4ea",
+        "behaviors": [
+          "L4",
+          "L9"
+        ]
+      },
+      "crates/core/src/runtime/usb/mod.rs": {
+        "previous_sha256": "3e7d32a461244e93f739b60c6fcc273feea36320f84fcb4fc8d16f573df08caa",
+        "current_sha256": "a0366564732970178db1c70d9644b7dfcf1d0e7a1c2fc0bd3120a22cf9c2e3c0",
+        "behaviors": [
+          "U1",
+          "U2",
+          "U3",
+          "U4",
+          "U5"
+        ]
+      },
+      "tests/support/c312_ccid.py": {
+        "previous_sha256": "a8c93fd0a78b43d63f27cb2e6b9fd4ea9e9acba0573a5b75379f073f3d26158e",
+        "current_sha256": "09208bad6e9df7c221cace7d4a265879869abd7b0363de7247f613fa2a32c89e",
+        "behaviors": [
+          "U3"
+        ]
+      },
+      "tests/fixtures/c312-correctness/vectors.json": {
+        "previous_sha256": "988a824de99b40cc959d140fdcbbb6e510e76259d5d5ba623b1336dbac35410f",
+        "current_sha256": "8e9403761bfced17bbc55aa57365fe9e3f5008ca369dd2d22c44e6b75d0c68e5",
+        "behaviors": [
+          "U3",
+          "U4",
+          "L8",
+          "C1-RETRIES",
+          "CID1"
+        ]
+      },
+      "crates/core/src/applets/ctap/credential_request.rs": {
+        "previous_sha256": "deaadf5ee519d323a62b1ac08b8def3941a8452af67044d67aa1549db3f78d39",
+        "current_sha256": "fc1335dc13ed25c0a77f9ef54cac208a5754e89c44efb81da004b468144d2543",
+        "behaviors": [
+          "C1",
+          "C2"
+        ]
+      },
+      "crates/core/src/applets/ctap/authentication.rs": {
+        "previous_sha256": "7f2b625f003f6443c7fce12c392d63932423d1d4a3b6d7074f742208cfbacce6",
+        "current_sha256": "4734648764244fa238cbc31a16157eabe53bdb2c50a7b2088dcc053482883d3d",
+        "behaviors": [
+          "C1"
+        ]
+      },
+      "crates/core/src/applets/ctap/request_decoder.rs": {
+        "previous_sha256": "77c336941933a999bea2abc6b1035a96208e793195d643831ca652b3ee925bd3",
+        "current_sha256": "eec674e089f2d9869c9aa2ed1e460e9028243bd265999bcdebb3c8958d6987b1",
+        "behaviors": [
+          "C2"
+        ]
+      },
+      "crates/protocol/src/cbor.rs": {
+        "previous_sha256": "1d463becaf677f186699849835a163ad4e6d4e6ffb7392d52df227bbaeeb269f",
+        "current_sha256": "acee8a01018d0167cdb6be16b8cedd8ce13626c401444d444d464131d23c9057",
+        "behaviors": [
+          "C2"
+        ]
+      },
+      "crates/core/src/applets/ctap/applet.rs": {
+        "previous_sha256": "c9f463a313646e71de44fd471970b57142104748b20766c19f25b164e57e7a7a",
+        "current_sha256": "18b86b3713f540fb93f11da475b5950942884ee4e7ff52a90f965087d8a5c67d",
+        "behaviors": [
+          "C3",
+          "T16",
+          "T18"
+        ]
+      },
+      "crates/core/src/runtime/nfc_io.rs": {
+        "previous_sha256": "c4bcbd4735dbf1d3f45036a94b78dd0ed4d3ed8faa1ce0023c492b21cc6ee9c7",
+        "current_sha256": "ec90af1367981ae2c421ccecab36cf3c34900612a87b3a07274bf07356bbf2d4",
+        "behaviors": [
+          "T20",
+          "T21",
+          "T22"
+        ]
+      },
+      "crates/core/src/applets/admin/protocol.rs": {
+        "previous_sha256": "e836cae63cb86ff107f528a6274117e3458270f36dcc9968ea678f5563548354",
+        "current_sha256": "2390d0e5afbb6aa865a269b3a18fe0962d4dc409713e8acba811d17c4f4ed5cf",
+        "behaviors": [
+          "T25"
+        ]
+      },
+      "crates/core/src/applets/ctap/pin.rs": {
+        "previous_sha256": "3e3f98b70cbd93329eaaa3c18ceb6316397904be20b949127d3f8cf7843a8492",
+        "current_sha256": "62ca766a1e2bb09352052632b4d7e39890aebff7a4fc1471a1e398f22f8b3095",
+        "behaviors": [
+          "C1-RETRIES"
+        ]
+      }
+    }
+  }
 }

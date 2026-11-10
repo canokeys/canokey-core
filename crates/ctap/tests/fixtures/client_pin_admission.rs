@@ -105,7 +105,8 @@ pub fn parsing_cases() -> std::vec::Vec<(std::vec::Vec<u8>, Option<u8>)> {
             canokey_ctap::client_pin::agreement::encode(&GENERATOR, |fragment| {
                 bytes.extend_from_slice(fragment);
                 Ok::<(), ()>(())
-            }).unwrap();
+            })
+            .unwrap();
             let mut count = 3;
             for (label, length) in [
                 (0x04, if protocol == 0x01 { 16 } else { 32 }),
@@ -136,7 +137,8 @@ pub fn parsing_cases() -> std::vec::Vec<(std::vec::Vec<u8>, Option<u8>)> {
     canokey_ctap::client_pin::agreement::encode(&GENERATOR, |fragment| {
         key.extend_from_slice(fragment);
         Ok::<(), ()>(())
-    }).unwrap();
+    })
+    .unwrap();
     // Optional COSE member 2 is ordered between kty (1) and alg (3).
     let mut extended = key.clone();
     extended[0] = 0xa6;
@@ -145,7 +147,11 @@ pub fn parsing_cases() -> std::vec::Vec<(std::vec::Vec<u8>, Option<u8>)> {
     unordered.extend_from_slice(&key[3..6]);
     unordered.extend_from_slice(&key[1..3]);
     unordered.extend_from_slice(&key[6..]);
-    for (key, expected) in [(key, None), (extended, None), (unordered, Some(Status::InvalidCbor as u8))] {
+    for (key, expected) in [
+        (key, None),
+        (extended, None),
+        (unordered, Some(Status::InvalidCbor as u8)),
+    ] {
         let mut bytes = std::vec![0xa3, 0x01, 0x02, 0x02, 0x02, 0x03];
         bytes.extend_from_slice(&key);
         cases.push((bytes, expected));
@@ -163,18 +169,53 @@ pub fn parsing_cases() -> std::vec::Vec<(std::vec::Vec<u8>, Option<u8>)> {
     for (bytes, expected) in [
         (&[0xa1, 0x02, 0x01][..], None),
         (&[0xa2, 0x01, 0x02, 0x02, 0x02][..], None),
-        (&[0xa2, 0x02, 0x01, 0x01, 0x02][..], Some(Status::InvalidCbor)),
-        (&[0xa2, 0x02, 0x01, 0x05, 0x40][..], Some(Status::MissingParameter)),
-        (&[0xa2, 0x01, 0x03, 0x02, 0x01][..], Some(Status::InvalidParameter)),
-        (&[0xa2, 0x01, 0x02, 0x02, 0x18, 0xff][..], Some(Status::InvalidSubcommand)),
-        (&[0xa3, 0x01, 0x02, 0x02, 0x01, 0x04, 0x40][..], Some(Status::InvalidCbor)),
-        (&[0xa3, 0x01, 0x02, 0x02, 0x01, 0x06, 0x40][..], Some(Status::InvalidCbor)),
-        (&[0xa3, 0x01, 0x02, 0x02, 0x01, 0x09, 0x00][..], Some(Status::InvalidParameter)),
-        (&[0xa3, 0x01, 0x02, 0x02, 0x01, 0x09, 0x20][..], Some(Status::UnauthorizedPermission)),
-        (&[0xa3, 0x01, 0x02, 0x02, 0x01, 0x0a, 0x60][..], Some(Status::InvalidParameter)),
+        (
+            &[0xa2, 0x02, 0x01, 0x01, 0x02][..],
+            Some(Status::InvalidCbor),
+        ),
+        (
+            &[0xa2, 0x02, 0x01, 0x05, 0x40][..],
+            Some(Status::MissingParameter),
+        ),
+        (
+            &[0xa2, 0x01, 0x03, 0x02, 0x01][..],
+            Some(Status::InvalidParameter),
+        ),
+        (
+            &[0xa2, 0x01, 0x02, 0x02, 0x18, 0xff][..],
+            Some(Status::InvalidSubcommand),
+        ),
+        (
+            &[0xa3, 0x01, 0x02, 0x02, 0x01, 0x04, 0x40][..],
+            Some(Status::InvalidCbor),
+        ),
+        (
+            &[0xa3, 0x01, 0x02, 0x02, 0x01, 0x06, 0x40][..],
+            Some(Status::InvalidCbor),
+        ),
+        (
+            &[0xa3, 0x01, 0x02, 0x02, 0x01, 0x09, 0x00][..],
+            Some(Status::InvalidParameter),
+        ),
+        (
+            &[0xa3, 0x01, 0x02, 0x02, 0x01, 0x09, 0x20][..],
+            Some(Status::UnauthorizedPermission),
+        ),
+        (
+            &[0xa3, 0x01, 0x02, 0x02, 0x01, 0x0a, 0x60][..],
+            Some(Status::InvalidParameter),
+        ),
         // Header length 255 exceeds the RP limit before any text body arrives.
-        (&[0xa3, 0x01, 0x02, 0x02, 0x01, 0x0a, 0x78, 0xff][..], Some(Status::InvalidParameter)),
-        (&[0xa2, 0x02, 0x01, 0x3b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x80][..], None),
+        (
+            &[0xa3, 0x01, 0x02, 0x02, 0x01, 0x0a, 0x78, 0xff][..],
+            Some(Status::InvalidParameter),
+        ),
+        (
+            &[
+                0xa2, 0x02, 0x01, 0x3b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x80,
+            ][..],
+            None,
+        ),
     ] {
         cases.push((bytes.into(), expected.map(|status| status as u8)));
     }

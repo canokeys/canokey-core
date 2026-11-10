@@ -138,12 +138,7 @@ impl<E: Error> Parser<E> {
         let Some(key) = self.key.take() else {
             if matches!(event, Event::End) {
                 let p = &self.params;
-                admit_fields::<E>(
-                    self.seen,
-                    p.protocol,
-                    p.salt_len,
-                    p.auth_len,
-                )?;
+                admit_fields::<E>(self.seen, p.protocol, p.salt_len, p.auth_len)?;
                 return Ok(true);
             }
             let key = Key::ordered(event, &mut self.previous)?;

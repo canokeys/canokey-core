@@ -79,9 +79,12 @@ impl<B: crate::ports::Backends> canokey_ctap::extensions::hmac_secret::Input
 {
     type Error = Status;
     const INVALID_LENGTH: Status = Status::InvalidLength;
-    fn decrypt(&mut self, protocol: canokey_ctap::client_pin::Protocol,
-        key: &[u8; 32], encoded: &mut [u8]) -> Result<(), Status>
-    {
+    fn decrypt(
+        &mut self,
+        protocol: canokey_ctap::client_pin::Protocol,
+        key: &[u8; 32],
+        encoded: &mut [u8],
+    ) -> Result<(), Status> {
         pin::decrypt(protocol as u8, key, encoded, self.platform)
     }
     fn agree(
@@ -119,19 +122,16 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
-        self.assertion
-            .hmac
-            .0
-            .prepare(
-                params.protocol,
-                &params.agreement,
-                &params.salt[..params.salt_len],
-                &params.auth[..params.auth_len],
-                &mut Preparation {
-                    pin: &mut self.pin,
-                    workspace: w,
-                    platform: p,
-                },
-            )
+        self.assertion.hmac.0.prepare(
+            params.protocol,
+            &params.agreement,
+            &params.salt[..params.salt_len],
+            &params.auth[..params.auth_len],
+            &mut Preparation {
+                pin: &mut self.pin,
+                workspace: w,
+                platform: p,
+            },
+        )
     }
 }

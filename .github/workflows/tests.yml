@@ -48,7 +48,8 @@ jobs:
   build_tools:
     name: Build custom yubico-piv-tool package
     #if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    # Match the consumer's distribution so cached debs use the same runtime ABI.
+    runs-on: ubuntu-24.04
     steps:
     - name: Cache deb files
       uses: actions/cache@v6
@@ -58,7 +59,7 @@ jobs:
         path: |
           yubico-piv-tool_*.deb
           libykpiv1_*.deb
-        key: ${{ runner.os }}-${{ env.cache-name }}
+        key: ${{ runner.os }}-ubuntu-24.04-${{ env.cache-name }}
     - name: Check file existence
       id: check_yubico_piv
       run: |
@@ -93,7 +94,8 @@ jobs:
 
   build_test:
     name: Build and Test
-    runs-on: ubuntu-latest
+    # The pinned pinentry 1.2.1 mock requires libassuan API 2 from this image.
+    runs-on: ubuntu-24.04
     needs: build_tools
     steps:
     - name: Prepare - Download packages
@@ -158,7 +160,7 @@ jobs:
         cache-name: cache_gpg_binary
       with:
         path: gnupg
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./tests/pcsc/build_gpg.sh') }}
+        key: ${{ runner.os }}-ubuntu-24.04-build-${{ env.cache-name }}-${{ hashFiles('./tests/pcsc/build_gpg.sh') }}
 
     - name: Cache - FIDO tools
       id: cache-fido
@@ -170,7 +172,7 @@ jobs:
           u2f-ref-code
           libfido2
           fido2-tests
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./tests/pcsc/build_fido_tests.sh') }}
+        key: ${{ runner.os }}-ubuntu-24.04-build-${{ env.cache-name }}-${{ hashFiles('./tests/pcsc/build_fido_tests.sh') }}
 
     - name: Build - Patched GnuPG
       if: steps.cache-gpg.outputs.cache-hit != 'true'
