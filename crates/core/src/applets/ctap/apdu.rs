@@ -2,18 +2,14 @@
 //! FIDO SELECT and APDU command envelope over the shared CTAP applet.
 use super::{Applet, Request, Response};
 use crate::{ports::Platform, runtime::workspace::SessionWorkspace};
-use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
+use canokey_protocol::{
+    apdu::{Header, fido},
+    response::StatusWord as Sw,
+};
 
 // Preserve the legacy six-byte SELECT reply; CTAP2 capabilities use GetInfo.
 const VERSION: &[u8] = b"U2F_V2";
-pub(super) const INS_MSG: u8 = 0x10;
-
-pub(super) fn valid_message_parameters(header: Header) -> bool {
-    // P1 bit 7 allows NFCCTAP_GETRESPONSE keepalive polling. Like the legacy
-    // synchronous engine, we may finish the command directly with 9000; the
-    // hint must not make standards-compliant NFC clients fail discovery.
-    header.p1 & 0x7f == 0 && header.p2 == 0
-}
+pub(super) use canokey_protocol::apdu::{FIDO_CBOR_INS as INS_MSG, fido::valid_message_parameters};
 
 impl Applet {
     pub fn select(
@@ -41,18 +37,7 @@ impl Applet {
         }
         w.wipe_active(p.memory);
         *w = SessionWorkspace::CtapRequest(Request::new());
-        if header.ins != INS_MSG {
-            // C acknowledges intermediate proprietary fragments before INS
-            // dispatch. The completed command is checked in finish().
-            if header.chained() {
-                return Ok(());
-            }
-            return Err(Sw::INS_NOT_SUPPORTED);
-        }
-        if !valid_message_parameters(header) {
-            return Err(Sw::WRONG_P1P2);
-        }
-        Ok(())
+        fido::begin_message(header)
     }
     #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8], w: &mut SessionWorkspace) -> Result<(), Sw> {
@@ -69,8 +54,8 @@ impl Applet {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
-        if header.cla != 0 && header.ins != INS_MSG {
-            return Err(Sw::INS_NOT_SUPPORTED);
+        if header.cla != 0x00 {
+            fido::finish_message(header)?;
         }
         self.finish_apdu_command(w, p)?;
         Ok(self.complete(w, p, None) as u32)

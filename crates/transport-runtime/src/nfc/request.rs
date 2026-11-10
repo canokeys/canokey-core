@@ -12,11 +12,7 @@ const TAIL_BYTES: usize = INLINE_BYTES - apdu::SHORT_FRAME_BYTES;
 pub fn message_prefix(prefix: &[u8; apdu::EXTENDED_HEADER_BYTES]) -> bool {
     prefix[..2] == [apdu::CLA_FIDO, apdu::FIDO_CBOR_INS] && prefix[4] == 0x00
 }
-#[inline]
-pub fn message_parameters(header: apdu::Header) -> bool {
-    const KEEPALIVE_HINT: u8 = 0x80;
-    header.p1 & !KEEPALIVE_HINT == 0x00 && header.p2 == 0x00
-}
+pub use apdu::fido::valid_message_parameters as message_parameters;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rejection {
