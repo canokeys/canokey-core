@@ -39,7 +39,7 @@ pub fn generate_info(firmware: u32) {
             ("setMinPINLength", Boolean::Fixed(true)),
             ("makeCredUvNotRqd", Boolean::MakeCredUvNotRqd),
         ]),
-        Field::MaxMessageSize(u16::try_from(crate::config::CTAP_MAX_REQUEST).unwrap()),
+        Field::MaxMessageSize(crate::config::CtapRequestConfig::MAX_MESSAGE_SIZE),
         Field::PinUvAuthProtocols,
         Field::MaxCredentialCountInList(16),
         Field::MaxCredentialIdLength(34),

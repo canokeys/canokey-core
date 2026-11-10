@@ -2,12 +2,14 @@
 //! Product capacities and direct Command publication for the shared parser.
 use super::{Command, Status};
 pub(super) use canokey_ctap::request::credential::MAX_LIST;
-pub type Parameters = canokey_ctap::request::credential::Parameters<{ super::MAX_REQUEST / 20 }>;
+pub type Parameters = canokey_ctap::request::credential::Parameters<
+    { crate::config::CtapRequestConfig::ALGORITHM_CAPACITY },
+>;
 pub struct Parser(
     canokey_ctap::request::credential::Parser<
         Status,
-        { super::MAX_REQUEST / 20 },
-        { (super::MAX_REQUEST - 1) as u16 },
+        { crate::config::CtapRequestConfig::ALGORITHM_CAPACITY },
+        { crate::config::CtapRequestConfig::CBOR_BYTES },
     >,
 );
 impl Parser {

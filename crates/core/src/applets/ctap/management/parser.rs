@@ -50,7 +50,7 @@ mod tests {
         type Reader<'a> = canokey_ctap::request::borrowed::Reader<
             'a,
             Status,
-            { (crate::applets::ctap::MAX_REQUEST - 1) as u16 },
+            { crate::config::CtapRequestConfig::CBOR_BYTES },
         >;
         let compare = |bytes: &[u8]| {
             let mut parser = envelope::Parser::new(0x0a);

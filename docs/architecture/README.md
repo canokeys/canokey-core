@@ -135,12 +135,20 @@ native crypto capability without routing through a ports adapter.
 
 `canokey-ports::RequestLimits` carries static logical CTAP and native HID MSG
 budgets. CanoKey defines its 1296-byte profile in `crates/core/src/config.rs`;
-GetInfo code generation, CTAP parsing, PC/SC admission and transport fixtures
-consume that profile. HID scratch adapters select a profile through an associated
+`canokey_ctap::config::RequestConfig<L>` derives the GetInfo `u16` value, CBOR
+parser budget (one less than the command-plus-CBOR limit), and owned algorithm
+capacity. GetInfo code generation, CTAP parsing, PC/SC admission and transport
+fixtures consume that profile. HID scratch adapters select a profile through an associated
 type; available staging capacity is checked separately. This allocates no extra
 request buffers. The shared protocol crate retains only wire framing limits.
 
 A different product may implement a 2048-byte profile without changing HID wire
-code. That does not establish its parser/staging capacity or authorize CCID
-extended APDUs. Response, NFC inline storage and application-specific chaining
-budgets remain separate and are not inferred from this request contract.
+code. Derive parser and advertised limits through `RequestConfig` and use the
+same logical request budget for CTAP HID and APDU chain admission; physical
+staging capacity is checked separately. This does not authorize CCID extended
+APDUs. Response and application-specific native-message budgets remain separate.
+
+The owned parser reserves one algorithm slot per conservative 20 wire bytes.
+A minimal complete public-key parameter map is 22 bytes, so that capacity cannot
+fill before the message limit. The divisor preserves existing capacities of 64
+at 1296 bytes and 102 at 2048 bytes. Borrowed parsers do not allocate that array.

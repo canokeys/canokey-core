@@ -620,9 +620,18 @@ mod tests {
     use crate::status::Status;
     // Exercise the CanoKey product capacity without importing product code.
     const REQUEST_BYTES: usize = 1296;
-    type Parser = super::Parser<Status, { REQUEST_BYTES / 20 }, { (REQUEST_BYTES - 1) as u16 }>;
+    type Parser = super::Parser<
+        Status,
+        { REQUEST_BYTES / crate::config::ALGORITHM_WIRE_BUDGET_BYTES },
+        { (REQUEST_BYTES - 1) as u16 },
+    >;
     impl Parser {
-        fn finish(&mut self) -> Result<Parameters<{ REQUEST_BYTES / 20 }>, Status> {
+        fn finish(
+            &mut self,
+        ) -> Result<
+            Parameters<{ REQUEST_BYTES / crate::config::ALGORITHM_WIRE_BUDGET_BYTES }>,
+            Status,
+        > {
             self.finish_with(&canokey_ports::default_memory(), core::convert::identity)
         }
     }

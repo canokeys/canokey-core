@@ -9,4 +9,5 @@ impl RequestLimits for CanoKeyLimits {
     const NATIVE_MSG_MAX_BYTES: usize = 1296;
 }
 
-pub const CTAP_MAX_REQUEST: usize = CanoKeyLimits::CTAP_REQUEST_MAX_BYTES;
+pub type CtapRequestConfig = canokey_ctap::config::RequestConfig<CanoKeyLimits>;
+pub const CTAP_MAX_REQUEST: usize = CtapRequestConfig::MAX_MESSAGE_BYTES;

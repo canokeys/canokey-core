@@ -290,10 +290,10 @@ mod differential_tests {
         }
     }
     fn borrowed(bytes: &[u8]) -> Result<Vec<u8>, Status> {
-        let parsed = schema::borrowed::decode::<Status, { (super::super::MAX_REQUEST - 1) as u16 }>(
-            bytes,
-            PERMISSIONS,
-        )?;
+        let parsed = schema::borrowed::decode::<
+            Status,
+            { crate::config::CtapRequestConfig::CBOR_BYTES },
+        >(bytes, PERMISSIONS)?;
         Ok(fingerprint(match parsed.command {
             schema::Command::Retries => Command::GetPinRetries,
             schema::Command::Agreement => Command::GetKeyAgreement,

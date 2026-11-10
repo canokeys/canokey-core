@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product request capacity for the shared first-error incremental decoder.
 use super::Status;
-pub(super) type RequestDecoder =
-    canokey_ctap::request::stream::Decoder<Status, { (super::MAX_REQUEST - 1) as u16 }>;
+pub(super) type RequestDecoder = canokey_ctap::request::stream::Decoder<
+    Status,
+    { crate::config::CtapRequestConfig::CBOR_BYTES },
+>;
 #[cfg(test)]
 mod tests {
     use super::*;
