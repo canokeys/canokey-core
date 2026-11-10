@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 pub mod ccid;
 pub mod ctaphid;
+pub mod mode;
 pub mod nfc;
 pub mod nfc_io;
 pub mod nfc_provision;

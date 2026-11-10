@@ -92,17 +92,11 @@ unsafe fn run() -> Stop {
 }
 #[cfg(feature = "nfc")]
 unsafe fn detect_nfc() -> bool {
-    // Observe the raw pin throughout the entire window; any low selects USB.
     unsafe {
-        let started = hal::device_get_tick();
-        loop {
-            if ck_board_mode_pin() == 0 {
-                return false;
-            }
-            if hal::device_get_tick().wrapping_sub(started) >= 10 {
-                return true;
-            }
-        }
+        canokey_transport_runtime::mode::detect_contactless(
+            || hal::device_get_tick(),
+            || ck_board_mode_pin() != 0,
+        )
     }
 }
 unsafe fn run_with<P: FirmwareProvider>() -> Stop {

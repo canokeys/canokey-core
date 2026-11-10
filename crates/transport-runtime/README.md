@@ -126,3 +126,12 @@ retain the mailbox while IN is busy or reset/configuration prevents service.
 This path only borrows transport mailboxes and control output, never an
 application, parser or reset capability. vLEI's post-execution CCID status drain
 leaves HID reports for normal polling rather than treating them as competitors.
+
+## Mode observation
+
+`mode::detect_contactless` observes the raw D+ mode pin continuously for a
+full 10 ms window before USB pull-up or NFC bus preparation. Any low sample
+selects USB immediately, including the final sample at the deadline. The
+millisecond clock wraps naturally. Callers provide only clock/pin reads;
+product configuration admission, storage and interface startup remain outside
+the observer.
