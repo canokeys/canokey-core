@@ -79,6 +79,15 @@ static __attribute__((noinline)) int sm2_message_digest(ecc_key_t *key, const ui
 
 #endif
 
+// Isolate message-signing scratch from Weierstrass operations under LTO.
+static __attribute__((noinline)) int ed25519_message_sign(ecc_key_t *key, const uint8_t *input,
+                                                        size_t length, uint8_t *out) {
+  if (ck_ecc_complete_key(ED25519, key) != 0 || ecc_sign(ED25519, key, input, length, out) != 0) {
+    return -1;
+  }
+  return (int)SIGNATURE_LENGTH[ED25519];
+}
+
 static __attribute__((noinline)) int ecc_operation(uint8_t op, uint8_t alg, rsa_key_t *material, const uint8_t *in,
                                                    size_t n, uint8_t *out) {
 #if !defined(RUST_CORE_OPENPGP) && !defined(RUST_CORE_PIV)
@@ -111,8 +120,9 @@ static __attribute__((noinline)) int ecc_operation(uint8_t op, uint8_t alg, rsa_
       // ECC uses only bytes [0,198); borrow the unused RSA-capacity tail.
       if (K__short_weierstrass_sign_with_scratch(alg, ec, in, n, out, key + ECC_SCRATCH_OFFSET, ECC_SCRATCH_BYTES) == 0)
         result = (int)SIGNATURE_LENGTH[alg];
-    } else if (alg == ED25519 && ck_ecc_complete_key(alg, ec) == 0 && ecc_sign(alg, ec, in, n, out) == 0)
-      result = (int)SIGNATURE_LENGTH[alg];
+    } else if (alg == ED25519) {
+      result = ed25519_message_sign(ec, in, n, out);
+    }
     break;
   case CK_KEY_SM2_MESSAGE_DIGEST:
 #if defined(RUST_CORE_CTAP) || defined(RUST_CORE_PIV)
