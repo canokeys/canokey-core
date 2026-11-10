@@ -14,6 +14,44 @@ pub fn message_prefix(prefix: &[u8; apdu::EXTENDED_HEADER_BYTES]) -> bool {
 }
 pub use apdu::fido::valid_message_parameters as message_parameters;
 
+/// Borrowed owner capabilities used before large-body staging is acquired.
+/// Product begin performs transport admission and closes replaceable output;
+/// replacing input must reject a still-live execution owner before any erasure.
+pub trait Admission {
+    fn begin(&mut self, header: apdu::Header) -> Result<(), Sw>;
+    fn fido_selected(&mut self) -> bool;
+    fn replace_input(&mut self) -> Result<(), Sw>;
+    fn request_limit(&mut self, header: apdu::Header) -> Result<u32, Sw>;
+}
+
+/// Own prefix rejection and input-retention order before large-body staging.
+/// A foreign prefix retains input; an admitted MSG replaces it before P1/P2 or
+/// size rejection. The returned limit does not itself acquire a staging lease.
+#[inline]
+pub fn prepare(
+    prefix: &[u8; apdu::EXTENDED_HEADER_BYTES],
+    owner: &mut impl Admission,
+) -> Result<u32, Sw> {
+    let header = apdu::Header {
+        cla: prefix[0],
+        ins: prefix[1],
+        p1: prefix[2],
+        p2: prefix[3],
+    };
+    owner.begin(header)?;
+    if !message_prefix(prefix) {
+        return Err(Sw::WRONG_LENGTH);
+    }
+    if !owner.fido_selected() {
+        return Err(Sw::FILE_NOT_FOUND);
+    }
+    owner.replace_input()?;
+    if !message_parameters(header) {
+        return Err(Sw::WRONG_P1P2);
+    }
+    owner.request_limit(header)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rejection {
     Status(Sw),

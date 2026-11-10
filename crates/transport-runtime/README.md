@@ -16,6 +16,9 @@ retains no Application reference or input-source loan. Product
 asynchronous polling retains its separate execution ownership and cannot let
 a second staged NFC request replace a pending command's body.
 
+`nfc::request::prepare` shares owner admission, prefix/selection checks, input
+replacement and parameter/limit admission before any staging acquisition. Its
+borrowed product capability rejects live asynchronous ownership before erasure.
 `nfc::request::Request` validates bounded inline/staged envelopes and drains
 rejected RF input. The owner supplies the sole staging lease: transient PKE
 plus complete semantic parsing in Core, or the existing bounded request array

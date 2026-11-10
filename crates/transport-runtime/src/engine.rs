@@ -303,6 +303,36 @@ impl<R: Dispatch<C>, P: OwnerPolicy, H: Handoff, C>
     }
 }
 
+/// NFC preparation borrows the same owner and command state as frame routing.
+struct NfcAdmission<'a, R, P: OwnerPolicy, H: Handoff, C> {
+    runtime: &'a mut Runtime<R, P, H>,
+    context: &'a mut C,
+}
+impl<R: Dispatch<C>, P: OwnerPolicy, H: Handoff, C> crate::nfc::request::Admission
+    for NfcAdmission<'_, R, P, H, C>
+{
+    fn begin(&mut self, header: Header) -> Result<(), Sw> {
+        if self.runtime.owner.is_some_and(|owner| owner != P::NFC) {
+            return Err(Sw::CONDITIONS_NOT_SATISFIED);
+        }
+        if !header.is_get_response() {
+            self.runtime.close_response(self.context);
+        }
+        self.runtime.owner = Some(P::NFC);
+        Ok(())
+    }
+    fn fido_selected(&mut self) -> bool {
+        self.runtime.router.fido_selected(self.context)
+    }
+    fn replace_input(&mut self) -> Result<(), Sw> {
+        self.runtime.abort_input(self.context);
+        Ok(())
+    }
+    fn request_limit(&mut self, header: Header) -> Result<u32, Sw> {
+        self.runtime.router.command_limit(header)
+    }
+}
+
 // Keep transport cursors before the large router on Thumb-1. This is an
 // internal layout choice, not a serialized or public C ABI.
 #[repr(C)]
@@ -476,33 +506,15 @@ impl<R: Router, P: OwnerPolicy, H: Handoff> Runtime<R, P, H> {
     where
         R: Dispatch<C>,
     {
-        if self.owner.is_some_and(|owner| owner != P::NFC) {
-            return Err(Sw::CONDITIONS_NOT_SATISFIED);
-        }
-        let header = Header {
-            cla: prefix[0],
-            ins: prefix[1],
-            p1: prefix[2],
-            p2: prefix[3],
-        };
-        if !header.is_get_response() {
-            self.close_response(p);
-        }
-        self.owner = Some(P::NFC);
-        if !crate::nfc::request::message_prefix(prefix) {
-            return Err(Sw::WRONG_LENGTH);
-        }
-        if !self.router.fido_selected(p) {
-            return Err(Sw::FILE_NOT_FOUND);
-        }
-        // Only an admitted FIDO MSG replaces input. A different large command
-        // is drained before applet dispatch and must preserve its old cursor.
-        self.abort_input(p);
-        if !crate::nfc::request::message_parameters(header) {
-            return Err(Sw::WRONG_P1P2);
-        }
-        self.router.command_limit(header)
+        crate::nfc::request::prepare(
+            prefix,
+            &mut NfcAdmission {
+                runtime: self,
+                context: p,
+            },
+        )
     }
+
     fn transport(&self) -> apdu::Transport {
         if self.owner == Some(P::NFC) {
             apdu::Transport::Nfc
