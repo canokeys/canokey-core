@@ -459,6 +459,31 @@ mod registers {
         }
     }
     #[test]
+    fn ignored_ack_from_previous_connection_cannot_release_current_turn() {
+        let mut io = Io::new(0);
+        let mut chip = Fake::default();
+        let mut out = [0x00; nfc::FRAME_LIMIT];
+        frame(&mut io, &mut chip, 1, &[nfc::PCB_ACK, 0x00, 0x00]);
+        let consumed_generation = io.generation();
+        assert_eq!(io.take(&mut out), Some(3));
+        // Activation arrives after main-loop take, before ignored-event cleanup.
+        chip.flags = [nfc::FM_MAIN_ACTIVE | nfc::FM_MAIN_RX_DONE, 0x00, 0x00];
+        chip.rx = vec![nfc::PCB_I, 0x07, 0x00, 0x00];
+        io.interrupt(2, &mut chip);
+        assert_ne!(io.generation(), consumed_generation);
+        io.ignored(consumed_generation);
+        assert_eq!(io.take(&mut out), Some(4));
+        assert_eq!(&out[..4], &[nfc::PCB_I, 0x07, 0x00, 0x00]);
+        assert!(io.begin_execution(2));
+        io.computed(3);
+        assert_eq!(io.complete_execution(), Some(true));
+        assert!(io.send(
+            &Packet::information(0, false, &[0x90, 0x00]).unwrap(),
+            &mut chip
+        ));
+    }
+
+    #[test]
     fn ignored_ack_releases_turn_without_revoking_selection_or_starting_recovery() {
         let mut io = Io::new(0);
         let mut chip = Fake::default();
@@ -466,7 +491,7 @@ mod registers {
         io.poll(0, false, &mut chip);
         frame(&mut io, &mut chip, 1, &[nfc::PCB_ACK, 0, 0]);
         assert_eq!(io.take(&mut out), Some(3));
-        io.ignored();
+        io.ignored(io.generation());
         io.poll(201, false, &mut chip);
         assert_eq!(io.generation(), 0);
         assert_eq!(

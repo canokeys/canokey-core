@@ -174,7 +174,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+          "sha256": "8dfa16d02a75823a30a27ce3b8ba09df219adc1dfcbc3845153b9512931f3850"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -183,6 +183,10 @@
         {
           "path": "crates/core/src/config.rs",
           "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
+        },
+        {
+          "path": "crates/transport-runtime/src/nfc_io.rs",
+          "sha256": "47f464c8ec82ac2d7c4939436efc6d9c91801e63e5aa5d6620ad9cd93f63c948"
         }
       ],
       "regressions": [
@@ -209,7 +213,8 @@
       "remaining": [
         "Full-product physical NFC capability acceptance is open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
       ]
     },
     {
@@ -335,7 +340,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+          "sha256": "8dfa16d02a75823a30a27ce3b8ba09df219adc1dfcbc3845153b9512931f3850"
         },
         {
           "path": "crates/host/src/pcsc.rs",
@@ -348,6 +353,10 @@
         {
           "path": "crates/core/src/config.rs",
           "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
+        },
+        {
+          "path": "crates/transport-runtime/src/nfc_io.rs",
+          "sha256": "47f464c8ec82ac2d7c4939436efc6d9c91801e63e5aa5d6620ad9cd93f63c948"
         }
       ],
       "regressions": [
@@ -408,7 +417,8 @@
         "CIU request-path stack and PKE/RF acceptance is open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs, crates/host/src/pcsc.rs, crates/protocol/src/ctaphid.rs, tests/card/src/bin/usb_sessions/envelopes.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
         "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
-        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
       ]
     },
     {
@@ -795,11 +805,15 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+          "sha256": "8dfa16d02a75823a30a27ce3b8ba09df219adc1dfcbc3845153b9512931f3850"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
           "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+        },
+        {
+          "path": "crates/transport-runtime/src/nfc_io.rs",
+          "sha256": "47f464c8ec82ac2d7c4939436efc6d9c91801e63e5aa5d6620ad9cd93f63c948"
         }
       ],
       "regressions": [
@@ -864,7 +878,8 @@
       "remaining": [
         "Functional regression restoration remains release-blocked on physical NFC/RF/WTX and CIU resources.",
         "Extend PKE faults/cancellation beyond the41 Rust source schedules to other CTAP commands, write/cleanup failures and paired C transport runs; broader aggregation remains.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc.rs, crates/core/src/runtime/nfc/request.rs, crates/core/tests/streaming.rs, crates/ffi/src/transport/nfc.rs, tests/card/src/bin/usb_sessions/envelopes.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc.rs, crates/core/src/runtime/nfc/request.rs, crates/core/tests/streaming.rs, crates/ffi/src/transport/nfc.rs, tests/card/src/bin/usb_sessions/envelopes.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
       ]
     },
     {
@@ -1015,7 +1030,11 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+          "sha256": "8dfa16d02a75823a30a27ce3b8ba09df219adc1dfcbc3845153b9512931f3850"
+        },
+        {
+          "path": "crates/transport-runtime/src/nfc_io.rs",
+          "sha256": "47f464c8ec82ac2d7c4939436efc6d9c91801e63e5aa5d6620ad9cd93f63c948"
         }
       ],
       "regressions": [
@@ -1052,7 +1071,8 @@
       ],
       "remaining": [
         "Broader large-response aggregation, WTX and physical RF execution remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs, crates/ffi/src/transport/nfc/tests.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs, crates/ffi/src/transport/nfc/tests.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
       ]
     },
     {
@@ -1448,7 +1468,11 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+          "sha256": "8dfa16d02a75823a30a27ce3b8ba09df219adc1dfcbc3845153b9512931f3850"
+        },
+        {
+          "path": "crates/transport-runtime/src/nfc_io.rs",
+          "sha256": "47f464c8ec82ac2d7c4939436efc6d9c91801e63e5aa5d6620ad9cd93f63c948"
         }
       ],
       "regressions": [
@@ -1473,7 +1497,8 @@
         }
       ],
       "remaining": [
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
       ]
     },
     {
@@ -2719,7 +2744,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+          "sha256": "8dfa16d02a75823a30a27ce3b8ba09df219adc1dfcbc3845153b9512931f3850"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -2728,6 +2753,10 @@
         {
           "path": "crates/core/src/config.rs",
           "sha256": "8a4547e62086aec18b2851727ab4258a28c8b1b50aa0641c5db4fe44296230f6"
+        },
+        {
+          "path": "crates/transport-runtime/src/nfc_io.rs",
+          "sha256": "47f464c8ec82ac2d7c4939436efc6d9c91801e63e5aa5d6620ad9cd93f63c948"
         }
       ],
       "regressions": [
@@ -2803,7 +2832,8 @@
         "CIU call-path stack/PKE and physical transport acceptance remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/credential_request.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/request_decoder.rs, crates/core/src/runtime/engine.rs, crates/core/tests/streaming.rs, crates/ffi/src/transport/nfc.rs, crates/protocol/src/cbor.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
         "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
-        "2026-11-10 shared-contract review: Owned parser CBOR and algorithm capacities now use the shared derivations; the CanoKey capacities remain 1295 CBOR bytes and 64 algorithms. The CBOR decoder now uses RequestConfig; its CanoKey limit remains 1295 bytes. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: Owned parser CBOR and algorithm capacities now use the shared derivations; the CanoKey capacities remain 1295 CBOR bytes and 64 algorithms. The CBOR decoder now uses RequestConfig; its CanoKey limit remains 1295 bytes. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
       ]
     },
     {
@@ -3402,13 +3432,17 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+          "sha256": "8dfa16d02a75823a30a27ce3b8ba09df219adc1dfcbc3845153b9512931f3850"
+        },
+        {
+          "path": "crates/transport-runtime/src/nfc_io.rs",
+          "sha256": "47f464c8ec82ac2d7c4939436efc6d9c91801e63e5aa5d6620ad9cd93f63c948"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/nfc.rs",
-          "sha256": "31d12f1a5fab72e0683b0497884f0bc9d324754811747a9791ef724c0c4418b4",
+          "sha256": "034d4ac582f3815e772da9fe845a26843dc04092df84340f748488e0bc3baff7",
           "id": "control_ack_cache_and_unsolicited_ack_preserve_input"
         },
         {
@@ -3450,7 +3484,8 @@
       ],
       "remaining": [
         "Physical RF/WTX and its separate IRQ-local cache/turn ordering, arbitrary IRQ/cancellation, full file-fault breadth, CIU runtime stack/PKE and complete source audit remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
       ]
     },
     {
@@ -3465,12 +3500,16 @@
         {
           "path": "crates/protocol/src/nfc.rs",
           "sha256": "77f019e7f0c2598dcd57c35719ff2dd4ae0570cf965a595cca03bd9c283a7f89"
+        },
+        {
+          "path": "crates/transport-runtime/src/nfc_io.rs",
+          "sha256": "47f464c8ec82ac2d7c4939436efc6d9c91801e63e5aa5d6620ad9cd93f63c948"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/nfc.rs",
-          "sha256": "31d12f1a5fab72e0683b0497884f0bc9d324754811747a9791ef724c0c4418b4",
+          "sha256": "034d4ac582f3815e772da9fe845a26843dc04092df84340f748488e0bc3baff7",
           "id": "coalesced_halt_activation_uses_live_state_and_preserves_new_rx;rf_status_failure_and_irq_errors_do_not_publish_coalesced_rx;silence_masks_active_high_irqs_and_drains_latched_activation"
         },
         {
@@ -3495,7 +3534,8 @@
       ],
       "remaining": [
         "Physical RF/WTX, CIU stack/PKE, mixed hunk19 and full source audit remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc_io.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc_io.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
       ]
     },
     {
@@ -3509,13 +3549,17 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+          "sha256": "8dfa16d02a75823a30a27ce3b8ba09df219adc1dfcbc3845153b9512931f3850"
+        },
+        {
+          "path": "crates/transport-runtime/src/nfc_io.rs",
+          "sha256": "47f464c8ec82ac2d7c4939436efc6d9c91801e63e5aa5d6620ad9cd93f63c948"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/nfc.rs",
-          "sha256": "31d12f1a5fab72e0683b0497884f0bc9d324754811747a9791ef724c0c4418b4",
+          "sha256": "034d4ac582f3815e772da9fe845a26843dc04092df84340f748488e0bc3baff7",
           "id": "pending_mailbox_drains_later_frames_without_decoding_or_replacing_input;ignored_ack_releases_turn_without_revoking_selection_or_starting_recovery"
         },
         {
@@ -3552,7 +3596,8 @@
       "remaining": [
         "Hunk57 includes admission during live Core execution: Rust retains its existing dedicated WTX/cancellation policy; no C/Rust execution parity is claimed. WTX cache/echo and arbitrary IRQ/endpoint schedules remain open.",
         "Mixed hunk19, physical RF/WTX, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc_io.rs, crates/ffi/src/transport/nfc.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc_io.rs, crates/ffi/src/transport/nfc.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
       ]
     },
     {
@@ -3566,13 +3611,17 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+          "sha256": "8dfa16d02a75823a30a27ce3b8ba09df219adc1dfcbc3845153b9512931f3850"
+        },
+        {
+          "path": "crates/transport-runtime/src/nfc_io.rs",
+          "sha256": "47f464c8ec82ac2d7c4939436efc6d9c91801e63e5aa5d6620ad9cd93f63c948"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/tests/nfc.rs",
-          "sha256": "31d12f1a5fab72e0683b0497884f0bc9d324754811747a9791ef724c0c4418b4",
+          "sha256": "034d4ac582f3815e772da9fe845a26843dc04092df84340f748488e0bc3baff7",
           "id": "execution_drains_early_frames_but_accepts_deselect_after_wtx_returns_the_turn"
         },
         {
@@ -3587,7 +3636,7 @@
         },
         {
           "path": "crates/core/tests/nfc.rs",
-          "sha256": "31d12f1a5fab72e0683b0497884f0bc9d324754811747a9791ef724c0c4418b4",
+          "sha256": "034d4ac582f3815e772da9fe845a26843dc04092df84340f748488e0bc3baff7",
           "id": "mismatched_wtx_echo_never_authorizes_an_apdu_reply"
         }
       ],
@@ -3615,7 +3664,8 @@
         "Unresolved E63: after-WTX wrong multiplier/ACK/NAK/deselect differ from pinned C permissive continuation; no parity or intentional-difference disposition is approved.",
         "Mixed NFC source hunk19 includes WTX retransmission cache, cleanup and TXEN ordering. Normal echo evidence does not close it. Arbitrary IRQ/endpoint schedules remain open.",
         "Physical RF/WTX, CIU IRQ/call-path stack/PKE, Linux sanitizer acceptance and full source audit remain open; NFCC remains oversized.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc_io.rs, crates/ffi/src/transport/nfc.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc_io.rs, crates/ffi/src/transport/nfc.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
       ]
     },
     {
@@ -3862,7 +3912,11 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+          "sha256": "8dfa16d02a75823a30a27ce3b8ba09df219adc1dfcbc3845153b9512931f3850"
+        },
+        {
+          "path": "crates/transport-runtime/src/nfc_io.rs",
+          "sha256": "47f464c8ec82ac2d7c4939436efc6d9c91801e63e5aa5d6620ad9cd93f63c948"
         }
       ],
       "regressions": [
@@ -3896,7 +3950,8 @@
         "Other response-source classes, full parameter/header/body mutations, pending configuration and volatile native-HID transitions still require review.",
         "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 remain open; the17 previous unequal literal cases are intentional correctness differences.",
         "Physical USB/RF/WTX, CIU total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
       ]
     },
     {
@@ -3993,7 +4048,11 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
+          "sha256": "8dfa16d02a75823a30a27ce3b8ba09df219adc1dfcbc3845153b9512931f3850"
+        },
+        {
+          "path": "crates/transport-runtime/src/nfc_io.rs",
+          "sha256": "47f464c8ec82ac2d7c4939436efc6d9c91801e63e5aa5d6620ad9cd93f63c948"
         }
       ],
       "regressions": [
@@ -4029,7 +4088,8 @@
       ],
       "remaining": [
         "Other response-source classes, configuration/native-HID transitions, arbitrary cancellation/IRQ and physical RF/WTX/resource acceptance remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
       ]
     }
   ],
@@ -10361,6 +10421,40 @@
         "current_sha256": "3cd691f5aeb9a8e2b1ce976c9e3f30a8e7da6ccc8da95b03c9f1c40ffa827173",
         "behaviors": [
           "C1-RETRIES"
+        ]
+      }
+    }
+  },
+  "nfc_generation_guard_review": {
+    "record_parent": "101bc885fc04a8fe676253f1b6aad9ef1b4107de",
+    "status": "pending; no source-hunk or release approval granted",
+    "scope": "Guard moved from the CanoKey facade to the shared runtime; host regressions also cover activation between mailbox take and ignored-event cleanup. Prior acceptance obligations remain open.",
+    "artifacts": {
+      "crates/ffi/src/transport/nfc.rs": {
+        "previous_sha256": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d",
+        "current_sha256": "8dfa16d02a75823a30a27ce3b8ba09df219adc1dfcbc3845153b9512931f3850",
+        "behaviors": [
+          "G3",
+          "G6",
+          "T3",
+          "T4",
+          "NFC-STATE",
+          "C2",
+          "T19",
+          "T21",
+          "T22",
+          "T28",
+          "T29"
+        ]
+      },
+      "crates/core/tests/nfc.rs": {
+        "previous_sha256": "31d12f1a5fab72e0683b0497884f0bc9d324754811747a9791ef724c0c4418b4",
+        "current_sha256": "034d4ac582f3815e772da9fe845a26843dc04092df84340f748488e0bc3baff7",
+        "behaviors": [
+          "T19",
+          "T20",
+          "T21",
+          "T22"
         ]
       }
     }

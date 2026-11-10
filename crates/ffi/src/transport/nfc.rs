@@ -480,11 +480,7 @@ pub unsafe fn poll<P: Provider>() {
                 }
             }
             Ok(Event::NextResponse) => next_response::<P>(),
-            Ok(Event::Ignored) => with_io(|io, _, _| {
-                if io.generation() == GENERATION {
-                    io.ignored();
-                }
-            }),
+            Ok(Event::Ignored) => with_io(|io, _, _| io.ignored(GENERATION)),
             Ok(Event::Deselect) => {
                 if !send(&Packet::deselect()) {
                     fault();

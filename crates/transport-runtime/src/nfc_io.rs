@@ -238,9 +238,12 @@ impl<P: Polling> Io<P> {
         Some(n)
     }
     /// An unsolicited ACK consumes no response bytes and needs no reply.
-    /// Release its turn so subsequent reader input can become the mailbox.
-    pub fn ignored(&mut self) {
-        self.turn = false;
+    /// Release only the connection that supplied the consumed mailbox. An RF
+    /// activation IRQ between take and this call may already own a new turn.
+    pub fn ignored(&mut self, generation: u32) {
+        if self.generation() == generation {
+            self.turn = false;
+        }
     }
     /// Copy into the chip FIFO synchronously. The bus adapter must not retain
     /// packet bytes or call Rust recursively while this method borrows state.
