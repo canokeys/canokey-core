@@ -643,7 +643,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
+          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
           "id": "explicit_selection"
         },
         {
@@ -696,7 +696,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
+          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
           "id": "explicit_selection_and_power_and_irq"
         }
       ],
@@ -749,7 +749,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
+          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
           "id": "ccid_drain"
         },
         {
@@ -1172,7 +1172,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
+          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
           "id": "ccid_drain"
         },
         {
@@ -1278,7 +1278,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
+          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
           "id": "ownership_and_pending-power_and_irq-staging_and_presence"
         },
         {
@@ -1334,7 +1334,7 @@
         },
         {
           "path": "tests/integration/piv_normal.py",
-          "sha256": "c3ab0b8ba3689132954ad4a20d4df0257fec19b1e2312f2ad77ff0aea7b6cf9f",
+          "sha256": "f5bebcf9316b333a255e77d0bff4c7f5efd855c72530d9f74a8e939ac9f7335e",
           "id": "unauthenticated_queries"
         },
         {
@@ -1394,7 +1394,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
+          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
           "id": "ownership_and_pending-native-MSG-two3000ms-gaps"
         },
         {
@@ -1536,7 +1536,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
+          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
           "id": "preemption: expired-Hold-continuation-exclusion and aborted-WebUSB-reservation-preserves-CCID-PIN"
         },
         {
@@ -1618,7 +1618,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
+          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
           "id": "preemption: expired-Hold-continuation-exclusion and aborted-WebUSB-reservation-preserves-CCID-PIN"
         },
         {
@@ -2617,7 +2617,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
+          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
           "id": "ownership_and_pending-preemption-power_and_irq"
         },
         {
@@ -3385,7 +3385,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "dd5bf6f4e42cdfca70648eebb298e569b24add7aecdf3f19e5b6cff64f6643c6",
+          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
           "id": "E59-disjoint-controls-and-pending-native-IN"
         }
       ],
