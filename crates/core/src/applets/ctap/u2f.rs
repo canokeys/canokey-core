@@ -103,6 +103,7 @@ impl Session {
                 return Err(Sw::WRONG_LENGTH);
             }
         }
+        // Both accepted request forms have a fixed 32-byte appId at offset 32.
         let rp = r.data[32..64].try_into().unwrap();
         let mut id = [0; credential::ID_BYTES];
         if !register {
@@ -151,6 +152,7 @@ impl Session {
             w.output[66] = id.len() as u8;
             w.output[67..67 + id.len()].copy_from_slice(&id);
             p.memory.wipe(&mut w.key.bytes);
+            // The attestation scalar occupies the fixed-width key prefix.
             super::attestation::key((&mut w.key.bytes[..32]).try_into().unwrap(), p)
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             let cert = super::attestation::certificate(p).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
@@ -169,6 +171,7 @@ impl Session {
         p.crypto
             .sha256(&w.input[..message_len], &mut digest)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+        // P-256 consumes a 32-byte scalar and writes a fixed 64-byte signature.
         p.crypto
             .p256_sign(
                 (&w.key.bytes[..32]).try_into().unwrap(),

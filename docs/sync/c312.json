@@ -2669,7 +2669,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/authentication.rs",
-          "sha256": "4734648764244fa238cbc31a16157eabe53bdb2c50a7b2088dcc053482883d3d"
+          "sha256": "c99fe953c3c2ca0990802fbab9da4bdc1835b691998812d65e0033676fba0d03"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -2714,7 +2714,8 @@
       ],
       "remaining": [
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/authentication.rs, crates/core/src/applets/ctap/credential_request.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: Owned parser CBOR and algorithm capacities now use the shared derivations; the CanoKey capacities remain 1295 CBOR bytes and 64 algorithms. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: Owned parser CBOR and algorithm capacities now use the shared derivations; the CanoKey capacities remain 1295 CBOR bytes and 64 algorithms. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Applet review: current artifact identities reflect typed CTAP parsing and documented fixed-width invariants. Historical evidence and dispositions are retained. Current-consumer qualification remains open."
       ]
     },
     {
@@ -2855,7 +2856,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/large_blob.rs",
-          "sha256": "b55d060c56740037f3cf6a017c44fd71c0f414d4c756f05522a63cddf0a75623"
+          "sha256": "e332a99b7f98c16323b2d79c24db44b7541d5a63b69d72872b0b8d57f9ff9147"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -2994,7 +2995,8 @@
         "Paired executing cancellation, broader native open/seek/close and physical storage, arbitrary IRQ/withheld endpoint faults, USB/RF/WTX, CIU stack/PKE and Linux LeakSanitizer remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
         "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Applet review: current artifact identities reflect typed CTAP parsing and documented fixed-width invariants. Historical evidence and dispositions are retained. Current-consumer qualification remains open."
       ]
     },
     {
@@ -3016,7 +3018,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/large_blob.rs",
-          "sha256": "b55d060c56740037f3cf6a017c44fd71c0f414d4c756f05522a63cddf0a75623"
+          "sha256": "e332a99b7f98c16323b2d79c24db44b7541d5a63b69d72872b0b8d57f9ff9147"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -3161,7 +3163,8 @@
         "Paired executing cancellation, broader native open/seek/close and physical storage, arbitrary IRQ/withheld endpoint faults, USB/RF/WTX, CIU stack/PKE and Linux LeakSanitizer remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
         "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Applet review: current artifact identities reflect typed CTAP parsing and documented fixed-width invariants. Historical evidence and dispositions are retained. Current-consumer qualification remains open."
       ]
     },
     {
@@ -3226,7 +3229,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/u2f.rs",
-          "sha256": "e5a90a0e5279e276a4592fd9a392880d328604ec24424c3433e6acf0890c10cb"
+          "sha256": "4a35e817c4840060c9b02c44c94bf8b793c1b30db2a6cb3a6a00c70a647846f7"
         },
         {
           "path": "crates/ports/src/contracts/storage.rs",
@@ -3332,7 +3335,8 @@
         "broader native open/seek/close and physical fault injection, arbitrary cancellation/IRQ schedules and physical/CIU acceptance remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
         "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
-        "2026-11-10 shared-contract review: Persisted Record values moved to ports::canokey; Storage signatures and numeric ABI remain unchanged. Only the persisted Record import namespace changed. The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: Persisted Record values moved to ports::canokey; Storage signatures and numeric ABI remain unchanged. Only the persisted Record import namespace changed. The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Applet review: current artifact identities reflect typed CTAP parsing and documented fixed-width invariants. Historical evidence and dispositions are retained. Current-consumer qualification remains open."
       ]
     },
     {
@@ -10221,7 +10225,7 @@
       },
       "crates/core/src/applets/ctap/authentication.rs": {
         "previous_sha256": "7f2b625f003f6443c7fce12c392d63932423d1d4a3b6d7074f742208cfbacce6",
-        "current_sha256": "4734648764244fa238cbc31a16157eabe53bdb2c50a7b2088dcc053482883d3d",
+        "current_sha256": "c99fe953c3c2ca0990802fbab9da4bdc1835b691998812d65e0033676fba0d03",
         "behaviors": [
           "C1"
         ]
@@ -10271,6 +10275,21 @@
         "behaviors": [
           "C1-RETRIES"
         ]
+      },
+      "crates/core/src/applets/ctap/large_blob.rs": {
+        "previous_sha256": "b55d060c56740037f3cf6a017c44fd71c0f414d4c756f05522a63cddf0a75623",
+        "current_sha256": "e332a99b7f98c16323b2d79c24db44b7541d5a63b69d72872b0b8d57f9ff9147",
+        "behaviors": [
+          "C3",
+          "T16"
+        ]
+      },
+      "crates/core/src/applets/ctap/u2f.rs": {
+        "previous_sha256": "e5a90a0e5279e276a4592fd9a392880d328604ec24424c3433e6acf0890c10cb",
+        "current_sha256": "4a35e817c4840060c9b02c44c94bf8b793c1b30db2a6cb3a6a00c70a647846f7",
+        "behaviors": [
+          "T18"
+        ]
       }
     },
     "follow_up_changes": [
@@ -10307,6 +10326,61 @@
           "C3",
           "T16",
           "T17",
+          "T18"
+        ]
+      },
+      {
+        "record_parent": "526e40a1c8ada276dae0ede6f94baa9e6831f83c",
+        "status": "pending; no behavior, source-hunk or release approval granted",
+        "scope": "Prepaid PIV and ADMIN verification retries and typed CTAP request processing. PIN paths are recorded here for provenance.",
+        "artifacts": {
+          "crates/core/src/applets/ctap/authentication.rs": {
+            "previous_sha256": "4734648764244fa238cbc31a16157eabe53bdb2c50a7b2088dcc053482883d3d",
+            "current_sha256": "c99fe953c3c2ca0990802fbab9da4bdc1835b691998812d65e0033676fba0d03",
+            "behaviors": [
+              "C1"
+            ]
+          },
+          "crates/core/src/applets/ctap/large_blob.rs": {
+            "previous_sha256": "b55d060c56740037f3cf6a017c44fd71c0f414d4c756f05522a63cddf0a75623",
+            "current_sha256": "e332a99b7f98c16323b2d79c24db44b7541d5a63b69d72872b0b8d57f9ff9147",
+            "behaviors": [
+              "C3",
+              "T16"
+            ]
+          },
+          "crates/core/src/applets/ctap/u2f.rs": {
+            "previous_sha256": "e5a90a0e5279e276a4592fd9a392880d328604ec24424c3433e6acf0890c10cb",
+            "current_sha256": "4a35e817c4840060c9b02c44c94bf8b793c1b30db2a6cb3a6a00c70a647846f7",
+            "behaviors": [
+              "T18"
+            ]
+          },
+          "crates/core/src/applets/admin/pin.rs": {
+            "previous_sha256": "b5e54776e77c901d2a4afad8791f761c4ef58277df6be7c205b4f7aa6112597b",
+            "current_sha256": "b58d1e4f9513142a8af45825d4a3fb7e94b1c2b8ad1a33f2507e5aca86726cbb",
+            "scope": "PIV PIN/PUK and ADMIN PIN durable retry ordering"
+          },
+          "crates/core/src/applets/piv/pin.rs": {
+            "previous_sha256": "56c7b044997eb75636c23cd68ae1567b46f960ed2453c083673844fa3587adce",
+            "current_sha256": "7346773fe3306d04f54b8eda855e544568ce4cc6e4890c2bdd12188971684db9",
+            "scope": "PIV PIN/PUK and ADMIN PIN durable retry ordering"
+          },
+          "crates/core/src/mechanisms/pin.rs": {
+            "previous_sha256": "5acff0e9eecdfc2bd7108bd1f438e3537e9f594015217204d95770151756e441",
+            "current_sha256": "158ba2d8d0c7c5f18b85fa12ca9918d434024e740cddc1cc773f94ce3bb78250",
+            "scope": "PIV PIN/PUK and ADMIN PIN durable retry ordering"
+          },
+          "crates/core/src/mechanisms/pin/record.rs": {
+            "previous_sha256": "65dcc1245ddde7dd8dae036520779e2756fd19199a348ced1fd77ccd96cce39f",
+            "current_sha256": "e76956bd8a9be4753542679cf1541adf64963e43ccc00d3ed8997021e4c2967f",
+            "scope": "PIV PIN/PUK and ADMIN PIN durable retry ordering"
+          }
+        },
+        "behaviors": [
+          "C1",
+          "C3",
+          "T16",
           "T18"
         ]
       }

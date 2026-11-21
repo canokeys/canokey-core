@@ -215,11 +215,11 @@ impl<B: crate::ports::Backends> authorization::Backend for CredentialAuthorizati
         self.session
             .credential_presence(self.workspace, self.platform)
     }
-    fn verify(&mut self) -> Result<(), Status> {
+    fn verify(&mut self, auth_length: usize) -> Result<(), Status> {
         let params = self.parameters;
         self.session.authorize(
             params.protocol,
-            &params.auth[..params.auth_len.unwrap()],
+            &params.auth[..auth_length],
             &params.client_hash,
             if params.make {
                 pin_protocol::PERMISSION_MAKE
@@ -292,6 +292,7 @@ fn respond(
             auth_len,
         },
     )
+    // SignCredential always constructs a response on success.
     .map(|output| output.unwrap())
 }
 
@@ -418,6 +419,7 @@ impl<B: crate::ports::Backends> canokey_ctap::attestation::Backend
                 )
             });
             reply::tail(&mut e, &envelope, |e| {
+                // The encoder calls this closure only when envelope.user is set.
                 super::encoding::user(e, user.as_ref().unwrap(), request.uv && request.details)
             })
             .map_err(|_| canokey_protocol::cbor::EncodeError)

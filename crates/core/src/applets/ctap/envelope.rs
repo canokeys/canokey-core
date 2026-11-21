@@ -3,6 +3,7 @@
 //! authenticate only the exact parameter map, with an in-place prefix.
 use super::{Command, Key, Status};
 use canokey_protocol::cbor::Event;
+use core::num::NonZeroU8;
 
 // authenticatorConfig auth prefix: 32 bytes 0xFF, command, subcommand.
 pub(super) const PREFIX: usize = 32 + 1 + 1;
@@ -150,7 +151,8 @@ struct Fields {
     end: Option<usize>,
     param_key: Option<Option<i8>>,
     param_previous: Option<Key>,
-    rp_array: bool,
+    // An active array stores its next index plus one.
+    rp_array: Option<NonZeroU8>,
     management: super::management::Parser,
 }
 impl Fields {
@@ -169,7 +171,7 @@ impl Fields {
             end: None,
             param_key: None,
             param_previous: None,
-            rp_array: false,
+            rp_array: None,
             management: super::management::Parser::new(),
         }
     }
@@ -274,17 +276,21 @@ impl Fields {
         Ok(())
     }
     fn parameter(&mut self, event: &Event<'_>, offset: usize) -> Result<(), Status> {
-        if self.rp_array && self.depth == 2 {
+        if let Some(next) = self.rp_array.filter(|_| self.depth == 2) {
             match *event {
                 Event::Text(n) => {
                     if usize::from(n) > super::wire::RP_ID_MAX {
                         return Err(Status::InvalidLength);
                     }
-                    let count = self.params.rp_count.as_mut().unwrap();
-                    self.params.rps[*count] = ((PREFIX + offset) as u16, n);
-                    *count += 1;
+                    let index = usize::from(next.get() - 1);
+                    self.params.rps[index] = ((PREFIX + offset) as u16, n);
+                    // The parser bounds the array to four elements.
+                    self.rp_array = next.checked_add(1);
                 }
-                Event::End => self.rp_array = false,
+                Event::End => {
+                    self.params.rp_count = Some(usize::from(next.get() - 1));
+                    self.rp_array = None;
+                }
                 _ => return Err(Status::UnexpectedType),
             }
         }
@@ -307,8 +313,7 @@ impl Fields {
             },
             Some(2) => match *event {
                 Event::Array(n) if n <= 4 => {
-                    self.params.rp_count = Some(0);
-                    self.rp_array = true;
+                    self.rp_array = Some(NonZeroU8::MIN);
                 }
                 Event::Array(_) => return Err(Status::KeyStoreFull),
                 _ => return Err(Status::UnexpectedType),

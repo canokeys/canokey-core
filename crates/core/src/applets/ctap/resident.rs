@@ -381,7 +381,7 @@ pub(super) mod tests {
         pub mutations: usize,
         aborts: usize,
         pub patch_bytes: usize,
-        stage: Vec<u8>,
+        pub(crate) stage: Vec<u8>,
         stage_open: bool,
         fail_mutation: Option<usize>,
         commit_then_fail: bool,
@@ -398,6 +398,7 @@ pub(super) mod tests {
         fn publish(&mut self, id: Record, bytes: &[u8]) {
             self.records
                 .retain(|(index, _)| Record::ctap_group(*index / 4) != Some(id));
+            // This fixture publishes only complete group records from the writer.
             let header: &[u8; GROUP_HEADER] = bytes[..GROUP_HEADER].try_into().unwrap();
             let mut at = GROUP_HEADER;
             for member in 0..GROUP_MEMBERS {

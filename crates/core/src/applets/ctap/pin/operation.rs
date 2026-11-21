@@ -17,9 +17,11 @@ impl<B: crate::ports::Backends> Operation<'_, '_, '_, B> {
         let w = &mut *self.workspace;
         let p = &mut *self.platform;
         let record = &mut *self.record;
+        // The shared secret has two fixed 32-byte halves.
         let aes_key = self.shared[32..].try_into().unwrap();
         let new_len = wire::new_pin_bytes(cp.protocol);
         decrypt(cp.protocol, aes_key, &mut cp.new_pin[..new_len], p)?;
+        // Either PIN protocol decrypts to the same fixed-width plaintext.
         let unpadded =
             shared_pin::unpad_pin((&cp.new_pin[..wire::PADDED_PIN_BYTES]).try_into().unwrap());
         let pin = shared_pin::validate_pin(unpadded, usize::from(record[MIN_PIN_LENGTH]))
@@ -93,6 +95,7 @@ impl<B: crate::ports::Backends> operation::Backend for Operation<'_, '_, '_, B> 
         let cp = &mut *self.parameters;
         let p = &mut *self.platform;
         let record = &mut *self.record;
+        // The shared secret has two fixed 32-byte halves.
         let aes_key = self.shared[32..].try_into().unwrap();
         retry::verify(&mut CurrentPin {
             session: self.session,
@@ -113,6 +116,7 @@ impl<B: crate::ports::Backends> operation::Backend for Operation<'_, '_, '_, B> 
         let w = &mut *self.workspace;
         let p = &mut *self.platform;
         let record = &mut *self.record;
+        // The shared secret has two fixed 32-byte halves.
         let aes_key = self.shared[32..].try_into().unwrap();
         if record[FLAGS] & FORCE_CHANGE != 0 {
             return Err(if cp.subcommand == wire::GET_TOKEN {

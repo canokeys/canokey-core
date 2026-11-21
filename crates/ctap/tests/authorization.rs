@@ -34,7 +34,7 @@ impl Backend for Product {
             _ => Ok(()),
         }
     }
-    fn verify(&mut self) -> Result<(u32, u32), Fault> {
+    fn verify(&mut self, _: usize) -> Result<(u32, u32), Fault> {
         self.calls.push("verify");
         if self.fault == Some(Fault::Proof) {
             return Err(Fault::Proof);

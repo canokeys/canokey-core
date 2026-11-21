@@ -160,6 +160,7 @@ impl<B: crate::ports::Backends> shared::Creation for CreateCredential<'_, '_, B>
                 &mut tag,
                 self.platform,
             )?;
+            // KeyMaterial reserves a fixed-width seed prefix.
             derive(
                 id,
                 self.rp,
@@ -182,6 +183,7 @@ impl<B: crate::ports::Backends> shared::Creation for CreateCredential<'_, '_, B>
         self.platform.memory.wipe(tag);
     }
     fn accept(&mut self, id: &Id) -> Option<Id> {
+        // The fixed-width prefix is the seed previously prepared above.
         shared::valid_signing_seed(
             self.scheme,
             (&self.key.bytes[..shared::KEY_BYTES]).try_into().unwrap(),
@@ -226,6 +228,7 @@ impl<B: crate::ports::Backends> shared::Opening for OpenCredential<'_, '_, B> {
         // The outer owner clears the complete key backing on every failure.
     }
     fn accept(&mut self, id: &Id) -> Result<Option<u8>, Status> {
+        // The seed view takes exactly KEY_BYTES from the fixed key workspace.
         let seed: &mut [u8; shared::KEY_BYTES] = (&mut self.key.bytes[..shared::KEY_BYTES])
             .try_into()
             .unwrap();

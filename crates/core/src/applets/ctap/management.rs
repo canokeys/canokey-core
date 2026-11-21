@@ -397,6 +397,7 @@ impl<B: crate::ports::Backends> canokey_ctap::management::Backend for Operation<
                     n
                 };
                 let has_blob_key = id[1] & resident::LARGE_BLOB_KEY != 0;
+                // The reserved key workspace range is exactly one blob key.
                 if has_blob_key {
                     credential::large_blob_key(
                         id,
@@ -485,6 +486,7 @@ impl<B: crate::ports::Backends> canokey_ctap::management::Backend for Operation<
             self.session
                 .finish_management(&authenticated, entry.rp_hash, p)?;
             if delete {
+                // The fixed key workspace lends exactly COPY_BYTES to each replacement.
                 resident::replace(
                     index,
                     &[],
@@ -516,6 +518,7 @@ impl<B: crate::ports::Backends> canokey_ctap::management::Backend for Operation<
                 );
                 // An uncertain publication must not acknowledge stale user data.
                 // Like deletion, failure revokes the command's continuation/token.
+                // Both branches borrow the same fixed-width group copy scratch.
                 resident::replace(
                     index,
                     &w.output[..at + n],

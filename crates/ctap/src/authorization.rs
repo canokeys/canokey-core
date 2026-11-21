@@ -40,7 +40,7 @@ pub trait Backend {
     type Authorization;
     fn policy(&mut self) -> Result<Policy, Self::Error>;
     fn presence(&mut self) -> Result<(), Self::Error>;
-    fn verify(&mut self) -> Result<Self::Authorization, Self::Error>;
+    fn verify(&mut self, auth_length: usize) -> Result<Self::Authorization, Self::Error>;
 }
 /// Pure request admission before policy IO, presence or token verification.
 /// Parsed command-only option keys are rejected by the shared schema even when
@@ -77,11 +77,14 @@ pub fn authorize<B: Backend>(
         }
         .into());
     }
-    if request.auth_length.is_some() {
+    if let Some(auth_length) = request.auth_length {
         if !policy.pin_set {
             return Err(RuleError::PinNotSet.into());
         }
-        return backend.verify().map(Some).map_err(Error::Backend);
+        return backend
+            .verify(auth_length)
+            .map(Some)
+            .map_err(Error::Backend);
     }
     if policy.always_uv || (policy.pin_set && request.make && request.resident) {
         return Err(RuleError::PuatRequired.into());

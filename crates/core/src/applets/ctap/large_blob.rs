@@ -7,6 +7,7 @@ use crate::{
 };
 use canokey_ports::{Crypto as _, Device as _, Storage as _};
 use canokey_protocol::cbor::{Encoder, Event};
+use core::num::{NonZeroU8, NonZeroU16};
 
 pub(super) const LIMIT: u16 = 4096;
 const FRAGMENT: usize = super::MAX_REQUEST - 64;
@@ -19,26 +20,38 @@ const EMPTY: [u8; 17] = [
 ];
 #[repr(C)]
 pub struct Parameters {
-    get: Option<u16>,
-    set: Option<usize>,
-    offset: Option<u16>,
-    length: Option<u16>,
-    auth_len: usize,
+    operation: Operation,
+    offset: u16,
+    total: Option<NonZeroU16>,
     protocol: u8,
+    auth_len: Option<NonZeroU8>,
+    buffers: Buffers,
+}
+enum Operation {
+    Get(u16),
+    Set(u16),
+}
+struct Buffers {
     bytes: [u8; FRAGMENT],
     auth: [u8; 32],
+}
+impl Buffers {
+    const fn new() -> Self {
+        Self {
+            bytes: [0; FRAGMENT],
+            auth: [0; 32],
+        }
+    }
 }
 impl Parameters {
     const fn new() -> Self {
         Self {
-            get: None,
-            set: None,
-            offset: None,
-            length: None,
-            bytes: [0; FRAGMENT],
-            auth: [0; 32],
-            auth_len: 0,
+            operation: Operation::Get(0),
+            offset: 0,
+            total: None,
             protocol: 0,
+            auth_len: None,
+            buffers: Buffers::new(),
         }
     }
 }
@@ -48,6 +61,10 @@ pub struct Parser {
 }
 struct Fields {
     params: Parameters,
+    get_seen: bool,
+    set_seen: bool,
+    offset_seen: bool,
+    length_seen: bool,
     started: bool,
     previous: Option<Key>,
     key: Option<Option<i8>>,
@@ -60,6 +77,10 @@ impl Parser {
             decoder: super::request_decoder::RequestDecoder::large_blob(),
             fields: Fields {
                 params: Parameters::new(),
+                get_seen: false,
+                set_seen: false,
+                offset_seen: false,
+                length_seen: false,
                 started: false,
                 previous: None,
                 key: None,
@@ -76,42 +97,44 @@ impl Parser {
             .consume(bytes, &mut |event, _| fields.event(event));
     }
     pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
-        memory.wipe(&mut self.fields.params.bytes);
-        memory.wipe(&mut self.fields.params.auth);
+        memory.wipe(&mut self.fields.params.buffers.bytes);
+        memory.wipe(&mut self.fields.params.buffers.auth);
     }
     #[inline(never)]
     pub fn finish(&mut self) -> Result<Command, Status> {
         self.decoder.finish()?;
-        let p = &self.fields.params;
-        let offset = p.offset.ok_or(Status::InvalidParameter)?;
-        if p.get.is_some() == p.set.is_some() {
+        let p = &mut self.fields;
+        if !p.offset_seen || p.get_seen == p.set_seen {
             return Err(Status::InvalidParameter);
         }
-        if p.get.is_some() {
-            if p.length.is_some() || p.auth_len != 0 || p.protocol != 0 {
+        if p.get_seen {
+            if p.length_seen || p.params.auth_len.is_some() || p.params.protocol != 0 {
                 return Err(Status::InvalidParameter);
             }
         } else {
-            if offset == 0 {
-                let length = p.length.ok_or(Status::InvalidParameter)?;
-                if length < 17 {
+            if p.params.offset == 0 {
+                // The decoder rejects lengths above LIMIT before storing them.
+                if !p
+                    .params
+                    .total
+                    .is_some_and(|n| usize::from(n.get()) >= EMPTY.len())
+                {
                     return Err(Status::InvalidParameter);
                 }
-                if length > LIMIT {
-                    return Err(Status::LargeBlobFull);
-                }
-            } else if p.length.is_some() {
+            } else if p.length_seen {
                 return Err(Status::InvalidParameter);
             }
-            if p.auth_len != 0
-                && p.protocol != 0
-                && p.auth_len != super::wire::pin_protocol::auth_bytes(p.protocol)
-            {
-                return Err(Status::InvalidParameter);
+            if let Some(length) = p.params.auth_len {
+                if p.params.protocol != 0
+                    && usize::from(length.get())
+                        != super::wire::pin_protocol::auth_bytes(p.params.protocol)
+                {
+                    return Err(Status::InvalidParameter);
+                }
             }
         }
         Ok(Command::LargeBlob(core::mem::replace(
-            &mut self.fields.params,
+            &mut p.params,
             Parameters::new(),
         )))
     }
@@ -130,9 +153,9 @@ impl Fields {
         }
         if let Some((key, _)) = self.body {
             let target: &mut [u8] = if key == 2 {
-                &mut self.params.bytes
+                &mut self.params.buffers.bytes
             } else {
-                &mut self.params.auth
+                &mut self.params.buffers.auth
             };
             super::consume_cbor_body(event, &mut self.body, target)?;
             return Ok(());
@@ -159,10 +182,17 @@ impl Fields {
                 let n = u16::try_from(n).map_err(|_| Status::InvalidParameter)?;
                 match key {
                     1 => {
-                        self.params.get = Some(n);
+                        self.get_seen = true;
+                        self.params.operation = Operation::Get(n);
                     }
-                    3 => self.params.offset = Some(n),
-                    4 => self.params.length = Some(n),
+                    3 => {
+                        self.offset_seen = true;
+                        self.params.offset = n;
+                    }
+                    4 => {
+                        self.length_seen = true;
+                        self.params.total = NonZeroU16::new(n);
+                    }
                     _ => {
                         if n != 1 && n != 2 {
                             return Err(Status::InvalidParameter);
@@ -179,14 +209,15 @@ impl Fields {
                     if usize::from(n) > FRAGMENT {
                         return Err(Status::InvalidLength);
                     }
-                    self.params.set = Some(usize::from(n));
+                    self.set_seen = true;
+                    self.params.operation = Operation::Set(n);
                 } else {
                     if n != super::wire::pin_protocol::AUTH_V1_BYTES as u16
                         && n != super::wire::pin_protocol::AUTH_V2_BYTES as u16
                     {
                         return Err(Status::InvalidParameter);
                     }
-                    self.params.auth_len = usize::from(n);
+                    self.params.auth_len = NonZeroU8::new(n as u8);
                 }
                 self.body = Some((key, 0));
             }
@@ -255,48 +286,48 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
-        let offset = usize::from(params.offset.unwrap());
-        if let Some(get) = params.get {
-            let size = match p.storage.size(Record::CtapLargeBlob) {
-                Ok(n) => Some(n as usize),
-                Err(StorageError::Missing) => None,
-                _ => return Err(Status::Other),
-            };
-            let total = size.unwrap_or(EMPTY.len());
-            if total > usize::from(LIMIT) || offset > total {
-                return Err(Status::InvalidParameter);
+        let offset = usize::from(params.offset);
+        let n = match params.operation {
+            Operation::Get(count) => {
+                let size = match p.storage.size(Record::CtapLargeBlob) {
+                    Ok(n) => Some(n as usize),
+                    Err(StorageError::Missing) => None,
+                    _ => return Err(Status::Other),
+                };
+                let total = size.unwrap_or(EMPTY.len());
+                if total > usize::from(LIMIT) || offset > total {
+                    return Err(Status::InvalidParameter);
+                }
+                let n = usize::from(count).min(total - offset);
+                processing(p);
+                w.output[0] = 0;
+                let mut e = Encoder::new(&mut w.output[1..]);
+                e.map(1)
+                    .u8(1)
+                    .bytes_len(n as u64)
+                    .finish()
+                    .map_err(|_| Status::Other)?;
+                let prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
+                if size.is_some() {
+                    self.auth_response = Some(super::Response::Blob {
+                        offset: offset as u32,
+                        length: n,
+                        prefix,
+                    });
+                } else {
+                    w.output[prefix..prefix + n].copy_from_slice(&EMPTY[offset..offset + n]);
+                }
+                return Ok(prefix + n);
             }
-            let n = usize::from(get).min(total - offset);
-            processing(p);
-            w.output[0] = 0;
-            let mut e = Encoder::new(&mut w.output[1..]);
-            e.map(1)
-                .u8(1)
-                .bytes_len(n as u64)
-                .finish()
-                .map_err(|_| Status::Other)?;
-            let prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
-            if size.is_some() {
-                self.auth_response = Some(super::Response::Blob {
-                    offset: offset as u32,
-                    length: n,
-                    prefix,
-                });
-            } else {
-                w.output[prefix..prefix + n].copy_from_slice(&EMPTY[offset..offset + n]);
-            }
-            return Ok(prefix + n);
-        }
-        let n = params.set.unwrap();
+            Operation::Set(fragment_len) => usize::from(fragment_len),
+        };
         if offset != 0 && (!self.upload.active || offset != usize::from(self.upload.next)) {
             return Err(Status::InvalidSequence);
         }
         let policy = pin::policy(p)?;
         let required = policy.pin_length != 0 || policy.flags & pin::ALWAYS_UV != 0;
         if required {
-            if params.auth_len == 0 {
-                return Err(Status::PuatRequired);
-            }
+            let auth_len = params.auth_len.ok_or(Status::PuatRequired)?.get();
             if params.protocol == 0 {
                 return Err(Status::MissingParameter);
             }
@@ -309,22 +340,23 @@ impl Session {
             message[OFFSET_AT..HASH_AT].copy_from_slice(&(offset as u32).to_le_bytes());
             p.crypto
                 .sha256(
-                    &params.bytes[..n],
+                    &params.buffers.bytes[..n],
+                    // HASH_AT leaves exactly the SHA-256 output width.
                     (&mut message[HASH_AT..]).try_into().unwrap(),
                 )
                 .map_err(|_| Status::Other)?;
             self.authorize(
                 params.protocol,
-                &params.auth[..params.auth_len],
+                &params.buffers.auth[..usize::from(auth_len)],
                 &message,
                 pin::PERMISSION_LARGE_BLOB_WRITE,
                 None,
                 p,
             )?;
         }
-        if offset == 0 {
+        if let Some(length) = params.total {
             self.abort_blob(p);
-            self.upload.length = params.length.unwrap();
+            self.upload.length = length.get();
             self.upload.next = 0;
             self.upload.checksum.fill(0);
             p.storage.stage_begin().map_err(|_| Status::Other)?;
@@ -346,7 +378,7 @@ impl Session {
             .digest(
                 DigestOperation::Update,
                 &mut self.upload.hash,
-                &params.bytes[..hashed],
+                &params.buffers.bytes[..hashed],
                 &mut [],
             )
             .map_err(|_| Status::Other)?;
@@ -354,12 +386,12 @@ impl Session {
             // A fragment crossing data_end starts the checksum at zero;
             // fragments already in the checksum retain their relative offset.
             let start = offset.saturating_sub(data_end);
-            let tail = &params.bytes[hashed..n];
+            let tail = &params.buffers.bytes[hashed..n];
             self.upload.checksum[start..][..tail.len()].copy_from_slice(tail);
         }
         // This is the requested durable blob, written only after authentication.
         p.storage
-            .stage_append(&params.bytes[..n])
+            .stage_append(&params.buffers.bytes[..n])
             .map_err(|_| Status::Other)?;
         // Offset equals the old cursor (or zero); end was bounded by length.
         self.upload.next = end as u16;
@@ -392,5 +424,74 @@ fn processing(p: &mut Platform<'_, impl crate::ports::Backends>) {
         // Match C's best-effort KEEPALIVE point after validation. The transport
         // observes lifecycle cancellation; this callback cannot borrow Core.
         let _ = p.device.progress();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::applets::ctap::resident::tests::Records;
+    use crate::runtime::workspace::SessionWorkspace;
+
+    #[test]
+    fn get_and_set_must_be_exclusive() {
+        for body in [&b"\xa3\x01\x01\x02\x41x\x03\x00"[..], b"\xa1\x03\x00"] {
+            let mut parser = Parser::new();
+            parser.consume(body);
+            assert_eq!(parser.finish().err(), Some(Status::InvalidParameter));
+        }
+    }
+
+    #[test]
+    fn first_fragment_requires_total() {
+        let mut parser = Parser::new();
+        parser.consume(b"\xa2\x02\x41x\x03\x00");
+        assert_eq!(parser.finish().err(), Some(Status::InvalidParameter));
+    }
+
+    #[test]
+    fn total_below_checksum_and_array_minimum_is_invalid() {
+        let mut parser = Parser::new();
+        parser.consume(b"\xa3\x02\x41x\x03\x00\x04\x10");
+        assert_eq!(parser.finish().err(), Some(Status::InvalidParameter));
+    }
+
+    #[test]
+    fn total_above_capacity_reports_full() {
+        let mut parser = Parser::new();
+        parser.consume(b"\xa3\x02\x41x\x03\x00\x04\x19\x10\x01");
+        assert_eq!(parser.finish().err(), Some(Status::LargeBlobFull));
+    }
+
+    #[test]
+    fn out_of_order_fragment_preserves_staged_prefix() {
+        let mut parser = Parser::new();
+        parser.consume(b"\xa2\x02\x41x\x03\x04");
+        let Ok(Command::LargeBlob(mut params)) = parser.finish() else {
+            panic!("valid noninitial Set fragment");
+        };
+        let mut storage = Records::default();
+        storage.stage_begin().unwrap();
+        storage.stage_append(b"abc").unwrap();
+        let mut session = Session::new();
+        session.upload.active = true;
+        session.upload.length = 17;
+        session.upload.next = 3;
+        let memory = canokey_ports::default_memory();
+        let mut backing = SessionWorkspace::new();
+        let mut workspace = backing.classic_with(&memory);
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+            storage: &mut storage,
+            crypto: &mut Records::default(),
+            device: &mut Records::default(),
+            memory: &memory,
+        };
+        assert_eq!(
+            session.large_blob(&mut params, &mut workspace, &mut p),
+            Err(Status::InvalidSequence)
+        );
+        assert!(session.upload.active);
+        assert_eq!(session.upload.next, 3);
+        assert_eq!(storage.stage, b"abc");
     }
 }
