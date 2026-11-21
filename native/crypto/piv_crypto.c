@@ -135,6 +135,8 @@ static __attribute__((noinline)) int sm2_finish(stream_t *s) {
 void ck_stream_abort(void *scratch) {
   stream_t *s = scratch;
   if (is_dsa(s->alg)) {
+    // ML-DSA-44 and -65 share the keygen state type. Keygen abort only
+    // erases state and restores the PKE clock, independent of the parameters.
     if (s->kind == STREAM_PUBLIC)
       ml_dsa_65_keygen_streaming_abort(&s->data.dsa.state.keygen);
     else if (s->kind == STREAM_SIGNING || s->kind == STREAM_SIGNATURE) {

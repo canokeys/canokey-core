@@ -20,8 +20,8 @@ static mut GENERATION: u32 = u32::MAX;
 // Endpoint-owned bytes are outside Transport. Polling/timeout may mutably
 // borrow Transport while the USB IRQ reads this buffer through its TX lease.
 const RESPONSE_BYTES: usize = HEADER + canokey_rust_core::runtime::ccid::REPLY;
-// WebUSB receives its bounded envelope here before entering Core, so a new
-// SETUP can abort partial RX without modifying the previous APDU context.
+// With WebUSB, its 288-byte command limit covers both its envelope and the
+// smaller CCID header plus short APDU reply. Otherwise only that reply fits.
 #[cfg(feature = "usb-webusb")]
 pub(crate) const SHARED_IO_BYTES: usize = canokey_rust_core::runtime::webusb::COMMAND_LIMIT;
 #[cfg(not(feature = "usb-webusb"))]
@@ -279,6 +279,8 @@ pub unsafe fn poll<P: Provider>() {
 }
 
 #[cfg(any(feature = "usb-webusb", feature = "nfc"))]
+/// CCID and WebUSB share this buffer. WebUSB admits commands when CCID is
+/// idle, and a busy WebUSB session rejects CCID through `block_competitor`.
 pub fn ck_ccid_response_buffer() -> *mut u8 {
     core::ptr::addr_of_mut!(RESPONSE).cast()
 }

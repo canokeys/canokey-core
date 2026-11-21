@@ -743,7 +743,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
+          "sha256": "4cfc37cc5a50472372062d4e8ca1b880d3eaaf5764058a7e603174cecb9b63b0"
         }
       ],
       "regressions": [
@@ -965,7 +965,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
+          "sha256": "4cfc37cc5a50472372062d4e8ca1b880d3eaaf5764058a7e603174cecb9b63b0"
         }
       ],
       "regressions": [
@@ -1094,7 +1094,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
+          "sha256": "4cfc37cc5a50472372062d4e8ca1b880d3eaaf5764058a7e603174cecb9b63b0"
         }
       ],
       "regressions": [
@@ -1161,7 +1161,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
+          "sha256": "4cfc37cc5a50472372062d4e8ca1b880d3eaaf5764058a7e603174cecb9b63b0"
         }
       ],
       "regressions": [
@@ -1268,7 +1268,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
+          "sha256": "4cfc37cc5a50472372062d4e8ca1b880d3eaaf5764058a7e603174cecb9b63b0"
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
@@ -1516,7 +1516,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
+          "sha256": "4cfc37cc5a50472372062d4e8ca1b880d3eaaf5764058a7e603174cecb9b63b0"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
@@ -1598,7 +1598,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
+          "sha256": "4cfc37cc5a50472372062d4e8ca1b880d3eaaf5764058a7e603174cecb9b63b0"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
@@ -2320,7 +2320,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
+          "sha256": "4cfc37cc5a50472372062d4e8ca1b880d3eaaf5764058a7e603174cecb9b63b0"
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
@@ -2611,7 +2611,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
+          "sha256": "4cfc37cc5a50472372062d4e8ca1b880d3eaaf5764058a7e603174cecb9b63b0"
         }
       ],
       "regressions": [
@@ -10955,6 +10955,28 @@
             "current_sha256": "82652e9577f33b64ec1375c744e2555b9aef5abff4812e6e90f1f065482263b2",
             "behaviors": [
               "C1"
+            ]
+          }
+        }
+      },
+      {
+        "record_parent": "6e4f0d88b99ae7525e498300eb8c3b916bd38394",
+        "status": "pending; no behavior, source-hunk or release approval granted",
+        "scope": "Reopened: record NDEF and OATH policy, shared transport scratch ownership, and parameter-independent ML-DSA keygen cleanup.",
+        "artifacts": {
+          "crates/ffi/src/transport/ccid/mod.rs": {
+            "previous_sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498",
+            "current_sha256": "4cfc37cc5a50472372062d4e8ca1b880d3eaaf5764058a7e603174cecb9b63b0",
+            "behaviors": [
+              "T1",
+              "T2",
+              "T5",
+              "T7",
+              "L5",
+              "L2",
+              "L7",
+              "L3",
+              "L1"
             ]
           }
         }

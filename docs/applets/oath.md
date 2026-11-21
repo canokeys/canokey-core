@@ -49,6 +49,8 @@ VALIDATE preserves the current SELECT challenge so a client may authenticate
 again after a failed proof, matching the legacy applet. Every failed proof
 revokes the access grant. A new SELECT generates a new challenge and clears
 authorization, so the previous selection's proof is not accepted.
+VALIDATE has no retry limit, matching YubiKey OATH. For password-derived
+access codes, the guessing cost depends on the host's PBKDF2 derivation.
 Increasing credentials require eight-byte, nondecreasing challenges and accept
 equality in both CALCULATE and CALCULATE ALL. Rejected challenges return 6982;
 the former C CALCULATE ALL bypass is intentionally removed. Enumeration is not
