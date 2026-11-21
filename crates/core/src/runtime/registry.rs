@@ -448,7 +448,6 @@ impl<B: crate::ports::Backends> canokey_transport_runtime::engine::Dispatch<Plat
     fn yield_native(&mut self, p: &mut Platform<'_, B>) {
         self.close_ctap(p);
     }
-    #[allow(unused_variables)]
     fn install(&mut self, platform: &mut Platform<'_, B>) -> Result<(), Sw> {
         self.view().install(platform)
     }
@@ -487,23 +486,18 @@ impl<B: crate::ports::Backends> canokey_transport_runtime::engine::Dispatch<Plat
             false
         }
     }
-    #[allow(unused_variables)]
     fn abort_command(&mut self, platform: &mut Platform<'_, B>) {
         self.view().abort_command(platform)
     }
-    #[allow(unused_variables)]
     fn begin_command(&mut self, header: Header, platform: &mut Platform<'_, B>) -> Result<(), Sw> {
         self.view().begin_command(header, platform)
     }
-    #[allow(unused_variables)]
     fn consume(&mut self, bytes: &[u8], platform: &mut Platform<'_, B>) -> Result<(), Sw> {
         self.view().consume(bytes, platform)
     }
-    #[allow(unused_variables)]
     fn end_frame(&mut self, last: bool, platform: &mut Platform<'_, B>) -> Result<(), Sw> {
         self.view().end_frame(last, platform)
     }
-    #[allow(unused_variables)]
     // Share final dispatch without expanding it into frame/response handling.
     fn finish(
         &mut self,
@@ -513,7 +507,6 @@ impl<B: crate::ports::Backends> canokey_transport_runtime::engine::Dispatch<Plat
     ) -> Result<(u32, Sw), Sw> {
         self.view().finish(header, le, platform)
     }
-    #[allow(unused_variables)]
     // Keep applet workspace addressing out of the response cursor and its
     // error/close paths; this boundary reduces the complete Thumb-1 image.
     fn read_response(
@@ -524,7 +517,6 @@ impl<B: crate::ports::Backends> canokey_transport_runtime::engine::Dispatch<Plat
     ) -> Result<usize, Sw> {
         self.view().read_response(offset, out, platform)
     }
-    #[allow(unused_variables)]
     fn close_response(&mut self, platform: &mut Platform<'_, B>) {
         self.view().close_response(platform)
     }
@@ -641,7 +633,7 @@ impl Registry {
     }
 }
 impl RegistryView<'_> {
-    #[allow(unused_variables)]
+    #[cfg_attr(not(has_applet), allow(unused_variables))]
     #[inline(never)]
     fn reset_sessions(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
         #[cfg(feature = "admin")]
@@ -754,7 +746,7 @@ impl RegistryView<'_> {
         Ok((0, Sw::SUCCESS))
     }
 
-    #[allow(unused_variables)]
+    #[cfg_attr(not(any(has_applet, feature = "pass")), allow(unused_variables))]
     #[inline(never)]
     fn install(
         &mut self,
@@ -853,7 +845,10 @@ impl RegistryView<'_> {
         }
     }
 
-    #[allow(unused_variables)]
+    #[cfg_attr(
+        not(any(classic_presence, feature = "admin", feature = "ndef")),
+        allow(unused_variables)
+    )]
     #[inline(never)]
     fn abort_command(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
         match &mut self.applet {
@@ -880,10 +875,13 @@ impl RegistryView<'_> {
         }
     }
 
-    #[allow(unused_variables)]
     #[inline(never)]
     fn begin_command(
         &mut self,
+        #[cfg_attr(
+            not(any(crypto_applet, feature = "ndef", feature = "admin")),
+            allow(unused_variables)
+        )]
         header: Header,
         platform: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
@@ -915,11 +913,19 @@ impl RegistryView<'_> {
         }
     }
 
-    #[allow(unused_variables)]
     #[inline(never)]
     fn consume(
         &mut self,
-        bytes: &[u8],
+        #[cfg_attr(not(has_applet), allow(unused_variables))] bytes: &[u8],
+        #[cfg_attr(
+            not(any(
+                feature = "ndef",
+                feature = "admin",
+                feature = "openpgp",
+                feature = "piv"
+            )),
+            allow(unused_variables)
+        )]
         platform: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         match &mut self.applet {
@@ -949,7 +955,7 @@ impl RegistryView<'_> {
         }
     }
 
-    #[allow(unused_variables)]
+    #[cfg_attr(not(feature = "ndef"), allow(unused_variables))]
     #[inline(never)]
     fn end_frame(
         &mut self,
@@ -967,14 +973,24 @@ impl RegistryView<'_> {
         Ok(())
     }
 
-    #[allow(unused_variables)]
     // Share final dispatch without expanding it into frame/response handling.
     #[inline(never)]
     fn finish(
         &mut self,
+        #[cfg_attr(
+            not(any(crypto_applet, feature = "admin", feature = "oath")),
+            allow(unused_variables)
+        )]
         header: Header,
+        #[cfg_attr(
+            not(any(classic_presence, feature = "admin", feature = "ndef")),
+            allow(unused_variables)
+        )]
         le: u32,
-        platform: &mut Platform<'_, impl crate::ports::Backends>,
+        #[cfg_attr(not(has_applet), allow(unused_variables))] platform: &mut Platform<
+            '_,
+            impl crate::ports::Backends,
+        >,
     ) -> Result<(u32, Sw), Sw> {
         match &mut self.applet {
             #[cfg(feature = "ndef")]
@@ -1009,14 +1025,17 @@ impl RegistryView<'_> {
         }
     }
 
-    #[allow(unused_variables)]
     // Keep applet workspace addressing out of the response cursor and its
     // error/close paths; this boundary reduces the complete Thumb-1 image.
     #[inline(never)]
     fn read_response(
         &mut self,
-        offset: u32,
-        out: &mut [u8],
+        #[cfg_attr(not(has_applet), allow(unused_variables))] offset: u32,
+        #[cfg_attr(not(has_applet), allow(unused_variables))] out: &mut [u8],
+        #[cfg_attr(
+            not(any(crypto_applet, feature = "admin", feature = "ndef")),
+            allow(unused_variables)
+        )]
         platform: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw> {
         match &mut self.applet {
@@ -1051,7 +1070,10 @@ impl RegistryView<'_> {
         }
     }
 
-    #[allow(unused_variables)]
+    #[cfg_attr(
+        not(any(crypto_applet, feature = "admin", feature = "oath")),
+        allow(unused_variables)
+    )]
     #[inline(never)]
     fn close_response(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
         match &mut self.applet {
@@ -1097,7 +1119,7 @@ impl RegistryView<'_> {
         inhibit: bool,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Option<u8> {
-        #[allow(unused_mut)]
+        #[cfg_attr(not(presence_applet), allow(unused_mut))]
         let mut presence = false;
         #[cfg(classic_presence)]
         {

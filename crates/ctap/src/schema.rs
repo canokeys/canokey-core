@@ -277,17 +277,19 @@ impl Builder {
             output
         }
         let mut output = String::from(
-            "// Generated immutable GetInfo schema.\n#[allow(unused_imports)]\nuse canokey_ctap::info::{Part, Flag, Value};\nconst INFO: &[Part] = &[\n",
+            "// Generated immutable GetInfo schema.\nuse canokey_ctap::info::Part;\nconst INFO: &[Part] = &[\n",
         );
         for part in &self.parts {
             output.push_str(&match part {
                 Fragment::Encoded(bytes) => format!("Part::Encoded({})", literal(bytes)),
                 Fragment::Choice(flag, yes, no) => format!(
-                    "Part::Choice(Flag::{flag:?}, {}, {})",
+                    "Part::Choice(canokey_ctap::info::Flag::{flag:?}, {}, {})",
                     literal(yes),
                     literal(no)
                 ),
-                Fragment::Value(value) => format!("Part::Value(Value::{value:?})"),
+                Fragment::Value(value) => {
+                    format!("Part::Value(canokey_ctap::info::Value::{value:?})")
+                }
             });
             output.push_str(",\n");
         }

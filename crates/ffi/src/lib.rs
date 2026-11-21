@@ -2,8 +2,10 @@
 #![no_std]
 #[cfg(test)]
 extern crate std;
-#[cfg(test)]
-#[allow(dead_code)] // Reduced feature profiles may contain no transport scenario.
+#[cfg(all(
+    test,
+    any(feature = "usb-ccid", feature = "usb-hid", feature = "usb-keyboard")
+))]
 static TRANSPORT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 // Runtime entrypoints use the same serialized, lazy BSS initialization
 // pattern. Keeping it in one macro prevents the READY flag and constructor

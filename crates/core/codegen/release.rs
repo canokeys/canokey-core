@@ -42,6 +42,8 @@ pub fn main() -> u32 {
         };
         if name == "CANOKEY_FIDO_FIRMWARE_VERSION" {
             firmware = number;
+            // Production encodes this value in the generated GetInfo schema.
+            release.push_str("#[cfg(all(test, feature = \"ctap\"))]\n");
         }
         assert!(number <= max, "{name} exceeds its ABI width");
         release.push_str(&format!("pub const {declaration} = {number};\n"));

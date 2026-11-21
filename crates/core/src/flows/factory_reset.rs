@@ -55,7 +55,7 @@ pub fn oath(
 pub fn run(
     mut pass: Option<&mut Pass>,
     #[cfg(feature = "ctap")] ctap: &mut crate::applets::ctap::Applet,
-    #[allow(unused_variables)] workspace: &mut SessionWorkspace,
+    #[cfg_attr(not(crypto_applet), allow(unused_variables))] workspace: &mut SessionWorkspace,
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Error> {
     // Session revocation precedes this flow. Reuse individual reset entrypoints

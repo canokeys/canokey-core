@@ -3,7 +3,7 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
-#[allow(dead_code)] // Reduced applet/interface profiles consume only some fields.
+#[cfg_attr(not(feature = "ctap"), allow(dead_code))]
 pub(crate) mod release {
     include!(concat!(env!("OUT_DIR"), "/release_versions.rs"));
 }

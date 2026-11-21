@@ -4,7 +4,6 @@ mod ctap;
 mod release;
 
 #[path = "src/config.rs"]
-#[allow(dead_code)]
 mod config;
 
 fn main() {
