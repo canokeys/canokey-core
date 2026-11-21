@@ -204,10 +204,15 @@
           "scope": "128 extracted pinned-C schema executions with explicit storage/configuration stubs; 32 expected wide-ID failures; not firmware/transport execution"
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -401,16 +406,26 @@
           "scope": "28 literal cases through actual C/Rust HID and applets:27 equal-output, one explicit unresolved fresh retry-count case. Declared counter8 fixture for three maximum requests; no response normalization, physical or withheld-IN/IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/auth-response-checkpoint.json",
-          "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim.",
+          "original": {
+            "path": "docs/sync/evidence/auth-response-checkpoint.json",
+            "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -596,16 +611,26 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/host-ctest.log",
+            "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-ccid/report.json",
@@ -654,16 +679,26 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/host-ctest.log",
+            "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-ccid/report.json",
@@ -702,16 +737,26 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/host-ctest.log",
+            "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -760,16 +805,26 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/host-ctest.log",
+            "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "docs/history/ccid-extended-removed/provenance.json",
@@ -845,16 +900,26 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/host-ctest.log",
+            "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-nfc/report.json",
@@ -863,16 +928,26 @@
           "scope": "Same literal packets through unchanged pinned-C and current Rust transport facades, with real applets; reported cases are partial coverage of named oracle rows. No physical acceptance."
         },
         {
-          "path": "docs/sync/evidence/nfc-source.json",
-          "sha256": "43afedd41da56f2a6ff7608b50451d98829bbfdd84e62cbb34b1bd26df8856e4",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "41 actual Rust production-dispatch injections and generic failed-close publication regression; not C transport or physical acceptance."
+          "scope": "41 actual Rust production-dispatch injections and generic failed-close publication regression; not C transport or physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/nfc-source.json",
+            "sha256": "43afedd41da56f2a6ff7608b50451d98829bbfdd84e62cbb34b1bd26df8856e4",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -923,16 +998,26 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/host-ctest.log",
+            "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-nfc/report.json",
@@ -998,10 +1083,15 @@
           "scope": "Same literal packets through unchanged pinned-C and current Rust transport facades, with real applets; reported cases are partial coverage of named oracle rows. No physical acceptance."
         },
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-usb-ownership/report.json",
@@ -1057,16 +1147,26 @@
           "scope": "Same literal packets through unchanged pinned-C and current Rust transport facades, with real applets; reported cases are partial coverage of named oracle rows. No physical acceptance."
         },
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -1121,10 +1221,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-webusb/report.json",
@@ -1194,10 +1299,15 @@
           "scope": "Same literal packets through unchanged pinned-C and current Rust transport facades, with real applets; reported cases are partial coverage of named oracle rows. No physical acceptance."
         },
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-usb-ownership/report.json",
@@ -1246,10 +1356,15 @@
           "scope": "Same literal packets through unchanged pinned-C and current Rust transport facades, with real applets; reported cases are partial coverage of named oracle rows. No physical acceptance."
         },
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -1289,10 +1404,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-hid-ownership/report.json",
@@ -1357,10 +1477,15 @@
           "scope": "Same literal packets through unchanged pinned-C and current Rust transport facades, with real applets; reported cases are partial coverage of named oracle rows. No physical acceptance."
         },
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -1415,10 +1540,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-hid-ownership/report.json",
@@ -1439,16 +1569,26 @@
           "scope": "40 literal C/Rust channel/WINK/framing/disabled/CANCEL cases:36 equal-output,4 explicit unresolved CID1 cases. Event-level drained IN; no physical or arbitrary IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/hid-source-review.json",
-          "sha256": "5525464d2d3cd07e31bc3d09b2d28d476b4affe42cb487fc389a4c4e415612e6",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "32 explicitly reviewed CTAPHID source units; maps mechanisms and leaves non-proven acceptance open."
+          "scope": "32 explicitly reviewed CTAPHID source units; maps mechanisms and leaves non-proven acceptance open.",
+          "original": {
+            "path": "docs/sync/evidence/hid-source-review.json",
+            "sha256": "5525464d2d3cd07e31bc3d09b2d28d476b4affe42cb487fc389a4c4e415612e6",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/cleanup-irq-source-review.json",
-          "sha256": "8c486e546be44894a9ce54e7033dfe8ec76e2983aa6a407f4eb9236962d03e25",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "22 reviewed session/context source units;200 Rust Core-erasure IRQ injections with current literal C/Rust ownership/reset vectors. No C in-cleanup IRQ, full CAS or physical acceptance."
+          "scope": "22 reviewed session/context source units;200 Rust Core-erasure IRQ injections with current literal C/Rust ownership/reset vectors. No C in-cleanup IRQ, full CAS or physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/cleanup-irq-source-review.json",
+            "sha256": "8c486e546be44894a9ce54e7033dfe8ec76e2983aa6a407f4eb9236962d03e25",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -1484,16 +1624,26 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/nfc-state-rename.json",
-          "sha256": "27270f305b89b6c1a457d87c81d3b8975830e061deb94799c52d16532463c552",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Exact mechanical source transformation for this follow-up and identical merge-parent delta only. Not acceptance of the earlier58-hunk NFC implementation or physical transport."
+          "scope": "Exact mechanical source transformation for this follow-up and identical merge-parent delta only. Not acceptance of the earlier58-hunk NFC implementation or physical transport.",
+          "original": {
+            "path": "docs/sync/evidence/nfc-state-rename.json",
+            "sha256": "27270f305b89b6c1a457d87c81d3b8975830e061deb94799c52d16532463c552",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -1553,10 +1703,15 @@
           "scope": "Literal EP0 event replay through pinned C USB/WebUSB and Rust production USB/WebUSB facade, with real applets. No physical USB, cross-transport concurrency or CIU resource acceptance inferred."
         },
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-usb-ownership/report.json",
@@ -1565,16 +1720,26 @@
           "scope": "Literal interleaved CCID and WebUSB events through unchanged pinned C and Rust production facades with real applets. Reports EP0 and CCID bytes separately without normalization. Only the recorded serialized poll schedule; no HID, physical USB, arbitrary IRQ race or CIU resource acceptance."
         },
         {
-          "path": "docs/sync/evidence/webusb-readiness-source-review.json",
-          "sha256": "9cc35aeb236c894a79bba015b02f269ec791ff5171d8b6616102ea10f1b48341",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Two explicitly inspected device-session acquisition guard/no-expiry source hunks; surrounding reservation/CAS/lifecycle hunks remain unreviewed."
+          "scope": "Two explicitly inspected device-session acquisition guard/no-expiry source hunks; surrounding reservation/CAS/lifecycle hunks remain unreviewed.",
+          "original": {
+            "path": "docs/sync/evidence/webusb-readiness-source-review.json",
+            "sha256": "9cc35aeb236c894a79bba015b02f269ec791ff5171d8b6616102ea10f1b48341",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/cleanup-irq-source-review.json",
-          "sha256": "8c486e546be44894a9ce54e7033dfe8ec76e2983aa6a407f4eb9236962d03e25",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "22 reviewed session/context source units;200 Rust Core-erasure IRQ injections with current literal C/Rust ownership/reset vectors. No C in-cleanup IRQ, full CAS or physical acceptance."
+          "scope": "22 reviewed session/context source units;200 Rust Core-erasure IRQ injections with current literal C/Rust ownership/reset vectors. No C in-cleanup IRQ, full CAS or physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/cleanup-irq-source-review.json",
+            "sha256": "8c486e546be44894a9ce54e7033dfe8ec76e2983aa6a407f4eb9236962d03e25",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -1635,10 +1800,15 @@
           "scope": "Literal EP0 event replay through pinned C USB/WebUSB and Rust production USB/WebUSB facade, with real applets. No physical USB, cross-transport concurrency or CIU resource acceptance inferred."
         },
         {
-          "path": "docs/sync/evidence/source-review.json",
-          "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/source-review.json",
+            "sha256": "9eeefa2393f099c97f8171182aabcd621e7040522633e12fad9fad35ed1bbac1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-usb-ownership/report.json",
@@ -1728,16 +1898,26 @@
           "scope": "Nine cases/75 events: four real class readiness schedules plus malformed-native preservation have equal output; four invalid-native cases retain unresolved L8 differences. No physical/arbitrary IRQ/withheld-IN acceptance."
         },
         {
-          "path": "docs/sync/evidence/rom-review-20261108.json",
-          "sha256": "3e31f8b3954facd8915f6120e728feb917b2f4a3cbc54da924e875e4810905de",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "ROM-only behavioral preservation; no new C synchronization units approved"
+          "scope": "ROM-only behavioral preservation; no new C synchronization units approved",
+          "original": {
+            "path": "docs/sync/evidence/rom-review-20261108.json",
+            "sha256": "3e31f8b3954facd8915f6120e728feb917b2f4a3cbc54da924e875e4810905de",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/auth-response-checkpoint.json",
-          "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim.",
+          "original": {
+            "path": "docs/sync/evidence/auth-response-checkpoint.json",
+            "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -1790,10 +1970,15 @@
           "scope": "40 literal C/Rust channel/WINK/framing/disabled/CANCEL cases:36 equal-output,4 explicit unresolved CID1 cases. Event-level drained IN; no physical or arbitrary IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/hid-source-review.json",
-          "sha256": "5525464d2d3cd07e31bc3d09b2d28d476b4affe42cb487fc389a4c4e415612e6",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "32 explicitly reviewed CTAPHID source units; maps mechanisms and leaves non-proven acceptance open."
+          "scope": "32 explicitly reviewed CTAPHID source units; maps mechanisms and leaves non-proven acceptance open.",
+          "original": {
+            "path": "docs/sync/evidence/hid-source-review.json",
+            "sha256": "5525464d2d3cd07e31bc3d09b2d28d476b4affe42cb487fc389a4c4e415612e6",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -1880,10 +2065,15 @@
           "scope": "40 literal C/Rust channel/WINK/framing/disabled/CANCEL cases:36 equal-output,4 explicit unresolved CID1 cases. Event-level drained IN; no physical or arbitrary IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/host-ctest.log",
+            "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -1921,10 +2111,15 @@
           "scope": "40 literal C/Rust channel/WINK/framing/disabled/CANCEL cases:36 equal-output,4 explicit unresolved CID1 cases. Event-level drained IN; no physical or arbitrary IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/host-ctest.log",
+            "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -1966,16 +2161,26 @@
           "scope": "40 literal C/Rust channel/WINK/framing/disabled/CANCEL cases:36 equal-output,4 explicit unresolved CID1 cases. Event-level drained IN; no physical or arbitrary IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/host-ctest.log",
+            "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/hid-source-review.json",
-          "sha256": "5525464d2d3cd07e31bc3d09b2d28d476b4affe42cb487fc389a4c4e415612e6",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "32 explicitly reviewed CTAPHID source units; maps mechanisms and leaves non-proven acceptance open."
+          "scope": "32 explicitly reviewed CTAPHID source units; maps mechanisms and leaves non-proven acceptance open.",
+          "original": {
+            "path": "docs/sync/evidence/hid-source-review.json",
+            "sha256": "5525464d2d3cd07e31bc3d09b2d28d476b4affe42cb487fc389a4c4e415612e6",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -2023,16 +2228,26 @@
           "scope": "40 literal C/Rust channel/WINK/framing/disabled/CANCEL cases:36 equal-output,4 explicit unresolved CID1 cases. Event-level drained IN; no physical or arbitrary IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/host-ctest.log",
+            "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/hid-source-review.json",
-          "sha256": "5525464d2d3cd07e31bc3d09b2d28d476b4affe42cb487fc389a4c4e415612e6",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "32 explicitly reviewed CTAPHID source units; maps mechanisms and leaves non-proven acceptance open."
+          "scope": "32 explicitly reviewed CTAPHID source units; maps mechanisms and leaves non-proven acceptance open.",
+          "original": {
+            "path": "docs/sync/evidence/hid-source-review.json",
+            "sha256": "5525464d2d3cd07e31bc3d09b2d28d476b4affe42cb487fc389a4c4e415612e6",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -2081,10 +2296,15 @@
           "scope": "36 literal C/Rust USB-control cases:29 equal-output, five U3 GET_STATUS and two U4 busy-descriptor differences. No physical/controller/IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/usb-control-source-review.json",
-          "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "91 explicitly reviewed source units in13 parent/file diffs, including merge duplicates; acceptance remains separately scoped."
+          "scope": "91 explicitly reviewed source units in13 parent/file diffs, including merge duplicates; acceptance remains separately scoped.",
+          "original": {
+            "path": "docs/sync/evidence/usb-control-source-review.json",
+            "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -2130,10 +2350,15 @@
           "scope": "36 literal C/Rust USB-control cases:29 equal-output, five U3 GET_STATUS and two U4 busy-descriptor differences. No physical/controller/IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/usb-control-source-review.json",
-          "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "91 explicitly reviewed source units in13 parent/file diffs, including merge duplicates; acceptance remains separately scoped."
+          "scope": "91 explicitly reviewed source units in13 parent/file diffs, including merge duplicates; acceptance remains separately scoped.",
+          "original": {
+            "path": "docs/sync/evidence/usb-control-source-review.json",
+            "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -2180,10 +2405,15 @@
           "scope": "36 literal C/Rust USB-control cases:29 equal-output, five U3 GET_STATUS and two U4 busy-descriptor differences. No physical/controller/IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/usb-control-source-review.json",
-          "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "91 explicitly reviewed source units in13 parent/file diffs, including merge duplicates; acceptance remains separately scoped."
+          "scope": "91 explicitly reviewed source units in13 parent/file diffs, including merge duplicates; acceptance remains separately scoped.",
+          "original": {
+            "path": "docs/sync/evidence/usb-control-source-review.json",
+            "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "docs/sync/c312-correctness-decisions.md",
@@ -2240,10 +2470,15 @@
           "scope": "36 literal C/Rust USB-control cases:29 equal-output, five U3 GET_STATUS and two U4 busy-descriptor differences. No physical/controller/IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/usb-control-source-review.json",
-          "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "91 explicitly reviewed source units in13 parent/file diffs, including merge duplicates; acceptance remains separately scoped."
+          "scope": "91 explicitly reviewed source units in13 parent/file diffs, including merge duplicates; acceptance remains separately scoped.",
+          "original": {
+            "path": "docs/sync/evidence/usb-control-source-review.json",
+            "sha256": "53203d837ed4c08eeebba3cfef969ebab1790b62171d1bb61aeef9904268c7c5",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "docs/sync/c312-correctness-decisions.md",
@@ -2298,10 +2533,15 @@
           "scope": "33 literal C/Rust cases/302 events; all equal output. Actual main-loop lifecycle service, duplicate configuration, reset/reconfiguration and empty-native C0. No physical/arbitrary IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/usb-lifecycle-source-review.json",
-          "sha256": "2a13036534bc5261b1a92d502e4eb4fa65d47d971d6c06c030e998910c828054",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "41 explicitly read source units in seven parent/file diffs, including merge duplicates. Other lifecycle schedules remain open."
+          "scope": "41 explicitly read source units in seven parent/file diffs, including merge duplicates. Other lifecycle schedules remain open.",
+          "original": {
+            "path": "docs/sync/evidence/usb-lifecycle-source-review.json",
+            "sha256": "2a13036534bc5261b1a92d502e4eb4fa65d47d971d6c06c030e998910c828054",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -2406,10 +2646,15 @@
           "scope": "33 literal C/Rust cases/302 events; all equal output. Actual main-loop lifecycle service, duplicate configuration, reset/reconfiguration and empty-native C0. No physical/arbitrary IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/usb-lifecycle-source-review.json",
-          "sha256": "2a13036534bc5261b1a92d502e4eb4fa65d47d971d6c06c030e998910c828054",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "41 explicitly read source units in seven parent/file diffs, including merge duplicates. Other lifecycle schedules remain open."
+          "scope": "41 explicitly read source units in seven parent/file diffs, including merge duplicates. Other lifecycle schedules remain open.",
+          "original": {
+            "path": "docs/sync/evidence/usb-lifecycle-source-review.json",
+            "sha256": "2a13036534bc5261b1a92d502e4eb4fa65d47d971d6c06c030e998910c828054",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-usb-readiness/report.json",
@@ -2418,10 +2663,15 @@
           "scope": "Nine cases/75 events: four real class readiness schedules plus malformed-native preservation have equal output; four invalid-native cases retain unresolved L8 differences. No physical/arbitrary IRQ/withheld-IN acceptance."
         },
         {
-          "path": "docs/sync/evidence/usb-readiness-source-review.json",
-          "sha256": "bad0d2bc46194afda6f6cd91e4fc3f33ec43c1d161064d8e4096e2e13c4fb375",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "12 explicitly reviewed source units in four class-send diffs; composite callbacks and native source precedence inspected at pinned final source."
+          "scope": "12 explicitly reviewed source units in four class-send diffs; composite callbacks and native source precedence inspected at pinned final source.",
+          "original": {
+            "path": "docs/sync/evidence/usb-readiness-source-review.json",
+            "sha256": "bad0d2bc46194afda6f6cd91e4fc3f33ec43c1d161064d8e4096e2e13c4fb375",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-webusb-readiness/report.json",
@@ -2430,10 +2680,15 @@
           "scope": "Eight cases/126 events with equal C/Rust output: fresh-product WebUSB command refusal before cleanup, idle response/status/configuration controls, post-cleanup Admin SELECT recovery. Event-level IN draining, no retained pre-reset-state/physical/arbitrary IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/webusb-readiness-source-review.json",
-          "sha256": "9cc35aeb236c894a79bba015b02f269ec791ff5171d8b6616102ea10f1b48341",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Two explicitly inspected device-session acquisition guard/no-expiry source hunks; surrounding reservation/CAS/lifecycle hunks remain unreviewed."
+          "scope": "Two explicitly inspected device-session acquisition guard/no-expiry source hunks; surrounding reservation/CAS/lifecycle hunks remain unreviewed.",
+          "original": {
+            "path": "docs/sync/evidence/webusb-readiness-source-review.json",
+            "sha256": "9cc35aeb236c894a79bba015b02f269ec791ff5171d8b6616102ea10f1b48341",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-webusb-retained/report.json",
@@ -2442,22 +2697,37 @@
           "scope": "Fourteen cases/605 events, equal output: existing waiting/RX/response/sending/Hold/PIN/FIDO-source states across two deferred lifecycle forms. Status retention, command/response refusal, old-source rejection and PIN revocation; virtual EP0, not arbitrary executing/cleanup IRQ or physical acceptance."
         },
         {
-          "path": "docs/sync/evidence/webusb-retained-source-review.json",
-          "sha256": "beecfb93164f6498b9ed51c9029776cc2d177d65658def2e36f5523438b4f368",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Two explicitly inspected context clear/init source hunks; complete reservation/CAS/IRQ and runtime-resource acceptance remain open."
+          "scope": "Two explicitly inspected context clear/init source hunks; complete reservation/CAS/IRQ and runtime-resource acceptance remain open.",
+          "original": {
+            "path": "docs/sync/evidence/webusb-retained-source-review.json",
+            "sha256": "beecfb93164f6498b9ed51c9029776cc2d177d65658def2e36f5523438b4f368",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/cleanup-irq-source-review.json",
-          "sha256": "8c486e546be44894a9ce54e7033dfe8ec76e2983aa6a407f4eb9236962d03e25",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "22 reviewed session/context source units;200 Rust Core-erasure IRQ injections with current literal C/Rust ownership/reset vectors. No C in-cleanup IRQ, full CAS or physical acceptance."
+          "scope": "22 reviewed session/context source units;200 Rust Core-erasure IRQ injections with current literal C/Rust ownership/reset vectors. No C in-cleanup IRQ, full CAS or physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/cleanup-irq-source-review.json",
+            "sha256": "8c486e546be44894a9ce54e7033dfe8ec76e2983aa6a407f4eb9236962d03e25",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/auth-response-checkpoint.json",
-          "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim.",
+          "original": {
+            "path": "docs/sync/evidence/auth-response-checkpoint.json",
+            "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -2501,10 +2771,15 @@
           "scope": "33 literal C/Rust cases/302 events; all equal output. Actual main-loop lifecycle service, duplicate configuration, reset/reconfiguration and empty-native C0. No physical/arbitrary IRQ acceptance."
         },
         {
-          "path": "docs/sync/evidence/usb-lifecycle-source-review.json",
-          "sha256": "2a13036534bc5261b1a92d502e4eb4fa65d47d971d6c06c030e998910c828054",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "41 explicitly read source units in seven parent/file diffs, including merge duplicates. Other lifecycle schedules remain open."
+          "scope": "41 explicitly read source units in seven parent/file diffs, including merge duplicates. Other lifecycle schedules remain open.",
+          "original": {
+            "path": "docs/sync/evidence/usb-lifecycle-source-review.json",
+            "sha256": "2a13036534bc5261b1a92d502e4eb4fa65d47d971d6c06c030e998910c828054",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-usb-readiness/report.json",
@@ -2513,10 +2788,15 @@
           "scope": "Nine cases/75 events: four real class readiness schedules plus malformed-native preservation have equal output; four invalid-native cases retain unresolved L8 differences. No physical/arbitrary IRQ/withheld-IN acceptance."
         },
         {
-          "path": "docs/sync/evidence/auth-response-checkpoint.json",
-          "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim.",
+          "original": {
+            "path": "docs/sync/evidence/auth-response-checkpoint.json",
+            "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -2560,16 +2840,26 @@
           "scope": "Nine cases/75 events: four real class readiness schedules plus malformed-native preservation have equal output; four invalid-native cases retain unresolved L8 differences. No physical/arbitrary IRQ/withheld-IN acceptance."
         },
         {
-          "path": "docs/sync/evidence/usb-readiness-source-review.json",
-          "sha256": "bad0d2bc46194afda6f6cd91e4fc3f33ec43c1d161064d8e4096e2e13c4fb375",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Pinned final CTAPHID dispatch inspected; E53 identifies retained-source override, without approval to reproduce stale output."
+          "scope": "Pinned final CTAPHID dispatch inspected; E53 identifies retained-source override, without approval to reproduce stale output.",
+          "original": {
+            "path": "docs/sync/evidence/usb-readiness-source-review.json",
+            "sha256": "bad0d2bc46194afda6f6cd91e4fc3f33ec43c1d161064d8e4096e2e13c4fb375",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/auth-response-checkpoint.json",
-          "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim.",
+          "original": {
+            "path": "docs/sync/evidence/auth-response-checkpoint.json",
+            "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "docs/sync/c312-correctness-decisions.md",
@@ -2633,10 +2923,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/cleanup-irq-source-review.json",
-          "sha256": "8c486e546be44894a9ce54e7033dfe8ec76e2983aa6a407f4eb9236962d03e25",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "22 reviewed session/context source units;200 Rust Core-erasure IRQ injections with current literal C/Rust ownership/reset vectors. No C in-cleanup IRQ, full CAS or physical acceptance."
+          "scope": "22 reviewed session/context source units;200 Rust Core-erasure IRQ injections with current literal C/Rust ownership/reset vectors. No C in-cleanup IRQ, full CAS or physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/cleanup-irq-source-review.json",
+            "sha256": "8c486e546be44894a9ce54e7033dfe8ec76e2983aa6a407f4eb9236962d03e25",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-usb-ownership/report.json",
@@ -2694,10 +2989,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/ctap-parser-source-review.json",
-          "sha256": "df7bc965af4bead6112e3ad0c58ffc1345ddd2713e95af16592f2ac75d9dfe43",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "87 explicitly reviewed CTAP parser/RP source units;445 C/Rust fragmented schema comparisons and C-only fault/cancellation results, with independent RP response verification. Not physical or full cancellation parity."
+          "scope": "87 explicitly reviewed CTAP parser/RP source units;445 C/Rust fragmented schema comparisons and C-only fault/cancellation results, with independent RP response verification. Not physical or full cancellation parity.",
+          "original": {
+            "path": "docs/sync/evidence/ctap-parser-source-review.json",
+            "sha256": "df7bc965af4bead6112e3ad0c58ffc1345ddd2713e95af16592f2ac75d9dfe43",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-parser/report.json",
@@ -2706,10 +3006,15 @@
           "scope": "Unchanged C exact-RP parser/response regression executes4 cases per invocation,8 total. Rust independently checks same-suffix/first-byte and same-prefix/suffix mutations at254 bytes."
         },
         {
-          "path": "docs/sync/evidence/rom-review-20261108.json",
-          "sha256": "3e31f8b3954facd8915f6120e728feb917b2f4a3cbc54da924e875e4810905de",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "ROM-only behavioral preservation; no new C synchronization units approved"
+          "scope": "ROM-only behavioral preservation; no new C synchronization units approved",
+          "original": {
+            "path": "docs/sync/evidence/rom-review-20261108.json",
+            "sha256": "3e31f8b3954facd8915f6120e728feb917b2f4a3cbc54da924e875e4810905de",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -2784,10 +3089,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/ctap-parser-source-review.json",
-          "sha256": "df7bc965af4bead6112e3ad0c58ffc1345ddd2713e95af16592f2ac75d9dfe43",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "87 explicitly reviewed CTAP parser/RP source units;445 C/Rust fragmented schema comparisons and C-only fault/cancellation results, with independent RP response verification. Not physical or full cancellation parity."
+          "scope": "87 explicitly reviewed CTAP parser/RP source units;445 C/Rust fragmented schema comparisons and C-only fault/cancellation results, with independent RP response verification. Not physical or full cancellation parity.",
+          "original": {
+            "path": "docs/sync/evidence/ctap-parser-source-review.json",
+            "sha256": "df7bc965af4bead6112e3ad0c58ffc1345ddd2713e95af16592f2ac75d9dfe43",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-parser/report.json",
@@ -2796,34 +3106,59 @@
           "scope": "Unchanged six C CTAP parsers, contiguous/source status comparison and callback fault/cancellation sweep; unchanged exact-RP response test. No USB/RF or Rust cancellation parity."
         },
         {
-          "path": "docs/sync/evidence/nfc-source.json",
-          "sha256": "43afedd41da56f2a6ff7608b50451d98829bbfdd84e62cbb34b1bd26df8856e4",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "41 actual Rust production-dispatch injections and generic failed-close publication regression; not C transport or physical acceptance."
+          "scope": "41 actual Rust production-dispatch injections and generic failed-close publication regression; not C transport or physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/nfc-source.json",
+            "sha256": "43afedd41da56f2a6ff7608b50451d98829bbfdd84e62cbb34b1bd26df8856e4",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/response-stream-source-review.json",
-          "sha256": "0420fd272ceb2d643d2c47818a5ebc928ca62643b35e6efd924ae1669de2b0ca",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Explicit request-source aliases, zeroing, early GetInfo closure and redundant PKE-wrapper removal; separate41 Rust source injections retain their prior scope."
+          "scope": "Explicit request-source aliases, zeroing, early GetInfo closure and redundant PKE-wrapper removal; separate41 Rust source injections retain their prior scope.",
+          "original": {
+            "path": "docs/sync/evidence/response-stream-source-review.json",
+            "sha256": "0420fd272ceb2d643d2c47818a5ebc928ca62643b35e6efd924ae1669de2b0ca",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/rom-review-20261108.json",
-          "sha256": "3e31f8b3954facd8915f6120e728feb917b2f4a3cbc54da924e875e4810905de",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "ROM-only behavioral preservation; no new C synchronization units approved"
+          "scope": "ROM-only behavioral preservation; no new C synchronization units approved",
+          "original": {
+            "path": "docs/sync/evidence/rom-review-20261108.json",
+            "sha256": "3e31f8b3954facd8915f6120e728feb917b2f4a3cbc54da924e875e4810905de",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/auth-response-checkpoint.json",
-          "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim.",
+          "original": {
+            "path": "docs/sync/evidence/auth-response-checkpoint.json",
+            "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -2912,10 +3247,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/response-stream-source-review.json",
-          "sha256": "0420fd272ceb2d643d2c47818a5ebc928ca62643b35e6efd924ae1669de2b0ca",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "118 inspected source units: request aliases/cleanup, segmented largeBlobs output, exact generalization and final merge deltas. Not full response-class equivalence."
+          "scope": "118 inspected source units: request aliases/cleanup, segmented largeBlobs output, exact generalization and final merge deltas. Not full response-class equivalence.",
+          "original": {
+            "path": "docs/sync/evidence/response-stream-source-review.json",
+            "sha256": "0420fd272ceb2d643d2c47818a5ebc928ca62643b35e6efd924ae1669de2b0ca",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-large-blob-usb/report.json",
@@ -2930,64 +3270,114 @@
           "scope": "Pinned-C/current-Rust11 cases/2478 events; actual I-block source RX, finite Le, file output and retries; all equal-output."
         },
         {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/host-ctest.log",
+            "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/auth-response-checkpoint.json",
-          "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim.",
+          "original": {
+            "path": "docs/sync/evidence/auth-response-checkpoint.json",
+            "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/auth-response-source-review.json",
-          "sha256": "cf4bb34b7b101fcd878275a1d996d72cd951fe54d0cfdc8735e0e5f1e0e3af1d",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Focused C ordinary-CBOR threshold, MC/U2F source publication and native MSG no-source Le path. No additional source units approved."
+          "scope": "Focused C ordinary-CBOR threshold, MC/U2F source publication and native MSG no-source Le path. No additional source units approved.",
+          "original": {
+            "path": "docs/sync/evidence/auth-response-source-review.json",
+            "sha256": "cf4bb34b7b101fcd878275a1d996d72cd951fe54d0cfdc8735e0e5f1e0e3af1d",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/u2f-progress-checkpoint.json",
-          "sha256": "d83d78188dd4b6ac4f934221f9a04281259db7b4f6e86b0d7912ee06d6cb2bfd",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Replayed E58 matrix after T18 alignment; 96 C/126 Rust checks and preserved exact CTAP/native errors."
+          "scope": "Replayed E58 matrix after T18 alignment; 96 C/126 Rust checks and preserved exact CTAP/native errors.",
+          "original": {
+            "path": "docs/sync/evidence/u2f-progress-checkpoint.json",
+            "sha256": "d83d78188dd4b6ac4f934221f9a04281259db7b4f6e86b0d7912ee06d6cb2bfd",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/u2f-progress-source-review.json",
-          "sha256": "6f0f0355285d2b175b90d30c4d9dfb06a62059967e48b30ee5182f94150e59ba",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Current exact function definitions, partial/exact transport distinction and capability mapping; no new source approval."
+          "scope": "Current exact function definitions, partial/exact transport distinction and capability mapping; no new source approval.",
+          "original": {
+            "path": "docs/sync/evidence/u2f-progress-source-review.json",
+            "sha256": "6f0f0355285d2b175b90d30c4d9dfb06a62059967e48b30ee5182f94150e59ba",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/usb-u2f-polling-checkpoint.json",
-          "sha256": "8beec4c194ed39fb6034efa48ee23f2f2b2e0c744f46d55d7b9ea061883da610",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Expanded E58:114 C/144 Rust checks, real Rust USB polling, unchanged products and preserved literal/auth/session contracts."
+          "scope": "Expanded E58:114 C/144 Rust checks, real Rust USB polling, unchanged products and preserved literal/auth/session contracts.",
+          "original": {
+            "path": "docs/sync/evidence/usb-u2f-polling-checkpoint.json",
+            "sha256": "8beec4c194ed39fb6034efa48ee23f2f2b2e0c744f46d55d7b9ea061883da610",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/usb-u2f-polling-source-review.json",
-          "sha256": "c1f2ad14c4253c6409e58635cdde06ee3956a28a23befd0630e69049265a1b5e",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Pinned C TEST presence mechanism and Rust raw-sampling provenance; no equal timing or new source-audit approval."
+          "scope": "Pinned C TEST presence mechanism and Rust raw-sampling provenance; no equal timing or new source-audit approval.",
+          "original": {
+            "path": "docs/sync/evidence/usb-u2f-polling-source-review.json",
+            "sha256": "c1f2ad14c4253c6409e58635cdde06ee3956a28a23befd0630e69049265a1b5e",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/native-storage-progress-checkpoint.json",
-          "sha256": "b3b902d7a0066f1eea1e7c6e2b9fb0d00102dec45919675693a0d75c3e524d3d",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "30 real native LittleFS APDU response/fault/recovery checks; native and exact-load old regressions, both board builds and macOS sanitizers."
+          "scope": "30 real native LittleFS APDU response/fault/recovery checks; native and exact-load old regressions, both board builds and macOS sanitizers.",
+          "original": {
+            "path": "docs/sync/evidence/native-storage-progress-checkpoint.json",
+            "sha256": "b3b902d7a0066f1eea1e7c6e2b9fb0d00102dec45919675693a0d75c3e524d3d",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/native-storage-progress-source-review.json",
-          "sha256": "46a2e0311fe1a3215d4a7ba5ce8117dfaee9d7ddf9a27c75b0fe0844c869eca7",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Corrects the lower native service gap missed by mock-level injection; no new source-audit approvals."
+          "scope": "Corrects the lower native service gap missed by mock-level injection; no new source-audit approvals.",
+          "original": {
+            "path": "docs/sync/evidence/native-storage-progress-source-review.json",
+            "sha256": "46a2e0311fe1a3215d4a7ba5ce8117dfaee9d7ddf9a27c75b0fe0844c869eca7",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -3074,10 +3464,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/response-stream-source-review.json",
-          "sha256": "0420fd272ceb2d643d2c47818a5ebc928ca62643b35e6efd924ae1669de2b0ca",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "118 inspected source units: request aliases/cleanup, segmented largeBlobs output, exact generalization and final merge deltas. Not full response-class equivalence."
+          "scope": "118 inspected source units: request aliases/cleanup, segmented largeBlobs output, exact generalization and final merge deltas. Not full response-class equivalence.",
+          "original": {
+            "path": "docs/sync/evidence/response-stream-source-review.json",
+            "sha256": "0420fd272ceb2d643d2c47818a5ebc928ca62643b35e6efd924ae1669de2b0ca",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-large-blob-usb/report.json",
@@ -3092,58 +3487,103 @@
           "scope": "Pinned-C/current-Rust11 cases/2478 events; actual I-block source RX, finite Le, file output and retries; all equal-output."
         },
         {
-          "path": "docs/sync/evidence/host-ctest.log",
-          "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance."
+          "scope": "42/42 host CTests and full-feature Core142 unit tests plus integrations pass. Fourteen rerun dual wire suites365 cases/11695 events:348 equal-output,17 unresolved L8/C1-RETRIES/CID1/U3/U4 cases. New largeBlobs suites23 cases/5337 events use real wire uploads and independent CBOR/hash expectations. No storage-fault/physical acceptance.",
+          "original": {
+            "path": "docs/sync/evidence/host-ctest.log",
+            "sha256": "4f94eab0a1ddf9c865bef05b07e987e821218e658796157c36aafa1f5d49776b",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/auth-response-checkpoint.json",
-          "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim.",
+          "original": {
+            "path": "docs/sync/evidence/auth-response-checkpoint.json",
+            "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/auth-response-source-review.json",
-          "sha256": "cf4bb34b7b101fcd878275a1d996d72cd951fe54d0cfdc8735e0e5f1e0e3af1d",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Focused C ordinary-CBOR threshold, MC/U2F source publication and native MSG no-source Le path. No additional source units approved."
+          "scope": "Focused C ordinary-CBOR threshold, MC/U2F source publication and native MSG no-source Le path. No additional source units approved.",
+          "original": {
+            "path": "docs/sync/evidence/auth-response-source-review.json",
+            "sha256": "cf4bb34b7b101fcd878275a1d996d72cd951fe54d0cfdc8735e0e5f1e0e3af1d",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/u2f-progress-checkpoint.json",
-          "sha256": "d83d78188dd4b6ac4f934221f9a04281259db7b4f6e86b0d7912ee06d6cb2bfd",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Replayed E58 matrix after T18 alignment; 96 C/126 Rust checks and preserved exact CTAP/native errors."
+          "scope": "Replayed E58 matrix after T18 alignment; 96 C/126 Rust checks and preserved exact CTAP/native errors.",
+          "original": {
+            "path": "docs/sync/evidence/u2f-progress-checkpoint.json",
+            "sha256": "d83d78188dd4b6ac4f934221f9a04281259db7b4f6e86b0d7912ee06d6cb2bfd",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/u2f-progress-source-review.json",
-          "sha256": "6f0f0355285d2b175b90d30c4d9dfb06a62059967e48b30ee5182f94150e59ba",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Current exact function definitions, partial/exact transport distinction and capability mapping; no new source approval."
+          "scope": "Current exact function definitions, partial/exact transport distinction and capability mapping; no new source approval.",
+          "original": {
+            "path": "docs/sync/evidence/u2f-progress-source-review.json",
+            "sha256": "6f0f0355285d2b175b90d30c4d9dfb06a62059967e48b30ee5182f94150e59ba",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/usb-u2f-polling-checkpoint.json",
-          "sha256": "8beec4c194ed39fb6034efa48ee23f2f2b2e0c744f46d55d7b9ea061883da610",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Expanded E58:114 C/144 Rust checks, real Rust USB polling, unchanged products and preserved literal/auth/session contracts."
+          "scope": "Expanded E58:114 C/144 Rust checks, real Rust USB polling, unchanged products and preserved literal/auth/session contracts.",
+          "original": {
+            "path": "docs/sync/evidence/usb-u2f-polling-checkpoint.json",
+            "sha256": "8beec4c194ed39fb6034efa48ee23f2f2b2e0c744f46d55d7b9ea061883da610",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/usb-u2f-polling-source-review.json",
-          "sha256": "c1f2ad14c4253c6409e58635cdde06ee3956a28a23befd0630e69049265a1b5e",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Pinned C TEST presence mechanism and Rust raw-sampling provenance; no equal timing or new source-audit approval."
+          "scope": "Pinned C TEST presence mechanism and Rust raw-sampling provenance; no equal timing or new source-audit approval.",
+          "original": {
+            "path": "docs/sync/evidence/usb-u2f-polling-source-review.json",
+            "sha256": "c1f2ad14c4253c6409e58635cdde06ee3956a28a23befd0630e69049265a1b5e",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/native-storage-progress-checkpoint.json",
-          "sha256": "b3b902d7a0066f1eea1e7c6e2b9fb0d00102dec45919675693a0d75c3e524d3d",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "30 real native LittleFS APDU response/fault/recovery checks; native and exact-load old regressions, both board builds and macOS sanitizers."
+          "scope": "30 real native LittleFS APDU response/fault/recovery checks; native and exact-load old regressions, both board builds and macOS sanitizers.",
+          "original": {
+            "path": "docs/sync/evidence/native-storage-progress-checkpoint.json",
+            "sha256": "b3b902d7a0066f1eea1e7c6e2b9fb0d00102dec45919675693a0d75c3e524d3d",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/native-storage-progress-source-review.json",
-          "sha256": "46a2e0311fe1a3215d4a7ba5ce8117dfaee9d7ddf9a27c75b0fe0844c869eca7",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Corrects the lower native service gap missed by mock-level injection; no new source-audit approvals."
+          "scope": "Corrects the lower native service gap missed by mock-level injection; no new source-audit approvals.",
+          "original": {
+            "path": "docs/sync/evidence/native-storage-progress-source-review.json",
+            "sha256": "46a2e0311fe1a3215d4a7ba5ce8117dfaee9d7ddf9a27c75b0fe0844c869eca7",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-storage-response-nfc-extended/report.json.gz",
@@ -3152,10 +3592,15 @@
           "scope": "72 C/90 Rust extended-NFC file-fault/recovery checks, finite/unlimited Le and source-preserving R-block retries; not physical acceptance."
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -3190,22 +3635,37 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/auth-response-source-review.json",
-          "sha256": "cf4bb34b7b101fcd878275a1d996d72cd951fe54d0cfdc8735e0e5f1e0e3af1d",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Focused C ordinary-CBOR threshold, MC/U2F source publication and native MSG no-source Le path. No additional source units approved."
+          "scope": "Focused C ordinary-CBOR threshold, MC/U2F source publication and native MSG no-source Le path. No additional source units approved.",
+          "original": {
+            "path": "docs/sync/evidence/auth-response-source-review.json",
+            "sha256": "cf4bb34b7b101fcd878275a1d996d72cd951fe54d0cfdc8735e0e5f1e0e3af1d",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/auth-response-checkpoint.json",
-          "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim."
+          "scope": "156 C and180 Rust contract checks across CCID/WebUSB/native MSG/NFC; independent crypto, exact256/257, finite Le, management/PQ and NFC small U2F. No equal-byte, storage-fault or physical acceptance claim.",
+          "original": {
+            "path": "docs/sync/evidence/auth-response-checkpoint.json",
+            "sha256": "a39533f251ae757f31184c2948f9e5024f9b027ff24a3eec5e68fa5334855cc1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -3283,16 +3743,26 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/u2f-progress-checkpoint.json",
-          "sha256": "d83d78188dd4b6ac4f934221f9a04281259db7b4f6e86b0d7912ee06d6cb2bfd",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Three former NFC T18 differences now recover on both sides; other exact-read faults/closure/recovery remain."
+          "scope": "Three former NFC T18 differences now recover on both sides; other exact-read faults/closure/recovery remain.",
+          "original": {
+            "path": "docs/sync/evidence/u2f-progress-checkpoint.json",
+            "sha256": "d83d78188dd4b6ac4f934221f9a04281259db7b4f6e86b0d7912ee06d6cb2bfd",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/u2f-progress-source-review.json",
-          "sha256": "6f0f0355285d2b175b90d30c4d9dfb06a62059967e48b30ee5182f94150e59ba",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Definition-only C source observations and Rust capability mapping; no additional source units approved."
+          "scope": "Definition-only C source observations and Rust capability mapping; no additional source units approved.",
+          "original": {
+            "path": "docs/sync/evidence/u2f-progress-source-review.json",
+            "sha256": "6f0f0355285d2b175b90d30c4d9dfb06a62059967e48b30ee5182f94150e59ba",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-storage-response/report.json",
@@ -3301,34 +3771,59 @@
           "scope": "114 C/144 Rust checks; U2F across CCID/WebUSB/native MSG/NFC, independently verified recovery and unchanged fault state before presence."
         },
         {
-          "path": "docs/sync/evidence/usb-u2f-polling-checkpoint.json",
-          "sha256": "8beec4c194ed39fb6034efa48ee23f2f2b2e0c744f46d55d7b9ea061883da610",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Expanded E58:114 C/144 Rust checks, real Rust USB polling, unchanged products and preserved literal/auth/session contracts."
+          "scope": "Expanded E58:114 C/144 Rust checks, real Rust USB polling, unchanged products and preserved literal/auth/session contracts.",
+          "original": {
+            "path": "docs/sync/evidence/usb-u2f-polling-checkpoint.json",
+            "sha256": "8beec4c194ed39fb6034efa48ee23f2f2b2e0c744f46d55d7b9ea061883da610",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/usb-u2f-polling-source-review.json",
-          "sha256": "c1f2ad14c4253c6409e58635cdde06ee3956a28a23befd0630e69049265a1b5e",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Pinned C TEST presence mechanism and Rust raw-sampling provenance; no equal timing or new source-audit approval."
+          "scope": "Pinned C TEST presence mechanism and Rust raw-sampling provenance; no equal timing or new source-audit approval.",
+          "original": {
+            "path": "docs/sync/evidence/usb-u2f-polling-source-review.json",
+            "sha256": "c1f2ad14c4253c6409e58635cdde06ee3956a28a23befd0630e69049265a1b5e",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/native-storage-progress-checkpoint.json",
-          "sha256": "b3b902d7a0066f1eea1e7c6e2b9fb0d00102dec45919675693a0d75c3e524d3d",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "30 real native LittleFS APDU response/fault/recovery checks; native and exact-load old regressions, both board builds and macOS sanitizers."
+          "scope": "30 real native LittleFS APDU response/fault/recovery checks; native and exact-load old regressions, both board builds and macOS sanitizers.",
+          "original": {
+            "path": "docs/sync/evidence/native-storage-progress-checkpoint.json",
+            "sha256": "b3b902d7a0066f1eea1e7c6e2b9fb0d00102dec45919675693a0d75c3e524d3d",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/native-storage-progress-source-review.json",
-          "sha256": "46a2e0311fe1a3215d4a7ba5ce8117dfaee9d7ddf9a27c75b0fe0844c869eca7",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Corrects the lower native service gap missed by mock-level injection; no new source-audit approvals."
+          "scope": "Corrects the lower native service gap missed by mock-level injection; no new source-audit approvals.",
+          "original": {
+            "path": "docs/sync/evidence/native-storage-progress-source-review.json",
+            "sha256": "46a2e0311fe1a3215d4a7ba5ce8117dfaee9d7ddf9a27c75b0fe0844c869eca7",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -3395,16 +3890,26 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/session-yield-source-review.json",
-          "sha256": "59e2ac6f29702ed220195fdefab8e7cb7593f4fa27b35f6eb9c996c50acac253",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "16 exact applet/header inventory units with complete per-parent patches and guard-to-Rust mapping; no whole-file claim"
+          "scope": "16 exact applet/header inventory units with complete per-parent patches and guard-to-Rust mapping; no whole-file claim",
+          "original": {
+            "path": "docs/sync/evidence/session-yield-source-review.json",
+            "sha256": "59e2ac6f29702ed220195fdefab8e7cb7593f4fa27b35f6eb9c996c50acac253",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
-          "path": "docs/sync/evidence/session-yield-checkpoint.json",
-          "sha256": "101daee2ad30b444b3cd4dcbe3a69c8993d13d1aa50f5540e97e6c33ab1fa1d9",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "300 paired contract checks and full host/native/board attempts; no full release acceptance"
+          "scope": "300 paired contract checks and full host/native/board attempts; no full release acceptance",
+          "original": {
+            "path": "docs/sync/evidence/session-yield-checkpoint.json",
+            "sha256": "101daee2ad30b444b3cd4dcbe3a69c8993d13d1aa50f5540e97e6c33ab1fa1d9",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-session-yield/report.json",
@@ -3413,10 +3918,15 @@
           "scope": "75 independent checks per side/CCID-or-WebUSB context, raw USB traces, AES and SM2 verification"
         },
         {
-          "path": "docs/sync/evidence/rom-review-20261108-narrow.json",
-          "sha256": "fd44ef016ccec1a28381caa02213ba93317ced7e81985c797336067f25ec14b2",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Safe range-comparison ROM cleanup; affected source hashes and unchanged complete literal results after rebuild; no new source-review approval."
+          "scope": "Safe range-comparison ROM cleanup; affected source hashes and unchanged complete literal results after rebuild; no new source-review approval.",
+          "original": {
+            "path": "docs/sync/evidence/rom-review-20261108-narrow.json",
+            "sha256": "fd44ef016ccec1a28381caa02213ba93317ced7e81985c797336067f25ec14b2",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -3462,10 +3972,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/nfc-rblock-source-review.json",
-          "sha256": "74f8c8909ea4e3b573ec0721dd0da6001a9d604ebc56b47e5584a77e43f0e68c",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "16 exact per-parent source units, final C cache excerpt; mixed WTX/TXEN hunk19 explicitly unreviewed."
+          "scope": "16 exact per-parent source units, final C cache excerpt; mixed WTX/TXEN hunk19 explicitly unreviewed.",
+          "original": {
+            "path": "docs/sync/evidence/nfc-rblock-source-review.json",
+            "sha256": "74f8c8909ea4e3b573ec0721dd0da6001a9d604ebc56b47e5584a77e43f0e68c",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-nfc/report.json",
@@ -3480,10 +3995,15 @@
           "scope": "Gzip JSON:72 C/90 Rust independent fault/recovery checks across three extended encodings; actual PKE request staging and RF control/source-read invariants."
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -3524,10 +4044,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/nfc-activation-source-review.json",
-          "sha256": "5315482567575e9eed6eb99afd066ed91817f8a09584e4bf4dcd2a1072dfbb12",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Eight exact source units;256 register states;31 paired raw IRQ cases; prior370 literal result arrays unchanged."
+          "scope": "Eight exact source units;256 register states;31 paired raw IRQ cases; prior370 literal result arrays unchanged.",
+          "original": {
+            "path": "docs/sync/evidence/nfc-activation-source-review.json",
+            "sha256": "5315482567575e9eed6eb99afd066ed91817f8a09584e4bf4dcd2a1072dfbb12",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-nfc/report.json",
@@ -3579,10 +4104,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/nfc-mailbox-source-review.json",
-          "sha256": "1b4b44fa6dcc9013878f8f908e1d136ba7434083392e0892e66bbe6cd00e23bd",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "16 local-FIFO source units; mixed hunk57 unreviewed; prior401 literal results unchanged."
+          "scope": "16 local-FIFO source units; mixed hunk57 unreviewed; prior401 literal results unchanged.",
+          "original": {
+            "path": "docs/sync/evidence/nfc-mailbox-source-review.json",
+            "sha256": "1b4b44fa6dcc9013878f8f908e1d136ba7434083392e0892e66bbe6cd00e23bd",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-nfc/report.json",
@@ -3591,10 +4121,15 @@
           "scope": "124 literal NFC cases; new28 E62 cases/105 events equal C/Rust; prior Rust fails all28."
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -3646,10 +4181,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/nfc-execution-source-review.json",
-          "sha256": "e10812c6f0af7cdd568a1fcc04695530eeff8a1f3c4c5f941cf0669555764c36",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Four ordinal57 source units; full pending guard through Core execution. Mixed hunk19 remains open."
+          "scope": "Four ordinal57 source units; full pending guard through Core execution. Mixed hunk19 remains open.",
+          "original": {
+            "path": "docs/sync/evidence/nfc-execution-source-review.json",
+            "sha256": "e10812c6f0af7cdd568a1fcc04695530eeff8a1f3c4c5f941cf0669555764c36",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-nfc-execution/report.json",
@@ -3658,10 +4198,15 @@
           "scope": "15 cases per side:11 normal equal initial RF contracts,4 unresolved after-WTX observations; continuation/selection and deferred C2 separately asserted."
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -3696,10 +4241,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/select-finalization-source-review.json",
-          "sha256": "e99eadb1a880a8555548f9abaf6e0555d4845e04dc401efd86d2623ef6514cde",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Extends existing SELECT/rejection source mappings; no additional source units approved."
+          "scope": "Extends existing SELECT/rejection source mappings; no additional source units approved.",
+          "original": {
+            "path": "docs/sync/evidence/select-finalization-source-review.json",
+            "sha256": "e99eadb1a880a8555548f9abaf6e0555d4845e04dc401efd86d2623ef6514cde",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-select/report.json",
@@ -3733,10 +4283,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/select-config-source-review.json",
-          "sha256": "33f7e70c679065d63f193db4b62b10f993774ee6d034aee910e2bf6655415598",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Targeted NDEF rejection distinction; no additional source units approved."
+          "scope": "Targeted NDEF rejection distinction; no additional source units approved.",
+          "original": {
+            "path": "docs/sync/evidence/select-config-source-review.json",
+            "sha256": "33f7e70c679065d63f193db4b62b10f993774ee6d034aee910e2bf6655415598",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-select-config/report.json",
@@ -3790,10 +4345,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/select-header-source-review.json",
-          "sha256": "169e4e1340c6b5c76c88e711bcf85441eb8774b0513a475a8474f8518898f234",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Selected-applet header/CLA/finalization contracts; no additional source units approved."
+          "scope": "Selected-applet header/CLA/finalization contracts; no additional source units approved.",
+          "original": {
+            "path": "docs/sync/evidence/select-header-source-review.json",
+            "sha256": "169e4e1340c6b5c76c88e711bcf85441eb8774b0513a475a8474f8518898f234",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-select-header/report.json",
@@ -3840,10 +4400,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/chain-control-source-review.json",
-          "sha256": "fe20055530d5dab9139b9203241bc30adb410e92d00821c0049c2cd7fdf74dab",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Bounded pending FIDO chain/control contracts; no additional source audit units approved."
+          "scope": "Bounded pending FIDO chain/control contracts; no additional source audit units approved.",
+          "original": {
+            "path": "docs/sync/evidence/chain-control-source-review.json",
+            "sha256": "fe20055530d5dab9139b9203241bc30adb410e92d00821c0049c2cd7fdf74dab",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-chain-control/report.json",
@@ -3878,10 +4443,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/chain-encoding-source-review.json",
-          "sha256": "944f20b9b8e94d86a66418ae88a7b51a6643f42bed9c1b3fe7acc79e64c4a502",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Bounded mixed encoding/chain contracts; no source audit unit approvals."
+          "scope": "Bounded mixed encoding/chain contracts; no source audit unit approvals.",
+          "original": {
+            "path": "docs/sync/evidence/chain-encoding-source-review.json",
+            "sha256": "944f20b9b8e94d86a66418ae88a7b51a6643f42bed9c1b3fe7acc79e64c4a502",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-chain-encoding/report.json",
@@ -3932,10 +4502,15 @@
       ],
       "evidence": [
         {
-          "path": "docs/sync/evidence/nfc-rejection-source-review.json",
-          "sha256": "19cef6832bfcd03334ee6edb5376c8b2584517760fde4f5af8d110441b2e717f",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Large NFC prefix/final rejection contracts; no source audit unit approvals."
+          "scope": "Large NFC prefix/final rejection contracts; no source audit unit approvals.",
+          "original": {
+            "path": "docs/sync/evidence/nfc-rejection-source-review.json",
+            "sha256": "19cef6832bfcd03334ee6edb5376c8b2584517760fde4f5af8d110441b2e717f",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         },
         {
           "path": "tests/fixtures/c312-nfc-rejection/report.json",
@@ -3944,10 +4519,15 @@
           "scope": "980 literal cases/550 repaired old failures; all equal-output."
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
@@ -4084,10 +4664,15 @@
           "scope": "540 literal paired NFC cases: pinned C540, repaired Rust540 with identical outputs. Five real retained contexts, malformed boundaries and70 RF split/retry schedules. Physical/WTX/resource acceptance remains open."
         },
         {
-          "path": "docs/sync/evidence/protocol-values-20261110.json",
-          "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+          "path": "docs/sync/evidence-summary.md",
+          "sha256": "ae3851d6a9a175a7e669698d150ba84c47dcee61c1d94c5dae5d1edf2135c51f",
           "revision": "a349b268e12953dd85169e9649091c4f91ce7c68",
-          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained."
+          "scope": "Scoped constant-only source review and current CTAP/FFI regressions. All behavior, source-hunk, resource and physical obligations retained.",
+          "original": {
+            "path": "docs/sync/evidence/protocol-values-20261110.json",
+            "sha256": "7b6a9a7a82eb5d9ee41e732f789f78c773b67f385bc6fe072c5bc11dff009ff1",
+            "commit": "884e68d4191cdbe0c157d6db271ec523ad52c508"
+          }
         }
       ],
       "remaining": [
