@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native-endian platform page ABI, matching the existing 512-byte config page.
 //! The loader owns bytes 0..4. Never include them in the CRC or reset them.
-#![forbid(unsafe_code)]
 use crate::ports::{Storage, StorageError};
 use canokey_ports::Device as _;
 pub const INITIALIZED: u32 = 1;

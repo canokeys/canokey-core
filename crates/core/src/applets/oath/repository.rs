@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Safe assembly adapters. Each backend borrow ends before the next service call.
-#![forbid(unsafe_code)]
 use crate::applets::oath::{
     Algorithm, Crypto, Error, auth, codec,
     credential::Credential,

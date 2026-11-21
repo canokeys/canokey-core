@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CanoKey USB composition and discovery policy for the shared control runtime.
-#![forbid(unsafe_code)]
 pub mod bos;
 pub mod descriptors;
 use canokey_protocol::usb::*;

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![forbid(unsafe_code)]
 pub const SLOT_COUNT: usize = 2;
 pub const OATH_NAME_LIMIT: usize = super::super::OATH_NAME_BYTES;
 pub const PASSWORD_LIMIT: usize = 32;

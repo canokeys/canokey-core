@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared CTAP parsing, PIN session and prepared responses for HID and APDU.
-#![forbid(unsafe_code)]
 
 use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 mod adapter;

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Main-loop presence operation; no C callback may reenter the core.
-#![forbid(unsafe_code)]
 #[cfg(feature = "ctap")]
 pub use canokey_ctap::presence::Error;
 #[cfg(presence_applet)]

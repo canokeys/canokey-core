@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Type-4 NDEF file policy. Payloads are read/written through bounded caller
 //! slices, never buffered as a second maximum-size NDEF object.
-#![forbid(unsafe_code)]
 use crate::ports::Memory as _;
 use canokey_protocol::response::StatusWord as Sw;
 pub const AID: &[u8] = &[0xd2, 0x76, 0, 0, 0x85, 1, 1];

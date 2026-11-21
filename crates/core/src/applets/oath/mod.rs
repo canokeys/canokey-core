@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! OATH domain and services. No APDU, status words, FFI or transport dependency.
-#![forbid(unsafe_code)]
 pub mod auth;
 pub mod codec;
 pub mod credential;

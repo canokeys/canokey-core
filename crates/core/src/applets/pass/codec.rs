@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fixed slots shared by RAM and persistence.
 //! No native-layout or previous-format decoding.
-#![forbid(unsafe_code)]
 pub use super::domain::SLOT_COUNT;
 use super::domain::{Error, KEY_LENGTH, PASSWORD_LIMIT, Slot, SlotIndex, kind};
 pub const SLOT_SIZE: usize = 72;

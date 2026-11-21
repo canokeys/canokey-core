@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! PASS service: no APDU, authorization grants or status words.
-#![forbid(unsafe_code)]
 use crate::applets::pass::{
     codec::{FILE_SIZE, Layout},
     domain::{self, Error, Slot, SlotIndex},

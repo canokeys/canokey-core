@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ADMIN protocol adapter. PASS remains a typed service without APDU knowledge.
-#![forbid(unsafe_code)]
 // Applet instruction bytes; P1/P2 and TLV tags have separate meanings.
 use canokey_ports::{Device as _, Memory as _};
 const INS_FACTORY_RESET: u8 = 0x50;

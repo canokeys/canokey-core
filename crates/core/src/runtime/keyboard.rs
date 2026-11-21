@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! US keyboard encoding and completion-driven press/release sequencing.
-#![forbid(unsafe_code)]
 
 use canokey_protocol::usb::{
     CONSUMER_REPORT_BYTES, CONSUMER_REPORT_ID, KEYBOARD_PACKET_BYTES, KEYBOARD_REPORT_ID,

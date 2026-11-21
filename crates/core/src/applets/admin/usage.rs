@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ADMIN usage attribution over the durable Rust record namespace.
-#![forbid(unsafe_code)]
 use crate::ports::{Record, Storage, StorageError};
 use canokey_protocol::response::StatusWord as Sw;
 const BYTES_PER_KIB: u32 = 1024;

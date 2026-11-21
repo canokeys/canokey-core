@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! OATH wire schema. Domain/authentication modules have no APDU dependency.
-#![forbid(unsafe_code)]
 
 #[cfg(test)]
 use super::wire::otp_selector;

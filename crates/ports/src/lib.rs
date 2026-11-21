@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Platform contracts and backend-independent binding policy.
 #![no_std]
+#![deny(unsafe_code)]
 mod binding;
 pub mod canokey;
 pub mod contracts;

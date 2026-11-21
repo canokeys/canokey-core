@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rust owns gesture interpretation and the lifetime of a password output job.
-#![forbid(unsafe_code)]
 #[cfg(test)]
 use crate::ports::Memory;
 pub struct Output {

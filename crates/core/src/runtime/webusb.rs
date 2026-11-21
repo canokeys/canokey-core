@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! WebUSB APDU lifecycle. Storage and session ownership are supplied by the
 //! serialized facade; this policy never allocates a second APDU workspace.
-#![forbid(unsafe_code)]
 use canokey_protocol::usb::Setup;
 
 pub const COMMAND_LIMIT: usize = 288;

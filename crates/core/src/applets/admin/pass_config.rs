@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ADMIN's PASS configuration format. Common APDU types/status words are shared;
 //! this format is not BER-TLV and has no applet-local APDU request structure.
-#![forbid(unsafe_code)]
 use crate::applets::pass::{
     codec::Layout,
     domain::{Error, KEY_LENGTH, PASSWORD_LIMIT, Slot, SlotIndex, kind},

@@ -324,7 +324,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89"
+          "sha256": "05c38c54cc08c94c62135890d8c9262819ff992e641c43ac2167705ef1840dc7"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
@@ -336,7 +336,7 @@
         },
         {
           "path": "crates/core/src/runtime/webusb.rs",
-          "sha256": "6b93effc604e8ed1de00a68c8251762e1f189dbc9e35090e967a106a1ec3b22a"
+          "sha256": "8838c65185cd6eb672a7754b965c2f69deb51b36a951aacb82982447777525d7"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
@@ -897,7 +897,7 @@
         },
         {
           "path": "crates/core/src/applets/ndef.rs",
-          "sha256": "1bcf7247e9d093020d6f718a30c732241382fe676421c266eaf5b2b9d1c83453"
+          "sha256": "d9fcc9a658d778dd4ea7d0ec47d5f94d49bed2923a1882fc69a25725164bf88a"
         },
         {
           "path": "crates/core/src/applets/piv/mod.rs",
@@ -1082,7 +1082,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/webusb.rs",
-          "sha256": "6b93effc604e8ed1de00a68c8251762e1f189dbc9e35090e967a106a1ec3b22a"
+          "sha256": "8838c65185cd6eb672a7754b965c2f69deb51b36a951aacb82982447777525d7"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
@@ -1219,7 +1219,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ndef.rs",
-          "sha256": "1bcf7247e9d093020d6f718a30c732241382fe676421c266eaf5b2b9d1c83453"
+          "sha256": "d9fcc9a658d778dd4ea7d0ec47d5f94d49bed2923a1882fc69a25725164bf88a"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -1508,7 +1508,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/webusb.rs",
-          "sha256": "6b93effc604e8ed1de00a68c8251762e1f189dbc9e35090e967a106a1ec3b22a"
+          "sha256": "8838c65185cd6eb672a7754b965c2f69deb51b36a951aacb82982447777525d7"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
@@ -1590,7 +1590,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/webusb.rs",
-          "sha256": "6b93effc604e8ed1de00a68c8251762e1f189dbc9e35090e967a106a1ec3b22a"
+          "sha256": "8838c65185cd6eb672a7754b965c2f69deb51b36a951aacb82982447777525d7"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
@@ -2049,7 +2049,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/usb/mod.rs",
-          "sha256": "a0366564732970178db1c70d9644b7dfcf1d0e7a1c2fc0bd3120a22cf9c2e3c0"
+          "sha256": "1cc40c56740e464631b6ae996d33a390a9e7573957a2d6118a764d2818c6c7d6"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
@@ -2103,7 +2103,7 @@
         },
         {
           "path": "crates/core/src/runtime/usb/mod.rs",
-          "sha256": "a0366564732970178db1c70d9644b7dfcf1d0e7a1c2fc0bd3120a22cf9c2e3c0"
+          "sha256": "1cc40c56740e464631b6ae996d33a390a9e7573957a2d6118a764d2818c6c7d6"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
@@ -2148,7 +2148,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/usb/mod.rs",
-          "sha256": "a0366564732970178db1c70d9644b7dfcf1d0e7a1c2fc0bd3120a22cf9c2e3c0"
+          "sha256": "1cc40c56740e464631b6ae996d33a390a9e7573957a2d6118a764d2818c6c7d6"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
@@ -2213,7 +2213,7 @@
         },
         {
           "path": "crates/core/src/runtime/usb/mod.rs",
-          "sha256": "a0366564732970178db1c70d9644b7dfcf1d0e7a1c2fc0bd3120a22cf9c2e3c0"
+          "sha256": "1cc40c56740e464631b6ae996d33a390a9e7573957a2d6118a764d2818c6c7d6"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
@@ -2270,7 +2270,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/usb/mod.rs",
-          "sha256": "a0366564732970178db1c70d9644b7dfcf1d0e7a1c2fc0bd3120a22cf9c2e3c0"
+          "sha256": "1cc40c56740e464631b6ae996d33a390a9e7573957a2d6118a764d2818c6c7d6"
         }
       ],
       "regressions": [
@@ -2733,7 +2733,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89"
+          "sha256": "05c38c54cc08c94c62135890d8c9262819ff992e641c43ac2167705ef1840dc7"
         },
         {
           "path": "crates/protocol/src/cbor.rs",
@@ -2844,7 +2844,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89"
+          "sha256": "05c38c54cc08c94c62135890d8c9262819ff992e641c43ac2167705ef1840dc7"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
@@ -3006,7 +3006,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89"
+          "sha256": "05c38c54cc08c94c62135890d8c9262819ff992e641c43ac2167705ef1840dc7"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
@@ -3174,7 +3174,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89"
+          "sha256": "05c38c54cc08c94c62135890d8c9262819ff992e641c43ac2167705ef1840dc7"
         },
         {
           "path": "crates/core/src/applets/ctap/message.rs",
@@ -3221,7 +3221,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89"
+          "sha256": "05c38c54cc08c94c62135890d8c9262819ff992e641c43ac2167705ef1840dc7"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
@@ -3766,7 +3766,7 @@
         },
         {
           "path": "crates/core/src/applets/admin/protocol.rs",
-          "sha256": "2390d0e5afbb6aa865a269b3a18fe0962d4dc409713e8acba811d17c4f4ed5cf"
+          "sha256": "2ad491bbdae9915fe30379954b8487b26f23825ad0c32a94ed26ed2ee1b580dc"
         },
         {
           "path": "crates/core/src/applets/ctap/apdu.rs",
@@ -10383,6 +10383,61 @@
           "T16",
           "T18"
         ]
+      },
+      {
+        "record_parent": "efd5f1ec2ff3c30847ccdb97b78cb7bf3000a679",
+        "status": "pending; no behavior, source-hunk or release approval granted",
+        "scope": "Consolidate Core unsafe-code guards and restrict ports unsafe code to its volatile erase. Historical dispositions and evidence remain in place.",
+        "artifacts": {
+          "crates/core/src/applets/ctap/mod.rs": {
+            "previous_sha256": "0e9a3e2e5360fffacb82c765356a37c97ca04b91164fed5e98eef9c9ee0eaf89",
+            "current_sha256": "05c38c54cc08c94c62135890d8c9262819ff992e641c43ac2167705ef1840dc7",
+            "behaviors": [
+              "G6",
+              "C2",
+              "C3",
+              "T16",
+              "T17",
+              "T18"
+            ]
+          },
+          "crates/core/src/runtime/webusb.rs": {
+            "previous_sha256": "6b93effc604e8ed1de00a68c8251762e1f189dbc9e35090e967a106a1ec3b22a",
+            "current_sha256": "8838c65185cd6eb672a7754b965c2f69deb51b36a951aacb82982447777525d7",
+            "behaviors": [
+              "G6",
+              "T5",
+              "L2",
+              "L7"
+            ]
+          },
+          "crates/core/src/applets/ndef.rs": {
+            "previous_sha256": "1bcf7247e9d093020d6f718a30c732241382fe676421c266eaf5b2b9d1c83453",
+            "current_sha256": "d9fcc9a658d778dd4ea7d0ec47d5f94d49bed2923a1882fc69a25725164bf88a",
+            "behaviors": [
+              "T6",
+              "T8"
+            ]
+          },
+          "crates/core/src/runtime/usb/mod.rs": {
+            "previous_sha256": "a0366564732970178db1c70d9644b7dfcf1d0e7a1c2fc0bd3120a22cf9c2e3c0",
+            "current_sha256": "1cc40c56740e464631b6ae996d33a390a9e7573957a2d6118a764d2818c6c7d6",
+            "behaviors": [
+              "U1",
+              "U2",
+              "U3",
+              "U4",
+              "U5"
+            ]
+          },
+          "crates/core/src/applets/admin/protocol.rs": {
+            "previous_sha256": "2390d0e5afbb6aa865a269b3a18fe0962d4dc409713e8acba811d17c4f4ed5cf",
+            "current_sha256": "2ad491bbdae9915fe30379954b8487b26f23825ad0c32a94ed26ed2ee1b580dc",
+            "behaviors": [
+              "T25"
+            ]
+          }
+        }
       }
     ],
     "protocol_values_follow_up_20261110": {
