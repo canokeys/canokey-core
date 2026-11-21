@@ -43,7 +43,7 @@ const ATS_LENGTH: u8 = 5;
 // (0x8 for 256 bytes, including PCB and RF CRC).
 const ATS_INTERFACE_PRESENT: u8 = 0x70;
 const FWI: u8 = 9;
-const SFGI: u8 = 7;
+const SFGI: u8 = 4;
 
 // Figure 3-2 and section 3.6.1. ATQA 0x0044 (seven-byte UID) is stored low byte
 // first, followed by SAK1=0x04 (UID cascades) and SAK2=0x20 (ISO-DEP),

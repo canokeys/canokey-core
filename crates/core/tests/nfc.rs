@@ -803,7 +803,7 @@ mod provisioning {
         let accesses = chip.accesses;
         assert_eq!(
             &chip.bytes[0x3b0..0x3b7],
-            &[0x05, 0x78, 0xa5, 0x57, 0x00, 0x97, 0x00]
+            &[0x05, 0x78, 0xa5, 0x57, 0x00, 0x94, 0x00]
         );
         assert!(configure_for::<MAX_FRAME_BYTES>(&mut chip));
         assert_eq!(chip.writes, 5);
@@ -814,7 +814,7 @@ mod provisioning {
         assert_eq!(chip.writes, 7);
         assert_eq!(
             &chip.bytes[0x3b0..0x3b7],
-            &[0x05, 0x78, 0xa5, 0x57, 0x00, 0x97, 0x00]
+            &[0x05, 0x78, 0xa5, 0x57, 0x00, 0x94, 0x00]
         );
         assert!(configure_for::<MAX_FRAME_BYTES>(&mut chip));
         assert_eq!(chip.writes, 7);

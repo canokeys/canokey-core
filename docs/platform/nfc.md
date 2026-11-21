@@ -64,8 +64,8 @@ are enabled. FM11NT082C v1.2 Figure 3-2 and Table 4-1 place TL/T0 at
 `0x03B0/0x03B1` and TA1/TB1/TC1 at `0x03B4..0x03B6`. Provisioning leaves
 `0x03B2` (VOUT) and `0x03B3` (I2C address `0x57`) intact.
 
-CanoKey NFCC advertises FSC=256 bytes in ATS `05 78 00 97 00`.
-TB1 specifies FWI=9 and SFGI=7 (about 38.7 ms after ATS).
+CanoKey NFCC advertises FSC=256 bytes in ATS `05 78 00 94 00`.
+TB1 specifies FWI=9 and SFGI=4 (about 4.8 ms after ATS).
 On an already provisioned device the first boot of a firmware with a
 different FSCI or SFGI writes and verifies the corresponding ATS fields
 when they differ.
