@@ -41,12 +41,28 @@ if CMake cannot discover the headers. The root Rust toolchain is pinned.
 
 ```sh
 cargo test -p canokey-protocol
-cargo test -p canokey-rust-core --features admin,pass,oath,openpgp,piv,ctap,ndef
 python3 tests/check_rust_profiles.py
 python3 tests/test_rust_transports.py
 cmake -S . -B build/host -DENABLE_TESTS=ON -DENABLE_APDU_REPLAY=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/host --parallel 2
 ctest --test-dir build/host --output-on-failure
+```
+
+The Rust feature test matrix runs the empty, single-applet and full Core
+profiles. FFI covers empty, CTAP-only and full. The portable CTAP crate
+exposes mechanism features and tests empty, streaming-only and full.
+
+```sh
+full=admin,pass,oath,openpgp,piv,ctap,ndef
+for features in "" admin pass oath openpgp piv ctap ndef "$full"; do
+    cargo test -p canokey-rust-core --no-default-features --features "$features"
+done
+for features in "" ctap "$full"; do
+    cargo test -p canokey-rust-ffi --no-default-features --features "$features"
+done
+for features in "" streaming streaming,schema; do
+    cargo test -p canokey-ctap --no-default-features --features "$features"
+done
 ```
 
 Core CTest never discovers platform fixtures in a parent checkout. CIU owns

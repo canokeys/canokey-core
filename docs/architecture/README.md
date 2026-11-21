@@ -1,17 +1,18 @@
 # Architecture
 
-The root Cargo workspace contains six product crates and the test card crate.
-Keep this granularity unless a
-new independently reusable component needs a separately enforced dependency.
+The root Cargo workspace contains eight product crates and the test card crate.
 
 | Component | Owns | Dependencies |
 | --- | --- | --- |
-| protocol | APDU, TLV, CBOR and transport framing/state machines | No applets or native ABI |
-| ports | Capability contracts, binding strategy, native implementations | Platform C callbacks at the native boundary |
-| core | Applets, authorization, records, shared runtime and workflows | protocol; safe ports contracts and bindings |
-| ffi | Pointer validation, serialized runtime access, IRQ/main-loop handoff | core, protocol, ports native adapters |
+| protocol | Wire encoding and parsing for APDU, TLV, CBOR and transport frames | None in production |
+| ctap | Product-independent CTAP parsing, schemas, streaming and sessions | protocol, ports, minicbor for schema and code generation |
+| transport-runtime | Transport engine and CCID, CTAPHID, NFC and USB state machines | protocol |
+| ports | Capability contracts and backend binding | None |
+| core | Applets, authorization, records, session routing and workflows | ctap, transport-runtime, protocol, ports |
+| ffi | Pointer validation, serialized runtime access, IRQ/main-loop handoff | core, transport-runtime, protocol, ports, optional native-crypto |
 | native-crypto | Native cryptographic imports and capability adapters | ports contracts and C primitives |
-| host | Host storage and virtual-card composition | ffi, protocol, ports |
+| host | Host storage and virtual-card composition | ffi, core, native-crypto, protocol, ports |
+| `tests/card` | Test card and regression fixtures | core, protocol, ports, native-crypto, optional ffi |
 
 `core` is `no_std` and forbids unsafe code. Applet-local wire adapters, services,
 record codecs and repositories stay together. Shared mechanisms do not depend
@@ -19,7 +20,9 @@ on applets; `flows/` owns explicit cross-applet reset, OATH/PASS binding and
 credential-output workflows.
 The registry routes operations without absorbing applet policy.
 
-`ctap::Applet` owns the single CTAP/U2F session and response backing shared by
+`crates/ctap` defines the reusable CTAP contracts. The applet at
+`crates/core/src/applets/ctap` applies product policy, manages storage and owns
+the single CTAP/U2F session and response backing shared by
 native HID and APDU transports. `ctap/apdu.rs` handles FIDO SELECT and command
 envelopes; `ctap/message.rs` handles HID MSG envelopes and continuation. Neither
 adapter reserves a second session or response buffer. ADMIN invokes typed CTAP
@@ -39,15 +42,16 @@ intentional composition/code-elimination choices.
 
 ## Transport ownership
 
-| Transport | protocol | core/runtime | ffi/transport |
+| Transport | protocol | transport-runtime | ffi/transport |
 | --- | --- | --- | --- |
 | CCID | Packet fields and framing | APDU/slot state machine and response leases | IRQ mailbox, timed extensions and serialized execution |
 | CTAPHID | Report framing and command/error values | Reassembly, channel and execution policy | USB mailbox, progress and shared-runtime arbitration |
 | NFC | ISO-DEP block encoding | ISO-DEP state machine, FM11NT I/O policy and provisioning | IRQ/timer handoff, chip callbacks and serialized execution |
-| WebUSB | USB setup fields | APDU transaction state; `usb/bos.rs` owns discovery descriptors | EP0 mailbox and shared-runtime arbitration |
+| USB and WebUSB | USB setup fields | USB control and lifecycle state machines | EP0 mailbox and shared-runtime arbitration |
 
-`runtime/webusb.rs` owns transactions; `runtime/usb/bos.rs` owns BOS, URL and
-Microsoft OS descriptors. The framing crate does not own hardware/session state.
+Core composes the portable engine with applet routing and policy.
+`crates/core/src/runtime/webusb.rs` owns WebUSB APDU transactions and
+`crates/core/src/runtime/usb/bos.rs` owns BOS, URL and Microsoft OS descriptors.
 
 ## Ports and bindings
 
@@ -89,7 +93,7 @@ progress and arbitration; credential policy and record interpretation stay in co
 
 Native callback imports and generated C contracts are in `crates/ports/include/`. Production
 entrypoints and their generated header belong to the platform. Native crypto
-imports and their declarations are owned by `crates/native-crypto`; C crypto
+imports and declarations are in `crates/native-crypto/include/`. C crypto
 facades live in `native/crypto/`, filesystem helpers in `native/storage/`, and
 C support headers in `native/support/include/`. Host-only C callbacks, including
 the POSIX-cancellable PC/SC wait, are private to `crates/host/native/`.

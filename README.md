@@ -9,17 +9,24 @@ machines. Platform repositories supply hardware drivers and firmware startup.
 | Directory | Responsibility |
 | --- | --- |
 | `crates/core` | Safe applets, shared mechanisms, session runtime and workflows |
-| `crates/protocol` | Wire formats, parsers and portable transport state machines |
-| `crates/ports` | Safe capability contracts, static/dynamic binding and native adapters |
+| `crates/protocol` | Wire encoding and parsing |
+| `crates/ctap` | Product-independent CTAP request parsing, schemas, streaming and sessions |
+| `crates/transport-runtime` | Transport engine and CCID, CTAPHID, NFC and USB state machines |
+| `crates/ports` | Safe capability contracts, static and dynamic binding, and C contract headers in `crates/ports/include` |
+| `crates/native-crypto` | Native crypto imports and C ABI headers in `crates/native-crypto/include` |
 | `crates/ffi` | C ABI, serialized runtime access and hardware-facing transport integration |
 | `crates/host` | Host storage and virtual-card integration; private C glue in `native/` |
-| `native` | Shared C ABI headers, crypto facades and LittleFS helpers |
+| `native/` | Crypto facades in `native/crypto`, LittleFS helpers in `native/storage` and C support headers in `native/support/include` |
+| `tests/card` | Rust test card and regression harnesses |
 | `tests` | Native, cross-language, PC/SC and hardware tests |
 | `cmake` | Cargo integration, host profiles and build helpers |
 | `tools` | Developer utilities |
 | `third_party` | Pinned Git submodules: canokey-crypto, LittleFS and minicbor |
 | `docs` | Current architecture, applet contracts, platform integration and testing |
 | `reference/legacy-c` | Immutable historical snapshot, excluded from builds |
+
+CTAP applet policy, storage and response backing live in
+`crates/core/src/applets/ctap`.
 
 ## Build and test
 

@@ -4,7 +4,9 @@
 
 CanoKey Core is a Rust workspace. See [README](README.md),
 [architecture](docs/architecture/README.md) and [testing](docs/testing/README.md).
-Product code lives in `crates/{core,protocol,ports,ffi,host,native-crypto}`.
+The eight product crates are `crates/protocol`, `crates/ctap`,
+`crates/transport-runtime`, `crates/ports`, `crates/native-crypto`,
+`crates/core`, `crates/ffi` and `crates/host`. The test card is in `tests/card`.
 Native import headers and C contract projections are in `crates/ports/include`; imported crypto ABI is in
 `crates/native-crypto/include`, C support headers in `native/support/include`,
 crypto facades in `native/crypto`, and filesystem
@@ -20,8 +22,11 @@ evidence referenced by the synchronization manifest.
 - `core` is `no_std` and forbids unsafe code. Keep applet policy, authorization,
   wire adapters, record codecs and repositories here; shared mechanisms must
   not depend on applets. Cross-applet orchestration belongs in `flows`.
-- `protocol` owns structural encoding and portable transport state machines,
-  with no applet or native dependencies.
+- `protocol` owns wire encoding and parsing. `transport-runtime` owns the
+  transport engine and the CCID, CTAPHID, NFC and USB state machines.
+- `crates/ctap` owns product-independent request parsing, schemas, streaming
+  and session contracts. `crates/core/src/applets/ctap` owns applet policy,
+  storage and response backing.
 - `ports/contracts` contains safe capability contracts; `binding.rs` selects
   outer static production or injectable test bindings; generic `Platform`
   families carry capability types through core routing. `native-crypto` owns
