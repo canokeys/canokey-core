@@ -20,6 +20,7 @@ struct Controller {
     address: u8,
     ready: bool,
     opened: [bool; 8],
+    data_opens: usize,
     halted: [bool; 8],
     stall_writes: [usize; 8],
     pending: [bool; 4],
@@ -39,6 +40,7 @@ static mut CONTROLLER: Controller = Controller {
     address: 0,
     ready: false,
     opened: [false; 8],
+    data_opens: 0,
     halted: [false; 8],
     stall_writes: [0; 8],
     pending: [false; 4],
@@ -91,6 +93,9 @@ pub(crate) unsafe fn ck_usb_dcd_stop() {
 pub(crate) unsafe fn ck_usb_dcd_open(ep: u8) {
     let c = controller();
     assert_ne!(c.masked, 0);
+    if ep & ENDPOINT_NUMBER_MASK != 0 {
+        c.data_opens += 1;
+    }
     c.opened[direction(ep)] = true;
     c.halted[direction(ep)] = false;
 }
@@ -443,6 +448,20 @@ fn usb_controller_control_endpoints_mailboxes_and_reset() {
             web::scenario();
             generation = ck_ccid_io_generation();
         }
+        // SETUP always reopens EP0 before dispatching the request.
+        let opens = controller().data_opens;
+        let stalled = controller().stall_writes[1];
+        setup(
+            INTERFACE_OUT,
+            SET_INTERFACE,
+            0,
+            u16::from(INTERFACES.count()),
+            0,
+        );
+        assert!(controller().halted[1]);
+        assert!(controller().stall_writes[1] > stalled);
+        assert_eq!(controller().data_opens, opens);
+
         assert_eq!(ck_ccid_io_submit(generation, payload.as_ptr(), 128, 1), 1);
         ck_ccid_io_arm(generation, packet.as_ptr(), 10, EXTENSION_INTERVAL);
         bus_reset();

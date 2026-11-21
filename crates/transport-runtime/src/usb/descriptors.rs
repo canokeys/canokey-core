@@ -42,6 +42,8 @@ pub struct Composition {
     pub keyboard: Option<Hid>,
 }
 impl Composition {
+    pub const CTAP_INTERFACE: u8 = 0x00;
+
     pub const fn count(self) -> u8 {
         1 + self.ctap.is_some() as u8
             + self.webusb_string.is_some() as u8
@@ -90,7 +92,7 @@ impl<const CAPACITY: usize> Configuration<CAPACITY> {
             0x32,
         ]);
         if let Some(endpoints) = composition.ctap {
-            descriptor.hid(0x00, CTAP_HID, endpoints);
+            descriptor.hid(Composition::CTAP_INTERFACE, CTAP_HID, endpoints);
         }
         if let Some(string) = composition.webusb_string {
             descriptor.append(&[

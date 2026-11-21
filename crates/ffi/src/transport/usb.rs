@@ -461,10 +461,13 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
 
                 let ep = if index == INTERFACES.ccid() {
                     EP_CCID
-                } else if INTERFACES.hid && index == 0 {
+                } else if INTERFACES.hid && index == INTERFACES.ctap() {
                     EP_HID
-                } else {
+                } else if INTERFACES.keyboard && index == INTERFACES.keyboard() {
                     EP_KEYBOARD
+                } else {
+                    stall();
+                    return;
                 };
                 reset_pipe(ep, true, ready());
                 status(Phase::StatusIn);

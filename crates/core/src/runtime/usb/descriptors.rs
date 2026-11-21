@@ -124,6 +124,9 @@ impl Interfaces {
     pub const fn keyboard(self) -> u8 {
         self.composition().keyboard()
     }
+    pub const fn ctap(self) -> u8 {
+        common::Composition::CTAP_INTERFACE
+    }
 
     pub fn endpoint(self, address: u16) -> bool {
         address & !u16::from(ENDPOINT_ADDRESS_MASK) == 0
@@ -136,7 +139,7 @@ impl Interfaces {
             }
     }
     pub fn hid_interface(self, index: u16) -> Option<usize> {
-        if self.hid && index == 0 {
+        if self.hid && index == u16::from(self.ctap()) {
             Some(0)
         } else if self.keyboard && index == self.keyboard() as u16 {
             Some(1)

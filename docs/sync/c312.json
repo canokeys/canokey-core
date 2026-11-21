@@ -731,7 +731,7 @@
         },
         {
           "path": "crates/core/src/runtime/usb/descriptors.rs",
-          "sha256": "08f6724e291e5bd178da0d38351b2e213e03d253843ec691c41c3a06bb01ecb8"
+          "sha256": "de2b51abf21cc43e55d555b0d9e72178fa72005c3e11f60cacda4be07dd87956"
         },
         {
           "path": "docs/history/ccid-extended-removed/README.md",
@@ -1520,7 +1520,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "019c2e834ca689d52f4988969c140188e6c2e9b5598c3a33c601578175b76dc8"
+          "sha256": "7efd97c3fe6ac7aa71fa6382b842939156a8b432cbd7af5dd45768e6f320f475"
         }
       ],
       "regressions": [
@@ -1602,7 +1602,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "019c2e834ca689d52f4988969c140188e6c2e9b5598c3a33c601578175b76dc8"
+          "sha256": "7efd97c3fe6ac7aa71fa6382b842939156a8b432cbd7af5dd45768e6f320f475"
         }
       ],
       "regressions": [
@@ -2053,7 +2053,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "019c2e834ca689d52f4988969c140188e6c2e9b5598c3a33c601578175b76dc8"
+          "sha256": "7efd97c3fe6ac7aa71fa6382b842939156a8b432cbd7af5dd45768e6f320f475"
         }
       ],
       "regressions": [
@@ -2064,7 +2064,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb/tests.rs",
-          "sha256": "2191dcb29e47f732ca74ee347af46b97b44336c77d74381c381e5b2b7c9bd927",
+          "sha256": "917394fc42655da8521aac97aea16e1ee29f107cbdd20223e07e75d7348a7cc8",
           "id": "usb_controller_control_endpoints_mailboxes_and_reset"
         },
         {
@@ -2099,7 +2099,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/usb/descriptors.rs",
-          "sha256": "08f6724e291e5bd178da0d38351b2e213e03d253843ec691c41c3a06bb01ecb8"
+          "sha256": "de2b51abf21cc43e55d555b0d9e72178fa72005c3e11f60cacda4be07dd87956"
         },
         {
           "path": "crates/core/src/runtime/usb/mod.rs",
@@ -2107,7 +2107,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "019c2e834ca689d52f4988969c140188e6c2e9b5598c3a33c601578175b76dc8"
+          "sha256": "7efd97c3fe6ac7aa71fa6382b842939156a8b432cbd7af5dd45768e6f320f475"
         }
       ],
       "regressions": [
@@ -2118,7 +2118,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb/tests.rs",
-          "sha256": "2191dcb29e47f732ca74ee347af46b97b44336c77d74381c381e5b2b7c9bd927",
+          "sha256": "917394fc42655da8521aac97aea16e1ee29f107cbdd20223e07e75d7348a7cc8",
           "id": "usb_controller_control_endpoints_mailboxes_and_reset"
         }
       ],
@@ -2152,7 +2152,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "019c2e834ca689d52f4988969c140188e6c2e9b5598c3a33c601578175b76dc8"
+          "sha256": "7efd97c3fe6ac7aa71fa6382b842939156a8b432cbd7af5dd45768e6f320f475"
         }
       ],
       "regressions": [
@@ -2209,7 +2209,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/usb/descriptors.rs",
-          "sha256": "08f6724e291e5bd178da0d38351b2e213e03d253843ec691c41c3a06bb01ecb8"
+          "sha256": "de2b51abf21cc43e55d555b0d9e72178fa72005c3e11f60cacda4be07dd87956"
         },
         {
           "path": "crates/core/src/runtime/usb/mod.rs",
@@ -2217,7 +2217,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "019c2e834ca689d52f4988969c140188e6c2e9b5598c3a33c601578175b76dc8"
+          "sha256": "7efd97c3fe6ac7aa71fa6382b842939156a8b432cbd7af5dd45768e6f320f475"
         }
       ],
       "regressions": [
@@ -2281,7 +2281,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb/tests.rs",
-          "sha256": "2191dcb29e47f732ca74ee347af46b97b44336c77d74381c381e5b2b7c9bd927",
+          "sha256": "917394fc42655da8521aac97aea16e1ee29f107cbdd20223e07e75d7348a7cc8",
           "id": "usb_controller_control_endpoints_mailboxes_and_reset"
         },
         {
@@ -2316,7 +2316,7 @@
       "targets": [
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "019c2e834ca689d52f4988969c140188e6c2e9b5598c3a33c601578175b76dc8"
+          "sha256": "7efd97c3fe6ac7aa71fa6382b842939156a8b432cbd7af5dd45768e6f320f475"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
@@ -2374,7 +2374,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb/tests.rs",
-          "sha256": "2191dcb29e47f732ca74ee347af46b97b44336c77d74381c381e5b2b7c9bd927",
+          "sha256": "917394fc42655da8521aac97aea16e1ee29f107cbdd20223e07e75d7348a7cc8",
           "id": "lifecycle_cleanup_gates_class_input_and_rejects_stale_completion"
         },
         {
@@ -3378,7 +3378,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
-          "sha256": "019c2e834ca689d52f4988969c140188e6c2e9b5598c3a33c601578175b76dc8"
+          "sha256": "7efd97c3fe6ac7aa71fa6382b842939156a8b432cbd7af5dd45768e6f320f475"
         }
       ],
       "regressions": [
@@ -10893,6 +10893,46 @@
             "previous_sha256": "0518fc9dc79a6d6e1ba596f7767c340bcbbf5a6ab0ac48130ca65d6e84f6feb5",
             "current_sha256": "4638bd3aba77c2acbcd2ec654f3d72b3d5d82beb1ffde591020109d6b34d27f0",
             "behaviors": [
+              "L3"
+            ]
+          }
+        }
+      },
+      {
+        "record_parent": "92a1a08d10a4b80ae0038d22e465695a8f357748",
+        "status": "pending; no behavior, source-hunk or release approval granted",
+        "scope": "Reopened: validate SET_INTERFACE against advertised USB interfaces and stall invalid indices.",
+        "artifacts": {
+          "crates/core/src/runtime/usb/descriptors.rs": {
+            "previous_sha256": "08f6724e291e5bd178da0d38351b2e213e03d253843ec691c41c3a06bb01ecb8",
+            "current_sha256": "de2b51abf21cc43e55d555b0d9e72178fa72005c3e11f60cacda4be07dd87956",
+            "behaviors": [
+              "T1",
+              "U2",
+              "U4"
+            ]
+          },
+          "crates/ffi/src/transport/usb.rs": {
+            "previous_sha256": "019c2e834ca689d52f4988969c140188e6c2e9b5598c3a33c601578175b76dc8",
+            "current_sha256": "7efd97c3fe6ac7aa71fa6382b842939156a8b432cbd7af5dd45768e6f320f475",
+            "behaviors": [
+              "L2",
+              "L7",
+              "U1",
+              "U2",
+              "U3",
+              "U4",
+              "L3",
+              "L10"
+            ]
+          },
+          "crates/ffi/src/transport/usb/tests.rs": {
+            "previous_sha256": "2191dcb29e47f732ca74ee347af46b97b44336c77d74381c381e5b2b7c9bd927",
+            "current_sha256": "917394fc42655da8521aac97aea16e1ee29f107cbdd20223e07e75d7348a7cc8",
+            "behaviors": [
+              "U1",
+              "U2",
+              "U5",
               "L3"
             ]
           }
