@@ -132,12 +132,13 @@ impl OpenPgp {
                 &b[1..]
             }
         } else {
-            // Preserve the legacy OpenPGP signature-input policy: RSA accepts at
-            // most 2/5 of its modulus byte length; non-Ed EC accepts one scalar
-            // width. This is an applet limit, not the PKCS#1 padding capacity.
+            // RSA retains its applet input limit. Byte-aligned Weierstrass
+            // curves truncate long digests in the signing service.
             if b.is_empty()
                 || a.rsa() && b.len() > a.public_value_bytes() * 2 / 5
-                || !a.rsa() && a.0 != alg::ED25519 && b.len() > a.private_component_bytes()
+                || !a.rsa()
+                    && !matches!(a.0, alg::ED25519 | alg::P256 | alg::SECP256K1 | alg::P384)
+                    && b.len() > a.private_component_bytes()
             {
                 return Err(Sw::WRONG_LENGTH);
             }

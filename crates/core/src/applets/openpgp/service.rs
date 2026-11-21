@@ -145,10 +145,14 @@ impl Session {
             && matches!(a.0, alg::P256 | alg::SECP256K1 | alg::P384 | alg::P521)
         {
             let width = a.private_component_bytes();
-            if width == 0 || used > width {
+            if a.0 == alg::P521 && used > width {
                 return Err(Error::Length);
             }
-            w.input.copy_within(input.clone(), width - used);
+            // FIPS 186-5 takes the leftmost order-width bits. The shorter
+            // curves have byte-aligned orders. P-521 retains its 66-byte cap.
+            let used = used.min(width);
+            w.input
+                .copy_within(input.start..input.start + used, width - used);
             w.input[..width - used].fill(0);
             &w.input[..width]
         } else {

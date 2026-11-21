@@ -65,8 +65,10 @@ Supported algorithms remain RSA-2048/3072/4096, P-256, secp256k1, P-384, P-521,
 Ed25519 and X25519. X25519 is decrypt-role only; Ed25519 is sign/auth-role only.
 RSA signatures use PKCS#1 v1.5 and RSA decipher validates v1.5 padding.
 Invalid decipher padding returns 6A80; primitive failures retain 6900. Short
-Weierstrass digests are left-zero-padded to the native scalar width without
-changing their numeric value. Signatures are raw r||s; ECDH consumes the nested
+Weierstrass digests are left-zero-padded to the native scalar width.
+Following FIPS 186-5, P-256, secp256k1 and P-384 use the leftmost order-width
+bytes of longer digests. P-521 accepts up to 66 bytes and rejects longer input.
+Signatures are raw r||s; ECDH consumes the nested
 A6/7F49/86 object. OpenPGP X25519 imported scalars are big-endian integers, matching the native
 representation (unlike the PIV import convention). Public values and shared
 secrets use RFC 7748 little-endian wire order. `key_regressions` verifies the
@@ -152,7 +154,9 @@ PIN records have four header bytes plus the actual PIN.
 Certificates store only their contents. No previous-format decoder is included.
 The key record is a version-2 discriminator byte, explicit private components,
 then a fixed 31-byte version/algorithm/origin/UIF/fingerprint/date/counter footer.
-RSA stores exponent4 and five
+RSA imports accept a 1- to 4-byte big-endian public exponent and require all
+six RSA components. The native backend validates the exponent and CRT values
+before storage. RSA stores the exponent in four bytes and five
 active-width components: 644/964/1284 material bytes for RSA-2048/3072/4096.
 Including metadata, RSA-4096 occupies 1316 bytes. Metadata reads fetch the
 discriminator and footer and check the exact complete record size; the native 1284-byte

@@ -169,7 +169,7 @@ impl Import {
         if a.rsa() {
             if count != 6
                 || tags != key_tag::RSA_COMPONENTS
-                || self.lengths[0] != key_layout::EXPONENT_BYTES
+                || !matches!(self.lengths[0], 1..=key_layout::EXPONENT_BYTES)
                 || self.lengths[1] != width
                 || self.lengths[2] != width
                 || self.lengths[3..].iter().any(|n| *n == 0 || *n > width)
@@ -227,6 +227,8 @@ impl Import {
                     key_layout::DQ,
                 ];
                 let width = if i == 0 {
+                    // The workspace starts zeroed. Right alignment leaves
+                    // the omitted leading exponent bytes at zero.
                     key_layout::EXPONENT_BYTES
                 } else {
                     a.private_component_bytes()

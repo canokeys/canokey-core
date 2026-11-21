@@ -243,6 +243,15 @@ def key_regressions(c):
     v = key.private_numbers()
     good = [v.public_numbers.e.to_bytes(4, "big")] + [
         x.to_bytes(128, "big") for x in (v.p, v.q, v.iqmp, v.dmp1, v.dmq1)]
+    c.cmd("rsa_import_e_3", 0xdb, 0x3f, 0xff,
+          import_template(0, range(0x91, 0x97), [good[0][1:], *good[1:]]), le=None)
+    exercise(c, 5, 0, key.public_key())
+    for exponent in (b"", b"\x00" + good[0]):
+        template = import_template(0, range(0x91, 0x97), [exponent, *good[1:]])
+        c.raw("reject_rsa_exponent_length", 0xdb, 0x3f, 0xff, template[:193],
+              cla=0x10, status=0x6a80)
+    c.cmd("reject_rsa_exponent_value", 0xdb, 0x3f, 0xff,
+          import_template(0, range(0x91, 0x97), [b"\x03", *good[1:]]), le=None, status=0x6a80)
     for defect in ("dp", "equal_primes"):
         parts = good.copy()
         if defect == "dp":
@@ -254,6 +263,22 @@ def key_regressions(c):
         c.cmd("invalid_crt_" + defect, 0xdb, 0x3f, 0xff,
               import_template(0, range(0x91, 0x97), parts), status=0x6a80)
         exercise(c, 5, 0, key.public_key())
+
+    for alg in (0, 2, 8):
+        c.attrs(alg, 0)
+        private = ec.generate_private_key(CURVES[alg]())
+        c.import_key(alg, 0, private)
+        c.verify(0x81)
+        digest = hashlib.sha512(b"OpenPGP ECDSA digest width").digest()
+        if alg == 8:
+            c.cmd("reject_p521_oversize_digest", 0x2a, 0x9e, 0x9a, digest + b"\x00" * 3,
+                  status=0x6700)
+            continue
+        signature = c.cmd("ecdsa_sha512", 0x2a, 0x9e, 0x9a, digest)
+        width = len(signature) // 2
+        der = utils.encode_dss_signature(int.from_bytes(signature[:width], "big"),
+                                         int.from_bytes(signature[width:], "big"))
+        private.public_key().verify(der, digest, ec.ECDSA(utils.Prehashed(hashes.SHA512())))
 
     c.attrs(5, 1)
     c.cmd("logout_for_generate", 0x20, 0xff, 0x83)
