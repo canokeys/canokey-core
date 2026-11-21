@@ -47,9 +47,6 @@ pub trait Backend {
 /// false; these checks also protect callers with already-owned semantic fields.
 #[inline]
 pub fn validate(request: &Request) -> Result<(), RuleError> {
-    if !request.make && !request.up && request.secret {
-        return Err(RuleError::UnsupportedOption);
-    }
     if !request.make && request.resident {
         return Err(RuleError::UnsupportedOption);
     }

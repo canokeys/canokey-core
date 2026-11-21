@@ -828,9 +828,6 @@ fn respond_mldsa_make(
 }
 
 #[cfg(test)]
-mod tests;
-
-#[cfg(test)]
 mod material_tests;
 
 #[cfg(test)]

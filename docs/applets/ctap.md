@@ -159,11 +159,13 @@ salts and authentication tag; no request/PKE bytes remain live during crypto.
 The MC variant requires `hmac-secret: true`; absent or false returns
 MISSING_PARAMETER (14). Unsupported unsigned enterpriseAttestation values return
 INVALID_PARAMETER (02), while other CBOR types return UNEXPECTED_TYPE (11).
-Assertions with hmac-secret require
-user presence. Invalid salt authentication never decrypts the salt.
+Assertions with hmac-secret support `up: false`, with the UP flag clear.
+Invalid salt authentication never decrypts the salt.
 
 CredRandom derives from the credential master with separate domains for UV and
-non-UV operations, distinct from signing keys and largeBlobKey. Output uses
+non-UV operations, selected by the assertion's UV result independently of UP.
+Both flags and the prepared salts carry into getNextAssertion.
+The domains are distinct from signing keys and largeBlobKey. Output uses
 the shared `canokey_ctap::extensions::hmac_secret::output` engine: prepare the
 IV, write each HMAC-SHA-256 result directly into the existing ciphertext body,
 then AES-256-CBC encrypt that body in place. Protocol 1 uses the zero IV;
@@ -829,9 +831,10 @@ with `INVALID_OPTION`, and getAssertion rejects explicit `rk` with
 `UNSUPPORTED_OPTION`, regardless of their boolean value. Omitted options retain
 the command defaults; getAssertion continues to support `up: false`.
 Both shared parsers apply these command-key rules after boolean type validation.
-Silent getAssertion with hmac-secret returns `UNSUPPORTED_OPTION` before PIN-policy
-IO, RP hashing, presence or token verification, even with empty authentication.
-Other invalid semantic options also reject before that PIN-state probe. The
+Silent getAssertion with hmac-secret follows normal PIN/UV and credProtect
+policy and retains token permissions because it does not consume presence.
+MakeCredential exclude-list handling still requires presence.
+Invalid semantic options reject before the PIN-state probe. The
 shared authorization engine has no ordering profile; the Core adapter validates
 before loading PIN policy. Full dispatch can still load product SM2 settings.
 Request rejection leaves existing agreement/token authority intact and the

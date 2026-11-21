@@ -90,7 +90,7 @@ fn ordinary_up_only_and_token_paths_preserve_the_authorization_value_without_pro
     }
 }
 #[test]
-fn invalid_options_and_silent_secret_precede_policy_probe_and_token_faults() {
+fn invalid_options_precede_policy_probe_and_token_faults() {
     for pin_set in [false, true] {
         for auth_length in [None, Some(0), Some(16), Some(32)] {
             for fault in [
@@ -100,7 +100,6 @@ fn invalid_options_and_silent_secret_precede_policy_probe_and_token_faults() {
                 Some(Fault::Proof),
             ] {
                 for (case, expected) in [
-                    (0, RuleError::UnsupportedOption),
                     (1, RuleError::UnsupportedOption),
                     (2, RuleError::InvalidOption),
                     (3, RuleError::InvalidOption),
@@ -108,11 +107,6 @@ fn invalid_options_and_silent_secret_precede_policy_probe_and_token_faults() {
                     let mut request = request();
                     request.auth_length = auth_length;
                     match case {
-                        0 => {
-                            request.make = false;
-                            request.up = false;
-                            request.secret = true;
-                        }
                         1 => {
                             request.make = false;
                             request.resident = true;
@@ -140,6 +134,24 @@ fn invalid_options_and_silent_secret_precede_policy_probe_and_token_faults() {
         Err(Error::Rule(RuleError::InvalidOption))
     );
     assert!(backend.calls.is_empty());
+}
+
+#[test]
+fn silent_hmac_secret_uses_normal_uv_admission() {
+    let mut request = request();
+    request.make = false;
+    request.up = false;
+    request.secret = true;
+    let mut backend = product(true);
+    assert_eq!(authorization::authorize(&request, &mut backend), Ok(None));
+    assert_eq!(backend.calls, ["read"]);
+    backend.calls.clear();
+    request.auth_length = Some(16);
+    assert!(matches!(
+        authorization::authorize(&request, &mut backend),
+        Ok(Some(_))
+    ));
+    assert_eq!(backend.calls, ["read", "verify"]);
 }
 #[test]
 fn valid_empty_authentication_probes_presence_once_and_never_verifies_token() {

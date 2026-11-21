@@ -2669,7 +2669,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/authentication.rs",
-          "sha256": "c99fe953c3c2ca0990802fbab9da4bdc1835b691998812d65e0033676fba0d03"
+          "sha256": "1680f923a4a75173c8a9902f99fc5969003733c27b4c26321b99831d5c9ec269"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -2683,7 +2683,7 @@
       "regressions": [
         {
           "path": "tests/integration/ctap_normal.py",
-          "sha256": "ed092f24d26f3a9d0d56f1358dace0e1e713a61539a97e77118797629fdcb900",
+          "sha256": "82652e9577f33b64ec1375c744e2555b9aef5abff4812e6e90f1f065482263b2",
           "id": "ctap-normal-254-byte-full-RP-disclosure-and-signed-hash"
         },
         {
@@ -10934,6 +10934,27 @@
               "U2",
               "U5",
               "L3"
+            ]
+          }
+        }
+      },
+      {
+        "record_parent": "11fc4f7928993a8e86194c27dd60e79bb2de8cf1",
+        "status": "pending; no behavior, source-hunk or release approval granted",
+        "scope": "Reopened: CTAP silent assertions with hmac-secret, including PIN/UV admission, response flags and continuation.",
+        "artifacts": {
+          "crates/core/src/applets/ctap/authentication.rs": {
+            "previous_sha256": "c99fe953c3c2ca0990802fbab9da4bdc1835b691998812d65e0033676fba0d03",
+            "current_sha256": "1680f923a4a75173c8a9902f99fc5969003733c27b4c26321b99831d5c9ec269",
+            "behaviors": [
+              "C1"
+            ]
+          },
+          "tests/integration/ctap_normal.py": {
+            "previous_sha256": "ed092f24d26f3a9d0d56f1358dace0e1e713a61539a97e77118797629fdcb900",
+            "current_sha256": "82652e9577f33b64ec1375c744e2555b9aef5abff4812e6e90f1f065482263b2",
+            "behaviors": [
+              "C1"
             ]
           }
         }

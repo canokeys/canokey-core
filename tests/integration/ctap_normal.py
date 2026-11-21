@@ -251,14 +251,18 @@ def run(wire):
         assert protocol.decrypt(secret, AuthenticatorData(result[2]).extensions["hmac-secret"]) == expected
         single = call(2, request | {4: {"hmac-secret": hmac_input(salts[:32])}})
         assert protocol.decrypt(secret, AuthenticatorData(single[2]).extensions["hmac-secret"]) == expected[:32]
-        call(2, request | {5: {"up": False}}, 0x2b)
+        silent = AuthenticatorData(call(2, request | {5: {"up": False}})[2])
+        assert not silent.is_user_present() and not silent.is_user_verified()
+        assert protocol.decrypt(secret, silent.extensions["hmac-secret"]) == expected
         call(2, request | {4: {"hmac-secret": extension | {3: bytes(len(extension[3]))}}}, 0x33)
         call(2, request | {4: {"hmac-secret": extension | {1: public | {-2: bytes(32), -3: bytes(32)}}}}, 2)
         # The extension keeps prepared salts/keys across getNextAssertion only.
-        first = call(2, {1: rp, 2: assertion_hash, 4: {"hmac-secret": extension}})
+        first = call(2, {1: rp, 2: assertion_hash, 4: {"hmac-secret": extension}, 5: {"up": False}})
         second = call(8)
         assert len(protocol.decrypt(secret, AuthenticatorData(second[2]).extensions["hmac-secret"])) == 64
         for answer in [first, second]:
+            flags = AuthenticatorData(answer[2])
+            assert not flags.is_user_present() and not flags.is_user_verified()
             direct = call(2, {1: rp, 2: assertion_hash, 3: [answer[1]], 4: {"hmac-secret": extension}})
             assert protocol.decrypt(secret, AuthenticatorData(direct[2]).extensions["hmac-secret"]) == protocol.decrypt(secret, AuthenticatorData(answer[2]).extensions["hmac-secret"])
         # Parse errors also terminate discovery and its prepared HMAC state.
@@ -325,7 +329,14 @@ def run(wire):
         token = protocol.decrypt(secret, call(6, {1: version, 2: 9, 3: public, 6: hashed, 9: 2, 10: rp})[2])
         encrypted = protocol.encrypt(secret, salts)
         extension = {1: public, 2: encrypted, 3: protocol.authenticate(secret, encrypted), 4: version}
-        verified = call(2, params | {4: {"hmac-secret": extension}, 6: protocol.authenticate(token, assertion_hash)})
+        silent_params = params | {
+            4: {"hmac-secret": extension}, 5: {"up": False},
+            6: protocol.authenticate(token, assertion_hash),
+        }
+        verified = call(2, silent_params)
+        assert call(2, silent_params)[1] == verified[1]
+        verified_flags = AuthenticatorData(verified[2])
+        assert verified_flags.is_user_verified() and not verified_flags.is_user_present()
         verified_output = protocol.decrypt(secret, AuthenticatorData(verified[2]).extensions["hmac-secret"])
         assert verified_output != hmac_results[version]
         if version == 1:
