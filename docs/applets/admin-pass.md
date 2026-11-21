@@ -28,10 +28,11 @@ SELECT and GET RESPONSE belong to the runtime. Reset or applet switch revokes gr
 | 13 | 0 | Empty | ADMIN grant; atomically clear both PASS slots |
 | 50 | 0 | ASCII `RESET` | Locked PIN and strong presence; reset enabled applets and ADMIN PIN |
 
-Verification preserves C behavior: compare PIN bytes and length, persist a
-retry decrement on mismatch, restore retries after a match if necessary, and
-never grant authorization after a storage error. Wrong PIN returns 63Cx, with
-6983 when blocked.
+Verification checks the input length first. It persistently decrements the retry
+counter before comparing the PIN to prevent a power cut from bypassing the
+charge. A match restores the retry limit before granting authorization. The
+prepaid decrement costs one extra Flash write on success. A storage error
+revokes authorization. Wrong PIN returns `63Cx`, with `6983` when blocked.
 READ PASS uses GET RESPONSE when an explicit Le limits the reply. A touch of
 at least 30 ms selects slot 1; a touch of
 at least 500 ms selects slot 2. The output job lives in Rust and handles C HID

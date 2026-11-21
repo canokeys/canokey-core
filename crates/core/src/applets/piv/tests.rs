@@ -6,6 +6,7 @@ use crate::ports::*;
 struct Store {
     bytes: Option<[u8; STATE_LEN]>,
     fail: bool,
+    fail_at: Option<usize>,
     commit_on_error: bool,
     writes: usize,
 }
@@ -24,10 +25,11 @@ impl Storage for Store {
     }
     fn replace(&mut self, _: Record, input: &[u8]) -> Result<(), StorageError> {
         self.writes += 1;
-        if !self.fail || self.commit_on_error {
+        let failed = self.fail || self.fail_at == Some(self.writes);
+        if !failed || self.commit_on_error {
             self.bytes = Some(input.try_into().unwrap());
         }
-        if self.fail {
+        if failed {
             Err(StorageError::Uncertain)
         } else {
             Ok(())
@@ -243,6 +245,7 @@ fn uncertain_storage_never_authorizes_or_uses_cached_credentials() {
             command(&mut piv, &mut store, 0x20, 0, 0x80, PIN),
             Sw::UNABLE_TO_PROCESS
         );
+        assert!(!piv.available);
         assert!(!piv.state.pin_ok);
         store.fail = false;
         assert_eq!(
@@ -250,7 +253,12 @@ fn uncertain_storage_never_authorizes_or_uses_cached_credentials() {
             Sw::UNABLE_TO_PROCESS
         );
         piv.install(&mut platform!(&mut store)).unwrap();
-        assert_eq!(piv.state.pin_tries, if commit_on_error { 3 } else { 2 });
+        let durable = store.bytes.unwrap()[PIN_REMAINING];
+        assert_eq!(durable, if commit_on_error { 1 } else { 2 });
+        assert_eq!(
+            command(&mut piv, &mut store, 0x20, 0, 0x80, &[]),
+            Sw::retries(durable)
+        );
         assert_eq!(
             command(&mut piv, &mut store, 0x20, 0, 0x80, PIN),
             Sw::SUCCESS
@@ -291,7 +299,7 @@ fn wrong_change_consumes_retries_and_blocked_puk_cannot_reset_pin() {
 fn uncertain_pin_change_requires_reload_of_actual_committed_value() {
     for commit_on_error in [false, true] {
         let (mut piv, mut store) = installed();
-        store.fail = true;
+        store.fail_at = Some(store.writes + 3);
         store.commit_on_error = commit_on_error;
         assert_eq!(
             command(
@@ -310,12 +318,35 @@ fn uncertain_pin_change_requires_reload_of_actual_committed_value() {
             command(&mut piv, &mut store, 0x20, 0, 0x80, b"99999999"),
             Sw::UNABLE_TO_PROCESS
         );
-        store.fail = false;
         piv.install(&mut platform!(&mut store)).unwrap();
         let expected = if commit_on_error { b"99999999" } else { PIN };
         assert_eq!(
             command(&mut piv, &mut store, 0x20, 0, 0x80, expected),
             Sw::SUCCESS
         );
+    }
+}
+
+#[test]
+fn uncertain_puk_decrement_revokes_pin_grant_and_reloads_durable_retries() {
+    for commit_on_error in [false, true] {
+        let (mut piv, mut store) = installed();
+        assert_eq!(
+            command(&mut piv, &mut store, 0x20, 0, 0x80, PIN),
+            Sw::SUCCESS
+        );
+        store.fail = true;
+        store.commit_on_error = commit_on_error;
+        assert_eq!(
+            command(&mut piv, &mut store, 0x2c, 0, 0x80, b"1234567811111111"),
+            Sw::UNABLE_TO_PROCESS
+        );
+        assert!(!piv.available);
+        assert!(!piv.state.pin_ok);
+        store.fail = false;
+        piv.install(&mut platform!(&mut store)).unwrap();
+        let durable = store.bytes.unwrap()[PUK_REMAINING];
+        assert_eq!(durable, if commit_on_error { 2 } else { 3 });
+        assert_eq!(piv.state.puk_tries, durable);
     }
 }

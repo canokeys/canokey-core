@@ -133,7 +133,10 @@ Applet adapters retain retry-charging and authorization semantics. PIV's
 and two eight-byte credentials. Authorization is never persisted.
 Failed credential writes invalidate the cache and revoke both grants; reset
 alone cannot make an uncertain cache authoritative.
-Verification patches only the selected PIN/PUK retry byte. Full credential
+Verification persistently decrements the selected PIN/PUK counter before
+comparison so that cutting power cannot bypass the charge. A match restores
+the retry limit before granting authorization. The prepaid decrement costs
+one extra Flash write on success. Verification patches only that retry byte. Full credential
 changes still publish both credentials and their metadata atomically.
 Algorithm mapping updates validate the input and atomically patch the fixed
 12-byte record before updating the session cache. Repeated identical mappings

@@ -3,7 +3,7 @@
 use super::domain::Error;
 use crate::{
     Platform,
-    mechanisms::pin::{self as pin_mechanism, Charge, PinInfo, RecordPin},
+    mechanisms::pin::{self as pin_mechanism, PinInfo, RecordPin},
     ports::Record,
 };
 pub const DEFAULT_PW1: &[u8] = b"123456";
@@ -52,9 +52,7 @@ pub fn verify(
     pin: &[u8],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Error> {
-    credential(id)
-        .verify(pin, min(id), Charge::BeforeCompare, p)
-        .map_err(error)
+    credential(id).verify(pin, min(id), p).map_err(error)
 }
 pub fn change(
     id: Record,

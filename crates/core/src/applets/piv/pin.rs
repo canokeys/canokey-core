@@ -170,9 +170,8 @@ impl Pins {
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         self.ready()?;
-        use crate::mechanisms::pin::{Charge, Credential, Error};
-        if puk {
-        } else {
+        use crate::mechanisms::pin::{Credential, Error};
+        if !puk {
             self.state.pin_ok = false;
         }
         // Keep the PIN/PUK pair in its existing atomic record. The shared
@@ -195,7 +194,7 @@ impl Pins {
             },
         )
         .and_then(|mut credential| {
-            credential.verify(&data[..VALUE_BYTES], Charge::OnMismatch, &mut |record| {
+            credential.verify(&data[..VALUE_BYTES], &mut |record| {
                 p.storage
                     .replace_at(
                         Record::PivState,
@@ -218,8 +217,7 @@ impl Pins {
             Error::Blocked => Sw::AUTHENTICATION_BLOCKED,
             Error::Retries(n) => Sw::retries(n),
         })?;
-        if puk {
-        } else {
+        if !puk {
             self.state.pin_ok = true;
         }
         Ok(())

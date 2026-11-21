@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Length-delimited credential record shared by ADMIN and OpenPGP.
-use super::{Charge, Credential, Error};
+use super::{Credential, Error};
 use crate::{Platform, ports::Record};
 use canokey_ports::{Memory as _, Storage as _};
 const PIN_CAPACITY: usize = 64;
@@ -132,7 +132,6 @@ impl RecordPin {
         &self,
         input: &[u8],
         min: usize,
-        charge: Charge,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
         self.with_record(p, |b, p| {
@@ -154,7 +153,7 @@ impl RecordPin {
                 counter: REMAINING,
                 limit,
             }
-            .verify(input, charge, &mut |bytes| {
+            .verify(input, &mut |bytes| {
                 p.storage
                     .replace_at(self.id, REMAINING as u32, &bytes[REMAINING..REMAINING + 1])
                     .map_err(|_| Error::Persistence)

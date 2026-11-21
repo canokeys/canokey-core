@@ -10,7 +10,7 @@ OATH challenge-response remains a separate authentication mechanism.
 
 | Layer | Responsibility |
 |---|---|
-| `mechanisms/pin.rs` | Checked borrowed credential view, comparison without secret-dependent early exit, explicit charging mode, blocked/remaining/persistence results |
+| `mechanisms/pin.rs` | Checked borrowed credential view, prepaid retry charge, comparison without secret-dependent early exit, blocked/remaining/persistence results |
 | `mechanisms/pin/record.rs` | ADMIN/OpenPGP four-byte header plus actual PIN bytes; record validation, creation, update, counter configuration, scoped loading and wiping |
 | `applets/admin/pin.rs` | ADMIN record/default, 6–64 byte policy, fixed three retries, length-first error precedence |
 | `applets/openpgp/pin.rs` | PW1/PW3/reset-code record selection, role lengths, configurable limits, domain-error mapping |
@@ -25,18 +25,12 @@ buffer or extra persistent file is introduced. Input and record bytes must be
 stable for the synchronous call; callbacks are storage-only and cannot re-enter
 the session. PIV materializes just its existing 21-byte credential record.
 
-## Preserve the existing charging policies
+## Durable retry order
 
-| Applet | Policy | Failed comparison | Successful comparison |
-|---|---|---|---|
-| ADMIN/PIV | `OnMismatch` | Compare, decrement, commit | Restore/commit only when retries differ from the limit |
-| OpenPGP | `BeforeCompare` | Decrement/commit, then compare | Decrement/commit, compare, restore/commit |
-
-The OpenPGP sequence deliberately charges interrupted attempts, including an
-interruption before the comparison. This refactor preserves that implementation
-choice; it does not assert that all applets have identical power-loss semantics.
-A commit failure always returns `Persistence`, including a failed write that
-would otherwise report remaining retries or successful verification.
+Verification commits the decrement before comparing the credential. An
+interrupted attempt can consume a retry even before comparison. A successful
+comparison commits the restored limit before the caller can grant authorization.
+Either commit failure returns `Persistence`.
 
 ADMIN validates supplied length before loading or checking blocking. OpenPGP
 loads and checks blocking before validating supplied length. PIV retains its
@@ -64,7 +58,7 @@ loads, verification and mutations. Session authorization is never serialized.
 
 ## Validation
 
-Shared tests assert durable counter-write sequences for both policies,
+Shared tests assert durable counter-write sequences for
 correct and incorrect credentials, length mismatch, blocking and failure at
 each commit (both committed and uncommitted failure outcomes). Record tests cover
 layout, cleanup on errors, replacement, disabled reset codes, adjustable limits
