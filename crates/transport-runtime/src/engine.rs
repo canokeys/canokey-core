@@ -154,9 +154,9 @@ impl<R: Dispatch<C>, C, P: OwnerPolicy> crate::frame::route::Backend for Routing
         self.router.fido_selected(self.context)
     }
     fn extended_allowed(&self, header: Header) -> bool {
+        // Extended APDUs require WebUSB or NFC as the current owner.
         let owner = self.owner.unwrap_or(P::INVALID);
         (owner == P::EXTENDED_USB || owner == P::NFC)
-            && self.owner.is_none_or(|current| current == owner)
             && !self.router.output_busy()
             && (header.is_select_by_name() || self.router.allows_extended(header))
     }
