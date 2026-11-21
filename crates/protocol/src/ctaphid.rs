@@ -74,9 +74,11 @@ pub fn header(out: &mut [u8; REPORT_SIZE], cid: u32, tag: u8, length: usize) -> 
     out[..4].copy_from_slice(&cid.to_be_bytes());
     out[4] = tag;
     if tag & CMD_INIT_BIT != 0 {
-        // The initial frame carries its total length as two big-endian bytes.
-        let [lo, hi, ..] = length.to_le_bytes();
-        out[5..7].copy_from_slice(&[hi, lo]);
+        // The frame carries the low 16 bits in big-endian order. Transport
+        // callers bound the full message to MAX_MESSAGE before framing it.
+        #[allow(clippy::cast_possible_truncation)]
+        let wire_length = length as u16;
+        out[5..7].copy_from_slice(&wire_length.to_be_bytes());
         &mut out[7..]
     } else {
         assert_eq!(

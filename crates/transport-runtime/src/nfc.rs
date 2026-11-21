@@ -29,7 +29,9 @@ impl ResponseBudget {
     pub fn continuation(&self) -> [u8; 5] {
         let mut command = canokey_protocol::apdu::GET_RESPONSE;
         // Short Le encodes 256 bytes as zero.
-        command[4] = self.0.min(256).to_le_bytes()[0];
+        #[allow(clippy::cast_possible_truncation)]
+        let le = self.0.min(256) as u8;
+        command[4] = le;
         command
     }
 }

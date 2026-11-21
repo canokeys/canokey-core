@@ -58,16 +58,19 @@ pub(crate) unsafe fn web_finish(owner: u8, out: *mut u8, capacity: usize) -> i32
     if length == SELECT.len() {
         assert_eq!(input, &SELECT);
     } else {
-        // The261-byte transport case is a valid short Case4S APDU, not
+        // The 261-byte transport case is a valid short Case4S APDU, not
         // arbitrary bytes that bypass production envelope validation.
         let header = [0x80, 0x10, 0, 0, 255];
         for (i, byte) in input.iter().enumerate() {
+            // Fixture payloads repeat the byte pattern every 256 bytes.
+            #[allow(clippy::cast_possible_truncation)]
+            let pattern = i as u8;
             assert_eq!(
                 *byte,
                 if length == 261 && i < header.len() {
                     header[i]
                 } else {
-                    i.to_le_bytes()[0]
+                    pattern
                 }
             );
         }
@@ -96,7 +99,8 @@ pub(crate) unsafe fn web_finish(owner: u8, out: *mut u8, capacity: usize) -> i32
     // SAFETY: The fixture caller supplies a live buffer for the ABI byte count.
     let out = unsafe { core::slice::from_raw_parts_mut(out, capacity) };
     for (i, byte) in out[..256].iter_mut().enumerate() {
-        *byte = i.to_le_bytes()[0];
+        // This slice contains exactly one cycle of the byte pattern.
+        *byte = u8::try_from(i).unwrap();
     }
     out[256..258].copy_from_slice(&[0x90, 0]);
     i32::try_from(RESPONSE_LIMIT).unwrap()
@@ -203,7 +207,8 @@ pub(super) fn scenario() {
         setup(VENDOR_INTERFACE_IN, 1, 0, interface, 256);
         assert_eq!(read_control(&mut bytes), 256);
         for (i, byte) in bytes.iter().enumerate() {
-            assert_eq!(*byte, i.to_le_bytes()[0]);
+            // This reply holds exactly one cycle of the byte pattern.
+            assert_eq!(*byte, u8::try_from(i).unwrap());
         }
         setup(VENDOR_INTERFACE_IN, 2, 0, interface, 1);
         assert_eq!(read_control(&mut bytes), 1);
@@ -224,7 +229,9 @@ pub(super) fn scenario() {
         assert_eq!(read_control(&mut bytes), 1);
         assert_eq!(bytes[0], STATUS_IDLE);
         setup(VENDOR_INTERFACE_OUT, 0, 0, interface, 261);
-        let mut fragment: [u8; EP0_PACKET_BYTES] = core::array::from_fn(|i| i.to_le_bytes()[0]);
+        // The first fragment is one EP0 packet (16 bytes).
+        let mut fragment: [u8; EP0_PACKET_BYTES] =
+            core::array::from_fn(|i| u8::try_from(i).unwrap());
         fragment[..5].copy_from_slice(&[0x80, 0x10, 0, 0, 255]);
         assert_eq!(
             ck_usb_out(0, fragment.as_ptr(), u16::try_from(fragment.len()).unwrap()),
@@ -234,7 +241,10 @@ pub(super) fn scenario() {
         for offset in (EP0_PACKET_BYTES..261).step_by(EP0_PACKET_BYTES) {
             let count = (261 - offset).min(EP0_PACKET_BYTES);
             for (i, byte) in fragment.iter_mut().enumerate() {
-                *byte = (offset + i).to_le_bytes()[0];
+                // Continue the repeating byte pattern across the 256-byte boundary.
+                #[allow(clippy::cast_possible_truncation)]
+                let pattern = (offset + i) as u8;
+                *byte = pattern;
             }
             assert_eq!(
                 ck_usb_out(0, fragment.as_ptr(), u16::try_from(count).unwrap()),

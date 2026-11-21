@@ -133,10 +133,11 @@ unsafe fn poll(io: &mut impl Io) {
             // Finish a previously submitted key release without entering Core.
             // WebUSB may own the session while the keyboard IN completes.
             if io.idle() {
-                PENDING = (&*core::ptr::addr_of!(KEYBOARD))
+                let length = (&*core::ptr::addr_of!(KEYBOARD))
                     .prepare(None, &mut *core::ptr::addr_of_mut!(REPORT))
-                    .unwrap_or(0)
-                    .to_le_bytes()[0];
+                    .unwrap_or(0);
+                // A release report fits in REPORT.
+                PENDING = u8::try_from(length).unwrap();
                 flush_pending(io, epoch);
             }
             return;
@@ -161,19 +162,22 @@ unsafe fn poll(io: &mut impl Io) {
         if PENDING == 0 {
             let keyboard = &*core::ptr::addr_of!(KEYBOARD);
             let report = &mut *core::ptr::addr_of_mut!(REPORT);
-            PENDING = if ch == i32::from(canokey_protocol::usb::EJECT_SENTINEL) {
+            let length = if ch == i32::from(canokey_protocol::usb::EJECT_SENTINEL) {
                 keyboard.prepare_eject(report)
             } else {
                 let usage = u8::try_from(ch).ok().and_then(|ch| {
                     let encoded = io.usage(ch);
-                    // ABI packs modifier in the high byte, usage in the low byte.
-                    let [usage, modifier, ..] = encoded.to_le_bytes();
-                    (encoded >= 0).then_some((modifier, usage))
+                    // For a successful ABI result, only bits 15:8 (modifier)
+                    // and 7:0 (usage) are interpreted as HID fields.
+                    #[allow(clippy::cast_possible_truncation)]
+                    let fields = ((encoded >> 8) as u8, encoded as u8);
+                    (encoded >= 0).then_some(fields)
                 });
                 keyboard.prepare_usage(usage, report)
             }
-            .unwrap_or(0)
-            .to_le_bytes()[0];
+            .unwrap_or(0);
+            // Both report formats fit in REPORT.
+            PENDING = u8::try_from(length).unwrap();
         }
         flush_pending(io, epoch);
     }

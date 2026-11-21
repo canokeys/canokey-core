@@ -140,8 +140,8 @@ impl Decoder {
                 Phase::Value => {
                     let n = bytes.len().min(usize::from(self.remaining));
                     emit(Event::Value(&bytes[..n])).map_err(|_| Error::Consumer)?;
-                    let [lo, hi, ..] = n.to_le_bytes();
-                    self.remaining -= u16::from_le_bytes([lo, hi]);
+                    // n is capped by the u16 remaining counter.
+                    self.remaining -= u16::try_from(n).unwrap();
                     bytes = &bytes[n..];
                     if self.remaining == 0 {
                         emit(Event::End).map_err(|_| Error::Consumer)?;

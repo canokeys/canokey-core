@@ -144,8 +144,8 @@ unsafe fn next_control() {
             } else {
                 pointer
             };
-            let [lo, hi, ..] = len.to_le_bytes();
-            if ck_usb_dcd_write(0x80, pointer, u16::from_le_bytes([lo, hi])) == 0 {
+            // ControlIn::next_packet returns at most EP0_PACKET_BYTES.
+            if ck_usb_dcd_write(0x80, pointer, u16::try_from(len).unwrap()) == 0 {
                 stall();
             }
         } else {
@@ -416,7 +416,8 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
             return;
         }
         let halted = if INTERFACES.endpoint(s.index) {
-            USB.halted & halt_bit(s.index.to_le_bytes()[0]) != 0
+            // INTERFACES.endpoint accepts only one-byte endpoint addresses.
+            USB.halted & halt_bit(u8::try_from(s.index).unwrap()) != 0
         } else {
             false
         };
@@ -507,17 +508,20 @@ pub unsafe fn ck_usb_tx_idle(ep: u8) -> u8 {
         )
     }
 }
+const _: () = assert!(KEYBOARD_PACKET_BYTES <= u16::MAX as usize);
+const _: () = assert!(DATA_PACKET_BYTES <= u16::MAX as usize);
 unsafe fn transmit(ep: u8) -> bool {
     // SAFETY: The masked endpoint owns a live IN buffer whose remaining length bounds this pointer advance.
     unsafe {
         let tx = &mut USB.tx[(ep & ENDPOINT_NUMBER_MASK) as usize];
-        let n = tx
-            .remaining
-            .min(if ep & ENDPOINT_NUMBER_MASK == EP_KEYBOARD {
-                u16::from(KEYBOARD_PACKET_BYTES.to_le_bytes()[0])
-            } else {
-                u16::from(DATA_PACKET_BYTES.to_le_bytes()[0])
-            });
+        // Both packet constants fit u16 by the assertions above.
+        #[allow(clippy::cast_possible_truncation)]
+        let packet_bytes = if ep & ENDPOINT_NUMBER_MASK == EP_KEYBOARD {
+            KEYBOARD_PACKET_BYTES as u16
+        } else {
+            DATA_PACKET_BYTES as u16
+        };
+        let n = tx.remaining.min(packet_bytes);
         if ck_usb_dcd_write(ep | DIRECTION_IN, tx.bytes, n) == 0 {
             return false;
         }

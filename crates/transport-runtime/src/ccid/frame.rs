@@ -39,7 +39,8 @@ impl Frame {
             let offset = usize::from(self.header_bytes);
             let length = bytes.len().min(HEADER - offset);
             self.header[offset..offset + length].copy_from_slice(&bytes[..length]);
-            self.header_bytes += length.to_le_bytes()[0];
+            // Only the remaining bytes of the fixed CCID header fit here.
+            self.header_bytes += u8::try_from(length).unwrap();
             bytes = &bytes[length..];
             if !self.has_header() {
                 return 0;

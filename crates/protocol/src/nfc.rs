@@ -110,7 +110,8 @@ impl Packet {
             PCB_I | (number & PCB_NUMBER) | if chained { PCB_CHAIN_OR_NAK } else { 0 },
         );
         packet.bytes[1..1 + bytes.len()].copy_from_slice(bytes);
-        packet.length += bytes.len().to_le_bytes()[0];
+        // The append guard bounds bytes.len() to the RF packet capacity.
+        packet.length += u8::try_from(bytes.len()).unwrap();
         Ok(packet)
     }
     pub const fn acknowledgement(number: u8) -> Self {

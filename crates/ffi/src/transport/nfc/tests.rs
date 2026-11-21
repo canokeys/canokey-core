@@ -316,8 +316,11 @@ pub(crate) unsafe fn ck_core_exchange(
             .min(c.response_chunk)
             .min(le);
         for i in 0..n {
+            // The fixture repeats the byte pattern every 256 bytes.
+            #[allow(clippy::cast_possible_truncation)]
+            let byte = (c.response_offset + i) as u8;
             // SAFETY: This fixture writes its reply within the caller's live output buffer.
-            unsafe { out.add(i).write((c.response_offset + i).to_le_bytes()[0]) };
+            unsafe { out.add(i).write(byte) };
         }
         c.response_offset += n;
         // SAFETY: The transport fixture serializes this call and owns the fake controller state.
@@ -357,8 +360,10 @@ pub(crate) unsafe fn ck_core_exchange(
         }
     }
     for i in 0..RESPONSE_PAYLOAD {
+        // This fixture emits 40 bytes.
+        let byte = u8::try_from(i).unwrap();
         // SAFETY: This fixture writes its reply within the caller's live output buffer.
-        unsafe { out.add(i).write(i.to_le_bytes()[0]) };
+        unsafe { out.add(i).write(byte) };
     }
     // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe {
@@ -388,8 +393,9 @@ fn nfc_link_chaining_wtx_reset_and_fido_aggregation() {
     assert_eq!(controller().sends, 1);
     assert_eq!(controller().txlen, 30);
     assert_eq!(controller().tx[0], 0x12);
+    // The first fragment carries only 29 payload bytes.
     for i in 0..29 {
-        assert_eq!(controller().tx[i + 1], i.to_le_bytes()[0]);
+        assert_eq!(controller().tx[i + 1], u8::try_from(i).unwrap());
     }
     // R-block with the current sequence requests the same chained reply again.
     frame(&[0xa2, 0, 0]);
@@ -472,7 +478,8 @@ fn nfc_link_chaining_wtx_reset_and_fido_aggregation() {
     assert_eq!(total, collected.len());
     assert_eq!(controller().continuation, 1);
     for (i, byte) in collected[..RESPONSE_PAYLOAD * 2].iter().enumerate() {
-        assert_eq!(*byte, i.to_le_bytes()[0]);
+        // This fixture checks two 40-byte payloads.
+        assert_eq!(*byte, u8::try_from(i).unwrap());
     }
     assert_eq!(&collected[RESPONSE_PAYLOAD * 2..], &[0x90, 0]);
     controller().fido = false;
@@ -557,7 +564,9 @@ fn large_requests_finite_le_remainder_and_staged_reset() {
         command.resize(7 + 768, 0x5a);
         if let Some(limit) = le {
             // Extended Le encodes its maximum (65536) as 0x0000.
-            command.extend_from_slice(&limit.to_be_bytes()[2..]);
+            #[allow(clippy::cast_possible_truncation)]
+            let wire_limit = limit as u16;
+            command.extend_from_slice(&wire_limit.to_be_bytes());
         }
         let closed = stage().closes;
         let (result, number) = exchange_blocks(&command, 0, true);
@@ -576,7 +585,10 @@ fn large_requests_finite_le_remainder_and_staged_reset() {
             }
         );
         for (index, byte) in result[..emitted].iter().enumerate() {
-            assert_eq!(*byte, index.to_le_bytes()[0]);
+            // The fixture repeats the byte pattern every 256 bytes.
+            #[allow(clippy::cast_possible_truncation)]
+            let expected = index as u8;
+            assert_eq!(*byte, expected);
         }
         if le == Some(257) {
             assert_eq!(controller().get_response_les, [1]);
@@ -586,7 +598,10 @@ fn large_requests_finite_le_remainder_and_staged_reset() {
             let (remainder, _) = exchange_blocks(&apdu::GET_RESPONSE, number, false);
             let n = (700 - emitted).min(256);
             assert_eq!(remainder.len(), n + 2);
-            assert_eq!(remainder[0], emitted.to_le_bytes()[0]);
+            // Resume the same repeating byte pattern at the emitted offset.
+            #[allow(clippy::cast_possible_truncation)]
+            let expected = emitted as u8;
+            assert_eq!(remainder[0], expected);
         }
         // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         unsafe { ck_nfc_set_mode(0) };

@@ -139,7 +139,8 @@ pub unsafe fn ck_ccid_packet_out(bytes: *const u8, length: u16) -> u8 {
             usize::from(length),
         );
         RX_TICK = device_get_tick();
-        QUEUED = length.to_le_bytes()[0];
+        // The mailbox guard bounds length to 64 bytes.
+        QUEUED = u8::try_from(length).unwrap();
         0
     })
 }

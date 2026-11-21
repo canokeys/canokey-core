@@ -72,8 +72,9 @@ impl<const CAPACITY: usize> Configuration<CAPACITY> {
                 * (composition.ctap.is_some() as usize + composition.keyboard.is_some() as usize)
             + INTERFACE_BYTES * composition.webusb_string.is_some() as usize;
         assert!(length <= CAPACITY && length <= u16::MAX as usize);
-        let [lo, hi, ..] = length.to_le_bytes();
-        let total = [lo, hi];
+        // The assertion above bounds the total descriptor length to u16.
+        #[allow(clippy::cast_possible_truncation)]
+        let total = (length as u16).to_le_bytes();
         let mut descriptor = Self {
             bytes: [0x00; CAPACITY],
             length: 0,

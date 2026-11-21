@@ -28,22 +28,24 @@ pub fn der_signature(out: &mut [u8], n: usize) -> Result<usize, Sw> {
         let len = width - skip;
         let pad = usize::from(out[start] & 0x80 != 0);
         out[at] = 0x02; // X.690 INTEGER tag.
-        out[at + 1] = (len + pad).to_le_bytes()[0];
+        // Each coordinate is at most 66 bytes, plus one sign pad.
+        out[at + 1] = u8::try_from(len + pad).unwrap();
         at += 2;
         out[at..at + pad].fill(0);
         at += pad;
         out.copy_within(start..start + len, at);
         at += len;
     }
-    let body = at - 3;
+    // Two INTEGER headers and sign pads add at most six bytes to 132.
+    let body = u8::try_from(at - 3).unwrap();
     let start = if body < 128 {
         out[1] = 0x30;
-        out[2] = body.to_le_bytes()[0];
+        out[2] = body;
         1
     } else {
         out[0] = 0x30;
         out[1] = 0x81;
-        out[2] = body.to_le_bytes()[0];
+        out[2] = body;
         0
     };
     out.copy_within(start..at, 0);

@@ -11,8 +11,10 @@ pub const EXTENSION_INTERVAL: u16 = 500;
 pub const RECEIVE_TIMEOUT_MS: u32 = 2000;
 const MIN_REPLY_BYTES: usize = 2;
 const SHORT_FRAME_LIMIT: u32 = {
-    let [a, b, c, d, ..] = apdu::SHORT_FRAME_BYTES.to_le_bytes();
-    u32::from_le_bytes([a, b, c, d])
+    assert!(apdu::SHORT_FRAME_BYTES <= u32::MAX as usize);
+    #[allow(clippy::cast_possible_truncation)]
+    let limit = apdu::SHORT_FRAME_BYTES as u32;
+    limit
 };
 
 /// Pure product validation and card identity; no application or IO references.
@@ -275,8 +277,11 @@ impl<P: Policy> Transport<P> {
             },
             u8::from(kind == PARAMETERS),
         );
-        let [lo, hi, ..] = (HEADER + length).to_le_bytes();
-        self.reply_len = u16::from_le_bytes([lo, hi]);
+        // APDU replies are short. Keep the legacy 16-bit cursor semantics
+        // for custom profiles that provide their own ATR or parameters.
+        #[allow(clippy::cast_possible_truncation)]
+        let reply_len = (HEADER + length) as u16;
+        self.reply_len = reply_len;
         self.phase = Phase::Reply;
     }
     /// In-flight bytes are owned by the facade's separate endpoint lease.

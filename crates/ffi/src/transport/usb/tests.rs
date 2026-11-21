@@ -341,7 +341,8 @@ fn usb_controller_control_endpoints_mailboxes_and_reset() {
         assert_eq!(ck_usb_submit(EP_CCID_IN, packet.as_ptr(), 64, 0), 0);
         ck_usb_resume();
         assert_ne!(ck_usb_configured(), 0);
-        let payload: [u8; 128] = core::array::from_fn(|i| i.to_le_bytes()[0]);
+        // Test indices are 0 through 127.
+        let payload: [u8; 128] = core::array::from_fn(|i| u8::try_from(i).unwrap());
         assert_eq!(ck_usb_submit(EP_CCID_IN, payload.as_ptr(), 128, 1), 1);
         assert_eq!(ck_usb_tx_idle(EP_CCID_IN), 0);
         assert_eq!(controller().lengths[3], 64);

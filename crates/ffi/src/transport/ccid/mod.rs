@@ -107,15 +107,10 @@ impl<P: Provider> Backend for Platform<P> {
         if n < 0 { Err(()) } else { Ok(n as usize) }
     }
     fn arm(&mut self, bytes: &[u8; 10], interval: u16) {
+        // The extension frame is exactly 10 bytes.
+        let length = u8::try_from(bytes.len()).unwrap();
         // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.
-        unsafe {
-            ck_ccid_io_arm(
-                self.generation,
-                bytes.as_ptr(),
-                bytes.len().to_le_bytes()[0],
-                interval,
-            )
-        }
+        unsafe { ck_ccid_io_arm(self.generation, bytes.as_ptr(), length, interval) }
     }
     fn disarm(&mut self) {
         // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.

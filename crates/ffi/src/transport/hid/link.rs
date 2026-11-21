@@ -56,17 +56,11 @@ unsafe fn execution() -> &'static mut Execution {
 }
 unsafe fn peek_header(epoch: u32) -> Option<(u32, u8, u16)> {
     let mut header = [0; 7];
+    // Peek only at the seven-byte initial frame header.
+    let capacity = u8::try_from(header.len()).unwrap();
     let mut received = 0;
     // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
-    if unsafe {
-        ck_hid_io_peek(
-            header.as_mut_ptr(),
-            header.len().to_le_bytes()[0],
-            &mut received,
-            epoch,
-        )
-    } == 0
-    {
+    if unsafe { ck_hid_io_peek(header.as_mut_ptr(), capacity, &mut received, epoch) } == 0 {
         return None;
     }
     Some((
@@ -298,13 +292,11 @@ pub unsafe fn poll<P: Provider>() -> u8 {
         LINK.transmitting = false;
         let generation = ck_hid_io_epoch();
         let mut report = [0; 64];
+        // The peek buffer holds exactly one 64-byte report.
+        let capacity = u8::try_from(report.len()).unwrap();
         let mut received = 0;
-        let has_input = ck_hid_io_peek(
-            report.as_mut_ptr(),
-            report.len().to_le_bytes()[0],
-            &mut received,
-            generation,
-        ) != 0;
+        let has_input =
+            ck_hid_io_peek(report.as_mut_ptr(), capacity, &mut received, generation) != 0;
         if has_input {
             ck_hid_io_consume(generation);
             ck_hid_io_receive();

@@ -191,7 +191,8 @@ pub unsafe fn receive(bytes: *const u8, length: usize) -> i8 {
             core::ptr::addr_of_mut!(WEBUSB.packet).cast(),
             length,
         );
-        WEBUSB.packet_length = length.to_le_bytes()[0];
+        // The mailbox guard bounds length to 16 bytes.
+        WEBUSB.packet_length = u8::try_from(length).unwrap();
         // Backpressure every packet until the main loop has consumed it.
         2
     }

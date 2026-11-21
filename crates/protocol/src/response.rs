@@ -161,9 +161,10 @@ impl Response {
     ) -> Result<Chunk, StatusWord> {
         let p = self.pending.ok_or(StatusWord::COMMAND_NOT_ALLOWED)?;
         let remaining = p.remaining;
-        // The output limit is represented in the same width as the APDU cursor.
-        let [a, b, c, d, ..] = output.len().to_le_bytes();
-        let n = remaining.min(le).min(u32::from_le_bytes([a, b, c, d])) as usize;
+        // Preserve the cursor's low-32-bit capacity on wider hosts.
+        #[allow(clippy::cast_possible_truncation)]
+        let capacity = output.len() as u32;
+        let n = remaining.min(le).min(capacity) as usize;
         let len = if n == 0 {
             0
         } else {
@@ -257,7 +258,8 @@ mod tests {
 
     #[test]
     fn segmented_windows_match_contiguous_reads() {
-        let bytes: [u8; 32] = core::array::from_fn(|i| i.to_le_bytes()[0]);
+        // from_fn only supplies indices 0 through 31.
+        let bytes: [u8; 32] = core::array::from_fn(|i| u8::try_from(i).unwrap());
         // Empty, adjacent and split segments, with every requested subrange.
         for split in 0..=bytes.len() {
             let segments = [&[][..], &bytes[..split], &[][..], &bytes[split..], &[][..]];
