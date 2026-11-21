@@ -2856,7 +2856,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/large_blob.rs",
-          "sha256": "e332a99b7f98c16323b2d79c24db44b7541d5a63b69d72872b0b8d57f9ff9147"
+          "sha256": "efd2a27d4941ea5cdab83f4515abdd8dd3b25ba8324b1cf20eded3b722849f66"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -3018,7 +3018,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/large_blob.rs",
-          "sha256": "e332a99b7f98c16323b2d79c24db44b7541d5a63b69d72872b0b8d57f9ff9147"
+          "sha256": "efd2a27d4941ea5cdab83f4515abdd8dd3b25ba8324b1cf20eded3b722849f66"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -10278,7 +10278,7 @@
       },
       "crates/core/src/applets/ctap/large_blob.rs": {
         "previous_sha256": "b55d060c56740037f3cf6a017c44fd71c0f414d4c756f05522a63cddf0a75623",
-        "current_sha256": "e332a99b7f98c16323b2d79c24db44b7541d5a63b69d72872b0b8d57f9ff9147",
+        "current_sha256": "efd2a27d4941ea5cdab83f4515abdd8dd3b25ba8324b1cf20eded3b722849f66",
         "behaviors": [
           "C3",
           "T16"
@@ -10343,7 +10343,7 @@
           },
           "crates/core/src/applets/ctap/large_blob.rs": {
             "previous_sha256": "b55d060c56740037f3cf6a017c44fd71c0f414d4c756f05522a63cddf0a75623",
-            "current_sha256": "e332a99b7f98c16323b2d79c24db44b7541d5a63b69d72872b0b8d57f9ff9147",
+            "current_sha256": "efd2a27d4941ea5cdab83f4515abdd8dd3b25ba8324b1cf20eded3b722849f66",
             "behaviors": [
               "C3",
               "T16"

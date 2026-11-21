@@ -12,8 +12,8 @@ helpers in `native/storage`. Dependencies in `third_party/` are Git submodules;
 retain their gitlinks and pinned revisions when relocating them.
 
 `reference/legacy-c` is an immutable historical snapshot with checksum provenance.
-Never edit, compile or include it. `docs/history` contains superseded migration
-plans and the old C guide; historical APIs there are not implementation guidance.
+Never edit, compile or include it. `docs/history` holds the archived CCID
+evidence referenced by the synchronization manifest.
 
 ## Boundaries
 

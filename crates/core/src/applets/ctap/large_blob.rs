@@ -25,23 +25,12 @@ pub struct Parameters {
     total: Option<NonZeroU16>,
     protocol: u8,
     auth_len: Option<NonZeroU8>,
-    buffers: Buffers,
+    bytes: [u8; FRAGMENT],
+    auth: [u8; 32],
 }
 enum Operation {
     Get(u16),
     Set(u16),
-}
-struct Buffers {
-    bytes: [u8; FRAGMENT],
-    auth: [u8; 32],
-}
-impl Buffers {
-    const fn new() -> Self {
-        Self {
-            bytes: [0; FRAGMENT],
-            auth: [0; 32],
-        }
-    }
 }
 impl Parameters {
     const fn new() -> Self {
@@ -51,7 +40,8 @@ impl Parameters {
             total: None,
             protocol: 0,
             auth_len: None,
-            buffers: Buffers::new(),
+            bytes: [0; FRAGMENT],
+            auth: [0; 32],
         }
     }
 }
@@ -97,8 +87,8 @@ impl Parser {
             .consume(bytes, &mut |event, _| fields.event(event));
     }
     pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
-        memory.wipe(&mut self.fields.params.buffers.bytes);
-        memory.wipe(&mut self.fields.params.buffers.auth);
+        memory.wipe(&mut self.fields.params.bytes);
+        memory.wipe(&mut self.fields.params.auth);
     }
     #[inline(never)]
     pub fn finish(&mut self) -> Result<Command, Status> {
@@ -133,6 +123,8 @@ impl Parser {
                 }
             }
         }
+        // The validated offset belongs to the command moved out below.
+        p.offset_seen = false;
         Ok(Command::LargeBlob(core::mem::replace(
             &mut p.params,
             Parameters::new(),
@@ -153,9 +145,9 @@ impl Fields {
         }
         if let Some((key, _)) = self.body {
             let target: &mut [u8] = if key == 2 {
-                &mut self.params.buffers.bytes
+                &mut self.params.bytes
             } else {
-                &mut self.params.buffers.auth
+                &mut self.params.auth
             };
             super::consume_cbor_body(event, &mut self.body, target)?;
             return Ok(());
@@ -340,14 +332,14 @@ impl Session {
             message[OFFSET_AT..HASH_AT].copy_from_slice(&(offset as u32).to_le_bytes());
             p.crypto
                 .sha256(
-                    &params.buffers.bytes[..n],
+                    &params.bytes[..n],
                     // HASH_AT leaves exactly the SHA-256 output width.
                     (&mut message[HASH_AT..]).try_into().unwrap(),
                 )
                 .map_err(|_| Status::Other)?;
             self.authorize(
                 params.protocol,
-                &params.buffers.auth[..usize::from(auth_len)],
+                &params.auth[..usize::from(auth_len)],
                 &message,
                 pin::PERMISSION_LARGE_BLOB_WRITE,
                 None,
@@ -378,7 +370,7 @@ impl Session {
             .digest(
                 DigestOperation::Update,
                 &mut self.upload.hash,
-                &params.buffers.bytes[..hashed],
+                &params.bytes[..hashed],
                 &mut [],
             )
             .map_err(|_| Status::Other)?;
@@ -386,12 +378,12 @@ impl Session {
             // A fragment crossing data_end starts the checksum at zero;
             // fragments already in the checksum retain their relative offset.
             let start = offset.saturating_sub(data_end);
-            let tail = &params.buffers.bytes[hashed..n];
+            let tail = &params.bytes[hashed..n];
             self.upload.checksum[start..][..tail.len()].copy_from_slice(tail);
         }
         // This is the requested durable blob, written only after authentication.
         p.storage
-            .stage_append(&params.buffers.bytes[..n])
+            .stage_append(&params.bytes[..n])
             .map_err(|_| Status::Other)?;
         // Offset equals the old cursor (or zero); end was bounded by length.
         self.upload.next = end as u16;
@@ -434,33 +426,22 @@ mod tests {
     use crate::runtime::workspace::SessionWorkspace;
 
     #[test]
-    fn get_and_set_must_be_exclusive() {
-        for body in [&b"\xa3\x01\x01\x02\x41x\x03\x00"[..], b"\xa1\x03\x00"] {
+    fn invalid_operation_or_length_preserves_status() {
+        let cases: &[(&[u8], Status)] = &[
+            (b"\xa3\x01\x01\x02\x41x\x03\x00", Status::InvalidParameter),
+            (b"\xa1\x03\x00", Status::InvalidParameter),
+            (b"\xa2\x02\x41x\x03\x00", Status::InvalidParameter),
+            (b"\xa3\x02\x41x\x03\x00\x04\x10", Status::InvalidParameter),
+            (
+                b"\xa3\x02\x41x\x03\x00\x04\x19\x10\x01",
+                Status::LargeBlobFull,
+            ),
+        ];
+        for &(body, status) in cases {
             let mut parser = Parser::new();
             parser.consume(body);
-            assert_eq!(parser.finish().err(), Some(Status::InvalidParameter));
+            assert_eq!(parser.finish().err(), Some(status), "{body:02x?}");
         }
-    }
-
-    #[test]
-    fn first_fragment_requires_total() {
-        let mut parser = Parser::new();
-        parser.consume(b"\xa2\x02\x41x\x03\x00");
-        assert_eq!(parser.finish().err(), Some(Status::InvalidParameter));
-    }
-
-    #[test]
-    fn total_below_checksum_and_array_minimum_is_invalid() {
-        let mut parser = Parser::new();
-        parser.consume(b"\xa3\x02\x41x\x03\x00\x04\x10");
-        assert_eq!(parser.finish().err(), Some(Status::InvalidParameter));
-    }
-
-    #[test]
-    fn total_above_capacity_reports_full() {
-        let mut parser = Parser::new();
-        parser.consume(b"\xa3\x02\x41x\x03\x00\x04\x19\x10\x01");
-        assert_eq!(parser.finish().err(), Some(Status::LargeBlobFull));
     }
 
     #[test]
@@ -470,6 +451,7 @@ mod tests {
         let Ok(Command::LargeBlob(mut params)) = parser.finish() else {
             panic!("valid noninitial Set fragment");
         };
+        assert_eq!(parser.finish().err(), Some(Status::InvalidParameter));
         let mut storage = Records::default();
         storage.stage_begin().unwrap();
         storage.stage_append(b"abc").unwrap();

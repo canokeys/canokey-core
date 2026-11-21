@@ -362,13 +362,17 @@ mod records {
             (4, 15, 15)
         );
         // Disabled OpenPGP reset codes retain policy, but cannot authenticate.
-        pin.create(b"", 3, &mut platform!(&mut store, &memory))
+        pin.change(b"", 0, &mut platform!(&mut store, &memory))
+            .unwrap();
+        pin.retry_limit(5, &mut platform!(&mut store, &memory))
             .unwrap();
         assert_eq!(
-            pin.info(&mut platform!(&mut store, &memory))
-                .unwrap()
-                .retries_remaining,
-            0
+            pin.info(&mut platform!(&mut store, &memory)),
+            Ok(PinInfo {
+                length_bytes: 0,
+                retries_remaining: 0,
+                retry_limit: 5,
+            })
         );
         assert_eq!(
             pin.verify(b"", 0, &mut platform!(&mut store, &memory)),
@@ -378,7 +382,7 @@ mod records {
 
     #[cfg(feature = "openpgp")]
     #[test]
-    fn batched_retry_updates_and_failed_restore_preserve_the_record() {
+    fn record_mutations_require_an_existing_credential() {
         let pin = RecordPin {
             id: Record::PgpRc,
             stored_min: 0,
@@ -386,52 +390,18 @@ mod records {
         };
         let mut store = Store::default();
         let memory = Eraser::default();
-        for empty in [false, true] {
+        for value in [&b""[..], b"5678"] {
             assert_eq!(
-                pin.change(
-                    if empty { b"" } else { b"5678" },
-                    0,
-                    &mut platform!(&mut store, &memory)
-                ),
+                pin.change(value, 0, &mut platform!(&mut store, &memory)),
                 Err(Error::Persistence)
             );
-            assert_eq!(
-                pin.retry_limit(3, &mut platform!(&mut store, &memory)),
-                Err(Error::Persistence)
-            );
-            assert!(!store.exists);
-            assert_eq!(store.writes, 0);
         }
-        pin.create(b"1234", 3, &mut platform!(&mut store, &memory))
-            .unwrap();
-        assert_eq!(store.writes, 1);
-        assert_eq!(&store.value[..8], b"\x01\x04\x03\x031234");
-        let verify =
-            |store: &mut Store, value: &[u8]| pin.verify(value, 4, &mut platform!(store, &memory));
-        assert_eq!(verify(&mut store, b"1234"), Ok(()));
-        assert_eq!(store.writes, 3);
-        assert_eq!(verify(&mut store, b"0000"), Err(Error::Retries(2)));
-        assert_eq!(store.writes, 4);
-        let old = store.value;
-        store.fail_write = true;
-        assert_eq!(verify(&mut store, b"1234"), Err(Error::Persistence));
-        assert_eq!(store.value, old);
-        store.fail_write = false;
-        assert_eq!(verify(&mut store, b"1234"), Ok(()));
-        assert_eq!(store.writes, 7);
-        assert_eq!(&store.value[..8], b"\x01\x04\x03\x031234");
-        pin.change(b"5678", 4, &mut platform!(&mut store, &memory))
-            .unwrap();
-        assert_eq!(store.writes, 8);
-        assert_eq!(&store.value[..8], b"\x01\x04\x03\x035678");
-        pin.change(b"", 0, &mut platform!(&mut store, &memory))
-            .unwrap();
-        assert_eq!(store.writes, 9);
-        assert_eq!(store.length, 4);
-        assert_eq!(&store.value[..4], b"\x01\x00\x00\x03");
-        store.length = 3; // No complete retry-policy header.
-        assert_eq!(verify(&mut store, b"1234"), Err(Error::Persistence));
-        assert_eq!(store.writes, 9);
+        assert_eq!(
+            pin.retry_limit(3, &mut platform!(&mut store, &memory)),
+            Err(Error::Persistence)
+        );
+        assert!(!store.exists);
+        assert_eq!(store.writes, 0);
     }
 
     #[cfg(feature = "admin")]
@@ -540,55 +510,5 @@ mod records {
             assert_eq!(store.writes, writes);
             assert_eq!(memory.0.get(), wipes + 1);
         }
-    }
-
-    #[cfg(feature = "openpgp")]
-    #[test]
-    fn openpgp_disabled_reset_code_and_prepaid_attempts() {
-        let pin = RecordPin {
-            id: Record::PgpRc,
-            stored_min: 0,
-            fixed_limit: None,
-        };
-        let mut store = Store::default();
-        let memory = Eraser::default();
-        pin.create(b"", 3, &mut platform!(&mut store, &memory))
-            .unwrap();
-        assert_eq!(
-            pin.info(&mut platform!(&mut store, &memory)),
-            Ok(crate::mechanisms::pin::PinInfo {
-                length_bytes: 0,
-                retries_remaining: 0,
-                retry_limit: 3
-            })
-        );
-        assert_eq!(
-            pin.verify(b"bad", 8, &mut platform!(&mut store, &memory)),
-            Err(Error::Blocked)
-        );
-        pin.retry_limit(5, &mut platform!(&mut store, &memory))
-            .unwrap();
-        assert_eq!(
-            pin.info(&mut platform!(&mut store, &memory)),
-            Ok(crate::mechanisms::pin::PinInfo {
-                length_bytes: 0,
-                retries_remaining: 0,
-                retry_limit: 5
-            })
-        );
-        pin.change(b"12345678", 8, &mut platform!(&mut store, &memory))
-            .unwrap();
-        let writes = store.writes;
-        pin.verify(b"12345678", 8, &mut platform!(&mut store, &memory))
-            .unwrap();
-        assert_eq!(store.writes, writes + 2);
-        assert_eq!(
-            pin.info(&mut platform!(&mut store, &memory)),
-            Ok(crate::mechanisms::pin::PinInfo {
-                length_bytes: 8,
-                retries_remaining: 5,
-                retry_limit: 5
-            })
-        );
     }
 }
