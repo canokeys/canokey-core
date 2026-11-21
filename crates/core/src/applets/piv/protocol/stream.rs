@@ -62,7 +62,9 @@ impl Piv {
                 repo::algorithm(h.p1, &self.config).map_err(|_| Sw::WRONG_P1P2)?
             };
             if repo::pq(a) || h.p1 == wire_alg::ED25519_STREAM || (a == alg::SM2 && h.chained()) {
-                self.agreement = None;
+                if self.agreement.is_some() {
+                    self.clear_agreement(&mut w.classic_with(p.memory), p);
+                }
                 self.stream_phase = StreamPhase::Identity;
                 self.sm2_id_used = 0;
                 self.sm2_id.fill(0);

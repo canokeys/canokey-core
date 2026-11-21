@@ -196,6 +196,28 @@ struct Streaming {
     finalized: usize,
 }
 impl Crypto for Streaming {
+    fn key_operation(
+        &mut self,
+        op: KeyOperation,
+        algorithm: u8,
+        key: &mut KeyMaterial,
+        _: &[u8],
+        out: &mut [u8],
+    ) -> Result<usize, CryptoError> {
+        assert_eq!(algorithm, alg::SM2);
+        match op {
+            KeyOperation::Generate => {
+                key.bytes[..32].fill(0x3c);
+                Ok(0)
+            }
+            KeyOperation::Public => {
+                out[..64].fill(0x5a);
+                Ok(64)
+            }
+            _ => panic!("unexpected SM2 operation"),
+        }
+    }
+
     fn stream(
         &mut self,
         op: StreamOperation,
@@ -371,6 +393,61 @@ fn classic_unauthorized_signature_does_not_consume_touch() {
         Err(Sw::SECURITY_STATUS_NOT_SATISFIED)
     );
     assert_eq!(device.samples, 0);
+}
+
+#[test]
+fn rejected_pq_request_wipes_retained_sm2_ephemeral_key() {
+    let mut sm2 = Store::key(alg::SM2);
+    let footer = 1 + repo::material(alg::SM2);
+    sm2.bytes[footer + repo::PIN_POLICY] = policy::PIN_NEVER;
+    sm2.bytes[footer + repo::TOUCH_POLICY] = policy::TOUCH_NEVER;
+    let mut pq = Store::key(alg::MLKEM768);
+    pq.bytes[65 + repo::PIN_POLICY] = policy::PIN_ALWAYS;
+    let mut crypto = Streaming::default();
+    let mut device = Backend;
+    let mut piv = Piv::new();
+    let mut workspace = SessionWorkspace::new();
+    let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+        storage: &mut sm2,
+        crypto: &mut crypto,
+        device: &mut device,
+        memory: &Backend,
+    };
+    let mut h = Header {
+        cla: 0,
+        ins: INS_GENERAL_AUTHENTICATE,
+        p1: repo::algorithm_id(alg::SM2, &repo::DEFAULT_CONFIG),
+        p2: 0x9a,
+    };
+    piv.begin(h, &mut workspace, &mut p).unwrap();
+    piv.consume(&[0x7c, 2, 0x82, 0], &mut workspace, &mut p)
+        .unwrap();
+    piv.finish(h, 256, &mut workspace, &mut p).unwrap();
+    assert!(piv.agreement.is_some());
+    assert!(
+        workspace
+            .classic_with(p.memory)
+            .agreement
+            .iter()
+            .any(|&b| b != 0)
+    );
+
+    p.storage = &mut pq;
+    h.p1 = repo::algorithm_id(alg::MLKEM768, &repo::DEFAULT_CONFIG);
+    assert_eq!(
+        piv.begin(h, &mut workspace, &mut p),
+        Err(Sw::SECURITY_STATUS_NOT_SATISFIED)
+    );
+    assert!(piv.agreement.is_none());
+    assert!(matches!(workspace, SessionWorkspace::Working(_)));
+    assert!(
+        workspace
+            .classic_with(p.memory)
+            .agreement
+            .iter()
+            .all(|&b| b == 0)
+    );
+    assert_eq!(crypto.initialized, 0);
 }
 
 #[test]
