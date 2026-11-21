@@ -27,63 +27,150 @@ macro_rules! pass_arg {
         }
     }};
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Selected {
-    None,
-    #[cfg(feature = "ndef")]
-    Ndef,
-    #[cfg(feature = "admin")]
-    Admin,
-    #[cfg(feature = "ctap")]
-    Ctap,
-    #[cfg(feature = "oath")]
-    Oath,
-    #[cfg(feature = "openpgp")]
-    OpenPgp,
-    #[cfg(feature = "piv")]
-    Piv,
+macro_rules! apdu_applets {
+    ($platform:ident, $config:ident, $header:ident, $transport:ident;
+        $(
+            $feature:literal: $variant:ident $(($ignore:tt => $state:ty))? {
+                aids: [$($aid:expr),* $(,)?],
+                $(transport_aid: $transport_aid:expr,)?
+                $(mask: $mask_case:ident => $mask:expr,)?
+                limit: $limit:expr,
+            }
+        )*
+    ) => {
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum Selected {
+            None,
+            $(#[cfg(feature = $feature)] $variant,)*
+        }
+
+        /// The discriminant owns both selection and live APDU applet state.
+        // Keep the tag first to avoid large-offset loads on Thumb-1.
+        // CTAP and ADMIN retain externally owned state for other entrypoints.
+        #[repr(u8)]
+        enum AppletState {
+            None,
+            $(#[cfg(feature = $feature)] $variant $(($state))?,)*
+        }
+
+        impl AppletState {
+            fn selected(&self) -> Selected {
+                match self {
+                    Self::None => Selected::None,
+                    $(#[cfg(feature = $feature)] Self::$variant $(($ignore))? => Selected::$variant,)*
+                }
+            }
+
+            fn command_limit(&self, $header: Header) -> (u8, u32) {
+                match self {
+                    $(#[cfg(feature = $feature)] Self::$variant $(($ignore))? => $limit,)*
+                    Self::None => ($header.cla, 0),
+                }
+            }
+        }
+
+        impl Selected {
+            fn enabled(self, $platform: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
+                use super::config as $config;
+                let mask = match self {
+                    $($(#[cfg(feature = $feature)] Self::$mask_case => $mask,)?)*
+                    _ => 0,
+                };
+                mask == 0 || $config::enabled($platform.storage, mask)
+            }
+
+            fn from_aid(aid: &[u8], $transport: canokey_protocol::apdu::Transport) -> Option<Self> {
+                // A transport-selected FIDO AID takes precedence.
+                $($(
+                    #[cfg(feature = $feature)]
+                    if aid == $transport_aid {
+                        return Some(Self::$variant);
+                    }
+                )?)*
+                let _ = $transport;
+
+                // Borrowed AIDs share one comparison on size-optimized targets.
+                const AIDS: &[(&[u8], Selected)] = &[
+                    $($(#[cfg(feature = $feature)] ($aid, Selected::$variant),)*)*
+                ];
+                for &(candidate, selected) in AIDS {
+                    if aid == candidate {
+                        return Some(selected);
+                    }
+                }
+                None
+            }
+        }
+    };
 }
 
-/// One discriminant owns both CCID selection and its live applet state.
-/// CTAP state stays outside this enum because native HID does not use AID selection.
-/// ADMIN/PASS services likewise remain available to cross-applet flows.
-// Keep the tag at the front of this internal RAM union. A trailing tag makes
-// every Thumb-1 dispatch rebuild a large offset before inspecting the applet.
-#[repr(u8)]
-enum AppletState {
-    None,
-    #[cfg(feature = "ndef")]
-    Ndef(crate::applets::ndef::Applet),
-    #[cfg(feature = "admin")]
-    Admin,
-    #[cfg(feature = "ctap")]
-    Ctap,
-    #[cfg(feature = "oath")]
-    Oath(crate::applets::oath::protocol::Oath),
-    #[cfg(feature = "openpgp")]
-    OpenPgp(crate::applets::openpgp::protocol::OpenPgp),
-    #[cfg(feature = "piv")]
-    Piv(Piv),
-}
-impl AppletState {
-    fn selected(&self) -> Selected {
-        match self {
-            Self::None => Selected::None,
-            #[cfg(feature = "ndef")]
-            Self::Ndef(_) => Selected::Ndef,
-            #[cfg(feature = "admin")]
-            Self::Admin => Selected::Admin,
-            #[cfg(feature = "ctap")]
-            Self::Ctap => Selected::Ctap,
-            #[cfg(feature = "oath")]
-            Self::Oath(_) => Selected::Oath,
-            #[cfg(feature = "openpgp")]
-            Self::OpenPgp(_) => Selected::OpenPgp,
-            #[cfg(feature = "piv")]
-            Self::Piv(_) => Selected::Piv,
-        }
+apdu_applets! {
+    p, config, h, transport;
+    "ndef": Ndef(_ => crate::applets::ndef::Applet) {
+        aids: [crate::applets::ndef::AID],
+        mask: Ndef => config::NDEF,
+        // The C NDEF handler dispatches by INS without restricting CLA.
+        limit: (0, crate::applets::ndef::FILE_LIMIT as u32),
     }
-    #[cfg(all(feature = "pass", classic_presence))]
+    "admin": Admin {
+        aids: [admin::AID],
+        limit: {
+            #[cfg(feature = "ctap")]
+            if h.ins == admin::INS_PROVISION_ATTESTATION {
+                return (h.unchained().cla, ctap::provision::CERT_LIMIT as u32);
+            }
+            (
+                if h.ins == admin::INS_SET_KEYMAP {
+                    h.unchained().cla
+                } else {
+                    h.cla
+                },
+                admin::COMMAND_CAPACITY as u32,
+            )
+        },
+    }
+    "ctap": Ctap {
+        aids: [],
+        transport_aid: transport.fido_aid(),
+        mask: Ctap => config::WEBAUTHN,
+        limit: (
+            if h.cla == 0 { 0 } else { h.unchained().cla ^ canokey_protocol::apdu::CLA_FIDO },
+            ctap::MAX_REQUEST as u32,
+        ),
+    }
+    "oath": Oath(_ => crate::applets::oath::protocol::Oath) {
+        aids: [crate::applets::oath::protocol::AID],
+        limit: (h.unchained().cla, crate::applets::oath::protocol::CAPACITY as u32),
+    }
+    "openpgp": OpenPgp(_ => crate::applets::openpgp::protocol::OpenPgp) {
+        aids: [crate::applets::openpgp::protocol::AID],
+        mask: OpenPgp => if p.device.contactless() { config::OPENPGP_NFC } else { config::OPENPGP_USB },
+        limit: (
+            if h.chained() && !crate::applets::openpgp::protocol::OpenPgp::supports_chaining(h) {
+                h.cla
+            } else {
+                h.unchained().cla
+            },
+            crate::applets::openpgp::protocol::OpenPgp::limit(h),
+        ),
+    }
+    "piv": Piv(_ => Piv) {
+        // Full AID, standardized nine-byte selector, then legacy RID selector.
+        aids: [
+            crate::applets::piv::AID,
+            crate::applets::piv::AID.split_at(9).0,
+            crate::applets::piv::AID.split_at(5).0,
+        ],
+        mask: Piv => if p.device.contactless() { config::PIV_NFC } else { config::PIV_USB },
+        limit: (
+            if h.chained() && !Piv::supports_chaining(h.ins) { h.cla } else { h.unchained().cla },
+            Piv::limit(h),
+        ),
+    }
+}
+
+#[cfg(all(feature = "pass", classic_presence))]
+impl AppletState {
     fn take_presence_attempt(&mut self) -> bool {
         match self {
             #[cfg(feature = "oath")]
@@ -93,128 +180,6 @@ impl AppletState {
             #[cfg(feature = "piv")]
             Self::Piv(s) => s.take_presence_attempt(),
             _ => false,
-        }
-    }
-}
-
-impl Selected {
-    fn enabled(self, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
-        use super::config;
-        let mask = match self {
-            #[cfg(feature = "ndef")]
-            Self::Ndef => config::NDEF,
-            #[cfg(feature = "openpgp")]
-            Self::OpenPgp => {
-                if p.device.contactless() {
-                    config::OPENPGP_NFC
-                } else {
-                    config::OPENPGP_USB
-                }
-            }
-            #[cfg(feature = "piv")]
-            Self::Piv => {
-                if p.device.contactless() {
-                    config::PIV_NFC
-                } else {
-                    config::PIV_USB
-                }
-            }
-            #[cfg(feature = "ctap")]
-            Self::Ctap => config::WEBAUTHN,
-            _ => 0,
-        };
-        mask == 0 || config::enabled(p.storage, mask)
-    }
-    fn from_aid(aid: &[u8], transport: canokey_protocol::apdu::Transport) -> Option<Self> {
-        // Iterate borrowed AIDs so size-optimized targets share one comparison
-        // instead of expanding constant slice patterns into bytewise branches.
-        #[cfg(feature = "ctap")]
-        if aid == transport.fido_aid() {
-            return Some(Self::Ctap);
-        }
-        let _ = transport;
-        const AIDS: &[(&[u8], Selected)] = &[
-            #[cfg(feature = "ndef")]
-            (crate::applets::ndef::AID, Selected::Ndef),
-            #[cfg(feature = "admin")]
-            (admin::AID, Selected::Admin),
-            #[cfg(feature = "oath")]
-            (crate::applets::oath::protocol::AID, Selected::Oath),
-            #[cfg(feature = "openpgp")]
-            (crate::applets::openpgp::protocol::AID, Selected::OpenPgp),
-            #[cfg(feature = "piv")]
-            (crate::applets::piv::AID, Selected::Piv),
-            // Only the standardized nine-byte and legacy RID-only selectors
-            // are accepted in addition to the full PIV AID.
-            #[cfg(feature = "piv")]
-            (crate::applets::piv::AID.split_at(9).0, Selected::Piv),
-            #[cfg(feature = "piv")]
-            (crate::applets::piv::AID.split_at(5).0, Selected::Piv),
-        ];
-        for &(candidate, selected) in AIDS {
-            if aid == candidate {
-                return Some(selected);
-            }
-        }
-        None
-    }
-}
-
-impl AppletState {
-    fn command_limit(&self, h: Header) -> (u8, u32) {
-        match self {
-            #[cfg(feature = "admin")]
-            Self::Admin => {
-                #[cfg(feature = "ctap")]
-                if h.ins == crate::applets::admin::protocol::INS_PROVISION_ATTESTATION {
-                    return (h.unchained().cla, ctap::provision::CERT_LIMIT as u32);
-                }
-                (
-                    if h.ins == admin::INS_SET_KEYMAP {
-                        h.unchained().cla
-                    } else {
-                        h.cla
-                    },
-                    admin::COMMAND_CAPACITY as u32,
-                )
-            }
-            #[cfg(feature = "ctap")]
-            Self::Ctap => (
-                if h.cla == 0 {
-                    0
-                } else {
-                    h.unchained().cla ^ canokey_protocol::apdu::CLA_FIDO
-                },
-                ctap::MAX_REQUEST as u32,
-            ),
-            #[cfg(feature = "oath")]
-            Self::Oath(_) => (
-                h.unchained().cla,
-                crate::applets::oath::protocol::CAPACITY as u32,
-            ),
-            #[cfg(feature = "openpgp")]
-            Self::OpenPgp(_) => (
-                if h.chained() && !crate::applets::openpgp::protocol::OpenPgp::supports_chaining(h)
-                {
-                    h.cla
-                } else {
-                    h.unchained().cla
-                },
-                crate::applets::openpgp::protocol::OpenPgp::limit(h),
-            ),
-            #[cfg(feature = "piv")]
-            Self::Piv(_) => (
-                if h.chained() && !crate::applets::piv::Piv::supports_chaining(h.ins) {
-                    h.cla
-                } else {
-                    h.unchained().cla
-                },
-                Piv::limit(h),
-            ),
-            #[cfg(feature = "ndef")]
-            // C's NDEF handler dispatches by INS without restricting CLA.
-            Self::Ndef(_) => (0, crate::applets::ndef::FILE_LIMIT as u32),
-            Self::None => (h.cla, 0),
         }
     }
 }

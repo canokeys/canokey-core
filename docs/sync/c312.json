@@ -562,7 +562,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
@@ -637,7 +637,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         }
       ],
       "regressions": [
@@ -690,7 +690,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         }
       ],
       "regressions": [
@@ -1223,7 +1223,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         }
       ],
       "regressions": [
@@ -1318,7 +1318,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         }
       ],
       "regressions": [
@@ -1384,7 +1384,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         },
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
@@ -2348,7 +2348,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         }
       ],
       "regressions": [
@@ -2599,7 +2599,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
@@ -2860,7 +2860,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         }
       ],
       "regressions": [
@@ -3022,7 +3022,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         }
       ],
       "regressions": [
@@ -3350,7 +3350,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         },
         {
           "path": "crates/core/src/applets/piv/protocol.rs",
@@ -3721,7 +3721,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         }
       ],
       "regressions": [
@@ -3762,7 +3762,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         },
         {
           "path": "crates/core/src/applets/admin/protocol.rs",
@@ -3820,7 +3820,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         },
         {
           "path": "crates/core/src/applets/ctap/apdu.rs",
@@ -3908,7 +3908,7 @@
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
-          "sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f"
+          "sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c"
         },
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
@@ -10435,6 +10435,34 @@
             "current_sha256": "2ad491bbdae9915fe30379954b8487b26f23825ad0c32a94ed26ed2ee1b580dc",
             "behaviors": [
               "T25"
+            ]
+          }
+        }
+      },
+      {
+        "record_parent": "7565cfbfedb6de41b21403725fd7181d43973150",
+        "status": "pending; no behavior, source-hunk or release approval granted",
+        "scope": "Generate APDU selection, enablement and dispatch limits from the applet registry. Preserve prior AID precedence and command limits.",
+        "artifacts": {
+          "crates/core/src/runtime/registry.rs": {
+            "previous_sha256": "040edc1b767d7ce1349ae136c3daecffaf5309b3bf6a5d47a74b49edb544f21f",
+            "current_sha256": "e9f047d25751398791a1c8fb21e38c756a356235e773b7044f995ca23c763a0c",
+            "behaviors": [
+              "A1",
+              "A2",
+              "A3",
+              "T8",
+              "T9-LE",
+              "L6",
+              "L3",
+              "L1",
+              "C3",
+              "T16",
+              "L10",
+              "T24",
+              "T25",
+              "T26",
+              "T28"
             ]
           }
         }
