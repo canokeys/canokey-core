@@ -27,21 +27,64 @@ macro_rules! pass_arg {
         }
     }};
 }
-macro_rules! apdu_applets {
-    ($platform:ident, $config:ident, $header:ident, $transport:ident;
+#[cfg(any(feature = "admin", feature = "pass"))]
+mod actions;
+
+// Emit entire matches so every dispatch arm uses the same feature gate.
+macro_rules! dispatch_applet {
+    ($value:expr, $fallback:pat => $default:expr; $(#[$gate:meta] $pat:pat => $action:expr,)*) => {
+        match $value {
+            $(#[$gate] $pat => $action,)*
+            $fallback => $default,
+        }
+    };
+}
+
+// APDU entries are ordered by AID precedence and selected-state discriminant.
+// Owned state is emitted in two groups to preserve the Thumb-1 field layout.
+macro_rules! applets {
+    (
+        $this:ident, $io:ident, $platform:ident, $config:ident, $h:ident,
+        $header:ident, $transport:ident, $bytes:ident, $last:ident,
+        $le:ident, $offset:ident, $out:ident;
+        #[$workspace_gate:meta];
         $(
-            $feature:literal: $variant:ident $(($ignore:tt => $state:ty))? {
-                aids: [$($aid:expr),* $(,)?],
+            #[$gate:meta] $variant:ident {
+                $(apdu: $selected:ident $(($ignore:tt => $state:ty = $make:expr))?,
+                  aids: [$($aid:expr),* $(,)?],
+                  limit: $limit:expr,)?
                 $(transport_aid: $transport_aid:expr,)?
-                $(mask: $mask_case:ident => $mask:expr,)?
-                limit: $limit:expr,
+                $(mask: $mask:expr,)?
+                $(primary: [$($primary:ident: $primary_ty:ty = $primary_init:expr),+ $(,)?],)?
+                $(secondary: [$($secondary:ident: $secondary_ty:ty = $secondary_init:expr),+ $(,)?],)?
+                $(install_first: $install_first:expr,)?
+                $(install: $install:expr,)?
+                $(reset_owned: $reset_owned:expr,)?
+                $(reset_selected($reset_binding:ident): $reset_selected:expr,)?
+                $(presence($presence_binding:ident): $presence:expr,)?
+                $(can_yield($yield_binding:ident): $can_yield:expr,)?
+                $(keep_selection_when_disabled: $keep_selection:expr,)?
+                $(zero_le: $zero_le:expr,)?
+                $(retain_nfc_input: $retain_nfc_input:expr,)?
+                $(allows_extended: $allows_extended:expr,)?
+                $(chain_header: $chain_header:expr,)?
+                $(owned_presence: $owned_presence:expr,)?
+                $(enter($enter_binding:ident): $enter:expr,)?
+                $(end_frame($frame_binding:ident): $end_frame:expr,)?
+                $(abort_command$(($abort_binding:ident))?: $abort_command:expr,)?
+                $(begin_command$(($begin_binding:ident))?: $begin_command:expr,)?
+                $(consume$(($consume_binding:ident))?: $consume:expr,)?
+                $(finish$(($finish_binding:ident))?: $finish:expr,)?
+                $(read_response$(($read_binding:ident))?: $read_response:expr,)?
+                $(close_response$(($close_binding:ident))?: $close_response:expr,)?
+                $(select$(($select_binding:ident))?: $select:expr,)?
             }
         )*
     ) => {
         #[derive(Clone, Copy, PartialEq, Eq)]
         enum Selected {
             None,
-            $(#[cfg(feature = $feature)] $variant,)*
+            $($(#[$gate] $selected,)?)*
         }
 
         /// The discriminant owns both selection and live APDU applet state.
@@ -50,39 +93,39 @@ macro_rules! apdu_applets {
         #[repr(u8)]
         enum AppletState {
             None,
-            $(#[cfg(feature = $feature)] $variant $(($state))?,)*
+            $($(#[$gate] $selected $(($state))?,)?)*
         }
 
         impl AppletState {
             fn selected(&self) -> Selected {
                 match self {
                     Self::None => Selected::None,
-                    $(#[cfg(feature = $feature)] Self::$variant $(($ignore))? => Selected::$variant,)*
+                    $($(#[$gate] Self::$selected $(($ignore))? => Selected::$selected,)?)*
                 }
             }
 
-            fn command_limit(&self, $header: Header) -> (u8, u32) {
+            fn command_limit(&self, $h: Header) -> (u8, u32) {
                 match self {
-                    $(#[cfg(feature = $feature)] Self::$variant $(($ignore))? => $limit,)*
-                    Self::None => ($header.cla, 0),
+                    $($(#[$gate] Self::$selected $(($ignore))? => $limit,)?)*
+                    Self::None => ($h.cla, 0),
                 }
             }
         }
 
         impl Selected {
-            fn enabled(self, $platform: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
+            fn enabled(self, $io: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
                 use super::config as $config;
                 let mask = match self {
-                    $($(#[cfg(feature = $feature)] Self::$mask_case => $mask,)?)*
+                    $($(#[$gate] Self::$variant => $mask,)?)*
                     _ => 0,
                 };
-                mask == 0 || $config::enabled($platform.storage, mask)
+                mask == 0 || $config::enabled($io.storage, mask)
             }
 
             fn from_aid(aid: &[u8], $transport: canokey_protocol::apdu::Transport) -> Option<Self> {
                 // A transport-selected FIDO AID takes precedence.
                 $($(
-                    #[cfg(feature = $feature)]
+                    #[$gate]
                     if aid == $transport_aid {
                         return Some(Self::$variant);
                     }
@@ -91,7 +134,7 @@ macro_rules! apdu_applets {
 
                 // Borrowed AIDs share one comparison on size-optimized targets.
                 const AIDS: &[(&[u8], Selected)] = &[
-                    $($(#[cfg(feature = $feature)] ($aid, Selected::$variant),)*)*
+                    $($($(#[$gate] ($aid, Selected::$selected),)*)?)*
                 ];
                 for &(candidate, selected) in AIDS {
                     if aid == candidate {
@@ -100,19 +143,438 @@ macro_rules! apdu_applets {
                 }
                 None
             }
+
+            fn keep_selection_when_disabled($this) -> bool {
+                dispatch_applet!(
+                    $this, _ => false;
+                    $($(#[$gate] Selected::$variant => $keep_selection,)?)*
+                )
+            }
+        }
+
+        #[cfg(all(feature = "pass", classic_presence))]
+        impl AppletState {
+            fn take_presence_attempt(&mut $this) -> bool {
+                dispatch_applet!(
+                    $this, _ => false;
+                    $($(#[$gate] AppletState::$variant($presence_binding) => $presence,)?)*
+                )
+            }
+        }
+
+        // Frequently accessed session controls precede the shared workspace.
+        #[repr(C)]
+        pub struct Registry {
+            $($($(#[$gate] $primary: $primary_ty,)*)?)*
+            $($($(#[$gate] $secondary: $secondary_ty,)*)?)*
+            applet: AppletState,
+            #[$workspace_gate]
+            workspace: super::workspace::SessionWorkspace,
+        }
+
+        // A call-scoped set of disjoint borrows. Materialize deep field addresses
+        // once before the outlined routing methods load them.
+        struct RegistryView<'a> {
+            $($($(#[$gate] $primary: &'a mut $primary_ty,)*)?)*
+            $($($(#[$gate] $secondary: &'a mut $secondary_ty,)*)?)*
+            applet: &'a mut AppletState,
+            #[$workspace_gate]
+            workspace: &'a mut super::workspace::SessionWorkspace,
+        }
+
+        impl Registry {
+            pub const fn new() -> Self {
+                Self {
+                    applet: AppletState::None,
+                    $($($(#[$gate] $primary: $primary_init,)*)?)*
+                    $($($(#[$gate] $secondary: $secondary_init,)*)?)*
+                    #[$workspace_gate]
+                    workspace: super::workspace::SessionWorkspace::new(),
+                }
+            }
+
+            // Sharing construction avoids duplicating deep field addresses.
+            #[inline(never)]
+            fn view(&mut $this) -> RegistryView<'_> {
+                RegistryView {
+                    $($($(#[$gate] $primary: &mut $this.$primary,)*)?)*
+                    $($($(#[$gate] $secondary: &mut $this.$secondary,)*)?)*
+                    applet: &mut $this.applet,
+                    #[$workspace_gate]
+                    workspace: &mut $this.workspace,
+                }
+            }
+        }
+
+        impl Router for Registry {
+            fn can_yield(&$this) -> bool {
+                dispatch_applet!(
+                    &$this.applet, _ => true;
+                    $($(#[$gate] AppletState::$variant($yield_binding) => $can_yield,)?)*
+                )
+            }
+            fn absent_le(&$this, info: canokey_protocol::apdu::CommandInfo) -> u32 {
+                if info.lc == 0 {
+                    dispatch_applet!(
+                        $this.applet.selected(), _ => ();
+                        $($(#[$gate] Selected::$variant => return $zero_le,)?)*
+                    )
+                }
+                if info.extended {
+                    65536
+                } else {
+                    super::engine::DEFAULT_APDU_LE
+                }
+            }
+            #[cfg(feature = "ctap")]
+            fn native_pending(&$this) -> bool {
+                $this.ctap.pending_message()
+            }
+            fn selected(&$this) -> bool {
+                !matches!($this.applet, AppletState::None)
+            }
+            fn retain_nfc_input(&$this) -> bool {
+                dispatch_applet!(
+                    $this.applet.selected(), _ => true;
+                    $($(#[$gate] Selected::$variant => $retain_nfc_input,)?)*
+                )
+            }
+            fn allows_extended(&$this, $header: Header) -> bool {
+                // Transport admission is independent of command validity.
+                match $this.applet.selected() {
+                    Selected::None => $header.is_get_response(),
+                    $($(#[$gate] Selected::$variant => $allows_extended,)?)*
+                    #[allow(unreachable_patterns)]
+                    _ => true,
+                }
+            }
+            fn command_limit(&$this, $h: Header) -> Result<u32, Sw> {
+                // Applets supply their accepted base CLA and logical command bound.
+                // Strip the chain bit only for supported commands. NDEF deliberately
+                // has no CLA filter, matching its INS-only dispatcher.
+                let (cla, limit) = $this.applet.command_limit($h);
+                if !$this.selected() {
+                    return Err(Sw::FILE_NOT_FOUND);
+                }
+                if cla != 0 {
+                    Err(Sw::CLA_NOT_SUPPORTED)
+                } else {
+                    Ok(limit)
+                }
+            }
+            fn chain_header(&$this, $header: Header) -> Header {
+                dispatch_applet!(
+                    $this.applet.selected(), _ => $header;
+                    $($(#[$gate] Selected::$variant => $chain_header,)?)*
+                )
+            }
+            #[cfg(feature = "pass")]
+            fn output_busy(&$this) -> bool {
+                // PASS owns the shared output queue; the registry only arbitrates
+                // applet presence and forwards sampling at this composition boundary.
+                $this.output.busy()
+            }
+        }
+
+        impl RegistryView<'_> {
+            #[cfg_attr(not(has_applet), allow(unused_variables))]
+            #[inline(never)]
+            fn reset_sessions(&mut $this, $platform: &mut Platform<'_, impl crate::ports::Backends>) {
+                $($(#[$gate] { $reset_owned; })?)*
+                // Release native handles before erasing backing bytes.
+                #[cfg(classic_presence)]
+                dispatch_applet!(
+                    &mut $this.applet, _ => ();
+                    $($(#[$gate] AppletState::$variant($reset_binding) => {
+                        $reset_selected;
+                        *$this.applet = AppletState::None;
+                    },)?)*
+                );
+                #[$workspace_gate]
+                $this.workspace.wipe_active($platform.memory);
+            }
+
+            #[cfg_attr(not(any(has_applet, feature = "pass")), allow(unused_variables))]
+            #[inline(never)]
+            fn install(
+                &mut $this,
+                $platform: &mut Platform<'_, impl crate::ports::Backends>,
+            ) -> Result<(), Sw> {
+                $($(#[$gate] $install_first?;)?)*
+                $($(#[$gate] $install?;)?)*
+                Ok(())
+            }
+
+            #[inline(never)]
+            fn reset(&mut $this, $io: &mut Platform<'_, impl crate::ports::Backends>) {
+                #[cfg(feature = "pass")]
+                $this.output.inhibit(true, $io.memory);
+                $this.reset_sessions($io);
+                *$this.applet = AppletState::None;
+            }
+
+            #[inline(never)]
+            fn select(
+                &mut $this,
+                aid: &[u8],
+                $transport: canokey_protocol::apdu::Transport,
+                $io: &mut Platform<'_, impl crate::ports::Backends>,
+            ) -> Result<u32, Sw> {
+                let next = Selected::from_aid(aid, $transport).ok_or(Sw::FILE_NOT_FOUND)?;
+                if !next.enabled($io) {
+                    // Disabled NDEF follows the unknown-AID rejection path.
+                    if next.keep_selection_when_disabled() {
+                        return Err(Sw::FILE_NOT_FOUND);
+                    }
+                    $this.reset_sessions($io);
+                    *$this.applet = AppletState::None;
+                    return Err(Sw::FILE_NOT_FOUND);
+                }
+                if $this.applet.selected() != next {
+                    $this.reset_sessions($io);
+                    match next {
+                        Selected::None => *$this.applet = AppletState::None,
+                        $($(
+                            #[$gate]
+                            Selected::$selected => *$this.applet = AppletState::$selected $(($make))?,
+                        )?)*
+                    }
+                    // Reload durable state only on an actual switch.
+                    let entered = dispatch_applet!(
+                        &mut $this.applet, _ => Ok(());
+                        $($(#[$gate] AppletState::$variant($enter_binding) => $enter,)?)*
+                    );
+                    if let Err(error) = entered {
+                        *$this.applet = AppletState::None;
+                        return Err(error);
+                    }
+                }
+                dispatch_applet!(
+                    &mut $this.applet, _ => Ok(0);
+                    $($(#[$gate] AppletState::$variant $(($select_binding))? => $select,)?)*
+                )
+            }
+
+            #[cfg_attr(
+                not(any(classic_presence, feature = "admin", feature = "ndef")),
+                allow(unused_variables)
+            )]
+            #[inline(never)]
+            fn abort_command(&mut $this, $platform: &mut Platform<'_, impl crate::ports::Backends>) {
+                dispatch_applet!(
+                    &mut $this.applet, AppletState::None => ();
+                    $($(#[$gate] AppletState::$variant $(($abort_binding))? => $abort_command,)?)*
+                )
+            }
+
+            #[inline(never)]
+            fn begin_command(
+                &mut $this,
+                #[cfg_attr(
+                    not(any(crypto_applet, feature = "ndef", feature = "admin")),
+                    allow(unused_variables)
+                )]
+                $header: Header,
+                $platform: &mut Platform<'_, impl crate::ports::Backends>,
+            ) -> Result<(), Sw> {
+                if !$this.applet.selected().enabled($platform) {
+                    $this.reset_sessions($platform);
+                    *$this.applet = AppletState::None;
+                    return Err(Sw::FILE_NOT_FOUND);
+                }
+                dispatch_applet!(
+                    &mut $this.applet, _ => Ok(());
+                    $($(#[$gate] AppletState::$variant $(($begin_binding))? => $begin_command,)?)*
+                )
+            }
+
+            #[inline(never)]
+            fn consume(
+                &mut $this,
+                #[cfg_attr(not(has_applet), allow(unused_variables))] $bytes: &[u8],
+                #[cfg_attr(
+                    not(any(
+                        feature = "ndef",
+                        feature = "admin",
+                        feature = "openpgp",
+                        feature = "piv"
+                    )),
+                    allow(unused_variables)
+                )]
+                $platform: &mut Platform<'_, impl crate::ports::Backends>,
+            ) -> Result<(), Sw> {
+                dispatch_applet!(
+                    &mut $this.applet, AppletState::None => Err(Sw::FILE_NOT_FOUND);
+                    $($(#[$gate] AppletState::$variant $(($consume_binding))? => $consume,)?)*
+                )
+            }
+
+            #[cfg_attr(not(feature = "ndef"), allow(unused_variables))]
+            #[inline(never)]
+            fn end_frame(
+                &mut $this,
+                $last: bool,
+                $platform: &mut Platform<'_, impl crate::ports::Backends>,
+            ) -> Result<(), Sw> {
+                dispatch_applet!(
+                    &mut $this.applet, _ => Ok(());
+                    $($(#[$gate] AppletState::$variant($frame_binding) => $end_frame,)?)*
+                )
+            }
+
+            // Share final dispatch without expanding it into frame/response handling.
+            #[inline(never)]
+            fn finish(
+                &mut $this,
+                #[cfg_attr(
+                    not(any(crypto_applet, feature = "admin", feature = "oath")),
+                    allow(unused_variables)
+                )]
+                $header: Header,
+                #[cfg_attr(
+                    not(any(classic_presence, feature = "admin", feature = "ndef")),
+                    allow(unused_variables)
+                )]
+                $le: u32,
+                #[cfg_attr(not(has_applet), allow(unused_variables))] $platform: &mut Platform<
+                    '_,
+                    impl crate::ports::Backends,
+                >,
+            ) -> Result<(u32, Sw), Sw> {
+                dispatch_applet!(
+                    &mut $this.applet, AppletState::None => Err(Sw::FILE_NOT_FOUND);
+                    $($(#[$gate] AppletState::$variant $(($finish_binding))? => $finish,)?)*
+                )
+            }
+
+            // Keep applet workspace addressing out of the response cursor and its
+            // error/close paths; this boundary reduces the complete Thumb-1 image.
+            #[inline(never)]
+            fn read_response(
+                &mut $this,
+                #[cfg_attr(not(has_applet), allow(unused_variables))] $offset: u32,
+                #[cfg_attr(not(has_applet), allow(unused_variables))] $out: &mut [u8],
+                #[cfg_attr(
+                    not(any(crypto_applet, feature = "admin", feature = "ndef")),
+                    allow(unused_variables)
+                )]
+                $platform: &mut Platform<'_, impl crate::ports::Backends>,
+            ) -> Result<usize, Sw> {
+                dispatch_applet!(
+                    &mut $this.applet, AppletState::None => Err(Sw::COMMAND_NOT_ALLOWED);
+                    $($(#[$gate] AppletState::$variant $(($read_binding))? => $read_response,)?)*
+                )
+            }
+
+            #[cfg_attr(
+                not(any(crypto_applet, feature = "admin", feature = "oath")),
+                allow(unused_variables)
+            )]
+            #[inline(never)]
+            fn close_response(&mut $this, $platform: &mut Platform<'_, impl crate::ports::Backends>) {
+                dispatch_applet!(
+                    &mut $this.applet, AppletState::None => ();
+                    $($(#[$gate] AppletState::$variant $(($close_binding))? => $close_response,)?)*
+                )
+            }
+
+            #[cfg(feature = "pass")]
+            #[inline(never)]
+            fn eject(&mut $this, $io: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
+                $this.output.eject($io.memory);
+                Ok(())
+            }
+
+            #[cfg(feature = "pass")]
+            #[inline(never)]
+            fn sample_output(
+                &mut $this,
+                pressed: bool,
+                now: u32,
+                ready: bool,
+                inhibit: bool,
+                $io: &mut Platform<'_, impl crate::ports::Backends>,
+            ) -> Option<u8> {
+                #[cfg_attr(not(presence_applet), allow(unused_mut))]
+                let mut presence = false;
+                #[cfg(classic_presence)]
+                {
+                    presence |= $this.applet.take_presence_attempt();
+                }
+                $($(#[$gate] { presence |= $owned_presence; })?)*
+                if presence || inhibit {
+                    $this.output.inhibit(pressed, $io.memory);
+                    return None;
+                }
+                $this.output
+                    .sample(pressed, now, ready, $io.memory, |index, $out| {
+                        if super::config::enabled($io.storage, super::config::PASS) {
+                            crate::flows::credential_output::touch(&$this.pass, index, $out, $io).unwrap_or(0)
+                        } else {
+                            0
+                        }
+                    })
+            }
         }
     };
 }
 
-apdu_applets! {
-    p, config, h, transport;
-    "ndef": Ndef(_ => crate::applets::ndef::Applet) {
+applets! {
+    self, p, platform, config, h, header, transport, bytes, last, le, offset, out;
+    #[cfg(any(crypto_applet, feature = "admin", feature = "ndef"))];
+    #[cfg(feature = "ndef")]
+    Ndef {
+        apdu: Ndef(_ => crate::applets::ndef::Applet = crate::applets::ndef::Applet::new()),
         aids: [crate::applets::ndef::AID],
-        mask: Ndef => config::NDEF,
         // The C NDEF handler dispatches by INS without restricting CLA.
         limit: (0, crate::applets::ndef::FILE_LIMIT as u32),
+        mask: config::NDEF,
+        install: crate::applets::ndef::Applet::install(false, platform),
+        keep_selection_when_disabled: true,
+        zero_le: 0,
+        chain_header: {
+            // NDEF SELECT/READ are complete commands even with CLA bit 4.
+            if header.ins != crate::applets::ndef::INS_UPDATE_BINARY {
+                header.unchained()
+            } else {
+                // UPDATE continues at the first fragment's offset.
+                Header {
+                    cla: header.cla & canokey_protocol::apdu::CLA_CHAINING,
+                    p1: 0,
+                    p2: 0,
+                    ..header
+                }
+            }
+        },
+        end_frame(s): s.end_frame(
+            last,
+            &mut self.workspace.classic_with(platform.memory),
+            platform,
+        ),
+        abort_command(s): s.cancel(
+            &mut self.workspace.classic_with(platform.memory),
+            platform.memory,
+        ),
+        begin_command(s): s.begin(
+            header,
+            &mut self.workspace.classic_with(platform.memory),
+            platform.memory,
+        ),
+        consume(s): {
+            s.consume(bytes, &mut self.workspace.classic_with(platform.memory))
+        },
+        // READ BINARY without Le is a zero-byte read; encoded 00 is 256.
+        finish(s): s.finish(
+            le,
+            &mut self.workspace.classic_with(platform.memory),
+            platform,
+        ),
+        read_response(s): s.read(offset as usize, out, platform),
+        close_response(s): s.close(),
     }
-    "admin": Admin {
+    #[cfg(feature = "admin")]
+    Admin {
+        apdu: Admin,
         aids: [admin::AID],
         limit: {
             #[cfg(feature = "ctap")]
@@ -128,23 +590,100 @@ apdu_applets! {
                 admin::COMMAND_CAPACITY as u32,
             )
         },
+        primary: [admin: admin::Admin = admin::Admin::new()],
+        secondary: [grants: admin::Grants = admin::Grants { admin: false }],
+        install_first: self.admin.install(platform),
+        reset_owned: {
+            self.grants.admin = false;
+            self.admin.abort_transaction(platform);
+        },
+        abort_command: self
+            .admin
+            .cancel_command(&mut self.workspace.classic_with(platform.memory), platform),
+        begin_command: self.admin.begin(header, &self.grants, platform),
+        consume: self.admin.consume(
+            bytes,
+            &mut self.workspace.classic_with(platform.memory),
+            platform,
+        ),
+        finish: self.finish_admin(header, le, platform),
+        read_response: self
+            .admin
+            .read_response(
+                offset as usize,
+                out,
+                &mut self.workspace.classic_with(platform.memory),
+            )
+            .map(|()| out.len()),
+        close_response: self
+            .admin
+            .close_response(&mut self.workspace.classic_with(platform.memory), platform),
     }
-    "ctap": Ctap {
+    #[cfg(feature = "ctap")]
+    Ctap {
+        apdu: Ctap,
         aids: [],
-        transport_aid: transport.fido_aid(),
-        mask: Ctap => config::WEBAUTHN,
         limit: (
             if h.cla == 0 { 0 } else { h.unchained().cla ^ canokey_protocol::apdu::CLA_FIDO },
             ctap::MAX_REQUEST as u32,
         ),
+        transport_aid: transport.fido_aid(),
+        mask: config::WEBAUTHN,
+        primary: [ctap: ctap::Applet = ctap::Applet::new()],
+        install_first: self.ctap.install(platform),
+        reset_owned: self.ctap.reset(&mut self.workspace, platform),
+        zero_le: 0,
+        retain_nfc_input: false,
+        owned_presence: self.ctap.take_presence_attempt(),
+        abort_command: self.ctap.cancel_command(&mut self.workspace),
+        begin_command: self.ctap.begin(header, &mut self.workspace, platform),
+        consume: self.ctap.consume(bytes, &mut self.workspace),
+        finish: self
+            .ctap
+            .finish(header, &mut self.workspace, platform)
+            .map(|n| (n, Sw::SUCCESS)),
+        read_response: {
+            self.ctap
+                .read_apdu(offset as usize, out, &mut self.workspace, platform)
+        },
+        close_response: {
+            // Release the primitive before erasing its backing. Response
+            // completion ends this workspace lease, not the FIDO session.
+            self.ctap.close(&mut self.workspace, platform);
+            self.workspace.wipe_active(platform.memory);
+        },
+        select: Ok(self.ctap.select(&mut self.workspace, p)),
     }
-    "oath": Oath(_ => crate::applets::oath::protocol::Oath) {
+    #[cfg(feature = "pass")]
+    Pass {
+        secondary: [
+            pass: Pass = Pass::new(),
+            output: crate::applets::pass::output::Output = crate::applets::pass::output::Output::new(),
+        ],
+        install: self.pass.install(platform.storage, platform.memory).map_err(crate::applets::pass::status),
+    }
+    #[cfg(feature = "oath")]
+    Oath {
+        apdu: Oath(_ => crate::applets::oath::protocol::Oath = crate::applets::oath::protocol::Oath::new()),
         aids: [crate::applets::oath::protocol::AID],
         limit: (h.unchained().cla, crate::applets::oath::protocol::CAPACITY as u32),
+        install: crate::applets::oath::protocol::Oath::new().install(platform),
+        reset_selected(s): s.reset(platform),
+        presence(s): s.take_presence_attempt(),
+        abort_command(s): s.cancel_command(platform),
+        consume(s): s.consume(bytes),
+        finish(s): {
+            let pass = pass_arg!(self);
+            s.finish(header, le, pass, platform)
+        },
+        read_response(s): s.read_response(offset as usize, out).map(|()| out.len()),
+        close_response(s): s.close_response(platform),
+        select(s): s.select(p),
     }
-    "openpgp": OpenPgp(_ => crate::applets::openpgp::protocol::OpenPgp) {
+    #[cfg(feature = "openpgp")]
+    OpenPgp {
+        apdu: OpenPgp(_ => crate::applets::openpgp::protocol::OpenPgp = crate::applets::openpgp::protocol::OpenPgp::new()),
         aids: [crate::applets::openpgp::protocol::AID],
-        mask: OpenPgp => if p.device.contactless() { config::OPENPGP_NFC } else { config::OPENPGP_USB },
         limit: (
             if h.chained() && !crate::applets::openpgp::protocol::OpenPgp::supports_chaining(h) {
                 h.cla
@@ -153,87 +692,74 @@ apdu_applets! {
             },
             crate::applets::openpgp::protocol::OpenPgp::limit(h),
         ),
+        mask: if p.device.contactless() { config::OPENPGP_NFC } else { config::OPENPGP_USB },
+        install: crate::applets::openpgp::protocol::OpenPgp::new().install(platform),
+        reset_selected(s): s.abort_transaction(platform),
+        presence(s): s.take_presence_attempt(),
+        zero_le: 0,
+        abort_command(s): {
+            s.abort(&mut self.workspace.classic_with(platform.memory), platform)
+        },
+        begin_command(s): s.begin(
+            header,
+            &mut self.workspace.classic_with(platform.memory),
+            platform,
+        ),
+        consume(s): s.consume(
+            bytes,
+            &mut self.workspace.classic_with(platform.memory),
+            platform,
+        ),
+        finish(s): s.finish(
+            header,
+            le,
+            &mut self.workspace.classic_with(platform.memory),
+            platform,
+        ),
+        read_response(s): s.read(
+            offset as usize,
+            out,
+            &mut self.workspace.classic_with(platform.memory),
+            platform,
+        ),
+        close_response(s): {
+            s.close(&mut self.workspace.classic_with(platform.memory), platform)
+        },
+        select(s): s.select(p),
     }
-    "piv": Piv(_ => Piv) {
+    #[cfg(feature = "piv")]
+    Piv {
+        apdu: Piv(_ => Piv = Piv::new()),
         // Full AID, standardized nine-byte selector, then legacy RID selector.
         aids: [
             crate::applets::piv::AID,
             crate::applets::piv::AID.split_at(9).0,
             crate::applets::piv::AID.split_at(5).0,
         ],
-        mask: Piv => if p.device.contactless() { config::PIV_NFC } else { config::PIV_USB },
         limit: (
             if h.chained() && !Piv::supports_chaining(h.ins) { h.cla } else { h.unchained().cla },
             Piv::limit(h),
         ),
+        mask: if p.device.contactless() { config::PIV_NFC } else { config::PIV_USB },
+        install: Piv::new().install(platform),
+        reset_selected(s): s.deselect(&mut self.workspace, platform),
+        presence(s): s.take_presence_attempt(),
+        can_yield(s): s.can_yield(),
+        zero_le: 0,
+        allows_extended: false,
+        enter(s): s.install(p),
+        abort_command(s): s.cancel(&mut self.workspace, platform),
+        begin_command(s): s.begin(header, &mut self.workspace, platform),
+        consume(s): s.consume(bytes, &mut self.workspace, platform),
+        finish(s): s.finish(header, le, &mut self.workspace, platform),
+        read_response(s): s.read(offset as usize, out, &mut self.workspace, platform),
+        close_response(s): s.close(&mut self.workspace, platform),
+        select(s): s.select(&mut self.workspace, p),
     }
 }
 
-#[cfg(all(feature = "pass", classic_presence))]
-impl AppletState {
-    fn take_presence_attempt(&mut self) -> bool {
-        match self {
-            #[cfg(feature = "oath")]
-            Self::Oath(s) => s.take_presence_attempt(),
-            #[cfg(feature = "openpgp")]
-            Self::OpenPgp(s) => s.take_presence_attempt(),
-            #[cfg(feature = "piv")]
-            Self::Piv(s) => s.take_presence_attempt(),
-            _ => false,
-        }
-    }
-}
-
-// Put frequently accessed session controls before the large workspace.
-// The stable internal order avoids expensive large-offset Thumb-1 accesses.
-#[repr(C)]
-pub struct Registry {
-    #[cfg(feature = "admin")]
-    admin: admin::Admin,
-    #[cfg(feature = "ctap")]
-    ctap: ctap::Applet,
-    #[cfg(feature = "admin")]
-    grants: admin::Grants,
-    #[cfg(feature = "pass")]
-    pass: Pass,
-    #[cfg(feature = "pass")]
-    output: crate::applets::pass::output::Output,
-    applet: AppletState,
-    #[cfg(any(
-        feature = "admin",
-        feature = "openpgp",
-        feature = "piv",
-        feature = "ctap",
-        feature = "ndef"
-    ))]
-    workspace: super::workspace::SessionWorkspace,
-}
+#[cfg(feature = "ctap")]
 impl Registry {
-    pub const fn new() -> Self {
-        Self {
-            applet: AppletState::None,
-            #[cfg(feature = "admin")]
-            admin: admin::Admin::new(),
-            #[cfg(feature = "ctap")]
-            ctap: ctap::Applet::new(),
-            #[cfg(feature = "admin")]
-            grants: admin::Grants { admin: false },
-            #[cfg(feature = "pass")]
-            pass: Pass::new(),
-            #[cfg(feature = "pass")]
-            output: crate::applets::pass::output::Output::new(),
-            #[cfg(any(
-                feature = "admin",
-                feature = "openpgp",
-                feature = "piv",
-                feature = "ctap",
-                feature = "ndef"
-            ))]
-            workspace: super::workspace::SessionWorkspace::new(),
-        }
-    }
-
-    #[cfg(feature = "ctap")]
     // Drop parser-construction temporaries before the HID caller runs crypto.
     #[inline(never)]
     pub fn begin_hid_request(
@@ -251,7 +777,6 @@ impl Registry {
             self.workspace = SessionWorkspace::CtapRequest(ctap::Request::new());
         }
     }
-    #[cfg(feature = "ctap")]
     pub fn consume_hid_request(&mut self, bytes: &[u8]) {
         use super::workspace::SessionWorkspace;
         match &mut self.workspace {
@@ -260,7 +785,6 @@ impl Registry {
             _ => unreachable!(),
         }
     }
-    #[cfg(feature = "ctap")]
     #[inline(never)]
     pub fn finish_hid_request(
         &mut self,
@@ -268,7 +792,6 @@ impl Registry {
     ) -> usize {
         self.ctap.finish_hid(&mut self.workspace, p)
     }
-    #[cfg(feature = "ctap")]
     pub fn execute_ctap(
         &mut self,
         command: Result<ctap::Command, ctap::Status>,
@@ -277,7 +800,6 @@ impl Registry {
         let mut command = command;
         self.ctap.execute(&mut command, &mut self.workspace, p)
     }
-    #[cfg(feature = "ctap")]
     pub fn execute_ctap_message(
         &mut self,
         command: ctap::message::Message,
@@ -286,7 +808,6 @@ impl Registry {
         self.ctap
             .execute_message(&mut { command }, &mut self.workspace, p)
     }
-    #[cfg(feature = "ctap")]
     pub fn read_ctap(
         &mut self,
         offset: usize,
@@ -295,19 +816,16 @@ impl Registry {
     ) -> Result<(), Sw> {
         self.ctap.read(offset, out, &mut self.workspace, p)
     }
-    #[cfg(feature = "ctap")]
     pub fn resume_ctap(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         if !self.ctap.pending_message() {
             self.close_ctap(p);
         }
     }
-    #[cfg(feature = "ctap")]
     pub fn complete_ctap(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         if !self.ctap.complete_message() {
             self.close_ctap(p);
         }
     }
-    #[cfg(feature = "ctap")]
     pub fn continue_ctap_message(
         &mut self,
         bytes: &[u8],
@@ -315,12 +833,14 @@ impl Registry {
     ) -> Option<usize> {
         self.ctap.continue_message(bytes, &mut self.workspace, p)
     }
-    #[cfg(feature = "ctap")]
     pub fn close_ctap(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.ctap.close(&mut self.workspace, p);
         self.workspace.classic_with(p.memory).clear(p.memory);
     }
-    #[cfg(feature = "pass")]
+}
+
+#[cfg(feature = "pass")]
+impl Registry {
     pub fn touch(
         &self,
         index: u8,
@@ -332,9 +852,9 @@ impl Registry {
         }
         // HOTP touch is a flow operation and uses flow_status; challenge is
         // a PASS service primitive and maps its domain status directly below.
-        crate::flows::credential_output::touch(&self.pass, index, out, p).map_err(flow_status)
+        crate::flows::credential_output::touch(&self.pass, index, out, p)
+            .map_err(actions::flow_status)
     }
-    #[cfg(feature = "pass")]
     pub fn challenge(
         &self,
         index: u8,
@@ -347,100 +867,7 @@ impl Registry {
             .map_err(crate::applets::pass::status)
     }
 }
-impl Router for Registry {
-    fn can_yield(&self) -> bool {
-        match &self.applet {
-            #[cfg(feature = "piv")]
-            AppletState::Piv(piv) => piv.can_yield(),
-            _ => true,
-        }
-    }
-    fn absent_le(&self, info: canokey_protocol::apdu::CommandInfo) -> u32 {
-        if info.lc == 0 {
-            match self.applet.selected() {
-                #[cfg(feature = "ctap")]
-                Selected::Ctap => return 0,
-                #[cfg(feature = "openpgp")]
-                Selected::OpenPgp => return 0,
-                #[cfg(feature = "piv")]
-                Selected::Piv => return 0,
-                #[cfg(feature = "ndef")]
-                Selected::Ndef => return 0,
-                _ => {}
-            }
-        }
-        if info.extended {
-            65536
-        } else {
-            super::engine::DEFAULT_APDU_LE
-        }
-    }
-    #[cfg(feature = "ctap")]
-    fn native_pending(&self) -> bool {
-        self.ctap.pending_message()
-    }
-    fn selected(&self) -> bool {
-        !matches!(self.applet, AppletState::None)
-    }
-    fn retain_nfc_input(&self) -> bool {
-        // C's malformed-envelope cleanup resets only the FIDO transport chain;
-        // it never enters another applet's command/abort path, even if disabled.
-        match self.applet.selected() {
-            #[cfg(feature = "ctap")]
-            Selected::Ctap => false,
-            _ => true,
-        }
-    }
-    fn allows_extended(&self, header: Header) -> bool {
-        // Transport admission is independent of command validity. PIV retains
-        // its blanket rejection; other applets apply ordinary command checks.
-        match self.applet.selected() {
-            Selected::None => header.is_get_response(),
-            #[cfg(feature = "piv")]
-            Selected::Piv => false,
-            #[allow(unreachable_patterns)]
-            _ => true,
-        }
-    }
-    fn command_limit(&self, h: Header) -> Result<u32, Sw> {
-        // Applets supply their accepted base CLA and logical command bound.
-        // Strip the chain bit only for supported commands. NDEF deliberately
-        // has no CLA filter, matching its INS-only dispatcher.
-        let (cla, limit) = self.applet.command_limit(h);
-        if !self.selected() {
-            return Err(Sw::FILE_NOT_FOUND);
-        }
-        if cla != 0 {
-            Err(Sw::CLA_NOT_SUPPORTED)
-        } else {
-            Ok(limit)
-        }
-    }
-    fn chain_header(&self, header: Header) -> Header {
-        // NDEF UPDATE continues at the first fragment's offset; subsequent
-        // P1/P2 values do not restart that applet's write cursor.
-        #[cfg(feature = "ndef")]
-        if matches!(self.applet, AppletState::Ndef(_)) {
-            if header.ins != crate::applets::ndef::INS_UPDATE_BINARY {
-                // NDEF SELECT/READ are complete commands even with CLA bit4.
-                return header.unchained();
-            }
-            return Header {
-                cla: header.cla & canokey_protocol::apdu::CLA_CHAINING,
-                p1: 0,
-                p2: 0,
-                ..header
-            };
-        }
-        header
-    }
-    #[cfg(feature = "pass")]
-    fn output_busy(&self) -> bool {
-        // PASS owns the shared output queue; the registry only arbitrates
-        // applet presence and forwards sampling at this composition boundary.
-        self.output.busy()
-    }
-}
+
 impl<B: crate::ports::Backends> canokey_transport_runtime::engine::Dispatch<Platform<'_, B>>
     for Registry
 {
@@ -555,592 +982,6 @@ impl<B: crate::ports::Backends> canokey_transport_runtime::engine::Dispatch<Plat
 impl Default for Registry {
     fn default() -> Self {
         Self::new()
-    }
-}
-#[cfg(any(feature = "admin", feature = "pass"))]
-fn flow_status(error: crate::flows::Error) -> Sw {
-    use crate::flows::Error;
-    match error {
-        #[cfg(all(feature = "admin", feature = "ctap"))]
-        Error::Ctap => Sw::UNABLE_TO_PROCESS,
-        #[cfg(all(feature = "admin", feature = "ndef"))]
-        Error::Ndef => Sw::UNABLE_TO_PROCESS,
-        #[cfg(all(feature = "admin", feature = "piv"))]
-        Error::Piv => Sw::UNABLE_TO_PROCESS,
-        Error::Pass(e) => crate::applets::pass::status(e),
-        #[cfg(feature = "oath")]
-        Error::Oath(e) => crate::applets::oath::protocol::status(e),
-        #[cfg(all(feature = "admin", feature = "openpgp"))]
-        Error::OpenPgp(e) => e.into(),
-        #[cfg(feature = "admin")]
-        Error::Admin(e) => admin::auth_error(e),
-        #[cfg(all(feature = "pass", feature = "oath"))]
-        Error::Output => Sw::WRONG_LENGTH,
-    }
-}
-
-// A call-scoped set of disjoint borrows, never retained in Registry or a
-// transport. Shared construction materializes deep field addresses once; the
-// outlined routing methods load nearby pointers instead of rebuilding them.
-// Registry continues to own every field and the only session workspace.
-struct RegistryView<'a> {
-    #[cfg(feature = "admin")]
-    admin: &'a mut admin::Admin,
-    #[cfg(feature = "ctap")]
-    ctap: &'a mut ctap::Applet,
-    #[cfg(feature = "admin")]
-    grants: &'a mut admin::Grants,
-    #[cfg(feature = "pass")]
-    pass: &'a mut Pass,
-    #[cfg(feature = "pass")]
-    output: &'a mut crate::applets::pass::output::Output,
-    applet: &'a mut AppletState,
-    #[cfg(any(
-        feature = "admin",
-        feature = "openpgp",
-        feature = "piv",
-        feature = "ctap",
-        feature = "ndef"
-    ))]
-    workspace: &'a mut super::workspace::SessionWorkspace,
-}
-impl Registry {
-    // Keep construction shared: inlining this into each adapter grows both
-    // complete Thumb-1 images even when the view methods remain outlined.
-    #[inline(never)]
-    fn view(&mut self) -> RegistryView<'_> {
-        RegistryView {
-            #[cfg(feature = "admin")]
-            admin: &mut self.admin,
-            #[cfg(feature = "ctap")]
-            ctap: &mut self.ctap,
-            #[cfg(feature = "admin")]
-            grants: &mut self.grants,
-            #[cfg(feature = "pass")]
-            pass: &mut self.pass,
-            #[cfg(feature = "pass")]
-            output: &mut self.output,
-            applet: &mut self.applet,
-            #[cfg(any(
-                feature = "admin",
-                feature = "openpgp",
-                feature = "piv",
-                feature = "ctap",
-                feature = "ndef"
-            ))]
-            workspace: &mut self.workspace,
-        }
-    }
-}
-impl RegistryView<'_> {
-    #[cfg_attr(not(has_applet), allow(unused_variables))]
-    #[inline(never)]
-    fn reset_sessions(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
-        #[cfg(feature = "admin")]
-        {
-            self.grants.admin = false;
-            self.admin.abort_transaction(platform);
-        }
-        #[cfg(feature = "ctap")]
-        self.ctap.reset(&mut self.workspace, platform);
-        // Release native handles before erasing backing bytes. The selected
-        // applet is discarded, so it need not rebuild an empty classic view.
-        #[cfg(classic_presence)]
-        match &mut self.applet {
-            #[cfg(feature = "oath")]
-            AppletState::Oath(s) => {
-                s.reset(platform);
-                *self.applet = AppletState::None;
-            }
-            #[cfg(feature = "openpgp")]
-            AppletState::OpenPgp(s) => {
-                s.abort_transaction(platform);
-                *self.applet = AppletState::None;
-            }
-            #[cfg(feature = "piv")]
-            AppletState::Piv(s) => {
-                s.deselect(&mut self.workspace, platform);
-                *self.applet = AppletState::None;
-            }
-            _ => (),
-        }
-        #[cfg(any(
-            feature = "admin",
-            feature = "openpgp",
-            feature = "piv",
-            feature = "ctap",
-            feature = "ndef"
-        ))]
-        self.workspace.wipe_active(platform.memory);
-    }
-
-    #[cfg(feature = "admin")]
-    #[inline(never)]
-    fn finish_admin(
-        &mut self,
-        h: Header,
-        le: u32,
-        p: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(u32, Sw), Sw> {
-        let pass = pass_arg!(self);
-        match self.admin.finish(
-            h,
-            le,
-            &mut self.grants,
-            pass,
-            p,
-            &mut self.workspace.classic_with(p.memory),
-        )? {
-            admin::Action::Response(n) => return Ok((n, Sw::SUCCESS)),
-            #[cfg(feature = "ctap")]
-            admin::Action::InstallFidoKey(mut key) => ctap::provision::install_key(
-                &mut key,
-                &mut self.workspace.classic_with(p.memory),
-                p,
-            )
-            .map_err(admin::provision_error)?,
-            #[cfg(feature = "ctap")]
-            admin::Action::ResetCtap => {
-                crate::flows::factory_reset::ctap(self.ctap, self.workspace, p)
-                    .map_err(flow_status)?
-            }
-            #[cfg(feature = "ndef")]
-            admin::Action::ResetNdef => {
-                crate::flows::factory_reset::ndef(p).map_err(flow_status)?
-            }
-            #[cfg(feature = "openpgp")]
-            admin::Action::ResetOpenPgp => {
-                // ADMIN selection already revoked the OpenPGP session. Keep
-                // the clear operation's workspace wipe without constructing
-                // a temporary applet whose session state is never observed.
-                crate::flows::factory_reset::openpgp(self.workspace, p).map_err(flow_status)?;
-            }
-            #[cfg(feature = "oath")]
-            admin::Action::ResetOath => {
-                // Same reasoning: OATH RAM state cannot be live here.
-                let pass = pass_arg!(self);
-                crate::flows::factory_reset::oath(pass, p).map_err(flow_status)?;
-            }
-            #[cfg(feature = "piv")]
-            admin::Action::ResetPiv => {
-                crate::flows::factory_reset::piv(self.workspace, p).map_err(flow_status)?;
-            }
-            admin::Action::FactoryReset => {
-                #[cfg(feature = "pass")]
-                self.output.inhibit(true, p.memory);
-                if !super::presence::strong(p.device) {
-                    return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
-                }
-                self.reset_sessions(p);
-                let pass = pass_arg!(self);
-                crate::flows::factory_reset::run(
-                    pass,
-                    #[cfg(feature = "ctap")]
-                    self.ctap,
-                    self.workspace,
-                    p,
-                )
-                .map_err(flow_status)?;
-            }
-        }
-        Ok((0, Sw::SUCCESS))
-    }
-
-    #[cfg_attr(not(any(has_applet, feature = "pass")), allow(unused_variables))]
-    #[inline(never)]
-    fn install(
-        &mut self,
-        platform: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Sw> {
-        #[cfg(feature = "admin")]
-        self.admin.install(platform)?;
-        #[cfg(feature = "ctap")]
-        self.ctap.install(platform)?;
-        #[cfg(feature = "ndef")]
-        crate::applets::ndef::Applet::install(false, platform)?;
-        #[cfg(feature = "pass")]
-        self.pass
-            .install(platform.storage, platform.memory)
-            .map_err(crate::applets::pass::status)?;
-        #[cfg(feature = "oath")]
-        crate::applets::oath::protocol::Oath::new().install(platform)?;
-        #[cfg(feature = "openpgp")]
-        crate::applets::openpgp::protocol::OpenPgp::new().install(platform)?;
-        #[cfg(feature = "piv")]
-        Piv::new().install(platform)?;
-        Ok(())
-    }
-
-    #[inline(never)]
-    fn reset(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
-        #[cfg(feature = "pass")]
-        self.output.inhibit(true, p.memory);
-        self.reset_sessions(p);
-        *self.applet = AppletState::None;
-    }
-
-    #[inline(never)]
-    fn select(
-        &mut self,
-        aid: &[u8],
-        transport: canokey_protocol::apdu::Transport,
-        p: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<u32, Sw> {
-        let next = Selected::from_aid(aid, transport).ok_or(Sw::FILE_NOT_FOUND)?;
-        if !next.enabled(p) {
-            // Disabled NDEF follows unknown-AID rejection in C: the engine
-            // revokes USB FIDO only, preserving other selections and grants.
-            #[cfg(feature = "ndef")]
-            if next == Selected::Ndef {
-                return Err(Sw::FILE_NOT_FOUND);
-            }
-            self.reset_sessions(p);
-            *self.applet = AppletState::None;
-            return Err(Sw::FILE_NOT_FOUND);
-        }
-        if self.applet.selected() != next {
-            self.reset_sessions(p);
-            match next {
-                Selected::None => *self.applet = AppletState::None,
-                #[cfg(feature = "ndef")]
-                Selected::Ndef => {
-                    *self.applet = AppletState::Ndef(crate::applets::ndef::Applet::new())
-                }
-                #[cfg(feature = "admin")]
-                Selected::Admin => *self.applet = AppletState::Admin,
-                #[cfg(feature = "ctap")]
-                Selected::Ctap => *self.applet = AppletState::Ctap,
-                #[cfg(feature = "oath")]
-                Selected::Oath => {
-                    *self.applet = AppletState::Oath(crate::applets::oath::protocol::Oath::new())
-                }
-                #[cfg(feature = "openpgp")]
-                Selected::OpenPgp => {
-                    *self.applet =
-                        AppletState::OpenPgp(crate::applets::openpgp::protocol::OpenPgp::new())
-                }
-                #[cfg(feature = "piv")]
-                Selected::Piv => *self.applet = AppletState::Piv(Piv::new()),
-            };
-            // Boot validates a temporary instance. Reload durable PIN/config
-            // only on a real switch, preserving grants on same-AID SELECT.
-            #[cfg(feature = "piv")]
-            if let AppletState::Piv(piv) = &mut self.applet
-                && let Err(error) = piv.install(p)
-            {
-                *self.applet = AppletState::None;
-                return Err(error);
-            }
-        }
-        match &mut self.applet {
-            #[cfg(feature = "ctap")]
-            AppletState::Ctap => Ok(self.ctap.select(&mut self.workspace, p)),
-            #[cfg(feature = "oath")]
-            AppletState::Oath(s) => s.select(p),
-            #[cfg(feature = "openpgp")]
-            AppletState::OpenPgp(s) => s.select(p),
-            #[cfg(feature = "piv")]
-            AppletState::Piv(s) => s.select(&mut self.workspace, p),
-            _ => Ok(0),
-        }
-    }
-
-    #[cfg_attr(
-        not(any(classic_presence, feature = "admin", feature = "ndef")),
-        allow(unused_variables)
-    )]
-    #[inline(never)]
-    fn abort_command(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
-        match &mut self.applet {
-            #[cfg(feature = "ndef")]
-            AppletState::Ndef(s) => s.cancel(
-                &mut self.workspace.classic_with(platform.memory),
-                platform.memory,
-            ),
-            #[cfg(feature = "admin")]
-            AppletState::Admin => self
-                .admin
-                .cancel_command(&mut self.workspace.classic_with(platform.memory), platform),
-            #[cfg(feature = "ctap")]
-            AppletState::Ctap => self.ctap.cancel_command(&mut self.workspace),
-            #[cfg(feature = "oath")]
-            AppletState::Oath(s) => s.cancel_command(platform),
-            #[cfg(feature = "openpgp")]
-            AppletState::OpenPgp(s) => {
-                s.abort(&mut self.workspace.classic_with(platform.memory), platform)
-            }
-            #[cfg(feature = "piv")]
-            AppletState::Piv(s) => s.cancel(&mut self.workspace, platform),
-            AppletState::None => (),
-        }
-    }
-
-    #[inline(never)]
-    fn begin_command(
-        &mut self,
-        #[cfg_attr(
-            not(any(crypto_applet, feature = "ndef", feature = "admin")),
-            allow(unused_variables)
-        )]
-        header: Header,
-        platform: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Sw> {
-        if !self.applet.selected().enabled(platform) {
-            self.reset_sessions(platform);
-            *self.applet = AppletState::None;
-            return Err(Sw::FILE_NOT_FOUND);
-        }
-        match &mut self.applet {
-            #[cfg(feature = "ndef")]
-            AppletState::Ndef(s) => s.begin(
-                header,
-                &mut self.workspace.classic_with(platform.memory),
-                platform.memory,
-            ),
-            #[cfg(feature = "admin")]
-            AppletState::Admin => self.admin.begin(header, &self.grants, platform),
-            #[cfg(feature = "ctap")]
-            AppletState::Ctap => self.ctap.begin(header, &mut self.workspace, platform),
-            #[cfg(feature = "openpgp")]
-            AppletState::OpenPgp(s) => s.begin(
-                header,
-                &mut self.workspace.classic_with(platform.memory),
-                platform,
-            ),
-            #[cfg(feature = "piv")]
-            AppletState::Piv(s) => s.begin(header, &mut self.workspace, platform),
-            _ => Ok(()),
-        }
-    }
-
-    #[inline(never)]
-    fn consume(
-        &mut self,
-        #[cfg_attr(not(has_applet), allow(unused_variables))] bytes: &[u8],
-        #[cfg_attr(
-            not(any(
-                feature = "ndef",
-                feature = "admin",
-                feature = "openpgp",
-                feature = "piv"
-            )),
-            allow(unused_variables)
-        )]
-        platform: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Sw> {
-        match &mut self.applet {
-            #[cfg(feature = "ndef")]
-            AppletState::Ndef(s) => {
-                s.consume(bytes, &mut self.workspace.classic_with(platform.memory))
-            }
-            #[cfg(feature = "admin")]
-            AppletState::Admin => self.admin.consume(
-                bytes,
-                &mut self.workspace.classic_with(platform.memory),
-                platform,
-            ),
-            #[cfg(feature = "ctap")]
-            AppletState::Ctap => self.ctap.consume(bytes, &mut self.workspace),
-            #[cfg(feature = "oath")]
-            AppletState::Oath(s) => s.consume(bytes),
-            #[cfg(feature = "openpgp")]
-            AppletState::OpenPgp(s) => s.consume(
-                bytes,
-                &mut self.workspace.classic_with(platform.memory),
-                platform,
-            ),
-            #[cfg(feature = "piv")]
-            AppletState::Piv(s) => s.consume(bytes, &mut self.workspace, platform),
-            AppletState::None => Err(Sw::FILE_NOT_FOUND),
-        }
-    }
-
-    #[cfg_attr(not(feature = "ndef"), allow(unused_variables))]
-    #[inline(never)]
-    fn end_frame(
-        &mut self,
-        last: bool,
-        platform: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Sw> {
-        #[cfg(feature = "ndef")]
-        if let AppletState::Ndef(s) = &mut self.applet {
-            return s.end_frame(
-                last,
-                &mut self.workspace.classic_with(platform.memory),
-                platform,
-            );
-        }
-        Ok(())
-    }
-
-    // Share final dispatch without expanding it into frame/response handling.
-    #[inline(never)]
-    fn finish(
-        &mut self,
-        #[cfg_attr(
-            not(any(crypto_applet, feature = "admin", feature = "oath")),
-            allow(unused_variables)
-        )]
-        header: Header,
-        #[cfg_attr(
-            not(any(classic_presence, feature = "admin", feature = "ndef")),
-            allow(unused_variables)
-        )]
-        le: u32,
-        #[cfg_attr(not(has_applet), allow(unused_variables))] platform: &mut Platform<
-            '_,
-            impl crate::ports::Backends,
-        >,
-    ) -> Result<(u32, Sw), Sw> {
-        match &mut self.applet {
-            #[cfg(feature = "ndef")]
-            // READ BINARY without Le is a zero-byte read; encoded 00 is 256.
-            AppletState::Ndef(s) => s.finish(
-                le,
-                &mut self.workspace.classic_with(platform.memory),
-                platform,
-            ),
-            #[cfg(feature = "admin")]
-            AppletState::Admin => self.finish_admin(header, le, platform),
-            #[cfg(feature = "ctap")]
-            AppletState::Ctap => self
-                .ctap
-                .finish(header, &mut self.workspace, platform)
-                .map(|n| (n, Sw::SUCCESS)),
-            #[cfg(feature = "oath")]
-            AppletState::Oath(s) => {
-                let pass = pass_arg!(self);
-                s.finish(header, le, pass, platform)
-            }
-            #[cfg(feature = "openpgp")]
-            AppletState::OpenPgp(s) => s.finish(
-                header,
-                le,
-                &mut self.workspace.classic_with(platform.memory),
-                platform,
-            ),
-            #[cfg(feature = "piv")]
-            AppletState::Piv(s) => s.finish(header, le, &mut self.workspace, platform),
-            AppletState::None => Err(Sw::FILE_NOT_FOUND),
-        }
-    }
-
-    // Keep applet workspace addressing out of the response cursor and its
-    // error/close paths; this boundary reduces the complete Thumb-1 image.
-    #[inline(never)]
-    fn read_response(
-        &mut self,
-        #[cfg_attr(not(has_applet), allow(unused_variables))] offset: u32,
-        #[cfg_attr(not(has_applet), allow(unused_variables))] out: &mut [u8],
-        #[cfg_attr(
-            not(any(crypto_applet, feature = "admin", feature = "ndef")),
-            allow(unused_variables)
-        )]
-        platform: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<usize, Sw> {
-        match &mut self.applet {
-            #[cfg(feature = "ndef")]
-            AppletState::Ndef(s) => s.read(offset as usize, out, platform),
-            #[cfg(feature = "admin")]
-            AppletState::Admin => self
-                .admin
-                .read_response(
-                    offset as usize,
-                    out,
-                    &mut self.workspace.classic_with(platform.memory),
-                )
-                .map(|()| out.len()),
-            #[cfg(feature = "ctap")]
-            AppletState::Ctap => {
-                self.ctap
-                    .read_apdu(offset as usize, out, &mut self.workspace, platform)
-            }
-            #[cfg(feature = "oath")]
-            AppletState::Oath(s) => s.read_response(offset as usize, out).map(|()| out.len()),
-            #[cfg(feature = "openpgp")]
-            AppletState::OpenPgp(s) => s.read(
-                offset as usize,
-                out,
-                &mut self.workspace.classic_with(platform.memory),
-                platform,
-            ),
-            #[cfg(feature = "piv")]
-            AppletState::Piv(s) => s.read(offset as usize, out, &mut self.workspace, platform),
-            AppletState::None => Err(Sw::COMMAND_NOT_ALLOWED),
-        }
-    }
-
-    #[cfg_attr(
-        not(any(crypto_applet, feature = "admin", feature = "oath")),
-        allow(unused_variables)
-    )]
-    #[inline(never)]
-    fn close_response(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
-        match &mut self.applet {
-            #[cfg(feature = "ndef")]
-            AppletState::Ndef(s) => s.close(),
-            #[cfg(feature = "admin")]
-            AppletState::Admin => self
-                .admin
-                .close_response(&mut self.workspace.classic_with(platform.memory), platform),
-            #[cfg(feature = "ctap")]
-            AppletState::Ctap => {
-                // Release the primitive before erasing its backing. Response
-                // completion ends this workspace lease, not the FIDO session.
-                self.ctap.close(&mut self.workspace, platform);
-                self.workspace.wipe_active(platform.memory);
-            }
-            #[cfg(feature = "oath")]
-            AppletState::Oath(s) => s.close_response(platform),
-            #[cfg(feature = "openpgp")]
-            AppletState::OpenPgp(s) => {
-                s.close(&mut self.workspace.classic_with(platform.memory), platform)
-            }
-            #[cfg(feature = "piv")]
-            AppletState::Piv(s) => s.close(&mut self.workspace, platform),
-            AppletState::None => (),
-        }
-    }
-
-    #[cfg(feature = "pass")]
-    #[inline(never)]
-    fn eject(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
-        self.output.eject(p.memory);
-        Ok(())
-    }
-
-    #[cfg(feature = "pass")]
-    #[inline(never)]
-    fn sample_output(
-        &mut self,
-        pressed: bool,
-        now: u32,
-        ready: bool,
-        inhibit: bool,
-        p: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Option<u8> {
-        #[cfg_attr(not(presence_applet), allow(unused_mut))]
-        let mut presence = false;
-        #[cfg(classic_presence)]
-        {
-            presence |= self.applet.take_presence_attempt();
-        }
-        #[cfg(feature = "ctap")]
-        {
-            presence |= self.ctap.take_presence_attempt();
-        }
-        if presence || inhibit {
-            self.output.inhibit(pressed, p.memory);
-            return None;
-        }
-        self.output
-            .sample(pressed, now, ready, p.memory, |index, out| {
-                if super::config::enabled(p.storage, super::config::PASS) {
-                    crate::flows::credential_output::touch(&self.pass, index, out, p).unwrap_or(0)
-                } else {
-                    0
-                }
-            })
     }
 }
 
