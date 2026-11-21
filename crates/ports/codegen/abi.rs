@@ -40,6 +40,7 @@ fn header() -> String {
             "CK_BOARD_INFO_CHIP_ID",
             device::board_info_kind::CHIP_ID as usize,
         ),
+        ("CK_PKE_LEASE_CTAP", device::PKE_LEASE_CTAP as usize),
     ] {
         text.push_str(&std::format!("#define {name} 0x{value:02X}u\n"));
     }

@@ -7,6 +7,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "port_abi.h"
+
 #ifndef PLATFORM_HAS_PKE_BUFFER
 #define PLATFORM_HAS_PKE_BUFFER 0
 #endif
@@ -17,7 +19,7 @@ enum {
   PKE_BUFFER_OWNER_NONE,
   PKE_BUFFER_OWNER_OPENPGP,
   PKE_BUFFER_OWNER_PIV,
-  PKE_BUFFER_OWNER_CTAP = 0x80,
+  PKE_BUFFER_OWNER_CTAP = CK_PKE_LEASE_CTAP,
 };
 
 size_t pke_buffer_size(void);

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // CIU board ABI writes the complete 13-byte chip identifier.
 pub const CHIP_ID_BYTES: usize = 13;
+/// CTAP owner in the PKE staging ABI. Transport sessions use separate IDs.
+pub const PKE_LEASE_CTAP: u8 = 0x80;
 /// Stable kinds passed to the board-information C ABI and ADMIN read command.
 pub mod board_info_kind {
     pub const FIRMWARE: u8 = 0x00;

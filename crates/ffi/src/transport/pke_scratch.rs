@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::composition::{Provider, Staging};
+use canokey_ports::PKE_LEASE_CTAP;
 use canokey_rust_core::runtime::owners::{
     OWNER_CCID, OWNER_CTAP, OWNER_INVALID, OWNER_NFC, OWNER_WEBUSB,
 };
 
-// PKE leases use a separate numbering space from transport sessions.
-// Match PKE_BUFFER_OWNER_CTAP in native/support/include/pke.h.
-const PKE_LEASE_CTAP: u8 = 0x80;
 const _: () = assert!(!matches!(
     PKE_LEASE_CTAP,
     OWNER_INVALID | OWNER_CCID | OWNER_CTAP | OWNER_WEBUSB | OWNER_NFC

@@ -10,4 +10,5 @@
 #define CK_BOARD_INFO_PRODUCT 0x01u
 #define CK_BOARD_INFO_CORE 0x02u
 #define CK_BOARD_INFO_CHIP_ID 0x03u
+#define CK_PKE_LEASE_CTAP 0x80u
 #endif
