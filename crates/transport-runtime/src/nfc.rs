@@ -51,11 +51,26 @@ pub enum Error {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Event {
     Send(Packet),
+    RetryResponse(Response),
     Execute(usize),
     NextResponse,
     Waiting(u8),
     Deselect,
     Ignored,
+}
+/// An I-block header and INF length. The facade retains the exact APDU
+/// response window through retransmission or until the next block is accepted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Response {
+    pub pcb: u8,
+    pub length: u8,
+}
+#[derive(Clone, Copy)]
+#[repr(u8)]
+enum Cached {
+    Empty,
+    Inline(Packet),
+    Response(Response),
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -70,7 +85,7 @@ pub struct Link {
     // ISO-DEP starts at block number 1. Store it inverted for static BSS.
     inverted_number: u8,
     received: usize,
-    cached: Option<Packet>,
+    cached: Cached,
     retransmits: u8,
     pending: bool,
 }
@@ -85,7 +100,7 @@ impl Link {
             phase: Phase::Receiving,
             inverted_number: 0,
             received: 0,
-            cached: None,
+            cached: Cached::Empty,
             retransmits: 0,
             pending: false,
         }
@@ -97,7 +112,7 @@ impl Link {
     /// transmitted its final cached reply. No response cursor is advanced here.
     pub fn polled(&mut self, number: u8, packet: Packet) {
         self.inverted_number = number ^ 1;
-        self.cached = Some(packet);
+        self.cached = Cached::Inline(packet);
         self.phase = Phase::Complete;
         self.received = 0;
         self.pending = false;
@@ -118,19 +133,22 @@ impl Link {
         if self.pending {
             return Err(Error::Busy);
         }
-        let packet = self.cached.ok_or(Error::Sequence)?;
         if self.retransmits >= MAX_RETRANSMITS {
             return Err(Error::Retransmits);
         }
         self.retransmits += 1;
-        Ok(Event::Send(packet))
+        Ok(match self.cached {
+            Cached::Empty => return Err(Error::Sequence),
+            Cached::Inline(packet) => Event::Send(packet),
+            Cached::Response(response) => Event::RetryResponse(response),
+        })
     }
     #[inline(never)]
     fn acknowledge(&mut self) -> Event {
         let packet = Packet::acknowledgement(self.number());
         // Rule11 retries the last transmitted block, including control ACKs.
         // A control reply does not advance the response source or block number.
-        self.cached = Some(packet);
+        self.cached = Cached::Inline(packet);
         self.retransmits = 0;
         Event::Send(packet)
     }
@@ -185,7 +203,7 @@ impl Link {
                 receive(self.received, bytes)?;
                 self.received = end;
                 self.inverted_number = number ^ 1;
-                self.cached = None;
+                self.cached = Cached::Empty;
                 self.retransmits = 0;
                 if chained {
                     self.phase = Phase::Receiving;
@@ -221,36 +239,53 @@ impl Link {
     }
     /// `remaining` is the current response chunk, not a second owned buffer.
     /// `more_chunks` means another engine GET RESPONSE chunk follows this one.
-    /// Advance the caller's response cursor only after successful FIFO delivery.
-    pub fn response(&mut self, remaining: &[u8], more_chunks: bool) -> Result<Packet, Error> {
+    /// Advance the caller's response cursor only after TX_DONE.
+    pub fn response(
+        &mut self,
+        remaining: usize,
+        more_chunks: bool,
+        frame_limit: usize,
+    ) -> Result<Response, Error> {
         if self.pending || !matches!(self.phase, Phase::Executing | Phase::Ready) {
             return Err(Error::Busy);
         }
-        let n = remaining.len().min(nfc::INF_LIMIT);
-        let chained = remaining.len() > n || more_chunks;
-        let packet =
-            Packet::information(self.number(), chained, &remaining[..n]).map_err(Error::Wire)?;
-        self.cached = Some(packet);
-        self.pending = true;
-        Ok(packet)
-    }
-    /// Commit only the initial send, not a retransmission. On hardware failure
-    /// reset the link and start recovery instead of committing a phantom packet.
-    pub fn sent(&mut self) -> Result<usize, Error> {
-        if !self.pending {
-            return Err(Error::Sequence);
+        let n = remaining.min(
+            frame_limit
+                .min(nfc::MAX_FRAME_BYTES)
+                .saturating_sub(nfc::FRAME_OVERHEAD),
+        );
+        if n == 0 {
+            return Err(Error::Wire(nfc::Error::Length));
         }
-        let bytes = self.cached.as_ref().ok_or(Error::Sequence)?.bytes();
-        self.phase = if bytes[0] & nfc::PCB_CHAIN_OR_NAK != 0x00 {
+        let response = Response {
+            pcb: nfc::information_pcb(self.number(), remaining > n || more_chunks),
+            length: n as u8,
+        };
+        self.cached = Cached::Response(response);
+        self.pending = true;
+        Ok(response)
+    }
+    pub fn response_pending(&self) -> bool {
+        self.pending
+    }
+    /// Commit an initial send after TX_DONE. A completed retry has no cursor
+    /// to advance. Hardware failure resets the link before another send.
+    pub fn sent(&mut self) -> Option<usize> {
+        if !self.pending {
+            return None;
+        }
+        let Cached::Response(response) = self.cached else {
+            return None;
+        };
+        self.phase = if response.pcb & nfc::PCB_CHAIN_OR_NAK != 0x00 {
             Phase::Responding
         } else {
             Phase::Complete
         };
-        let n = bytes.len() - 1;
         self.pending = false;
         self.received = 0;
         self.retransmits = 0;
-        Ok(n)
+        Some(usize::from(response.length))
     }
 }
 
@@ -466,7 +501,7 @@ pub fn irq(flags: [u8; nfc::FM_IRQ_BYTES]) -> Irq {
         Irq::Halt
     } else {
         Irq::Activity {
-            activated: flags[0] & nfc::FM_MAIN_ACTIVE != 0x00,
+            activated: flags[0] & (nfc::FM_MAIN_ACTIVE | nfc::FM_MAIN_POWER_ON) != 0x00,
             received: flags[0] & nfc::FM_MAIN_RX_DONE != 0x00,
         }
     }

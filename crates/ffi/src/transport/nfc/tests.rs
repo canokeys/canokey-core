@@ -226,6 +226,8 @@ pub(crate) unsafe fn ck_nfc_io_read(address: u16, out: *mut u8, length: u8) -> i
             out[0] = u8::try_from(c.rxlen).unwrap();
         }
         wire::FM_REG_FIFO_ACCESS => out.copy_from_slice(&c.rx[..c.rxlen]),
+        wire::FM_REG_RF_STATUS => out[0] = wire::FM_STATE_RATS << 4,
+        wire::FM_REG_RF_RATS => out[0] = wire::fsci(wire::FRAME_LIMIT) << 4,
         _ => panic!("unexpected NFC register {address:#x}"),
     }
     0
@@ -244,8 +246,12 @@ pub(crate) unsafe fn ck_nfc_io_write(address: u16, bytes: *const u8, length: u8)
         wire::FM_REG_RF_TXEN => {
             assert_eq!(bytes, &[wire::FM_RF_TX_ENABLE]);
             c.sends += 1;
+            c.flags[0] |= wire::FM_MAIN_TX_DONE;
         }
-        wire::FM_REG_RESET_SILENCE | wire::FM_REG_MAIN_IRQ_MASK => {}
+        wire::FM_REG_RESET_SILENCE
+        | wire::FM_REG_MAIN_IRQ_MASK
+        | wire::FM_REG_FIFO_IRQ_MASK
+        | wire::FM_REG_FIFO_CLEAR => {}
         _ => panic!("unexpected NFC register {address:#x}"),
     }
     0
@@ -261,7 +267,7 @@ fn frame(bytes: &[u8]) {
     let c = controller();
     c.rx[..bytes.len()].copy_from_slice(bytes);
     c.rxlen = bytes.len();
-    c.flags[0] = wire::FM_MAIN_RX_DONE;
+    c.flags[0] |= wire::FM_MAIN_RX_DONE;
     // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { nfc_handler() };
 }
@@ -375,6 +381,13 @@ pub(crate) unsafe fn ck_core_exchange(
 fn poll() {
     // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { super::poll::<crate::platform::Native>() };
+    if controller().flags[0] & wire::FM_MAIN_TX_DONE != 0 {
+        // Complete the RF send before the fixture advances its clock.
+        unsafe {
+            nfc_handler();
+            super::poll::<crate::platform::Native>();
+        }
+    }
 }
 #[test]
 fn nfc_link_chaining_wtx_reset_and_fido_aggregation() {

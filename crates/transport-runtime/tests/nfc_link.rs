@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use canokey_protocol::nfc::Packet;
+use canokey_protocol::nfc::{FRAME_LIMIT, Packet};
 use canokey_transport_runtime::nfc::{Error, Event, Link, MAX_RETRANSMITS};
 
 #[test]
@@ -43,8 +43,8 @@ fn opposite_number_nak_never_advances_a_response_cursor() {
     let mut input = [];
     link.receive(&[0x02, 0x00, 0x00], &mut input).unwrap();
     let payload = [0x5a; 40];
-    let first = link.response(&payload, false).unwrap();
-    assert_eq!(link.sent(), Ok(29));
+    let first = link.response(payload.len(), false, FRAME_LIMIT).unwrap();
+    assert_eq!(link.sent(), Some(29));
     // ISO-DEP R(NAK), opposite BN: emit a control ACK without consuming INF.
     let ack = Packet::acknowledgement(0);
     assert_eq!(
@@ -52,20 +52,25 @@ fn opposite_number_nak_never_advances_a_response_cursor() {
         Ok(Event::Send(ack))
     );
     assert_eq!(link.number(), 0);
-    assert_eq!(link.response(&payload[29..], false), Err(Error::Busy));
+    assert_eq!(
+        link.response(payload.len() - 29, false, FRAME_LIMIT),
+        Err(Error::Busy)
+    );
     // Matching BN repeats the last control reply, not the earlier data packet.
     assert_eq!(
         link.receive(&[0xb2, 0x00, 0x00], &mut input),
         Ok(Event::Send(ack))
     );
-    assert_ne!(ack, first);
+    assert_ne!(ack.bytes()[0], first.pcb);
     assert_eq!(
         link.receive(&[0xa3, 0x00, 0x00], &mut input),
         Ok(Event::NextResponse)
     );
-    let last = link.response(&payload[29..], false).unwrap();
-    assert_eq!(&last.bytes()[1..], &payload[29..]);
-    assert_eq!(link.sent(), Ok(11));
+    let last = link
+        .response(payload.len() - 29, false, FRAME_LIMIT)
+        .unwrap();
+    assert_eq!(last.length, 11);
+    assert_eq!(link.sent(), Some(11));
 }
 
 #[test]
@@ -73,7 +78,7 @@ fn polling_handoff_retransmits_exact_reply_then_admits_a_new_command() {
     let mut link = Link::new();
     let mut input = [0x00; 8];
     link.receive(&[0x02, 0x80, 0x00, 0x00], &mut input).unwrap();
-    let initial = link.response(&[0x01, 0x91, 0x00], false).unwrap();
+    link.response(3, false, FRAME_LIMIT).unwrap();
     link.sent().unwrap();
     let cancelled = Packet::information(1, false, &[0x2d, 0x90, 0x00]).unwrap();
     link.polled(1, cancelled);
@@ -85,7 +90,6 @@ fn polling_handoff_retransmits_exact_reply_then_admits_a_new_command() {
             Ok(Event::Send(cancelled))
         );
     }
-    assert_ne!(initial, cancelled);
     assert_eq!(
         link.receive(&[0xa3, 0x00, 0x00], &mut input),
         Err(Error::Retransmits)

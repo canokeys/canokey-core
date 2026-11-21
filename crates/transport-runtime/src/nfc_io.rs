@@ -2,7 +2,7 @@
 //! IRQ-local NFC orchestration. The facade masks IRQs around every method;
 //! this state never owns or calls the APDU engine or the shared APDU buffer.
 #![forbid(unsafe_code)]
-use super::nfc::{self, Execution, HardwareAction, Irq, Recovery};
+use super::nfc::{self, Execution, HardwareAction, Irq, Recovery, Response};
 use canokey_protocol::nfc::{self as wire, Block, Packet};
 /// Implementations complete IO before returning and retain no borrowed slices.
 /// They must not reenter the transport runtime while its state is borrowed.
@@ -46,16 +46,31 @@ impl Polling for NoPolling {
     }
     fn clear(&mut self) {}
 }
-pub struct Io<P: Polling = NoPolling> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tx {
+    Idle,
+    Inline,
+    Response,
+    Done,
+}
+
+pub struct Io<P: Polling = NoPolling, const FSC: usize = { wire::FRAME_LIMIT }> {
     polling: P,
     recovery: Recovery,
     execution: Execution,
     computing: bool,
     turn: bool,
-    frame: [u8; wire::FRAME_LIMIT],
-    length: u8,
+    // RX partial/mailbox and TX staging are mutually exclusive RF turns.
+    // A transmitted I-block's retry source remains with the main-loop owner.
+    frame: [u8; FSC],
+    length: u16,
+    dropping: bool,
+    fsd: u16,
+    tx: Tx,
+    tx_loaded: u8,
+    tx_length: u8,
 }
-impl<P: Polling> Io<P> {
+impl<P: Polling, const FSC: usize> Io<P, FSC> {
     pub const fn new(now: u32) -> Self {
         Self {
             polling: P::INITIAL,
@@ -63,8 +78,13 @@ impl<P: Polling> Io<P> {
             execution: Execution::new(),
             computing: false,
             turn: false,
-            frame: [0x00; wire::FRAME_LIMIT],
+            frame: [0x00; FSC],
             length: 0,
+            dropping: false,
+            fsd: 0,
+            tx: Tx::Idle,
+            tx_loaded: 0,
+            tx_length: 0,
         }
     }
     pub fn generation(&self) -> u32 {
@@ -73,12 +93,24 @@ impl<P: Polling> Io<P> {
     pub fn live(&self) -> bool {
         self.execution.live()
     }
+    /// Call under the same lock as the facade's generation check. Zero means
+    /// the current activation has no completed RATS observation yet.
+    pub fn tx_frame_limit(&self, local: usize) -> usize {
+        usize::from(self.fsd).min(local)
+    }
+    fn clear_frame(&mut self) {
+        self.length = 0;
+    }
     fn discard(&mut self) {
         self.execution.cancel();
         self.polling.clear();
         self.turn = false;
-        self.length = 0;
+        self.clear_frame();
+        self.dropping = false;
+        self.fsd = 0;
+        self.tx = Tx::Idle;
     }
+    #[cold]
     pub fn fault(&mut self) {
         self.discard();
         self.recovery.fault();
@@ -131,65 +163,121 @@ impl<P: Polling> Io<P> {
                 if !self.computing && flags[0] & wire::FM_MAIN_ACTIVITY != 0x00 {
                     self.recovery.activity(now);
                 }
-                if !received {
-                    return;
-                }
+                self.transfer(flags, received, chip);
             }
         }
-        let mut size = [0x00];
-        if !chip.read(wire::FM_REG_FIFO_WORDCNT, &mut size)
-            || size[0] == 0
-            || usize::from(size[0]) > wire::FRAME_LIMIT
-        {
-            self.fault();
-            return;
-        }
-        // A current mailbox/reply retains its bytes until the turn is sent.
-        // Drain into bounded stack scratch only on that early-traffic path.
-        if self.turn {
-            if !drain_fifo(size[0] as usize, chip) {
+    }
+    fn transfer(&mut self, flags: [u8; wire::FM_IRQ_BYTES], received: bool, chip: &mut impl Chip) {
+        let mut water = FSC > wire::FIFO_BYTES && flags[1] & wire::FM_FIFO_WATER != 0x00;
+        if matches!(self.tx, Tx::Inline | Tx::Response) {
+            let done = flags[0] & wire::FM_MAIN_TX_DONE != 0x00;
+            let remaining = FSC > wire::FIFO_BYTES && self.tx_loaded < self.tx_length;
+            // EMPTY can be latched before TX starts. FIFO_IRQ reports TX
+            // underflow through the over/underflow flag handled by nfc::irq.
+            if remaining && done {
                 self.fault();
+                return;
             }
-            return;
-        }
-        if !chip.read(
-            wire::FM_REG_FIFO_ACCESS,
-            &mut self.frame[..size[0] as usize],
-        ) {
-            self.fault();
-            return;
-        }
-        match wire::decode(&self.frame[..size[0] as usize]) {
-            Ok(Block::Waiting(multiplier)) => {
-                if self.execution.echo(multiplier) {
-                    self.turn = true;
+            if done {
+                self.tx = if self.tx == Tx::Response {
+                    Tx::Done
                 } else {
+                    Tx::Idle
+                };
+                // A co-latched watermark may be the final TX watermark.
+                // Service it as RX only if the next frame has reached 24 B.
+                if water && !received {
+                    let Some(count) = fifo_count(chip) else {
+                        self.fault();
+                        return;
+                    };
+                    water = count >= wire::RX_WATERMARK;
+                }
+            } else {
+                if received || (water && remaining && !self.refill(chip)) {
                     self.fault();
                 }
                 return;
             }
-            Ok(Block::Deselect) => {
+        }
+        if (received || water) && !self.receive_fifo(received, chip) {
+            self.fault();
+        }
+    }
+    fn receive_fifo(&mut self, done: bool, chip: &mut impl Chip) -> bool {
+        // RX_DONE takes precedence over a co-latched watermark. Reading the
+        // actual count once avoids consuming the same FIFO bytes twice.
+        let count = if done {
+            let Some(count) = fifo_count(chip) else {
+                return false;
+            };
+            count
+        } else {
+            wire::RX_WATERMARK
+        };
+        if self.turn || (FSC > wire::FIFO_BYTES && self.dropping) {
+            if FSC > wire::FIFO_BYTES {
+                let had_partial = self.dropping;
+                self.dropping = !done;
+                if count == 0 {
+                    return had_partial;
+                }
+            }
+            return count != 0 && drain_fifo(count, chip);
+        }
+        let start = if FSC > wire::FIFO_BYTES {
+            usize::from(self.length)
+        } else {
+            0
+        };
+        let end = start + count;
+        let Some(chunk) = self.frame.get_mut(start..end) else {
+            return false;
+        };
+        if !chunk.is_empty() && !chip.read(wire::FM_REG_FIFO_ACCESS, chunk) {
+            return false;
+        }
+        self.length = end as u16;
+        if !done {
+            return true;
+        }
+        if end < wire::FRAME_OVERHEAD || (self.fsd == 0 && !self.latch_rats(chip)) {
+            return false;
+        }
+        match &self.frame[..end] {
+            &[wire::PCB_WTX, multiplier, _, _] => {
+                self.clear_frame();
+                self.turn = self.execution.echo(multiplier);
+                return self.turn;
+            }
+            [wire::PCB_DESELECT, _, _] => {
                 // Cancel the current execution but retain the request so the
                 // main loop can echo deselect after its Core borrow returns.
                 self.execution.cancel();
             }
-            Ok(block) if self.polling.active() => {
-                let packet = self.polling.receive(block);
+            frame if self.polling.active() => {
+                let packet = wire::decode(frame)
+                    .ok()
+                    .and_then(|block| self.polling.receive(block));
+                self.clear_frame();
                 self.poll_response(packet, chip);
-                return;
+                return true;
             }
-            Ok(_) if self.execution.live() => {
-                self.fault();
-                return;
-            }
-            Ok(_) => {}
-            Err(_) => {
-                self.fault();
-                return;
-            }
+            _ if self.execution.live() => return false,
+            _ => {}
         }
-        self.length = size[0];
         self.turn = true;
+        true
+    }
+    fn latch_rats(&mut self, chip: &mut impl Chip) -> bool {
+        let mut rats = [0x00];
+        // In Level-4 mode the frontend handles RATS/ATS and PPS itself.
+        // Only a completed post-RATS data frame is delivered via this FIFO.
+        if !chip.read(wire::FM_REG_RF_RATS, &mut rats) {
+            return false;
+        }
+        self.fsd = wire::reader_frame_size(rats[0]) as u16;
+        true
     }
     fn poll_response(&mut self, packet: Option<Packet>, chip: &mut impl Chip) {
         let Some(packet) = packet else {
@@ -210,12 +298,12 @@ impl<P: Polling> Io<P> {
         }
         self.computing = true;
         self.execution.begin(now);
-        if self.length != 0 {
-            let length = self.length as usize;
-            self.length = 0;
+        if self.turn && self.length != 0 {
+            let length = usize::from(self.length);
             let packet = wire::decode(&self.frame[..length])
                 .ok()
                 .and_then(|block| self.polling.receive(block));
+            self.clear_frame();
             self.poll_response(packet, chip);
         }
     }
@@ -228,13 +316,13 @@ impl<P: Polling> Io<P> {
         self.recovery.activity(now);
         self.polling.finish()
     }
-    pub fn take(&mut self, out: &mut [u8; wire::FRAME_LIMIT]) -> Option<usize> {
-        if self.length == 0 || self.recovery.drain_only() {
+    pub fn take(&mut self, out: &mut [u8; FSC]) -> Option<usize> {
+        if !self.turn || self.length == 0 || self.recovery.drain_only() {
             return None;
         }
-        let n = self.length as usize;
+        let n = usize::from(self.length);
         out[..n].copy_from_slice(&self.frame[..n]);
-        self.length = 0;
+        self.clear_frame();
         Some(n)
     }
     /// An unsolicited ACK consumes no response bytes and needs no reply.
@@ -245,19 +333,78 @@ impl<P: Polling> Io<P> {
             self.turn = false;
         }
     }
-    /// Copy into the chip FIFO synchronously. The bus adapter must not retain
-    /// packet bytes or call Rust recursively while this method borrows state.
+    /// Inline packets fit in the first FIFO load.
     pub fn send(&mut self, packet: &Packet, chip: &mut impl Chip) -> bool {
-        if !self.turn || self.recovery.drain_only() {
+        if !self.can_send() {
             return false;
         }
-        if !chip.write(wire::FM_REG_FIFO_ACCESS, packet.bytes())
-            || !chip.write(wire::FM_REG_RF_TXEN, &[wire::FM_RF_TX_ENABLE])
+        if !start_fifo(packet.bytes(), chip) {
+            self.fault();
+            return false;
+        }
+        self.turn = false;
+        if FSC > wire::FIFO_BYTES {
+            self.tx = Tx::Inline;
+            self.tx_loaded = 0;
+            self.tx_length = 0;
+        }
+        true
+    }
+    /// Copy the I-block into owned staging before arming TX. IRQs never
+    /// borrow APDU backing and no call waits for a future FIFO interrupt.
+    pub fn send_response(&mut self, response: Response, inf: &[u8], chip: &mut impl Chip) -> bool {
+        let length = inf.len() + 1;
+        if !self.can_send()
+            || inf.len() != usize::from(response.length)
+            || length + 2 > self.tx_frame_limit(FSC)
+        {
+            return false;
+        }
+        let Some((pcb, payload)) = self
+            .frame
+            .get_mut(..length)
+            .and_then(<[u8]>::split_first_mut)
+        else {
+            return false;
+        };
+        *pcb = response.pcb;
+        payload.copy_from_slice(inf);
+
+        let initial = length.min(wire::FIFO_BYTES);
+        if (length > wire::FIFO_BYTES && !chip.write(wire::FM_REG_FIFO_CLEAR, &[0x00]))
+            || !start_fifo(&self.frame[..initial], chip)
         {
             self.fault();
             return false;
         }
         self.turn = false;
+        self.tx = Tx::Response;
+        if FSC > wire::FIFO_BYTES {
+            self.tx_loaded = initial as u8;
+            self.tx_length = length as u8;
+        }
+        true
+    }
+    fn can_send(&self) -> bool {
+        self.turn
+            && self.length == 0
+            && (FSC <= wire::FIFO_BYTES || !self.dropping)
+            && self.tx == Tx::Idle
+    }
+    fn refill(&mut self, chip: &mut impl Chip) -> bool {
+        let start = usize::from(self.tx_loaded);
+        let end = (start + wire::FIFO_BYTES - wire::TX_WATERMARK).min(usize::from(self.tx_length));
+        if !chip.write(wire::FM_REG_FIFO_ACCESS, &self.frame[start..end]) {
+            return false;
+        }
+        self.tx_loaded = end as u8;
+        true
+    }
+    pub fn take_tx_done(&mut self) -> bool {
+        if self.tx != Tx::Done {
+            return false;
+        }
+        self.tx = Tx::Idle;
         true
     }
     pub fn begin_execution(&mut self, now: u32) -> bool {
@@ -289,7 +436,12 @@ impl<P: Polling> Io<P> {
     /// the ordinary 200 ms recovery window bounds the response wait as well.
     pub fn poll(&mut self, now: u32, link_dirty: bool, chip: &mut impl Chip) {
         let generation = self.generation();
-        let dirty = link_dirty || self.length != 0 || self.turn || self.execution.live();
+        let dirty = link_dirty
+            || self.length != 0
+            || (FSC > wire::FIFO_BYTES && self.dropping)
+            || self.turn
+            || self.tx != Tx::Idle
+            || self.execution.live();
         let action = self.recovery.poll(now, dirty, self.computing);
         if generation != self.generation() {
             self.discard();
@@ -298,12 +450,21 @@ impl<P: Polling> Io<P> {
             let ok = match action.operation {
                 HardwareAction::Silence => {
                     chip.write(wire::FM_REG_RESET_SILENCE, &[wire::FM_SILENCE])
+                        && chip.write(wire::FM_REG_FIFO_CLEAR, &[0x00])
                 }
                 HardwareAction::Unsilence => {
                     chip.write(wire::FM_REG_RESET_SILENCE, &[wire::FM_UNSILENCE])
                 }
                 HardwareAction::ConfigureInterrupts => {
-                    chip.write(wire::FM_REG_MAIN_IRQ_MASK, &[wire::FM_MAIN_IRQ_MASK])
+                    let fifo_mask = if FSC > wire::FIFO_BYTES {
+                        wire::FM_FIFO_IRQ_MASK
+                    } else {
+                        wire::FM_FIFO_IRQ_MASK | wire::FM_FIFO_WATER
+                    };
+                    chip.write(
+                        wire::FM_REG_MAIN_IRQ_MASK,
+                        &[wire::FM_MAIN_IRQ_MASK, fifo_mask],
+                    )
                 }
             };
             self.recovery.completed(action, ok, now);
@@ -315,10 +476,24 @@ impl<P: Polling> Io<P> {
     }
 }
 
+fn start_fifo(bytes: &[u8], chip: &mut impl Chip) -> bool {
+    chip.write(wire::FM_REG_FIFO_ACCESS, bytes)
+        && chip.write(wire::FM_REG_RF_TXEN, &[wire::FM_RF_TX_ENABLE])
+}
+
+fn fifo_count(chip: &mut impl Chip) -> Option<usize> {
+    let mut count = [0x00];
+    if !chip.read(wire::FM_REG_FIFO_WORDCNT, &mut count) {
+        return None;
+    }
+    let count = usize::from(count[0] & wire::FM_FIFO_WORDCNT_MASK);
+    (count <= wire::FIFO_BYTES).then_some(count)
+}
+
 // Early input may not overwrite a live mailbox. Keep this disjoint drain
 // scratch out of the ordinary decode/polling path and its IRQ stack frame.
 #[inline(never)]
 fn drain_fifo(length: usize, chip: &mut impl Chip) -> bool {
-    let mut discarded = [0x00; wire::FRAME_LIMIT];
+    let mut discarded = [0x00; wire::FIFO_BYTES];
     chip.read(wire::FM_REG_FIFO_ACCESS, &mut discarded[..length])
 }

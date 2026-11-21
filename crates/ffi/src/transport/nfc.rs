@@ -24,9 +24,11 @@ use canokey_protocol::{
 };
 use canokey_rust_core::runtime::nfc::request::{Backend as ReceiveBackend, Rejection, Request};
 use canokey_rust_core::runtime::{
-    nfc::{Event, Link, ResponseBudget},
-    nfc_io::{Chip, Io},
+    nfc::{Event, Link, Response, ResponseBudget},
+    nfc_io::Chip,
 };
+const FSC: usize = wire::MAX_FRAME_BYTES;
+type Io = canokey_rust_core::runtime::nfc_io::Io<FSC>;
 #[cfg(test)]
 use tests::deinit;
 // CTAP status returned inside the NFC APDU for an oversized FIDO request.
@@ -79,8 +81,10 @@ impl canokey_rust_core::runtime::nfc_provision::Provision for Hardware {
 ///
 /// # Safety
 /// Call during boot, before the GPIO NFC IRQ and transport polling can run. SysTick must be available for chip delays.
+#[inline(never)]
 pub unsafe fn ck_nfc_configure() -> i32 {
-    if canokey_rust_core::runtime::nfc_provision::configure(&mut Hardware) {
+    use canokey_rust_core::runtime::nfc_provision;
+    if nfc_provision::configure_for::<FSC>(&mut Hardware) {
         0
     } else {
         -1
@@ -392,9 +396,15 @@ unsafe fn fault() {
         });
     }
 }
-unsafe fn send(packet: &Packet) -> bool {
+unsafe fn send(packet: &Packet) {
     // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
-    unsafe { with_io(|io, chip, _| io.generation() == NFC.generation && io.send(packet, chip)) }
+    unsafe {
+        with_io(|io, chip, _| {
+            if io.generation() == NFC.generation && !io.send(packet, chip) {
+                io.fault();
+            }
+        });
+    }
 }
 unsafe fn execute<P: Provider>(continuation: Option<&[u8]>) {
     // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
@@ -456,21 +466,35 @@ unsafe fn next_response<P: Provider>() {
             execute::<P>(Some(&command));
             return;
         }
-        let buffer = crate::transport::ccid::ck_ccid_response_buffer();
-        let remaining = core::slice::from_raw_parts(buffer.add(NFC.sent), NFC.length - NFC.sent);
-        match (&mut *core::ptr::addr_of_mut!(NFC.link)).response(remaining, NFC.more) {
-            Ok(packet) => {
-                if send(&packet) {
-                    match (&mut *core::ptr::addr_of_mut!(NFC.link)).sent() {
-                        Ok(n) => NFC.sent += n,
-                        Err(_) => fault(),
-                    }
-                } else {
-                    fault();
-                }
+        send_response(None);
+    }
+}
+unsafe fn send_response(retry: Option<Response>) {
+    // SAFETY: Link keeps the committed I-block in the main-loop APDU
+    // response window. I/O copies it before the borrowed slice expires.
+    unsafe {
+        with_io(|io, chip, _| {
+            if io.generation() != NFC.generation {
+                return;
             }
-            Err(_) => fault(),
-        }
+            let (response, offset) = if let Some(response) = retry {
+                (response, NFC.sent - usize::from(response.length))
+            } else {
+                let link = &mut *core::ptr::addr_of_mut!(NFC.link);
+                let Ok(response) =
+                    link.response(NFC.length - NFC.sent, NFC.more, io.tx_frame_limit(FSC))
+                else {
+                    io.fault();
+                    return;
+                };
+                (response, NFC.sent)
+            };
+            let buffer = crate::transport::ccid::ck_ccid_response_buffer();
+            let inf = core::slice::from_raw_parts(buffer.add(offset), usize::from(response.length));
+            if !io.send_response(response, inf, chip) {
+                io.fault();
+            }
+        });
     }
 }
 // Keep the packet window off the applet/crypto call path.
@@ -478,7 +502,7 @@ unsafe fn next_response<P: Provider>() {
 unsafe fn receive<P: Provider>() -> Option<Result<Event, canokey_rust_core::runtime::nfc::Error>> {
     // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe {
-        let mut frame = [0; wire::FRAME_LIMIT];
+        let mut frame = [0x00; FSC];
         let n = with_io(|io, _, _| {
             if io.generation() != NFC.generation {
                 None
@@ -514,14 +538,20 @@ pub unsafe fn poll<P: Provider>() {
             return;
         }
         let dirty = (&*core::ptr::addr_of!(NFC.link)).dirty() || NFC.pending;
-        let generation = with_io(|io, chip, now| {
+        let (generation, tx_done) = with_io(|io, chip, now| {
             io.poll(now, dirty, chip);
-            io.generation()
+            (
+                io.generation(),
+                io.generation() == NFC.generation && io.take_tx_done(),
+            )
         });
         if generation != NFC.generation {
             NFC.generation = generation;
             reset_link::<P>();
             return;
+        }
+        if tx_done && let Some(n) = (&mut *core::ptr::addr_of_mut!(NFC.link)).sent() {
+            NFC.sent += n;
         }
         if NFC.pending {
             match with_io(|io, _, _| io.complete_execution()) {
@@ -542,17 +572,14 @@ pub unsafe fn poll<P: Provider>() {
         };
         match event {
             Ok(Event::Execute(_)) => execute::<P>(None),
-            Ok(Event::Send(packet)) => {
-                if !send(&packet) {
-                    fault();
-                }
+            Ok(Event::Send(packet)) => send(&packet),
+            Ok(Event::RetryResponse(response)) => {
+                send_response(Some(response));
             }
             Ok(Event::NextResponse) => next_response::<P>(),
             Ok(Event::Ignored) => with_io(|io, _, _| io.ignored(NFC.generation)),
             Ok(Event::Deselect) => {
-                if !send(&Packet::deselect()) {
-                    fault();
-                }
+                send(&Packet::deselect());
                 reset_link::<P>();
             }
             Ok(Event::Waiting(_)) | Err(_) => fault(),

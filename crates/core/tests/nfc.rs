@@ -23,8 +23,8 @@ fn literal_wire_lengths_and_optional_fields() {
     for pcb in [0x00, 0x08, 0x0a, 0x06, 0xa0, 0xaa, 0xca, 0xff] {
         assert!(nfc::decode(&[pcb, 0, 0]).is_err());
     }
-    for n in 0..=40 {
-        if !(3..=32).contains(&n) {
+    for n in 0..=nfc::MAX_FRAME_BYTES + 1 {
+        if !(3..=nfc::MAX_FRAME_BYTES).contains(&n) {
             assert!(nfc::decode(&vec![2; n]).is_err());
         }
     }
@@ -58,16 +58,19 @@ fn chained_input_duplicates_are_not_appended_twice() {
     );
     assert_eq!(&input[..4], &[1, 2, 3, 4]);
     assert_eq!(l.receive(&[0x03, 3, 4, 0, 0], &mut input), Err(Error::Busy));
-    let p = l.response(&[0x90, 0], false).unwrap();
-    assert_eq!(p.bytes(), &[3, 0x90, 0]);
+    let p = l.response(2, false, nfc::FRAME_LIMIT).unwrap();
+    assert_eq!((p.pcb, p.length), (3, 2));
     assert!(l.dirty());
-    assert_eq!(l.sent(), Ok(2));
+    assert_eq!(l.sent(), Some(2));
     assert!(!l.dirty());
     assert_eq!(
         l.receive(&[0x03, 3, 4, 0, 0], &mut input),
-        Ok(Event::Send(p))
+        Ok(Event::RetryResponse(p))
     );
-    assert_eq!(l.receive(&[0xb3, 0, 0], &mut input), Ok(Event::Send(p)));
+    assert_eq!(
+        l.receive(&[0xb3, 0, 0], &mut input),
+        Ok(Event::RetryResponse(p))
+    );
     assert_eq!(
         l.receive(&[0xa3, 0, 0], &mut input),
         Err(Error::Retransmits)
@@ -79,20 +82,25 @@ fn response_packet_commits_and_chaining_acknowledgements() {
     let mut input = [0; 261];
     assert_eq!(l.receive(&[2, 0, 0], &mut input), Ok(Event::Execute(0)));
     let bytes: Vec<u8> = (0..100).collect();
-    let p = l.response(&bytes, false).unwrap();
-    assert_eq!(p.bytes()[0], 0x12);
-    assert_eq!(&p.bytes()[1..], &bytes[..29]);
+    let p = l.response(bytes.len(), false, nfc::FRAME_LIMIT).unwrap();
+    assert_eq!((p.pcb, p.length), (0x12, 29));
     assert_eq!(l.receive(&[0xa3, 0, 0], &mut input), Err(Error::Busy));
-    assert_eq!(l.sent(), Ok(29));
-    assert_eq!(l.response(&bytes[29..], false), Err(Error::Busy));
-    assert_eq!(l.receive(&[0xa2, 0, 0], &mut input), Ok(Event::Send(p)));
+    assert_eq!(l.sent(), Some(29));
+    assert_eq!(
+        l.response(bytes.len() - 29, false, nfc::FRAME_LIMIT),
+        Err(Error::Busy)
+    );
+    assert_eq!(
+        l.receive(&[0xa2, 0, 0], &mut input),
+        Ok(Event::RetryResponse(p))
+    );
     assert_eq!(
         l.receive(&[0xa3, 0, 0], &mut input),
         Ok(Event::NextResponse)
     );
-    let p = l.response(&bytes[29..58], true).unwrap();
-    assert_eq!(p.bytes()[0], 0x13);
-    assert_eq!(l.sent(), Ok(29));
+    let p = l.response(29, true, nfc::FRAME_LIMIT).unwrap();
+    assert_eq!(p.pcb, 0x13);
+    assert_eq!(l.sent(), Some(29));
     assert_eq!(
         l.receive(&[0xb2, 0, 0], &mut input),
         Ok(Event::Send(Packet::acknowledgement(1)))
@@ -105,10 +113,8 @@ fn response_packet_commits_and_chaining_acknowledgements() {
         l.receive(&[0xa2, 0, 0], &mut input),
         Ok(Event::NextResponse)
     );
-    assert_eq!(
-        l.response(&[0x90, 0], false).unwrap().bytes(),
-        &[2, 0x90, 0]
-    );
+    let p = l.response(2, false, nfc::FRAME_LIMIT).unwrap();
+    assert_eq!((p.pcb, p.length), (2, 2));
     l.sent().unwrap();
     assert_eq!(
         l.receive(&[0xb3, 0, 0], &mut input),
@@ -141,12 +147,12 @@ fn control_ack_cache_and_unsolicited_ack_preserve_input() {
         Ok(Event::Execute(2))
     );
     assert_eq!(&input[..2], &[7, 8]);
-    let reply = link.response(&[0x90, 0], false).unwrap();
+    let reply = link.response(2, false, nfc::FRAME_LIMIT).unwrap();
     link.sent().unwrap();
     assert_eq!(link.receive(&[0xa2, 0, 0], &mut input), Ok(Event::Ignored));
     assert_eq!(
         link.receive(&[0xb3, 0, 0], &mut input),
-        Ok(Event::Send(reply))
+        Ok(Event::RetryResponse(reply))
     );
     let ack = Event::Send(Packet::acknowledgement(1));
     assert_eq!(link.receive(&[0xb2, 0, 0], &mut input), Ok(ack));
@@ -263,7 +269,10 @@ fn irq_error_priority_matches_native_register_contract() {
 mod registers {
     use super::*;
     use canokey_rust_core::runtime::nfc_io::{Chip, Io};
-    #[derive(Default)]
+    const MASKS: [u8; 2] = [
+        nfc::FM_MAIN_IRQ_MASK,
+        nfc::FM_FIFO_IRQ_MASK | nfc::FM_FIFO_WATER,
+    ];
     struct Fake {
         flags: [u8; 3],
         rf_status: u8,
@@ -271,6 +280,20 @@ mod registers {
         writes: Vec<(u16, Vec<u8>)>,
         fail: Option<u16>,
         reads: Vec<u16>,
+        tx_active: bool,
+    }
+    impl Default for Fake {
+        fn default() -> Self {
+            Self {
+                flags: [0; 3],
+                rf_status: nfc::FM_STATE_RATS << 4,
+                rx: Vec::new(),
+                writes: Vec::new(),
+                fail: None,
+                reads: Vec::new(),
+                tx_active: false,
+            }
+        }
     }
     impl Chip for Fake {
         fn read(&mut self, address: u16, out: &mut [u8]) -> bool {
@@ -283,17 +306,30 @@ mod registers {
                 0xfff2 => out[0] = self.rx.len() as u8,
                 0xfff0 => out.copy_from_slice(&self.rx),
                 nfc::FM_REG_RF_STATUS => out[0] = self.rf_status,
+                nfc::FM_REG_RF_RATS => out[0] = nfc::fsci(nfc::FRAME_LIMIT) << 4,
                 _ => panic!("unexpected read"),
             }
             true
         }
         fn write(&mut self, address: u16, bytes: &[u8]) -> bool {
             self.writes.push((address, bytes.to_vec()));
+            if address == nfc::FM_REG_RF_TXEN {
+                self.tx_active = true;
+            }
             self.fail != Some(address)
         }
     }
     fn frame(io: &mut Io, chip: &mut Fake, now: u32, bytes: &[u8]) {
-        chip.flags = [0x10, 0, 0];
+        chip.flags = [
+            nfc::FM_MAIN_RX_DONE
+                | if core::mem::take(&mut chip.tx_active) {
+                    nfc::FM_MAIN_TX_DONE
+                } else {
+                    0
+                },
+            0,
+            0,
+        ];
         chip.rx = bytes.to_vec();
         io.interrupt(now, chip);
     }
@@ -303,7 +339,10 @@ mod registers {
         let mut chip = Fake::default();
         let mut packet = [0; 32];
         io.poll(0, false, &mut chip);
-        assert_eq!(chip.writes, vec![(0xfffa, vec![0x22])]);
+        assert_eq!(
+            chip.writes,
+            vec![(nfc::FM_REG_MAIN_IRQ_MASK, MASKS.to_vec())]
+        );
         frame(&mut io, &mut chip, 1, &[2, 1, 2, 0, 0]);
         assert_eq!(io.take(&mut packet), Some(5));
         assert!(io.begin_execution(1));
@@ -323,6 +362,8 @@ mod registers {
             &Packet::information(0, false, &[0x90, 0]).unwrap(),
             &mut chip
         ));
+        chip.flags = [nfc::FM_MAIN_TX_DONE, 0, 0];
+        io.interrupt(154, &mut chip);
         let generation = io.generation();
         io.poll(1000, false, &mut chip);
         assert_eq!(io.generation(), generation);
@@ -494,10 +535,7 @@ mod registers {
         io.ignored(io.generation());
         io.poll(201, false, &mut chip);
         assert_eq!(io.generation(), 0);
-        assert_eq!(
-            chip.writes,
-            [(nfc::FM_REG_MAIN_IRQ_MASK, vec![nfc::FM_MAIN_IRQ_MASK])]
-        );
+        assert_eq!(chip.writes, [(nfc::FM_REG_MAIN_IRQ_MASK, MASKS.to_vec())]);
         frame(&mut io, &mut chip, 202, &[nfc::PCB_I, 7, 0, 0]);
         assert_eq!(io.take(&mut out), Some(4));
         assert_eq!(&out[..4], &[nfc::PCB_I, 7, 0, 0]);
@@ -572,7 +610,8 @@ mod registers {
                         nfc::FM_REG_MAIN_IRQ,
                         nfc::FM_REG_RF_STATUS,
                         nfc::FM_REG_FIFO_WORDCNT,
-                        nfc::FM_REG_FIFO_ACCESS
+                        nfc::FM_REG_FIFO_ACCESS,
+                        nfc::FM_REG_RF_RATS,
                     ]
                 );
             } else {
@@ -633,6 +672,7 @@ mod registers {
                 chip.writes,
                 [
                     (nfc::FM_REG_RESET_SILENCE, vec![nfc::FM_SILENCE]),
+                    (nfc::FM_REG_FIFO_CLEAR, vec![0]),
                     (nfc::FM_REG_MAIN_IRQ_MASK, vec![nfc::FM_MAIN_IRQ_MASK_ALL]),
                 ]
             );
@@ -651,10 +691,10 @@ mod registers {
             io.poll(201, false, &mut chip);
             io.poll(202, false, &mut chip);
             assert_eq!(
-                &chip.writes[2..],
+                &chip.writes[3..],
                 [
                     (nfc::FM_REG_RESET_SILENCE, vec![nfc::FM_UNSILENCE]),
-                    (nfc::FM_REG_MAIN_IRQ_MASK, vec![nfc::FM_MAIN_IRQ_MASK]),
+                    (nfc::FM_REG_MAIN_IRQ_MASK, MASKS.to_vec()),
                 ]
             );
         }
@@ -680,7 +720,10 @@ mod registers {
         chip.fail = None;
         io.poll(552, false, &mut chip);
         io.poll(553, false, &mut chip);
-        assert_eq!(chip.writes.last(), Some(&(0xfffa, vec![0x22])));
+        assert_eq!(
+            chip.writes.last(),
+            Some(&(nfc::FM_REG_MAIN_IRQ_MASK, MASKS.to_vec()))
+        );
         frame(&mut io, &mut chip, 554, &[2, 0, 0]);
         io.take(&mut out);
         io.begin_execution(554);
@@ -694,7 +737,7 @@ mod registers {
 mod provisioning {
     use canokey_rust_core::runtime::{
         nfc_io::Chip,
-        nfc_provision::{Provision, configure},
+        nfc_provision::{Provision, configure_for},
     };
     struct Eeprom {
         bytes: [u8; 1024],
@@ -751,28 +794,41 @@ mod provisioning {
     }
     #[test]
     fn config_is_verified_idempotent_and_releases_chip_on_every_bus_error() {
+        use canokey_protocol::nfc::MAX_FRAME_BYTES;
         let mut chip = Eeprom::new();
-        assert!(configure(&mut chip));
-        assert_eq!(chip.writes, 4);
+        chip.bytes[0x3b2..0x3b4].copy_from_slice(&[0xa5, 0x57]);
+        assert!(configure_for::<MAX_FRAME_BYTES>(&mut chip));
+        assert_eq!(chip.writes, 5);
         assert!(!chip.selected);
         let accesses = chip.accesses;
         assert_eq!(
             &chip.bytes[0x3b0..0x3b7],
-            &[5, 0x72, 0xa0, 0x57, 0, 0x99, 0]
+            &[0x05, 0x78, 0xa5, 0x57, 0x00, 0x97, 0x00]
         );
-        assert!(configure(&mut chip));
-        assert_eq!(chip.writes, 4);
+        assert!(configure_for::<MAX_FRAME_BYTES>(&mut chip));
+        assert_eq!(chip.writes, 5);
+        // A previously provisioned tag rewrites only the two ATS ranges.
+        chip.bytes[0x3b1] = 0x72;
+        chip.bytes[0x3b5] = 0x99;
+        assert!(configure_for::<MAX_FRAME_BYTES>(&mut chip));
+        assert_eq!(chip.writes, 7);
+        assert_eq!(
+            &chip.bytes[0x3b0..0x3b7],
+            &[0x05, 0x78, 0xa5, 0x57, 0x00, 0x97, 0x00]
+        );
+        assert!(configure_for::<MAX_FRAME_BYTES>(&mut chip));
+        assert_eq!(chip.writes, 7);
         for failure in 0..accesses {
             let mut chip = Eeprom::new();
             chip.fail = Some(failure);
-            assert!(!configure(&mut chip));
+            assert!(!configure_for::<MAX_FRAME_BYTES>(&mut chip));
             assert!(!chip.selected);
             chip.fail = None;
-            assert!(configure(&mut chip)); // partially programmed EEPROM is recoverable
+            assert!(configure_for::<MAX_FRAME_BYTES>(&mut chip));
         }
         let mut chip = Eeprom::new();
         chip.discard_write = true;
-        assert!(!configure(&mut chip));
+        assert!(!configure_for::<MAX_FRAME_BYTES>(&mut chip));
         assert!(!chip.selected);
     }
 }

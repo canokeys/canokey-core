@@ -1,10 +1,8 @@
 # Rust NFC and NDEF integration
 
 The NFCC Rust composition enables NFC, NDEF and all USB interfaces. NFC and USB
-are mutually exclusive boot modes. This integration is still under validation:
-the full NFCC image does not fit Flash, and no physical NFC reader or runtime
-stack acceptance has
-been performed. Do not treat host tests as a release qualification.
+are mutually exclusive boot modes. Physical RF, controller timing and complete
+NFC stack validation remain open.
 
 `runtime::nfc` owns ISO-DEP block numbers, bounded command delivery, chaining,
 duplicate suppression and at most two packet retransmissions. The facade leases
@@ -13,26 +11,71 @@ as owner 4; there is no NFC-private applet or crypto workspace. Request storage
 uses the shared 261-byte buffer plus a 27-byte tail for inline envelopes; selected
 standalone FIDO bodies above 279 bytes use transient PKE staging, up to 1296 bytes.
 Each FIDO extended command's Le controls continuous response aggregation. Core
-GET RESPONSE owns the actual response cursor; intermediate 61xx trailers are
-removed only in this compatibility mode.
+GET RESPONSE owns the actual response cursor. The facade removes intermediate
+61xx trailers only in this compatibility mode.
 
 Inline envelope length is checked with the shared ISO decoder layout before
 applet dispatch. Malformed requests close FIDO input/output while preserving
 unrelated applet write cursors and grants. They cannot trigger NDEF/OpenPGP
 command abort merely because their header resembles an applet command.
 
-`runtime::nfc_io` owns the IRQ mailbox, 150-ms WTX schedule and 200-ms dirty-link
-recovery. The main-loop facade masks interrupts only around this disjoint state.
-No IRQ borrows Core, storage or the shared APDU bytes. Field reset cancels the
-running command, and Core cleanup occurs after its call returns. A pending WTX
-echo retains the RF turn even if Core has already finished. Clean idle links keep
-their applet authorization. Reset, deselect or forced recovery clear it.
+## ISO-DEP frames and FIFO ownership
+
+The FM11NT082C FIFO holds 32 bytes. Products with FSC above 32 bytes enable
+the FIFO watermark interrupt. RX drains 24 bytes at each watermark and uses
+the FIFO count at RX_DONE. For co-latched RX_DONE and watermark flags one
+counted drain handles both. The frontend checks CRC, parity and frame format.
+Hardware errors, a new activation or a reset revoke partial transfers. The
+main loop checks the generation before taking the completed RX mailbox.
+FIFO-sized profiles can read the complete frame at RX_DONE.
+
+TX stages the encoded I-block in the IRQ-owned frame buffer and starts with
+up to 32 bytes. When 8 bytes remain, each refill writes up to 24 bytes.
+The facade releases the IRQ lock after each bus operation or bounded sequence
+of operations. TX_DONE confirms delivery and lets the main loop advance its
+cursor. A premature TX_DONE, FIFO over/underflow or bus error cancels the
+transfer. The masked FIFO_EMPTY bit may still be latched from before TX.
+Only the FIFO over/underflow bit reports a FIFO error. The main loop retains
+PCB and INF length for exact retransmission
+from its existing APDU response window. ACK, WTX, deselect and asynchronous
+polling replies use the small inline packet. The IRQ owns only its frame
+staging and polling state.
+
+In Level-4 mode the frontend handles RATS/ATS and PPS and delivers the
+subsequent frames via FIFO. The first complete data frame latches FSDI from
+the high nibble of `0xFFF6` for the current generation. Valid codes 0 through 8
+give FSD 16 through 256 bytes. Reserved codes use the minimum 16 bytes.
+An I-block, including PCB and hardware-generated CRC, fits within the
+smaller of reader FSD and product TX capacity. Watermarks, chaining and
+retries preserve the generation.
+
+The IRQ runtime schedules WTX at 150 ms and recovers dirty links after
+200 ms. A power-on, new activation, HALT or forced recovery revokes the old
+turn. Loss during execution cancels the command when observed, with Core
+cleanup after its call returns. An outstanding WTX echo retains the turn
+even if Core has finished. An idle clean link retains authorization.
+
+## ATS provisioning
 
 `runtime::nfc_provision` owns EEPROM configuration, ATS, ATQA/SAK and identity CRC.
-It compares before programming, delays for EEPROM writes and verifies readback;
-every error releases chip select. Its boot entrypoint runs before GPIO IRQs are
-enabled. The platform adapter supplies only raw register/bus, chip-select, delay,
-IRQ mask and timer actions.
+It compares before programming, waits for each write and verifies readback.
+It always releases chip select. The boot entrypoint runs before GPIO IRQs
+are enabled. FM11NT082C v1.2 Figure 3-2 and Table 4-1 place TL/T0 at
+`0x03B0/0x03B1` and TA1/TB1/TC1 at `0x03B4..0x03B6`. Provisioning leaves
+`0x03B2` (VOUT) and `0x03B3` (I2C address `0x57`) intact.
+
+CanoKey NFCC advertises FSC=256 bytes in ATS `05 78 00 97 00`.
+TB1 specifies FWI=9 and SFGI=7 (about 38.7 ms after ATS).
+On an already provisioned device the first boot of a firmware with a
+different FSCI or SFGI writes and verifies the corresponding ATS fields
+when they differ.
+The FM11NT loads EEPROM on power-up. A new ATS can therefore be relied
+upon after the frontend loses power, restarts, and answers a fresh RATS.
+A CIU-only reset while the frontend remains powered does not guarantee
+reload. On cold RF startup the frontend can advertise ATS before the MCU
+arms FIFO service, including on later boots after EEPROM has been updated.
+
+## NDEF and contactless applet policy
 
 NDEF uses the existing applet-state union and response cursor. Complete UPDATE
 BINARY frames commit through storage; truncated frames do not publish data. The
@@ -48,8 +91,11 @@ without polling touch hardware. ADMIN factory reset is rejected in NFC mode with
 
 Validation entrypoints:
 
-- `tools/hil/test_rust_nfc.py`: production raw bus adapter and NFC FFI with mocked
-  Core/registers; fragmentation, retransmission, FIDO aggregation, WTX and reset.
+- `tools/hil/test_rust_nfc.py`: production raw bus adapter.
+- FFI host tests `--lib nfc`: fragmentation, retransmission, FIDO aggregation,
+  WTX and reset with mocked Core and registers.
+- Transport-runtime `--test nfc_fifo`: bounded FIFO, co-latched flags, reader
+  limits, errors, and 256-byte RX/TX and retransmission.
 - Rust `--test nfc`: wire, lifecycle, IRQ register and provisioning failure tests.
 - Rust `--test ndef`: file policy and actual Core/registry frame routing.
 - Combined host `core-behavior`: ADMIN NDEF authorization and read-only/reset APDUs.
@@ -59,7 +105,7 @@ Validation entrypoints:
 CIU's full product passes native ownership, capacity and offline boot/recovery
 gates. NFCC physical reader/RF compatibility, instrumented I2C timing, deliberate
 MPU fault/recovery checks and board-specific stack evidence remain scoped by
-the platform's `docs/acceptance.md`; DevKit measurements do not establish them.
+the platform's `docs/current-status.md`.
 
 The native-endian configuration-page layout is preserved by `runtime::config`.
 NFC enable/disable (`14`, P1=0 read or P1=1 authenticated write, P2=0/1), ADMIN

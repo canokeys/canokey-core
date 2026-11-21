@@ -118,6 +118,7 @@ impl Request {
     }
     /// Called only for accepted (non-repeated) blocks. Rejections keep draining
     /// legal RF blocks so an APDU error does not tear down the activation.
+    #[inline(never)]
     pub fn append(&mut self, mut bytes: &[u8], inline: &mut [u8], backend: &mut impl Backend) {
         assert!(inline.len() >= apdu::SHORT_FRAME_BYTES);
         while !bytes.is_empty() {

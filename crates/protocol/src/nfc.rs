@@ -3,7 +3,34 @@
 //! bytes on receive and appends CRC on transmit. CID/NAD are not advertised.
 #![forbid(unsafe_code)]
 pub const FRAME_LIMIT: usize = 32;
-pub const INF_LIMIT: usize = 29;
+pub const MAX_FRAME_BYTES: usize = 256;
+pub const FRAME_OVERHEAD: usize = 3; // PCB followed by INF and two CRC bytes.
+pub const INF_LIMIT: usize = FRAME_LIMIT - FRAME_OVERHEAD;
+pub const FIFO_BYTES: usize = 32;
+pub const RX_WATERMARK: usize = 24;
+pub const TX_WATERMARK: usize = 8;
+const FRAME_SIZES: [u16; 9] = [16, 24, 32, 40, 48, 64, 96, 128, 256];
+
+pub const fn fsci(fsc: usize) -> u8 {
+    let mut code = 0;
+    while code < FRAME_SIZES.len() {
+        if FRAME_SIZES[code] as usize == fsc {
+            return code as u8;
+        }
+        code += 1;
+    }
+    panic!("unsupported ISO-DEP frame size");
+}
+
+/// RF_RATS stores FSDI in the high nibble and CID in the low nibble.
+pub fn reader_frame_size(rats: u8) -> usize {
+    // A reserved FSDI carries no usable size promise. Use the mandatory minimum.
+    usize::from(
+        *FRAME_SIZES
+            .get(usize::from(rats >> 4))
+            .unwrap_or(&FRAME_SIZES[0]),
+    )
+}
 // ISO 14443-4 PCB fields; bit 0 is the alternating block number.
 pub const PCB_NUMBER: u8 = 0x01;
 pub const PCB_CHAIN_OR_NAK: u8 = 0x10;
@@ -26,24 +53,33 @@ pub const FM_IRQ_BYTES: usize = 3;
 pub const FM_REG_FIFO_WORDCNT: u16 = 0xfff2;
 // RF_STATUS high nibble is NFC_STATE (FM11NT082C section 3.3.3.12).
 pub const FM_REG_RF_STATUS: u16 = 0xfff3;
+pub const FM_REG_RF_RATS: u16 = 0xfff6;
 pub const FM_STATE_RATS: u8 = 9;
 pub const FM_STATE_PPS: u8 = 10;
 pub const FM_REG_FIFO_ACCESS: u16 = 0xfff0;
+pub const FM_REG_FIFO_CLEAR: u16 = 0xfff1;
+pub const FM_FIFO_WORDCNT_MASK: u8 = 0x3f;
 pub const FM_REG_RF_TXEN: u16 = 0xfff4;
 pub const FM_RF_TX_ENABLE: u8 = 0x55;
 pub const FM_REG_RESET_SILENCE: u16 = 0xffe6;
 pub const FM_SILENCE: u8 = 0x33;
 pub const FM_UNSILENCE: u8 = 0xcc;
 pub const FM_REG_MAIN_IRQ_MASK: u16 = 0xfffa;
-pub const FM_MAIN_IRQ_MASK: u8 = 0x22;
+pub const FM_REG_FIFO_IRQ_MASK: u16 = 0xfffb;
+pub const FM_MAIN_IRQ_MASK: u8 = 0x20; // Mask RX_START, service FIFO and TX/RX completion.
+pub const FM_FIFO_IRQ_MASK: u8 = 0xf3; // Watermark and over/underflow only.
 // FM11NT IRQ masks are active-high; silence recovery masks every MAIN source.
 pub const FM_MAIN_IRQ_MASK_ALL: u8 = 0xff;
 pub const FM_AUX_ERRORS: u8 = 0x78;
 pub const FM_FIFO_OVERFLOW: u8 = 0x04;
+pub const FM_FIFO_WATER: u8 = 0x08;
+pub const FM_FIFO_EMPTY: u8 = 0x01;
 // AUX register (the third IRQ triplet byte): halt request from the frontend.
 pub const FM_AUX_HALT: u8 = 0x04;
 pub const FM_MAIN_ACTIVE: u8 = 0x40;
+pub const FM_MAIN_POWER_ON: u8 = 0x80;
 pub const FM_MAIN_RX_DONE: u8 = 0x10;
+pub const FM_MAIN_TX_DONE: u8 = 0x08;
 pub const FM_MAIN_ACTIVITY: u8 = 0x3f;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Block<'a> {
@@ -66,7 +102,7 @@ pub enum Error {
     Multiplier,
 }
 pub fn decode(frame: &[u8]) -> Result<Block<'_>, Error> {
-    if frame.len() < 3 || frame.len() > FRAME_LIMIT {
+    if !(FRAME_OVERHEAD..=MAX_FRAME_BYTES).contains(&frame.len()) {
         return Err(Error::Length);
     }
     let pcb = frame[0];
@@ -94,21 +130,24 @@ pub fn decode(frame: &[u8]) -> Result<Block<'_>, Error> {
         _ => Err(Error::Prologue),
     }
 }
-/// Packet bytes exclude CRC; the chip generates it. The last successful
-/// Link packet is retained by the runtime for exact retransmission.
+pub fn information_pcb(number: u8, chained: bool) -> u8 {
+    PCB_I | (number & PCB_NUMBER) | if chained { PCB_CHAIN_OR_NAK } else { 0x00 }
+}
+
+/// Inline ACK, WTX, deselect and three-byte asynchronous polling replies.
+/// Ordinary responses use the transport's existing APDU backing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Packet {
-    bytes: [u8; 30],
+    bytes: [u8; INLINE_PACKET_BYTES],
     length: u8,
 }
+const INLINE_PACKET_BYTES: usize = 4;
 impl Packet {
     pub fn information(number: u8, chained: bool, bytes: &[u8]) -> Result<Self, Error> {
-        if bytes.is_empty() || bytes.len() > INF_LIMIT {
+        if bytes.is_empty() || bytes.len() >= INLINE_PACKET_BYTES {
             return Err(Error::Length);
         }
-        let mut packet = Self::control(
-            PCB_I | (number & PCB_NUMBER) | if chained { PCB_CHAIN_OR_NAK } else { 0 },
-        );
+        let mut packet = Self::control(information_pcb(number, chained));
         packet.bytes[1..1 + bytes.len()].copy_from_slice(bytes);
         // The append guard bounds bytes.len() to the RF packet capacity.
         packet.length += u8::try_from(bytes.len()).unwrap();
@@ -130,7 +169,7 @@ impl Packet {
         Ok(packet)
     }
     const fn control(pcb: u8) -> Self {
-        let mut bytes = [0; 30];
+        let mut bytes = [0x00; INLINE_PACKET_BYTES];
         bytes[0] = pcb;
         Self { bytes, length: 1 }
     }
