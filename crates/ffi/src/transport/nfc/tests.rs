@@ -119,7 +119,7 @@ pub(super) unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u
             // SAFETY: The transport fixture serializes this call and owns the fake controller state.
             let length = unsafe {
                 ck_core_exchange(
-                    crate::transport::owners::OWNER_NFC,
+                    canokey_rust_core::runtime::owners::OWNER_NFC,
                     pointer,
                     input.len(),
                     buffer,
@@ -278,7 +278,7 @@ pub(crate) unsafe fn ck_core_exchange(
     capacity: usize,
 ) -> i32 {
     assert_eq!(controller().masked, 0);
-    assert_eq!(owner, crate::transport::owners::OWNER_NFC);
+    assert_eq!(owner, canokey_rust_core::runtime::owners::OWNER_NFC);
     assert_eq!(out, crate::transport::ccid::ck_ccid_response_buffer());
     assert_eq!(capacity, apdu::SHORT_REPLY_BYTES);
     controller().calls += 1;

@@ -6,7 +6,7 @@ use canokey_protocol::ccid::HEADER;
 use canokey_rust_core::runtime::ccid::{Backend, Transport};
 
 use crate::composition::{Provider, core as core_ops};
-use crate::transport::owners::OWNER_CCID;
+use canokey_rust_core::runtime::owners::OWNER_CCID;
 
 crate::lazy_state!(
     CCID,

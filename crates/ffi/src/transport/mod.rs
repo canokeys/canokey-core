@@ -6,8 +6,6 @@
     feature = "device-runtime"
 ))]
 mod lock;
-#[cfg(any(feature = "usb-ccid", feature = "usb-webusb", feature = "nfc"))]
-mod owners;
 #[cfg(feature = "ctap")]
 mod pke_scratch;
 #[cfg(any(feature = "usb-ccid", feature = "usb-hid", feature = "usb-keyboard"))]

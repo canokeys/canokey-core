@@ -14,13 +14,13 @@ use crate::sys::device_get_tick;
 use crate::transport::ccid::ck_ccid_idle;
 #[cfg(all(not(test), feature = "usb-hid"))]
 use crate::transport::hid::link::ck_hid_busy;
-use crate::transport::owners::OWNER_WEBUSB;
 #[cfg(all(test, feature = "usb-hid"))]
 use crate::transport::usb::tests::ck_hid_busy;
 #[cfg(test)]
 use crate::transport::usb::tests::{can_preempt, ck_ccid_idle};
 use crate::transport::usb_locked;
 use canokey_protocol::usb::Setup;
+use canokey_rust_core::runtime::owners::OWNER_WEBUSB;
 use canokey_rust_core::runtime::webusb::{RESPONSE_LIMIT, Request, Transport};
 // Shared by EP0 IRQ and the main loop under the USB mask. Core runs with the
 // mask released and without a borrow of this structure.

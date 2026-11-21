@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CanoKey application composition over the shared APDU engine.
+#[cfg(feature = "ctap")]
+use super::owners::OWNER_CTAP;
+use super::owners::{OWNER_INVALID, OWNER_NFC, OWNER_WEBUSB};
 #[cfg(any(feature = "ctap", feature = "pass"))]
 use crate::ports::Platform;
 #[cfg(any(feature = "ctap", feature = "pass"))]
@@ -7,14 +10,9 @@ use canokey_protocol::response::StatusWord as Sw;
 use canokey_transport_runtime::engine as common;
 pub(super) use common::DEFAULT_APDU_LE;
 pub use common::{Dispatch, InputSource, Reply, Router};
-pub(crate) const OWNER_APDU: u8 = 0x00;
-pub(crate) const OWNER_WEBUSB: u8 = 0x03;
-pub(crate) const OWNER_NFC: u8 = 0x04;
-#[cfg(feature = "ctap")]
-pub(crate) const OWNER_CTAP: u8 = 0x02;
 pub struct CanoKeyOwners;
 impl common::OwnerPolicy for CanoKeyOwners {
-    const INVALID: u8 = OWNER_APDU;
+    const INVALID: u8 = OWNER_INVALID;
     const NFC: u8 = OWNER_NFC;
     const EXTENDED_USB: u8 = OWNER_WEBUSB;
 }

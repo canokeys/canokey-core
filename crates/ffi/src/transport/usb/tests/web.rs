@@ -51,7 +51,7 @@ pub(crate) fn web_feed(bytes: &[u8]) {
 pub(crate) unsafe fn web_finish(owner: u8, out: *mut u8, capacity: usize) -> i32 {
     let input = policy().input.clone();
     let length = input.len();
-    assert_eq!(owner, crate::transport::owners::OWNER_WEBUSB);
+    assert_eq!(owner, canokey_rust_core::runtime::owners::OWNER_WEBUSB);
     assert_eq!(capacity, RESPONSE_LIMIT);
     assert!(matches!(length, 5 | 261 | 288));
     let input = input.as_slice();

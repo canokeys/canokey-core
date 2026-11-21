@@ -174,7 +174,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "1da6eba7a4fc6f30b0841ae1094fe50c31da719ab961ad47e9d166d22fabf622"
+          "sha256": "135aff712b5055d669d4d2f02b43c37c0c4bd0538262ba11b39302437141b7ee"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -328,7 +328,7 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
@@ -340,7 +340,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "1da6eba7a4fc6f30b0841ae1094fe50c31da719ab961ad47e9d166d22fabf622"
+          "sha256": "135aff712b5055d669d4d2f02b43c37c0c4bd0538262ba11b39302437141b7ee"
         },
         {
           "path": "crates/host/src/pcsc.rs",
@@ -566,7 +566,7 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/host/src/pcsc.rs",
@@ -633,7 +633,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -686,7 +686,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -743,7 +743,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "3f2995bdb3f907f5cdd260c120bf4df13aa6b142b09cc47170282c9355961048"
+          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
         }
       ],
       "regressions": [
@@ -805,11 +805,11 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "1da6eba7a4fc6f30b0841ae1094fe50c31da719ab961ad47e9d166d22fabf622"
+          "sha256": "135aff712b5055d669d4d2f02b43c37c0c4bd0538262ba11b39302437141b7ee"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
@@ -893,7 +893,7 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/applets/ndef.rs",
@@ -965,7 +965,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "3f2995bdb3f907f5cdd260c120bf4df13aa6b142b09cc47170282c9355961048"
+          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
         }
       ],
       "regressions": [
@@ -1022,7 +1022,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/runtime/nfc/request.rs",
@@ -1030,7 +1030,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "1da6eba7a4fc6f30b0841ae1094fe50c31da719ab961ad47e9d166d22fabf622"
+          "sha256": "135aff712b5055d669d4d2f02b43c37c0c4bd0538262ba11b39302437141b7ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
@@ -1040,7 +1040,7 @@
       "regressions": [
         {
           "path": "crates/ffi/src/transport/nfc/tests.rs",
-          "sha256": "781b7f7f72c909751522622ac315e21c35976f334794e54c416218e126136532",
+          "sha256": "cfe3f5dc10447443c18a0f662cc89d90c8ac6a89a313e45b95781c11073cc6db",
           "id": "nfc_link_chaining_wtx_reset_and_fido_aggregation"
         },
         {
@@ -1086,15 +1086,15 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "39defe677c9e86609bafe4a7b79c2f5c4a8ec3616c97dbaa56fbd011b396fddd"
+          "sha256": "471d6f2c13c8b6b48d21cb3bd1de3dfff42b5389b358ca9fb01716dd30c357e1"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "3f2995bdb3f907f5cdd260c120bf4df13aa6b142b09cc47170282c9355961048"
+          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
         }
       ],
       "regressions": [
@@ -1161,7 +1161,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "3f2995bdb3f907f5cdd260c120bf4df13aa6b142b09cc47170282c9355961048"
+          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
         }
       ],
       "regressions": [
@@ -1268,7 +1268,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "3f2995bdb3f907f5cdd260c120bf4df13aa6b142b09cc47170282c9355961048"
+          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
@@ -1314,7 +1314,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -1380,7 +1380,7 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -1468,7 +1468,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "1da6eba7a4fc6f30b0841ae1094fe50c31da719ab961ad47e9d166d22fabf622"
+          "sha256": "135aff712b5055d669d4d2f02b43c37c0c4bd0538262ba11b39302437141b7ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
@@ -1512,11 +1512,11 @@
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "39defe677c9e86609bafe4a7b79c2f5c4a8ec3616c97dbaa56fbd011b396fddd"
+          "sha256": "471d6f2c13c8b6b48d21cb3bd1de3dfff42b5389b358ca9fb01716dd30c357e1"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "3f2995bdb3f907f5cdd260c120bf4df13aa6b142b09cc47170282c9355961048"
+          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
@@ -1594,11 +1594,11 @@
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "39defe677c9e86609bafe4a7b79c2f5c4a8ec3616c97dbaa56fbd011b396fddd"
+          "sha256": "471d6f2c13c8b6b48d21cb3bd1de3dfff42b5389b358ca9fb01716dd30c357e1"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "3f2995bdb3f907f5cdd260c120bf4df13aa6b142b09cc47170282c9355961048"
+          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
@@ -2320,7 +2320,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "3f2995bdb3f907f5cdd260c120bf4df13aa6b142b09cc47170282c9355961048"
+          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
@@ -2336,7 +2336,7 @@
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "39defe677c9e86609bafe4a7b79c2f5c4a8ec3616c97dbaa56fbd011b396fddd"
+          "sha256": "471d6f2c13c8b6b48d21cb3bd1de3dfff42b5389b358ca9fb01716dd30c357e1"
         },
         {
           "path": "crates/ffi/src/composition/core.rs",
@@ -2344,7 +2344,7 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -2384,7 +2384,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb/tests/web.rs",
-          "sha256": "0518fc9dc79a6d6e1ba596f7767c340bcbbf5a6ab0ac48130ca65d6e84f6feb5",
+          "sha256": "4638bd3aba77c2acbcd2ec654f3d72b3d5d82beb1ffde591020109d6b34d27f0",
           "id": "before-cleanup-command-refusal-status-config-and-no-execution"
         },
         {
@@ -2595,7 +2595,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -2607,11 +2607,11 @@
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "39defe677c9e86609bafe4a7b79c2f5c4a8ec3616c97dbaa56fbd011b396fddd"
+          "sha256": "471d6f2c13c8b6b48d21cb3bd1de3dfff42b5389b358ca9fb01716dd30c357e1"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
-          "sha256": "3f2995bdb3f907f5cdd260c120bf4df13aa6b142b09cc47170282c9355961048"
+          "sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498"
         }
       ],
       "regressions": [
@@ -2741,11 +2741,11 @@
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "1da6eba7a4fc6f30b0841ae1094fe50c31da719ab961ad47e9d166d22fabf622"
+          "sha256": "135aff712b5055d669d4d2f02b43c37c0c4bd0538262ba11b39302437141b7ee"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -3346,7 +3346,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -3374,7 +3374,7 @@
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "39defe677c9e86609bafe4a7b79c2f5c4a8ec3616c97dbaa56fbd011b396fddd"
+          "sha256": "471d6f2c13c8b6b48d21cb3bd1de3dfff42b5389b358ca9fb01716dd30c357e1"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
@@ -3436,7 +3436,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "1da6eba7a4fc6f30b0841ae1094fe50c31da719ab961ad47e9d166d22fabf622"
+          "sha256": "135aff712b5055d669d4d2f02b43c37c0c4bd0538262ba11b39302437141b7ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
@@ -3553,7 +3553,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "1da6eba7a4fc6f30b0841ae1094fe50c31da719ab961ad47e9d166d22fabf622"
+          "sha256": "135aff712b5055d669d4d2f02b43c37c0c4bd0538262ba11b39302437141b7ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
@@ -3615,7 +3615,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "1da6eba7a4fc6f30b0841ae1094fe50c31da719ab961ad47e9d166d22fabf622"
+          "sha256": "135aff712b5055d669d4d2f02b43c37c0c4bd0538262ba11b39302437141b7ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
@@ -3679,7 +3679,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         }
       ],
       "regressions": [
@@ -3758,7 +3758,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -3816,7 +3816,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -3828,7 +3828,7 @@
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "39defe677c9e86609bafe4a7b79c2f5c4a8ec3616c97dbaa56fbd011b396fddd"
+          "sha256": "471d6f2c13c8b6b48d21cb3bd1de3dfff42b5389b358ca9fb01716dd30c357e1"
         }
       ],
       "regressions": [
@@ -3866,7 +3866,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         }
       ],
       "regressions": [
@@ -3904,7 +3904,7 @@
       "targets": [
         {
           "path": "crates/core/src/runtime/engine.rs",
-          "sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf"
+          "sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4"
         },
         {
           "path": "crates/core/src/runtime/registry.rs",
@@ -3916,7 +3916,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "1da6eba7a4fc6f30b0841ae1094fe50c31da719ab961ad47e9d166d22fabf622"
+          "sha256": "135aff712b5055d669d4d2f02b43c37c0c4bd0538262ba11b39302437141b7ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
@@ -4052,7 +4052,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "1da6eba7a4fc6f30b0841ae1094fe50c31da719ab961ad47e9d166d22fabf622"
+          "sha256": "135aff712b5055d669d4d2f02b43c37c0c4bd0538262ba11b39302437141b7ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
@@ -10803,6 +10803,97 @@
               "U3",
               "U4",
               "U5"
+            ]
+          }
+        }
+      },
+      {
+        "record_parent": "b2044fa07e0afc0ab2c47d8e3c1a42daaeccd809",
+        "status": "pending; no behavior, source-hunk or release approval granted",
+        "scope": "Reopened: central transport identities and a disjoint CTAP staging lease identity.",
+        "artifacts": {
+          "crates/ffi/src/transport/nfc.rs": {
+            "previous_sha256": "1da6eba7a4fc6f30b0841ae1094fe50c31da719ab961ad47e9d166d22fabf622",
+            "current_sha256": "135aff712b5055d669d4d2f02b43c37c0c4bd0538262ba11b39302437141b7ee",
+            "behaviors": [
+              "G3",
+              "G6",
+              "T3",
+              "T4",
+              "NFC-STATE",
+              "C2",
+              "T19",
+              "T21",
+              "T22",
+              "T28",
+              "T29"
+            ]
+          },
+          "crates/core/src/runtime/engine.rs": {
+            "previous_sha256": "df4ab41a7a0b062957b87beae8a818bdaf148016bd54262a7a963c44c19339bf",
+            "current_sha256": "517eff5821dfa1ea9c337d2a47de96b2365e4d4894a79980a1cb97e5aa23c8b4",
+            "behaviors": [
+              "G6",
+              "A1",
+              "A2",
+              "A3",
+              "T3",
+              "T6",
+              "T4",
+              "T5",
+              "T9-LE",
+              "L6",
+              "L3",
+              "L1",
+              "C2",
+              "L10",
+              "T23",
+              "T25",
+              "T26",
+              "T27",
+              "T28"
+            ]
+          },
+          "crates/ffi/src/transport/ccid/mod.rs": {
+            "previous_sha256": "3f2995bdb3f907f5cdd260c120bf4df13aa6b142b09cc47170282c9355961048",
+            "current_sha256": "4dbf7468e495dbe6349e951e137edbdfeb0e79c3b453f5dcb3986fa3a305e498",
+            "behaviors": [
+              "T1",
+              "T2",
+              "T5",
+              "T7",
+              "L5",
+              "L2",
+              "L7",
+              "L3",
+              "L1"
+            ]
+          },
+          "crates/ffi/src/transport/nfc/tests.rs": {
+            "previous_sha256": "781b7f7f72c909751522622ac315e21c35976f334794e54c416218e126136532",
+            "current_sha256": "cfe3f5dc10447443c18a0f662cc89d90c8ac6a89a313e45b95781c11073cc6db",
+            "behaviors": [
+              "T4"
+            ]
+          },
+          "crates/ffi/src/transport/webusb.rs": {
+            "previous_sha256": "39defe677c9e86609bafe4a7b79c2f5c4a8ec3616c97dbaa56fbd011b396fddd",
+            "current_sha256": "471d6f2c13c8b6b48d21cb3bd1de3dfff42b5389b358ca9fb01716dd30c357e1",
+            "behaviors": [
+              "T5",
+              "L2",
+              "L7",
+              "L3",
+              "L1",
+              "L10",
+              "T26"
+            ]
+          },
+          "crates/ffi/src/transport/usb/tests/web.rs": {
+            "previous_sha256": "0518fc9dc79a6d6e1ba596f7767c340bcbbf5a6ab0ac48130ca65d6e84f6feb5",
+            "current_sha256": "4638bd3aba77c2acbcd2ec654f3d72b3d5d82beb1ffde591020109d6b34d27f0",
+            "behaviors": [
+              "L3"
             ]
           }
         }

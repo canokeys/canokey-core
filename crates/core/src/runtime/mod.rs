@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 pub mod engine;
+pub mod owners;
 #[cfg(has_applet)]
 pub(crate) mod presence;
 pub mod registry;

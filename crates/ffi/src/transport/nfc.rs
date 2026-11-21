@@ -234,7 +234,7 @@ unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outco
                 Ok(()) => {
                     let total = request.len();
                     core.receive_source_with_info(
-                        crate::transport::owners::OWNER_NFC,
+                        canokey_rust_core::runtime::owners::OWNER_NFC,
                         total,
                         &mut Source::<P> {
                             request,
@@ -249,7 +249,7 @@ unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outco
                     let malformed = request.is_malformed();
                     request.reset(&mut Stager::<P>(core::marker::PhantomData));
                     if malformed {
-                        core.abort_request(crate::transport::owners::OWNER_NFC, p);
+                        core.abort_request(canokey_rust_core::runtime::owners::OWNER_NFC, p);
                     }
                     match rejection {
                         Rejection::Status(sw) => (Reply::Status(sw), None),
@@ -410,7 +410,7 @@ unsafe fn execute<P: Provider>(continuation: Option<&[u8]>) {
             return;
         }
         let buffer = crate::transport::ccid::ck_ccid_response_buffer();
-        use crate::transport::owners::OWNER_NFC;
+        use canokey_rust_core::runtime::owners::OWNER_NFC;
         let n = if let Some(input) = continuation {
             ck_core_exchange::<P>(
                 OWNER_NFC,
