@@ -329,16 +329,24 @@ def run(wire):
         token = protocol.decrypt(secret, call(6, {1: version, 2: 9, 3: public, 6: hashed, 9: 2, 10: rp})[2])
         encrypted = protocol.encrypt(secret, salts)
         extension = {1: public, 2: encrypted, 3: protocol.authenticate(secret, encrypted), 4: version}
-        silent_params = params | {
+        silent_params = {
+            1: rp, 2: assertion_hash, 3: [descriptor],
             4: {"hmac-secret": extension}, 5: {"up": False},
-            6: protocol.authenticate(token, assertion_hash),
         }
-        verified = call(2, silent_params)
-        assert call(2, silent_params)[1] == verified[1]
+        unverified = call(2, silent_params)
+        unverified_flags = AuthenticatorData(unverified[2])
+        assert not unverified_flags.is_user_verified() and not unverified_flags.is_user_present()
+        unverified_output = protocol.decrypt(secret, unverified_flags.extensions["hmac-secret"])
+        authenticated_params = silent_params | {
+            6: protocol.authenticate(token, assertion_hash), 7: version,
+        }
+        verified = call(2, authenticated_params)
+        assert call(2, authenticated_params)[1] == verified[1]
         verified_flags = AuthenticatorData(verified[2])
         assert verified_flags.is_user_verified() and not verified_flags.is_user_present()
-        verified_output = protocol.decrypt(secret, AuthenticatorData(verified[2]).extensions["hmac-secret"])
-        assert verified_output != hmac_results[version]
+        verified_output = protocol.decrypt(secret, verified_flags.extensions["hmac-secret"])
+        assert unverified_output == hmac_results[version]
+        assert verified_output != unverified_output
         if version == 1:
             verified_baseline = verified_output
         else:

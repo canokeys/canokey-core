@@ -2978,7 +2978,7 @@
       "regressions": [
         {
           "path": "tests/integration/ctap_normal.py",
-          "sha256": "82652e9577f33b64ec1375c744e2555b9aef5abff4812e6e90f1f065482263b2",
+          "sha256": "0118eecd027604c6000b29ecc547a97504ecd1f5814bce35d8bdee2ab3741b4d",
           "id": "ctap-normal-254-byte-full-RP-disclosure-and-signed-hash"
         },
         {
@@ -11685,6 +11685,20 @@
             "current_sha256": "a2310d2328c35201518551b57db28fb90fccf34dc7ace4f182ebae0d47d3c6b9",
             "behaviors": [
               "T20"
+            ]
+          }
+        }
+      },
+      {
+        "record_parent": "8fee4f36c07fc8337ba37eb814529eb18d2553ac",
+        "status": "pending; no behavior, source-hunk or release approval granted",
+        "scope": "Reopen CTAP hmac-secret integration evidence after directly comparing UV domains",
+        "artifacts": {
+          "tests/integration/ctap_normal.py": {
+            "previous_sha256": "82652e9577f33b64ec1375c744e2555b9aef5abff4812e6e90f1f065482263b2",
+            "current_sha256": "0118eecd027604c6000b29ecc547a97504ecd1f5814bce35d8bdee2ab3741b4d",
+            "behaviors": [
+              "C1"
             ]
           }
         }
