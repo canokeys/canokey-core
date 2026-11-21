@@ -12,7 +12,13 @@ pub type Device = canokey_transport_runtime::usb::Device<CanoKey, CONTROL_BUFFER
 pub struct CanoKey {
     idle: [u8; 2],
     pub leds: u8,
-    pub landing: bool,
+    // USB is ready at boot with a zero-initialized policy.
+    landing_disabled: bool,
+}
+impl CanoKey {
+    pub fn set_landing(&mut self, enabled: bool) {
+        self.landing_disabled = !enabled;
+    }
 }
 impl Profile<CONTROL_BUFFER_BYTES> for CanoKey {
     type Configuration = Configuration;
@@ -20,13 +26,13 @@ impl Profile<CONTROL_BUFFER_BYTES> for CanoKey {
     const INITIAL: Self = Self {
         idle: [0x00; 2],
         leds: 0x00,
-        landing: true,
+        landing_disabled: false,
     };
     const DEVICE: &'static [u8] = descriptors::DEVICE;
     fn reset(&mut self) {
-        let landing = self.landing;
+        let landing_disabled = self.landing_disabled;
         *self = Self::INITIAL;
-        self.landing = landing;
+        self.landing_disabled = landing_disabled;
     }
     fn string(index: u8, configuration: &Configuration) -> Option<&'static [u8]> {
         match index {
@@ -45,7 +51,7 @@ impl Profile<CONTROL_BUFFER_BYTES> for CanoKey {
             return None;
         }
         bos::Descriptor::request(setup, interfaces.webusb()).map(|descriptor| {
-            if descriptor == bos::Descriptor::Bos && !self.landing {
+            if descriptor == bos::Descriptor::Bos && self.landing_disabled {
                 bos::Descriptor::BosWithoutLanding
             } else {
                 descriptor

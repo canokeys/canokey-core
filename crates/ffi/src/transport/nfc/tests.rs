@@ -556,7 +556,8 @@ fn large_requests_finite_le_remainder_and_staged_reset() {
         let mut command = std::vec![0x80, 0x10, 0, 0, 0, 0x03, 0x00];
         command.resize(7 + 768, 0x5a);
         if let Some(limit) = le {
-            command.extend_from_slice(&u16::try_from(limit).unwrap().to_be_bytes());
+            // Extended Le encodes its maximum (65536) as 0x0000.
+            command.extend_from_slice(&limit.to_be_bytes()[2..]);
         }
         let closed = stage().closes;
         let (result, number) = exchange_blocks(&command, 0, true);

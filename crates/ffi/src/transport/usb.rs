@@ -6,7 +6,7 @@ use crate::transport::usb_locked;
 #[cfg(test)]
 pub(crate) mod tests;
 use canokey_protocol::usb::*;
-// HALTED packs two bits per endpoint: OUT then IN, including EP0.
+// Two halt bits per endpoint: OUT then IN, including EP0.
 const HALT_BITS_PER_ENDPOINT: u8 = 2;
 const HALT_PAIR_MASK: u8 = 0x03;
 #[inline(always)]
@@ -65,30 +65,52 @@ enum Phase {
     WebStatus,
 }
 const CONFIGURATION: Configuration = Configuration::new(INTERFACES);
-static mut DEVICE: Device = Device::new();
-// CCID's mailbox generation advances on every global USB lifecycle reset.
-// Class callbacks stay closed until the main loop has cleaned that generation.
-static mut LIFECYCLE: canokey_transport_runtime::usb::Lifecycle =
-    canokey_transport_runtime::usb::Lifecycle::new();
-static mut TX: [Tx; 4] = [Tx::EMPTY; 4];
-static mut HALTED: u8 = 0;
-static mut SUSPENDED: bool = false;
-static mut CONTROL: [u8; CONTROL_BUFFER_BYTES] = [0; CONTROL_BUFFER_BYTES];
-static mut CONTROL_IN: ControlIn = ControlIn::new();
-#[cfg(feature = "usb-webusb")]
-static mut CONTROL_WEB: bool = false;
-static mut CONTROL_SOURCE: Option<canokey_rust_core::runtime::usb::bos::Descriptor> = None;
-static mut PHASE: Phase = Phase::Idle;
+// Keep byte-sized IRQ flags in reach of Thumb-1 immediate loads.
+#[repr(C)]
+struct UsbState {
+    // IRQ owns protocol and endpoint flags. Main-loop changes use the USB mask.
+    device: Device,
+    halted: u8,
+    suspended: bool,
+    // IRQ owns EP0. Locked WebUSB admission and lifecycle callbacks may also
+    // advance or reset the active transfer.
+    phase: Phase,
+    #[cfg(feature = "usb-webusb")]
+    control_web: bool,
+    control_source: canokey_rust_core::runtime::usb::bos::Descriptor,
+    descriptor_active: bool,
+    control_in: ControlIn,
+    // IRQ and main loop share lifecycle acknowledgement and IN leases under
+    // the USB mask.
+    lifecycle: canokey_transport_runtime::usb::Lifecycle,
+    tx: [Tx; 4],
+    control: [u8; CONTROL_BUFFER_BYTES],
+}
+
+static mut USB: UsbState = UsbState {
+    device: Device::new(),
+    halted: 0,
+    suspended: false,
+    phase: Phase::Idle,
+    #[cfg(feature = "usb-webusb")]
+    control_web: false,
+    control_source: canokey_rust_core::runtime::usb::bos::Descriptor::Bos,
+    descriptor_active: false,
+    control_in: ControlIn::new(),
+    lifecycle: canokey_transport_runtime::usb::Lifecycle::new(),
+    tx: [Tx::EMPTY; 4],
+    control: [0; CONTROL_BUFFER_BYTES],
+};
 
 unsafe fn stall() {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         #[cfg(feature = "usb-webusb")]
-        if CONTROL_WEB || PHASE == Phase::WebReceive {
+        if USB.control_web || USB.phase == Phase::WebReceive {
             crate::transport::webusb::reset();
-            CONTROL_WEB = false;
+            USB.control_web = false;
         }
-        PHASE = Phase::Idle;
+        USB.phase = Phase::Idle;
         ck_usb_dcd_stall(0, 1);
         ck_usb_dcd_stall(0x80, 1);
     }
@@ -96,7 +118,7 @@ unsafe fn stall() {
 unsafe fn status(phase: Phase) {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
-        PHASE = phase;
+        USB.phase = phase;
         if ck_usb_dcd_write(0x80, core::ptr::null(), 0) == 0 {
             stall();
         }
@@ -105,15 +127,19 @@ unsafe fn status(phase: Phase) {
 unsafe fn next_control() {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
-        if let Some((offset, len)) = (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).next_packet() {
-            let pointer = if let Some(source) = CONTROL_SOURCE {
-                source.read(offset, &mut (&mut *core::ptr::addr_of_mut!(CONTROL))[..len]);
-                core::ptr::addr_of!(CONTROL).cast::<u8>()
+        if let Some((offset, len)) = (&mut *core::ptr::addr_of_mut!(USB.control_in)).next_packet() {
+            let pointer = if USB.descriptor_active {
+                let source = USB.control_source;
+                source.read(
+                    offset,
+                    &mut (&mut *core::ptr::addr_of_mut!(USB.control))[..len],
+                );
+                core::ptr::addr_of!(USB.control).cast::<u8>()
             } else {
-                core::ptr::addr_of!(CONTROL).cast::<u8>().add(offset)
+                core::ptr::addr_of!(USB.control).cast::<u8>().add(offset)
             };
             #[cfg(feature = "usb-webusb")]
-            let pointer = if CONTROL_WEB {
+            let pointer = if USB.control_web {
                 crate::transport::webusb::pointer(offset)
             } else {
                 pointer
@@ -124,11 +150,11 @@ unsafe fn next_control() {
             }
         } else {
             #[cfg(feature = "usb-webusb")]
-            if CONTROL_WEB {
+            if USB.control_web {
                 crate::transport::webusb::completed();
-                CONTROL_WEB = false;
+                USB.control_web = false;
             }
-            PHASE = Phase::StatusOut;
+            USB.phase = Phase::StatusOut;
         }
         ck_usb_dcd_receive(0);
     }
@@ -136,8 +162,8 @@ unsafe fn next_control() {
 unsafe fn mailbox_reset(ep: u8) {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
-        TX[ep as usize] = Tx::EMPTY;
-        HALTED &= !(HALT_PAIR_MASK << (ep * HALT_BITS_PER_ENDPOINT));
+        USB.tx[ep as usize] = Tx::EMPTY;
+        USB.halted &= !(HALT_PAIR_MASK << (ep * HALT_BITS_PER_ENDPOINT));
         match ep {
             EP_CCID => ck_ccid_packet_reset(),
             #[cfg(feature = "usb-hid")]
@@ -168,18 +194,20 @@ unsafe fn endpoints(enabled: bool) {
     unsafe {
         #[cfg(feature = "usb-webusb")]
         crate::transport::webusb::lifecycle_reset();
-        DEVICE.configured = false;
+        USB.device.configured = false;
         for ep in EP_KEYBOARD..=EP_CCID {
             reset_pipe(ep, enabled && INTERFACES.endpoint(ep as u16), false);
         }
-        DEVICE.configured = enabled;
+        USB.device.configured = enabled;
         ck_usb_dcd_ready(0);
     }
 }
 
 unsafe fn ready() -> bool {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
-    unsafe { (&*core::ptr::addr_of!(LIFECYCLE)).ready(DEVICE.configured, ck_ccid_io_generation()) }
+    unsafe {
+        (&*core::ptr::addr_of!(USB.lifecycle)).ready(USB.device.configured, ck_ccid_io_generation())
+    }
 }
 
 pub(crate) fn service_generation() -> u32 {
@@ -192,13 +220,13 @@ pub(crate) fn service_generation() -> u32 {
 pub(crate) fn service_complete(generation: u32) -> bool {
     // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
-        let Some(changed) = (&mut *core::ptr::addr_of_mut!(LIFECYCLE))
+        let Some(changed) = (&mut *core::ptr::addr_of_mut!(USB.lifecycle))
             .complete(generation, ck_ccid_io_generation())
         else {
             return false;
         };
         if changed {
-            if DEVICE.configured {
+            if USB.device.configured {
                 for ep in EP_KEYBOARD..=EP_CCID {
                     if INTERFACES.endpoint(ep as u16) {
                         ck_usb_dcd_receive(ep);
@@ -235,8 +263,8 @@ unsafe fn begin_data_in(length: usize, requested: u16, zero_phase: Option<Phase>
 unsafe fn start_data_in(length: usize, requested: u16) {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
-        (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).begin(length, requested);
-        PHASE = Phase::DataIn;
+        (&mut *core::ptr::addr_of_mut!(USB.control_in)).begin(length, requested);
+        USB.phase = Phase::DataIn;
         next_control();
     }
 }
@@ -282,13 +310,13 @@ pub unsafe fn ck_usb_reset() {
         endpoints(false);
         #[cfg(feature = "usb-webusb")]
         {
-            CONTROL_WEB = false;
+            USB.control_web = false;
         }
-        SUSPENDED = false;
+        USB.suspended = false;
         ck_usb_dcd_close(0);
         ck_usb_dcd_close(0x80);
-        (&mut *core::ptr::addr_of_mut!(DEVICE)).reset();
-        PHASE = Phase::Idle;
+        (&mut *core::ptr::addr_of_mut!(USB.device)).reset();
+        USB.phase = Phase::Idle;
         ck_usb_dcd_address(0);
         ck_usb_dcd_open(0);
         ck_usb_dcd_open(0x80);
@@ -308,14 +336,14 @@ pub unsafe fn ck_usb_bus_reset() {
         #[cfg(feature = "usb-webusb")]
         {
             crate::transport::webusb::lifecycle_reset();
-            CONTROL_WEB = false;
+            USB.control_web = false;
         }
         ck_usb_dcd_ready(0);
         reset_software_pipes();
-        SUSPENDED = false;
-        (&mut *core::ptr::addr_of_mut!(DEVICE)).reset();
-        PHASE = Phase::Idle;
-        CONTROL_SOURCE = None;
+        USB.suspended = false;
+        (&mut *core::ptr::addr_of_mut!(USB.device)).reset();
+        USB.phase = Phase::Idle;
+        USB.descriptor_active = false;
     }
 }
 ///
@@ -324,7 +352,7 @@ pub unsafe fn ck_usb_bus_reset() {
 pub unsafe fn ck_usb_suspend() {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
-        SUSPENDED = true;
+        USB.suspended = true;
     }
 }
 ///
@@ -333,7 +361,7 @@ pub unsafe fn ck_usb_suspend() {
 pub unsafe fn ck_usb_resume() {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
-        SUSPENDED = false;
+        USB.suspended = false;
     }
 }
 ///
@@ -351,10 +379,10 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
         #[cfg(feature = "usb-webusb")]
         {
             crate::transport::webusb::abort_control();
-            CONTROL_WEB = false;
+            USB.control_web = false;
         }
-        PHASE = Phase::Idle;
-        CONTROL_SOURCE = None;
+        USB.phase = Phase::Idle;
+        USB.descriptor_active = false;
         if length != 8 {
             stall();
             return;
@@ -364,22 +392,22 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
             return;
         };
         #[cfg(feature = "usb-webusb")]
-        if DEVICE.configured
+        if USB.device.configured
             && s.index == INTERFACES.webusb() as u16
             && s.kind & !DIRECTION_IN == VENDOR_INTERFACE_OUT
         {
             use crate::transport::webusb::{self as web, Action};
             match web::setup(s, INTERFACES.webusb(), ready()) {
                 Some(Action::Receive) => {
-                    PHASE = Phase::WebReceive;
+                    USB.phase = Phase::WebReceive;
                     ck_usb_dcd_receive(0);
                 }
                 Some(Action::Send(n)) => {
-                    CONTROL_WEB = true;
+                    USB.control_web = true;
                     begin_data_in(n, s.length, Some(Phase::WebStatus));
                 }
                 Some(Action::Status(value)) => {
-                    CONTROL[0] = value;
+                    USB.control[0] = value;
                     // This status reply begins DataIn even for a zero request.
                     begin_data_in(1, s.length, None);
                 }
@@ -388,15 +416,15 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
             return;
         }
         let halted = if INTERFACES.endpoint(s.index) {
-            HALTED & halt_bit(s.index.to_le_bytes()[0]) != 0
+            USB.halted & halt_bit(s.index.to_le_bytes()[0]) != 0
         } else {
             false
         };
-        let reply = (&mut *core::ptr::addr_of_mut!(DEVICE)).setup(
+        let reply = (&mut *core::ptr::addr_of_mut!(USB.device)).setup(
             &CONFIGURATION,
             s,
             halted,
-            &mut *core::ptr::addr_of_mut!(CONTROL),
+            &mut *core::ptr::addr_of_mut!(USB.control),
         );
         match reply {
             Reply::Descriptor(source) => {
@@ -404,7 +432,8 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
                     status(Phase::StatusIn);
                     return;
                 }
-                CONTROL_SOURCE = Some(source);
+                USB.control_source = source;
+                USB.descriptor_active = true;
                 begin_data_in(source.len(), s.length, Some(Phase::StatusIn));
             }
             Reply::Data(n) => {
@@ -414,7 +443,7 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
             Reply::Address(address) => {
                 // The CIU controller accepts SET_ADDRESS in the same order
                 // as the legacy C stack: program it before the EP0 status ZLP.
-                (&mut *core::ptr::addr_of_mut!(DEVICE)).address = address;
+                (&mut *core::ptr::addr_of_mut!(USB.device)).address = address;
                 ck_usb_dcd_address(address);
                 status(Phase::StatusIn);
             }
@@ -443,15 +472,15 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
             Reply::Halt(ep, halt) => {
                 let bit = halt_bit(ep);
                 if halt {
-                    HALTED |= bit;
+                    USB.halted |= bit;
                 } else {
-                    HALTED &= !bit;
+                    USB.halted &= !bit;
                 }
                 ck_usb_dcd_stall(ep, halt as u8);
                 status(Phase::StatusIn);
             }
             Reply::ReceiveLed => {
-                PHASE = Phase::Led;
+                USB.phase = Phase::Led;
                 ck_usb_dcd_receive(0);
             }
             Reply::Stall => stall(),
@@ -463,7 +492,7 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
 /// Call only with the USB interrupt mask held, including from serialized IRQ dispatch.
 pub unsafe extern "C" fn ck_usb_configured() -> u8 {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
-    unsafe { DEVICE.configured as u8 }
+    unsafe { USB.device.configured as u8 }
 }
 pub unsafe fn ck_usb_tx_idle(ep: u8) -> u8 {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
@@ -471,14 +500,14 @@ pub unsafe fn ck_usb_tx_idle(ep: u8) -> u8 {
         u8::from(
             ep & !ENDPOINT_ADDRESS_MASK == 0
                 && ep & ENDPOINT_NUMBER_MASK != 0
-                && !TX[(ep & ENDPOINT_NUMBER_MASK) as usize].active,
+                && !USB.tx[(ep & ENDPOINT_NUMBER_MASK) as usize].active,
         )
     }
 }
 unsafe fn transmit(ep: u8) -> bool {
     // SAFETY: The masked endpoint owns a live IN buffer whose remaining length bounds this pointer advance.
     unsafe {
-        let tx = &mut TX[(ep & ENDPOINT_NUMBER_MASK) as usize];
+        let tx = &mut USB.tx[(ep & ENDPOINT_NUMBER_MASK) as usize];
         let n = tx
             .remaining
             .min(if ep & ENDPOINT_NUMBER_MASK == EP_KEYBOARD {
@@ -499,7 +528,7 @@ unsafe fn transmit(ep: u8) -> bool {
 pub unsafe fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zlp: u8) -> i32 {
     // SAFETY: The USB mask protects the IN lease, and the caller retains the buffer until completion.
     unsafe {
-        if !DEVICE.configured
+        if !USB.device.configured
             || ep & DIRECTION_IN == 0
             || ep & ENDPOINT_NUMBER_MASK == 0
             || !INTERFACES.endpoint(ep as u16)
@@ -507,23 +536,23 @@ pub unsafe fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zlp: u8) -> i
             return -1;
         }
         if !ready()
-            || SUSPENDED
-            || HALTED & halt_bit(ep | DIRECTION_IN) != 0
-            || TX[(ep & ENDPOINT_NUMBER_MASK) as usize].active
+            || USB.suspended
+            || USB.halted & halt_bit(ep | DIRECTION_IN) != 0
+            || USB.tx[(ep & ENDPOINT_NUMBER_MASK) as usize].active
         {
             return 0;
         }
         if length != 0 && bytes.is_null() {
             return -1;
         }
-        TX[(ep & ENDPOINT_NUMBER_MASK) as usize] = Tx {
+        USB.tx[(ep & ENDPOINT_NUMBER_MASK) as usize] = Tx {
             bytes,
             remaining: length,
             zlp: zlp != 0 && length != 0,
             active: true,
         };
         if !transmit(ep) {
-            TX[(ep & ENDPOINT_NUMBER_MASK) as usize] = Tx::EMPTY;
+            USB.tx[(ep & ENDPOINT_NUMBER_MASK) as usize] = Tx::EMPTY;
             return -1;
         }
         1
@@ -545,33 +574,33 @@ pub unsafe fn ck_usb_in(ep: u8) {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         if ep == 0 || ep == 0x80 {
-            match PHASE {
+            match USB.phase {
                 Phase::DataIn => next_control(),
-                Phase::StatusIn => PHASE = Phase::Idle,
+                Phase::StatusIn => USB.phase = Phase::Idle,
                 #[cfg(feature = "usb-webusb")]
                 Phase::WebStatus => {
                     crate::transport::webusb::completed();
-                    CONTROL_WEB = false;
-                    PHASE = Phase::Idle;
+                    USB.control_web = false;
+                    USB.phase = Phase::Idle;
                 }
 
                 _ => (),
             }
         } else if ep & !ENDPOINT_ADDRESS_MASK == 0
             && ready()
-            && TX[(ep & ENDPOINT_NUMBER_MASK) as usize].active
+            && USB.tx[(ep & ENDPOINT_NUMBER_MASK) as usize].active
         {
-            if TX[(ep & ENDPOINT_NUMBER_MASK) as usize].remaining != 0 {
+            if USB.tx[(ep & ENDPOINT_NUMBER_MASK) as usize].remaining != 0 {
                 if !transmit(ep) {
                     ck_usb_reset();
                 }
-            } else if TX[(ep & ENDPOINT_NUMBER_MASK) as usize].zlp {
-                TX[(ep & ENDPOINT_NUMBER_MASK) as usize].zlp = false;
+            } else if USB.tx[(ep & ENDPOINT_NUMBER_MASK) as usize].zlp {
+                USB.tx[(ep & ENDPOINT_NUMBER_MASK) as usize].zlp = false;
                 if !transmit(ep) {
                     ck_usb_reset();
                 }
             } else {
-                TX[(ep & ENDPOINT_NUMBER_MASK) as usize] = Tx::EMPTY;
+                USB.tx[(ep & ENDPOINT_NUMBER_MASK) as usize] = Tx::EMPTY;
             }
         }
     }
@@ -584,16 +613,16 @@ pub unsafe fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8 {
     // SAFETY: The IRQ owns the reported RX buffer and masks competing access while it is read.
     unsafe {
         if ep == 0 {
-            match PHASE {
+            match USB.phase {
                 Phase::StatusOut | Phase::DataIn if length == 0 => {
                     ck_usb_dcd_close(0x80);
                     ck_usb_dcd_open(0x80);
                     #[cfg(feature = "usb-webusb")]
-                    if CONTROL_WEB {
+                    if USB.control_web {
                         crate::transport::webusb::abort_control();
-                        CONTROL_WEB = false;
+                        USB.control_web = false;
                     }
-                    PHASE = Phase::Idle;
+                    USB.phase = Phase::Idle;
                 }
                 #[cfg(feature = "usb-webusb")]
                 Phase::WebReceive => {
@@ -608,7 +637,7 @@ pub unsafe fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8 {
                     }
                 }
                 Phase::Led if length == 2 && *bytes == KEYBOARD_REPORT_ID => {
-                    DEVICE.policy.leds = *bytes.add(1) & KEYBOARD_LED_MASK;
+                    USB.device.policy.leds = *bytes.add(1) & KEYBOARD_LED_MASK;
                     status(Phase::StatusIn);
                 }
                 _ => stall(),
@@ -628,7 +657,7 @@ pub unsafe fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8 {
             EP_KEYBOARD
                 if usize::from(length) == CONSUMER_REPORT_BYTES && *bytes == KEYBOARD_REPORT_ID =>
             {
-                DEVICE.policy.leds = *bytes.add(1) & KEYBOARD_LED_MASK;
+                USB.device.policy.leds = *bytes.add(1) & KEYBOARD_LED_MASK;
                 1
             }
             _ => 1, // Ignore malformed interrupt reports; never parse stale tail.
@@ -640,14 +669,14 @@ pub unsafe fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8 {
 pub(crate) unsafe fn web_admission(accepted: bool, complete: bool) {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
-        if PHASE != Phase::WebReceive {
+        if USB.phase != Phase::WebReceive {
             return;
         }
         if !accepted {
             // Main-loop admission already released the input transfer. Refusal
             // must not schedule a Core reset that revokes a retained APDU grant
             // or interrupts the native HID operation borrowing that context.
-            PHASE = Phase::Idle;
+            USB.phase = Phase::Idle;
             stall();
         } else if complete {
             status(Phase::StatusIn);
@@ -711,6 +740,8 @@ pub unsafe fn progress<P: crate::composition::Provider>() -> u8 {
 pub unsafe extern "C" fn ck_usb_set_landing(enabled: u8) {
     // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
-        DEVICE.policy.landing = enabled != 0;
+        (&mut *core::ptr::addr_of_mut!(USB.device))
+            .policy
+            .set_landing(enabled != 0);
     });
 }

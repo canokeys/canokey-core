@@ -289,8 +289,9 @@ impl<P: Profile<BUFFER>, const BUFFER: usize> Default for Device<P, BUFFER> {
 /// One control-IN transaction. Count acknowledgements, not submitted packets.
 /// Exact host length never sends an extra ZLP; a shorter MPS multiple does.
 pub struct ControlIn {
-    total: usize,
-    offset: usize,
+    // The setup packet's wLength bounds the transfer and its cursor.
+    total: u16,
+    offset: u16,
     zlp: bool,
 }
 impl ControlIn {
@@ -302,19 +303,20 @@ impl ControlIn {
         }
     }
     pub fn begin(&mut self, available: usize, requested: u16) {
-        self.total = available.min(requested as usize);
+        let [lo, hi, ..] = available.min(usize::from(requested)).to_le_bytes();
+        self.total = u16::from_le_bytes([lo, hi]);
         self.offset = 0;
-        self.zlp = self.total < requested as usize && self.total % EP0_PACKET_BYTES == 0;
+        self.zlp = self.total < requested && usize::from(self.total) % EP0_PACKET_BYTES == 0;
     }
     pub fn next_packet(&mut self) -> Option<(usize, usize)> {
         if self.offset < self.total {
-            let n = (self.total - self.offset).min(EP0_PACKET_BYTES);
+            let n = (self.total - self.offset).min(u16::from(EP0_PACKET_BYTES.to_le_bytes()[0]));
             let start = self.offset;
             self.offset += n;
-            Some((start, n))
+            Some((usize::from(start), usize::from(n)))
         } else if self.zlp {
             self.zlp = false;
-            Some((self.offset, 0))
+            Some((usize::from(self.offset), 0))
         } else {
             None
         }

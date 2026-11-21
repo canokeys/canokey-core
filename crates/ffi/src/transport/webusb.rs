@@ -22,23 +22,42 @@ use crate::transport::usb::tests::{can_preempt, ck_ccid_idle};
 use crate::transport::usb_locked;
 use canokey_protocol::usb::Setup;
 use canokey_rust_core::runtime::webusb::{RESPONSE_LIMIT, Request, Transport};
-static mut STATE: Transport = Transport::new();
-static mut WAITING: bool = false;
-static mut PACKET: [u8; 16] = [0; 16];
-static mut PACKET_LENGTH: Option<usize> = None;
-static mut CLEANUP: bool = false;
-static mut SESSION: bool = false;
-// A reservation may still refer to a foreign applet context. Switch it only
-// when the complete command enters Core; aborted RX must leave it intact.
-static mut PREPARE: bool = false;
-static mut CLEAR_INPUT: bool = false;
+// Shared by EP0 IRQ and the main loop under the USB mask. Core runs with the
+// mask released and without a borrow of this structure.
+struct WebUsbState {
+    transport: Transport,
+    waiting: bool,
+    // IRQ publishes the packet and the main loop consumes it. Zero is empty.
+    packet: [u8; 16],
+    packet_length: u8,
+    // IRQ may schedule cleanup. Only the main loop performs it.
+    cleanup: bool,
+    clear_input: bool,
+    // The main loop reserves the session and publishes ownership changes.
+    session: bool,
+    prepare: bool,
+}
+
+static mut WEBUSB: WebUsbState = WebUsbState {
+    transport: Transport::new(),
+    waiting: false,
+    packet: [0; 16],
+    packet_length: 0,
+    cleanup: false,
+    clear_input: false,
+    session: false,
+    prepare: false,
+};
 
 /// Competitors yield to an EP0 reservation. A command arriving during a Core
 /// call waits in the FIFO mailbox and cannot touch the shared byte buffer.
 pub unsafe fn block_competitor() -> bool {
     // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
-        CLEANUP || CLEAR_INPUT || SESSION || (&*core::ptr::addr_of!(STATE)).busy()
+        WEBUSB.cleanup
+            || WEBUSB.clear_input
+            || WEBUSB.session
+            || (&*core::ptr::addr_of!(WEBUSB.transport)).busy()
     })
 }
 /// Main-loop only: a foreign APDU may replace a completed session. Native HID
@@ -52,16 +71,16 @@ pub unsafe fn try_preempt<P: Provider>(requested: bool, preserve_context: bool) 
             return false;
         }
         let eligible = usb_locked(|| {
-            let eligible = !CLEANUP
-                && !CLEAR_INPUT
-                && !WAITING
-                && SESSION
-                && (&*core::ptr::addr_of!(STATE)).completed_transaction()
+            let eligible = !WEBUSB.cleanup
+                && !WEBUSB.clear_input
+                && !WEBUSB.waiting
+                && WEBUSB.session
+                && (&*core::ptr::addr_of!(WEBUSB.transport)).completed_transaction()
                 && (preserve_context || can_preempt());
             if eligible && !preserve_context {
-                SESSION = false;
-                PREPARE = false;
-                (&mut *core::ptr::addr_of_mut!(STATE)).reset();
+                WEBUSB.session = false;
+                WEBUSB.prepare = false;
+                (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).reset();
             }
             eligible
         });
@@ -84,10 +103,10 @@ unsafe fn invalidate(deferred: bool) {
     unsafe {
         // USB reset can interrupt an unrelated Core operation; only the main
         // loop performs cleanup, never this IRQ-side notification.
-        let state = &mut *core::ptr::addr_of_mut!(STATE);
-        CLEANUP |= deferred || SESSION || (!WAITING && state.busy());
-        WAITING = false;
-        PACKET_LENGTH = None;
+        let state = &mut *core::ptr::addr_of_mut!(WEBUSB.transport);
+        WEBUSB.cleanup |= deferred || WEBUSB.session || (!WEBUSB.waiting && state.busy());
+        WEBUSB.waiting = false;
+        WEBUSB.packet_length = 0;
         // Lifecycle cleanup initializes the class on the main loop. Retain its
         // visible status until then, but cancel an interrupted Core operation
         // immediately so it cannot publish its old result.
@@ -99,9 +118,9 @@ unsafe fn invalidate(deferred: bool) {
 pub unsafe fn abort_control() {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
-        if WAITING
+        if WEBUSB.waiting
             || matches!(
-                (&*core::ptr::addr_of!(STATE)).status(),
+                (&*core::ptr::addr_of!(WEBUSB.transport)).status(),
                 canokey_rust_core::runtime::webusb::STATUS_SENDING
                     | canokey_rust_core::runtime::webusb::STATUS_RECEIVING
             )
@@ -109,14 +128,14 @@ pub unsafe fn abort_control() {
             // Hardware has quiesced EP0. No Core input was published before
             // complete RX, so abort only the byte transfer, not SELECT/PIN or
             // a previously retained command/response chain.
-            CLEAR_INPUT |= SESSION && !WAITING;
-            if PREPARE {
-                SESSION = false;
-                PREPARE = false;
+            WEBUSB.clear_input |= WEBUSB.session && !WEBUSB.waiting;
+            if WEBUSB.prepare {
+                WEBUSB.session = false;
+                WEBUSB.prepare = false;
             }
-            WAITING = false;
-            PACKET_LENGTH = None;
-            (&mut *core::ptr::addr_of_mut!(STATE)).reset();
+            WEBUSB.waiting = false;
+            WEBUSB.packet_length = 0;
+            (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).reset();
         }
     }
 }
@@ -130,27 +149,28 @@ pub unsafe fn setup(s: Setup, interface: u8, usb_ready: bool) -> Option<Action> 
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         let now = device_get_tick();
-        (&mut *core::ptr::addr_of_mut!(STATE)).keepalive(now);
+        (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).keepalive(now);
         let request = Request::decode(s, interface)?;
-        let state = &mut *core::ptr::addr_of_mut!(STATE);
+        let state = &mut *core::ptr::addr_of_mut!(WEBUSB.transport);
         Some(match request {
             Request::Command(length) => {
                 // Global configuration can precede serialized session cleanup.
                 // EP0 status/enumeration remains available during that interval.
-                let admitted = usb_ready && !CLEANUP;
+                let admitted = usb_ready && !WEBUSB.cleanup;
                 if state.command(length, now, admitted) {
-                    WAITING = true;
-                    PACKET_LENGTH = None;
+                    WEBUSB.waiting = true;
+                    WEBUSB.packet_length = 0;
                     Action::Receive
                 } else {
                     Action::Reject
                 }
             }
-            Request::Response(length) if usb_ready && !CLEANUP => match state.response(length, now)
-            {
-                Some(n) => Action::Send(n),
-                None => Action::Reject,
-            },
+            Request::Response(length) if usb_ready && !WEBUSB.cleanup => {
+                match state.response(length, now) {
+                    Some(n) => Action::Send(n),
+                    None => Action::Reject,
+                }
+            }
             Request::Response(_) => Action::Reject,
             Request::Status => {
                 state.keepalive(now);
@@ -163,11 +183,15 @@ pub unsafe fn setup(s: Setup, interface: u8, usb_ready: bool) -> Option<Action> 
 pub unsafe fn receive(bytes: *const u8, length: usize) -> i8 {
     // SAFETY: The masked IRQ owns the live packet; the size check bounds the mailbox copy.
     unsafe {
-        if length == 0 || length > 16 || matches!(PACKET_LENGTH, Some(_)) {
+        if length == 0 || length > 16 || WEBUSB.packet_length != 0 {
             return -1;
         }
-        core::ptr::copy_nonoverlapping(bytes, core::ptr::addr_of_mut!(PACKET).cast(), length);
-        PACKET_LENGTH = Some(length);
+        core::ptr::copy_nonoverlapping(
+            bytes,
+            core::ptr::addr_of_mut!(WEBUSB.packet).cast(),
+            length,
+        );
+        WEBUSB.packet_length = length.to_le_bytes()[0];
         // Backpressure every packet until the main loop has consumed it.
         2
     }
@@ -179,7 +203,7 @@ pub unsafe fn pointer(offset: usize) -> *const u8 {
 pub unsafe fn completed() {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
-        (&mut *core::ptr::addr_of_mut!(STATE)).completed(device_get_tick());
+        (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).completed(device_get_tick());
     }
 }
 /// Consume an IRQ-published lifecycle event without admitting another command.
@@ -187,12 +211,12 @@ pub(crate) unsafe fn service_reset<P: Provider>() {
     // SAFETY: The serialized main loop owns the WebUSB session; each mailbox access keeps its USB mask.
     unsafe {
         let cleanup = usb_locked(|| {
-            let cleanup = CLEANUP;
+            let cleanup = WEBUSB.cleanup;
             if cleanup {
-                CLEANUP = false;
-                SESSION = false;
-                PREPARE = false;
-                (&mut *core::ptr::addr_of_mut!(STATE)).reset();
+                WEBUSB.cleanup = false;
+                WEBUSB.session = false;
+                WEBUSB.prepare = false;
+                (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).reset();
             }
             cleanup
         });
@@ -200,8 +224,8 @@ pub(crate) unsafe fn service_reset<P: Provider>() {
             ck_core_reset::<P>();
         }
         let clear = usb_locked(|| {
-            let clear = CLEAR_INPUT;
-            CLEAR_INPUT = false;
+            let clear = WEBUSB.clear_input;
+            WEBUSB.clear_input = false;
             clear
         });
         if clear {
@@ -225,33 +249,37 @@ pub unsafe fn poll<P: Provider>() {
             return;
         }
         service_reset::<P>();
-        usb_locked(|| (&mut *core::ptr::addr_of_mut!(STATE)).expire(device_get_tick()));
+        usb_locked(|| (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).expire(device_get_tick()));
         usb_locked(|| {
-            if !WAITING || CLEANUP {
+            if !WEBUSB.waiting || WEBUSB.cleanup {
                 return;
             }
-            let admitted = SESSION || ck_ccid_idle() != 0;
+            let admitted = WEBUSB.session || ck_ccid_idle() != 0;
             #[cfg(feature = "usb-hid")]
             let admitted = admitted && ck_hid_busy() == 0;
-            WAITING = false;
+            WEBUSB.waiting = false;
             if admitted {
-                PREPARE |= !SESSION;
-                SESSION = true;
+                WEBUSB.prepare |= !WEBUSB.session;
+                WEBUSB.session = true;
             } else {
-                PACKET_LENGTH = None;
-                (&mut *core::ptr::addr_of_mut!(STATE)).reset();
+                WEBUSB.packet_length = 0;
+                (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).reset();
                 crate::transport::usb::web_admission(false, false);
             }
         });
         let mut bytes = [0; 16];
         let packet = usb_locked(|| {
-            if WAITING || CLEANUP || !SESSION {
+            if WEBUSB.waiting || WEBUSB.cleanup || !WEBUSB.session {
                 return None;
             }
-            let n = PACKET_LENGTH?;
-            PACKET_LENGTH = None;
-            bytes[..n].copy_from_slice(&(&*core::ptr::addr_of!(PACKET))[..n]);
-            let offset = (&mut *core::ptr::addr_of_mut!(STATE)).receive(n, device_get_tick());
+            let n = usize::from(WEBUSB.packet_length);
+            if n == 0 {
+                return None;
+            }
+            WEBUSB.packet_length = 0;
+            bytes[..n].copy_from_slice(&(&*core::ptr::addr_of!(WEBUSB.packet))[..n]);
+            let offset =
+                (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).receive(n, device_get_tick());
             Some((n, offset))
         });
         if let Some((n, offset)) = packet {
@@ -269,21 +297,21 @@ pub unsafe fn poll<P: Provider>() {
             usb_locked(|| {
                 crate::transport::usb::web_admission(
                     valid,
-                    (&*core::ptr::addr_of!(STATE)).status() == 1,
+                    (&*core::ptr::addr_of!(WEBUSB.transport)).status() == 1,
                 )
             });
         }
         let command = usb_locked(|| {
-            if CLEANUP || CLEAR_INPUT || WAITING {
+            if WEBUSB.cleanup || WEBUSB.clear_input || WEBUSB.waiting {
                 None
             } else {
-                (&mut *core::ptr::addr_of_mut!(STATE)).execute()
+                (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).execute()
             }
         });
         if let Some(length) = command {
             let prepare = usb_locked(|| {
-                let prepare = PREPARE;
-                PREPARE = false;
+                let prepare = WEBUSB.prepare;
+                WEBUSB.prepare = false;
                 prepare
             });
             if prepare {
@@ -317,10 +345,10 @@ pub unsafe fn poll<P: Provider>() {
                 n as usize
             };
             usb_locked(|| {
-                if (&mut *core::ptr::addr_of_mut!(STATE)).finish(n, device_get_tick()) {
-                    SESSION = true;
+                if (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).finish(n, device_get_tick()) {
+                    WEBUSB.session = true;
                 } else {
-                    CLEANUP = true;
+                    WEBUSB.cleanup = true;
                 }
             });
         }
@@ -330,9 +358,9 @@ pub unsafe fn poll<P: Provider>() {
 pub unsafe fn progress() -> Option<bool> {
     // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
-        (&*core::ptr::addr_of!(STATE))
+        (&*core::ptr::addr_of!(WEBUSB.transport))
             .execution_live()
-            .map(|live| live && !CLEANUP)
+            .map(|live| live && !WEBUSB.cleanup)
     })
 }
 

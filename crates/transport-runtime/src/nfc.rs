@@ -65,7 +65,8 @@ enum Phase {
 }
 pub struct Link {
     phase: Phase,
-    number: u8,
+    // ISO-DEP starts at block number 1. Store it inverted for static BSS.
+    inverted_number: u8,
     received: usize,
     cached: Option<Packet>,
     retransmits: u8,
@@ -80,7 +81,7 @@ impl Link {
     pub const fn new() -> Self {
         Self {
             phase: Phase::Receiving,
-            number: 1,
+            inverted_number: 0,
             received: 0,
             cached: None,
             retransmits: 0,
@@ -88,12 +89,12 @@ impl Link {
         }
     }
     pub fn number(&self) -> u8 {
-        self.number
+        self.inverted_number ^ 1
     }
     /// Resume main-loop framing after the product IRQ polling owner has
     /// transmitted its final cached reply. No response cursor is advanced here.
     pub fn polled(&mut self, number: u8, packet: Packet) {
-        self.number = number;
+        self.inverted_number = number ^ 1;
         self.cached = Some(packet);
         self.phase = Phase::Complete;
         self.received = 0;
@@ -124,7 +125,7 @@ impl Link {
     }
     #[inline(never)]
     fn acknowledge(&mut self) -> Event {
-        let packet = Packet::acknowledgement(self.number);
+        let packet = Packet::acknowledgement(self.number());
         // Rule11 retries the last transmitted block, including control ACKs.
         // A control reply does not advance the response source or block number.
         self.cached = Some(packet);
@@ -164,7 +165,7 @@ impl Link {
                 if self.pending || matches!(self.phase, Phase::Executing | Phase::Ready) {
                     return Err(Error::Busy);
                 }
-                if number == self.number {
+                if number == self.number() {
                     // Repeated command blocks must never execute/write twice.
                     return if self.phase == Phase::Receiving {
                         Ok(self.acknowledge())
@@ -181,7 +182,7 @@ impl Link {
                     .ok_or(Error::Overflow)?;
                 receive(self.received, bytes)?;
                 self.received = end;
-                self.number = number;
+                self.inverted_number = number ^ 1;
                 self.cached = None;
                 self.retransmits = 0;
                 if chained {
@@ -196,7 +197,7 @@ impl Link {
                 if self.pending || matches!(self.phase, Phase::Executing | Phase::Ready) {
                     return Err(Error::Busy);
                 }
-                if number == self.number {
+                if number == self.number() {
                     return self.retransmit();
                 }
                 if negative {
@@ -205,7 +206,7 @@ impl Link {
                     return Ok(self.acknowledge());
                 }
                 if self.phase == Phase::Responding {
-                    self.number = number;
+                    self.inverted_number = number ^ 1;
                     self.phase = Phase::Ready;
                     Ok(Event::NextResponse)
                 } else {
@@ -226,7 +227,7 @@ impl Link {
         let n = remaining.len().min(nfc::INF_LIMIT);
         let chained = remaining.len() > n || more_chunks;
         let packet =
-            Packet::information(self.number, chained, &remaining[..n]).map_err(Error::Wire)?;
+            Packet::information(self.number(), chained, &remaining[..n]).map_err(Error::Wire)?;
         self.cached = Some(packet);
         self.pending = true;
         Ok(packet)
@@ -343,7 +344,7 @@ pub struct Recovery {
     phase: RecoveryPhase,
     generation: u32,
     last_activity: u32,
-    configure: bool,
+    interrupts_configured: bool,
 }
 impl Recovery {
     pub const fn new(now: u32) -> Self {
@@ -351,7 +352,7 @@ impl Recovery {
             phase: RecoveryPhase::Active,
             generation: 0,
             last_activity: now,
-            configure: true,
+            interrupts_configured: false,
         }
     }
     pub fn generation(&self) -> u32 {
@@ -404,7 +405,9 @@ impl Recovery {
         let operation = match self.phase {
             RecoveryPhase::SilenceRequested => HardwareAction::Silence,
             RecoveryPhase::UnsilenceRequested => HardwareAction::Unsilence,
-            RecoveryPhase::Active if self.configure => HardwareAction::ConfigureInterrupts,
+            RecoveryPhase::Active if !self.interrupts_configured => {
+                HardwareAction::ConfigureInterrupts
+            }
             _ => return None,
         };
         Some(RecoveryAction {
@@ -430,14 +433,14 @@ impl Recovery {
         }
         if success {
             match action.operation {
-                HardwareAction::ConfigureInterrupts => self.configure = false,
+                HardwareAction::ConfigureInterrupts => self.interrupts_configured = true,
                 HardwareAction::Silence => {
                     self.phase = RecoveryPhase::Silenced;
                     self.last_activity = now;
                 }
                 HardwareAction::Unsilence => {
                     self.phase = RecoveryPhase::Active;
-                    self.configure = true;
+                    self.interrupts_configured = false;
                     self.last_activity = now;
                 }
             }
