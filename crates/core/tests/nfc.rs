@@ -335,7 +335,8 @@ mod registers {
     }
     #[test]
     fn wtx_uses_disjoint_mailbox_and_requires_echo_before_reply() {
-        let mut io = Io::new(0);
+        let mut backing = [0; nfc::FRAME_LIMIT];
+        let mut io = Io::new(0, Some(&mut backing));
         let mut chip = Fake::default();
         let mut packet = [0; 32];
         io.poll(0, false, &mut chip);
@@ -375,7 +376,8 @@ mod registers {
                 if multiplier == 1 {
                     continue; // Only the exact requested multiplier is an echo.
                 }
-                let mut io = Io::new(0);
+                let mut backing = [0; nfc::FRAME_LIMIT];
+                let mut io = Io::new(0, Some(&mut backing));
                 let mut chip = Fake::default();
                 let mut out = [0; nfc::FRAME_LIMIT];
                 frame(&mut io, &mut chip, 0, &[nfc::PCB_I, 7, 0, 0]);
@@ -416,7 +418,8 @@ mod registers {
     }
     #[test]
     fn field_reset_revokes_execution_and_queued_frames_survive_reader_retries() {
-        let mut io = Io::new(0);
+        let mut backing = [0; nfc::FRAME_LIMIT];
+        let mut io = Io::new(0, Some(&mut backing));
         let mut chip = Fake::default();
         let mut out = [0; 32];
         frame(&mut io, &mut chip, 1, &[2, 1, 0, 0]);
@@ -446,7 +449,8 @@ mod registers {
     fn pending_mailbox_drains_later_frames_without_decoding_or_replacing_input() {
         for length in 1..=nfc::FRAME_LIMIT {
             for pcb in 0..=u8::MAX {
-                let mut io = Io::new(0);
+                let mut backing = [0; nfc::FRAME_LIMIT];
+                let mut io = Io::new(0, Some(&mut backing));
                 let mut chip = Fake::default();
                 let original = [nfc::PCB_I_CHAIN, 0x80, 0x10, 0, 0];
                 frame(&mut io, &mut chip, 0, &original);
@@ -473,7 +477,8 @@ mod registers {
         // Taking the mailbox transfers its bytes to main-loop/PKE parsing;
         // it does not release the associated reply turn.
         for pcb in [nfc::PCB_ACK, nfc::PCB_NAK, nfc::PCB_DESELECT, nfc::PCB_WTX] {
-            let mut io = Io::new(0);
+            let mut backing = [0; nfc::FRAME_LIMIT];
+            let mut io = Io::new(0, Some(&mut backing));
             let mut chip = Fake::default();
             let mut out = [0; nfc::FRAME_LIMIT];
             frame(&mut io, &mut chip, 0, &[nfc::PCB_I_CHAIN, 7, 0, 0]);
@@ -489,7 +494,8 @@ mod registers {
         // Hardware errors still revoke a queued command; only bounded FIFO
         // traffic with clean IRQ flags may be discarded as a reader retry.
         for length in [0, nfc::FRAME_LIMIT + 1] {
-            let mut io = Io::new(0);
+            let mut backing = [0; nfc::FRAME_LIMIT];
+            let mut io = Io::new(0, Some(&mut backing));
             let mut chip = Fake::default();
             frame(&mut io, &mut chip, 0, &[nfc::PCB_I_CHAIN, 0, 0]);
             chip.reads.clear();
@@ -501,7 +507,8 @@ mod registers {
     }
     #[test]
     fn ignored_ack_from_previous_connection_cannot_release_current_turn() {
-        let mut io = Io::new(0);
+        let mut backing = [0; nfc::FRAME_LIMIT];
+        let mut io = Io::new(0, Some(&mut backing));
         let mut chip = Fake::default();
         let mut out = [0x00; nfc::FRAME_LIMIT];
         frame(&mut io, &mut chip, 1, &[nfc::PCB_ACK, 0x00, 0x00]);
@@ -526,7 +533,8 @@ mod registers {
 
     #[test]
     fn ignored_ack_releases_turn_without_revoking_selection_or_starting_recovery() {
-        let mut io = Io::new(0);
+        let mut backing = [0; nfc::FRAME_LIMIT];
+        let mut io = Io::new(0, Some(&mut backing));
         let mut chip = Fake::default();
         let mut out = [0; nfc::FRAME_LIMIT];
         io.poll(0, false, &mut chip);
@@ -543,7 +551,8 @@ mod registers {
     }
     #[test]
     fn execution_drains_early_frames_but_accepts_deselect_after_wtx_returns_the_turn() {
-        let mut io = Io::new(0);
+        let mut backing = [0; nfc::FRAME_LIMIT];
+        let mut io = Io::new(0, Some(&mut backing));
         let mut chip = Fake::default();
         let mut out = [0; nfc::FRAME_LIMIT];
         frame(&mut io, &mut chip, 0, &[nfc::PCB_I, 7, 0, 0]);
@@ -580,7 +589,8 @@ mod registers {
     #[test]
     fn coalesced_halt_activation_uses_live_state_and_preserves_new_rx() {
         for status in 0..=u8::MAX {
-            let mut io = Io::new(0);
+            let mut backing = [0; nfc::FRAME_LIMIT];
+            let mut io = Io::new(0, Some(&mut backing));
             let mut chip = Fake::default();
             let mut out = [0; nfc::FRAME_LIMIT];
             frame(&mut io, &mut chip, 0, &[nfc::PCB_I, 7, 0, 0]);
@@ -628,7 +638,8 @@ mod registers {
             nfc::FM_AUX_HALT,
         ];
         for error in [0, nfc::FM_FIFO_OVERFLOW, 8, 16, 32, 64] {
-            let mut io = Io::new(0);
+            let mut backing = [0; nfc::FRAME_LIMIT];
+            let mut io = Io::new(0, Some(&mut backing));
             let mut chip = Fake {
                 flags,
                 rf_status: nfc::FM_STATE_RATS << 4,
@@ -661,7 +672,8 @@ mod registers {
     #[test]
     fn silence_masks_active_high_irqs_and_drains_latched_activation() {
         for fail_mask in [false, true] {
-            let mut io = Io::new(0);
+            let mut backing = [0; nfc::FRAME_LIMIT];
+            let mut io = Io::new(0, Some(&mut backing));
             let mut chip = Fake::default();
             if fail_mask {
                 chip.fail = Some(nfc::FM_REG_MAIN_IRQ_MASK);
@@ -701,7 +713,8 @@ mod registers {
     }
     #[test]
     fn missing_wtx_echo_and_bus_failures_enter_rf_recovery() {
-        let mut io = Io::new(0);
+        let mut backing = [0; nfc::FRAME_LIMIT];
+        let mut io = Io::new(0, Some(&mut backing));
         let mut chip = Fake::default();
         let mut out = [0; 32];
         frame(&mut io, &mut chip, 0, &[2, 0, 0]);

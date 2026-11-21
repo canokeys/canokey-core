@@ -54,15 +54,28 @@ enum Tx {
     Done,
 }
 
-pub struct Io<P: Polling = NoPolling, const FSC: usize = { wire::FRAME_LIMIT }> {
+/// Completed RX data. The backing stays exclusive until returned to its Io.
+#[must_use = "return the frame to its Io after consuming or discarding it"]
+pub struct ReceivedFrame<'a, const FSC: usize> {
+    backing: &'a mut [u8; FSC],
+    length: u16,
+    generation: u32,
+}
+impl<const FSC: usize> ReceivedFrame<'_, FSC> {
+    pub fn bytes(&self) -> &[u8] {
+        &self.backing[..usize::from(self.length)]
+    }
+}
+
+pub struct Io<'a, P: Polling = NoPolling, const FSC: usize = { wire::FRAME_LIMIT }> {
     polling: P,
     recovery: Recovery,
     execution: Execution,
     computing: bool,
     turn: bool,
     // RX partial/mailbox and TX staging are mutually exclusive RF turns.
-    // A transmitted I-block's retry source remains with the main-loop owner.
-    frame: [u8; FSC],
+    // None during startup without backing or while the main loop owns RX.
+    frame: Option<&'a mut [u8; FSC]>,
     length: u16,
     dropping: bool,
     fsd: u16,
@@ -70,15 +83,17 @@ pub struct Io<P: Polling = NoPolling, const FSC: usize = { wire::FRAME_LIMIT }> 
     tx_loaded: u8,
     tx_length: u8,
 }
-impl<P: Polling, const FSC: usize> Io<P, FSC> {
-    pub const fn new(now: u32) -> Self {
+impl<'a, P: Polling, const FSC: usize> Io<'a, P, FSC> {
+    /// A product can provide its zero-initialized frame separately from state.
+    /// Pass None only until binding backing at transport startup.
+    pub const fn new(now: u32, frame: Option<&'a mut [u8; FSC]>) -> Self {
         Self {
             polling: P::INITIAL,
             recovery: Recovery::new(now),
             execution: Execution::new(),
             computing: false,
             turn: false,
-            frame: [0x00; FSC],
+            frame,
             length: 0,
             dropping: false,
             fsd: 0,
@@ -215,7 +230,8 @@ impl<P: Polling, const FSC: usize> Io<P, FSC> {
         } else {
             wire::RX_WATERMARK
         };
-        if self.turn || (FSC > wire::FIFO_BYTES && self.dropping) {
+        let busy = self.turn || (FSC > wire::FIFO_BYTES && self.dropping);
+        let (Some(frame), false) = (self.frame.as_deref_mut(), busy) else {
             if FSC > wire::FIFO_BYTES {
                 let had_partial = self.dropping;
                 self.dropping = !done;
@@ -224,16 +240,17 @@ impl<P: Polling, const FSC: usize> Io<P, FSC> {
                 }
             }
             return count != 0 && drain_fifo(count, chip);
-        }
+        };
         let start = if FSC > wire::FIFO_BYTES {
             usize::from(self.length)
         } else {
             0
         };
         let end = start + count;
-        let Some(chunk) = self.frame.get_mut(start..end) else {
+        let Some(frame) = frame.get_mut(..end) else {
             return false;
         };
+        let chunk = &mut frame[start..];
         if !chunk.is_empty() && !chip.read(wire::FM_REG_FIFO_ACCESS, chunk) {
             return false;
         }
@@ -241,10 +258,19 @@ impl<P: Polling, const FSC: usize> Io<P, FSC> {
         if !done {
             return true;
         }
-        if end < wire::FRAME_OVERHEAD || (self.fsd == 0 && !self.latch_rats(chip)) {
+        if end < wire::FRAME_OVERHEAD {
             return false;
         }
-        match &self.frame[..end] {
+        if self.fsd == 0 {
+            let mut rats = [0x00];
+            // In Level-4 mode the frontend handles RATS/ATS and PPS itself.
+            // Latch FSDI only when the first post-RATS data frame completes.
+            if !chip.read(wire::FM_REG_RF_RATS, &mut rats) {
+                return false;
+            }
+            self.fsd = wire::reader_frame_size(rats[0]) as u16;
+        }
+        match &*frame {
             &[wire::PCB_WTX, multiplier, _, _] => {
                 self.clear_frame();
                 self.turn = self.execution.echo(multiplier);
@@ -269,16 +295,6 @@ impl<P: Polling, const FSC: usize> Io<P, FSC> {
         self.turn = true;
         true
     }
-    fn latch_rats(&mut self, chip: &mut impl Chip) -> bool {
-        let mut rats = [0x00];
-        // In Level-4 mode the frontend handles RATS/ATS and PPS itself.
-        // Only a completed post-RATS data frame is delivered via this FIFO.
-        if !chip.read(wire::FM_REG_RF_RATS, &mut rats) {
-            return false;
-        }
-        self.fsd = wire::reader_frame_size(rats[0]) as u16;
-        true
-    }
     fn poll_response(&mut self, packet: Option<Packet>, chip: &mut impl Chip) {
         let Some(packet) = packet else {
             self.fault();
@@ -300,7 +316,7 @@ impl<P: Polling, const FSC: usize> Io<P, FSC> {
         self.execution.begin(now);
         if self.turn && self.length != 0 {
             let length = usize::from(self.length);
-            let packet = wire::decode(&self.frame[..length])
+            let packet = wire::decode(&self.frame.as_deref().unwrap()[..length])
                 .ok()
                 .and_then(|block| self.polling.receive(block));
             self.clear_frame();
@@ -316,14 +332,35 @@ impl<P: Polling, const FSC: usize> Io<P, FSC> {
         self.recovery.activity(now);
         self.polling.finish()
     }
+    /// Copy a validated mailbox for callers that supply their own frame buffer.
     pub fn take(&mut self, out: &mut [u8; FSC]) -> Option<usize> {
+        let frame = self.take_frame()?;
+        let n = frame.bytes().len();
+        out[..n].copy_from_slice(frame.bytes());
+        self.return_frame(frame);
+        Some(n)
+    }
+    /// Transfer the validated mailbox to the main loop under the IRQ lock.
+    /// Even a new activation must drain incoming FIFO data during the loan.
+    pub fn take_frame(&mut self) -> Option<ReceivedFrame<'a, FSC>> {
         if !self.turn || self.length == 0 || self.recovery.drain_only() {
             return None;
         }
-        let n = usize::from(self.length);
-        out[..n].copy_from_slice(&self.frame[..n]);
+        let received = ReceivedFrame {
+            backing: self.frame.take()?,
+            length: self.length,
+            generation: self.generation(),
+        };
         self.clear_frame();
-        Some(n)
+        Some(received)
+    }
+    /// Reattach to the issuing Io under the IRQ lock. A false result revokes
+    /// the frame's effects: the caller must suppress its event and reset its
+    /// old link/request through the regular generation-change path.
+    pub fn return_frame(&mut self, frame: ReceivedFrame<'a, FSC>) -> bool {
+        debug_assert!(self.frame.is_none());
+        self.frame = Some(frame.backing);
+        self.generation() == frame.generation
     }
     /// An unsolicited ACK consumes no response bytes and needs no reply.
     /// Release only the connection that supplied the consumed mailbox. An RF
@@ -360,11 +397,8 @@ impl<P: Polling, const FSC: usize> Io<P, FSC> {
         {
             return false;
         }
-        let Some((pcb, payload)) = self
-            .frame
-            .get_mut(..length)
-            .and_then(<[u8]>::split_first_mut)
-        else {
+        let frame = self.frame.as_deref_mut().unwrap();
+        let Some((pcb, payload)) = frame.get_mut(..length).and_then(<[u8]>::split_first_mut) else {
             return false;
         };
         *pcb = response.pcb;
@@ -372,7 +406,7 @@ impl<P: Polling, const FSC: usize> Io<P, FSC> {
 
         let initial = length.min(wire::FIFO_BYTES);
         if (length > wire::FIFO_BYTES && !chip.write(wire::FM_REG_FIFO_CLEAR, &[0x00]))
-            || !start_fifo(&self.frame[..initial], chip)
+            || !start_fifo(&frame[..initial], chip)
         {
             self.fault();
             return false;
@@ -388,13 +422,17 @@ impl<P: Polling, const FSC: usize> Io<P, FSC> {
     fn can_send(&self) -> bool {
         self.turn
             && self.length == 0
+            && self.frame.is_some()
             && (FSC <= wire::FIFO_BYTES || !self.dropping)
             && self.tx == Tx::Idle
     }
     fn refill(&mut self, chip: &mut impl Chip) -> bool {
         let start = usize::from(self.tx_loaded);
         let end = (start + wire::FIFO_BYTES - wire::TX_WATERMARK).min(usize::from(self.tx_length));
-        if !chip.write(wire::FM_REG_FIFO_ACCESS, &self.frame[start..end]) {
+        if !chip.write(
+            wire::FM_REG_FIFO_ACCESS,
+            &self.frame.as_deref().unwrap()[start..end],
+        ) {
             return false;
         }
         self.tx_loaded = end as u8;
@@ -408,7 +446,7 @@ impl<P: Polling, const FSC: usize> Io<P, FSC> {
         true
     }
     pub fn begin_execution(&mut self, now: u32) -> bool {
-        if !self.turn || self.length != 0 || self.recovery.drain_only() {
+        if !self.turn || self.length != 0 || self.frame.is_none() || self.recovery.drain_only() {
             return false;
         }
         self.computing = true;

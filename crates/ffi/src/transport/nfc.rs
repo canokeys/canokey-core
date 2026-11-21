@@ -28,7 +28,7 @@ use canokey_rust_core::runtime::{
     nfc_io::Chip,
 };
 const FSC: usize = wire::MAX_FRAME_BYTES;
-type Io = canokey_rust_core::runtime::nfc_io::Io<FSC>;
+type Io = canokey_rust_core::runtime::nfc_io::Io<'static, FSC>;
 #[cfg(test)]
 use tests::deinit;
 // CTAP status returned inside the NFC APDU for an oversized FIDO request.
@@ -111,6 +111,7 @@ struct NfcState {
 
 // The mode query and IRQ can run before main-loop polling. Use a boot value
 // and borrow only the required field across each call.
+static mut NFC_FRAME: [u8; FSC] = [0x00; FSC];
 static mut NFC: NfcState = NfcState {
     active: false,
     pending: false,
@@ -119,7 +120,7 @@ static mut NFC: NfcState = NfcState {
     length: 0,
     sent: 0,
     budget: ResponseBudget::new(),
-    io: Io::new(0),
+    io: Io::new(0, None),
     link: Link::new(),
     request: Request::new(),
 };
@@ -379,7 +380,10 @@ pub unsafe fn init<P: Provider>() {
         let mask = ck_nfc_io_lock();
         ck_nfc_io_schedule(None, 0);
         NFC.active = true;
-        NFC.io = Io::new(ck_nfc_io_now());
+        let now = ck_nfc_io_now();
+        // Drop the previous binding before taking the sole static reference.
+        NFC.io = Io::new(now, None);
+        NFC.io = Io::new(now, Some(&mut *(&raw mut NFC_FRAME)));
         NFC.generation = 0;
         ck_nfc_io_unlock(mask);
         reset_link::<P>();
@@ -497,22 +501,22 @@ unsafe fn send_response(retry: Option<Response>) {
         });
     }
 }
-// Keep the packet window off the applet/crypto call path.
+// Keep frame loan and request staging locals off the applet execution path.
 #[inline(never)]
 unsafe fn receive<P: Provider>() -> Option<Result<Event, canokey_rust_core::runtime::nfc::Error>> {
-    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
+    // SAFETY: The main loop owns Link and the APDU buffer. The frame loan
+    // removes the only backing reference from Io until we return it.
     unsafe {
-        let mut frame = [0x00; FSC];
-        let n = with_io(|io, _, _| {
+        let frame = with_io(|io, _, _| {
             if io.generation() != NFC.generation {
                 None
             } else {
-                io.take(&mut frame)
+                io.take_frame()
             }
         })?;
         let buffer = crate::transport::ccid::ck_ccid_response_buffer();
-        Some((&mut *core::ptr::addr_of_mut!(NFC.link)).receive_with(
-            &frame[..n],
+        let event = (&mut *core::ptr::addr_of_mut!(NFC.link)).receive_with(
+            frame.bytes(),
             |offset, bytes| {
                 let request = &mut *core::ptr::addr_of_mut!(NFC.request);
                 if request.len() != offset {
@@ -525,7 +529,8 @@ unsafe fn receive<P: Provider>() -> Option<Result<Event, canokey_rust_core::runt
                 );
                 Ok(())
             },
-        ))
+        );
+        with_io(|io, _, _| io.return_frame(frame)).then_some(event)
     }
 }
 ///

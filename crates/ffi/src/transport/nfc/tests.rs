@@ -48,9 +48,14 @@ pub(super) fn prepare(prefix: &[u8; 7]) -> Result<(), Rejection> {
     Ok(())
 }
 pub(super) fn stage_write(offset: usize, bytes: &[u8]) -> bool {
+    assert_eq!(controller().masked, 0);
     assert!(stage().held);
     stage().bytes[offset..offset + bytes.len()].copy_from_slice(bytes);
     stage().writes += 1;
+    if controller().reset_in_stage_write {
+        controller().reset_in_stage_write = false;
+        activate();
+    }
     true
 }
 pub(super) fn stage_read(offset: usize, out: &mut [u8]) -> bool {
@@ -147,6 +152,7 @@ struct Controller {
     sends: usize,
     resets_in_core: usize,
     reset_in_core: bool,
+    reset_in_stage_write: bool,
     waiting_in_core: bool,
     fido: bool,
     continuation: usize,
@@ -172,6 +178,7 @@ impl Controller {
             sends: 0,
             resets_in_core: 0,
             reset_in_core: false,
+            reset_in_stage_write: false,
             waiting_in_core: false,
             fido: false,
             continuation: 0,
@@ -626,15 +633,30 @@ fn large_requests_finite_le_remainder_and_staged_reset() {
     let mut packet = std::vec![0x12, 0x80, 0x10, 0, 0, 0, 0x03, 0x00];
     packet.extend_from_slice(&[0x5a; 20]);
     packet.extend_from_slice(&[0, 0]);
-    frame(&packet);
-    poll();
-    assert!(stage().held);
-    let closes = stage().closes;
-    activate();
-    poll();
-    assert!(!stage().held);
-    assert_eq!(stage().closes, closes + 1);
-    assert!(stage().bytes.iter().all(|byte| *byte == 0));
+    for during_write in [false, true] {
+        let closes = stage().closes;
+        let calls = controller().calls;
+        let sends = controller().sends;
+        controller().reset_in_stage_write = during_write;
+        packet[0] = if during_write {
+            wire::PCB_I
+        } else {
+            wire::PCB_I_CHAIN
+        };
+        frame(&packet);
+        poll();
+        assert_eq!(controller().calls, calls);
+        if during_write {
+            assert_eq!(controller().sends, sends);
+        } else {
+            assert!(stage().held);
+            activate();
+        }
+        poll();
+        assert!(!stage().held);
+        assert_eq!(stage().closes, closes + 1);
+        assert!(stage().bytes.iter().all(|byte| *byte == 0));
+    }
     // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { ck_nfc_set_mode(0) };
 }

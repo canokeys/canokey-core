@@ -4,7 +4,7 @@ use canokey_transport_runtime::nfc::{Event, Link};
 use canokey_transport_runtime::nfc_io::{Chip, Io, NoPolling};
 use std::collections::VecDeque;
 
-type Radio = Io<NoPolling, { wire::MAX_FRAME_BYTES }>;
+type Radio<'a> = Io<'a, NoPolling, { wire::MAX_FRAME_BYTES }>;
 
 struct Frontend {
     fifo: VecDeque<u8>,
@@ -12,6 +12,7 @@ struct Frontend {
     status: u8,
     rats: u8,
     transmitted: Vec<u8>,
+    reject_fifo_write: bool,
 }
 
 impl Frontend {
@@ -22,6 +23,7 @@ impl Frontend {
             status: wire::FM_STATE_RATS << 4,
             rats: 0x80,
             transmitted: Vec::new(),
+            reject_fifo_write: false,
         }
     }
     fn signal(&mut self, io: &mut Radio, main: u8, fifo: u8, aux: u8) {
@@ -81,7 +83,12 @@ impl Chip for Frontend {
     }
     fn write(&mut self, address: u16, bytes: &[u8]) -> bool {
         match address {
-            wire::FM_REG_FIFO_ACCESS => self.push(bytes),
+            wire::FM_REG_FIFO_ACCESS => {
+                if self.reject_fifo_write {
+                    return false;
+                }
+                self.push(bytes);
+            }
             wire::FM_REG_FIFO_CLEAR => self.fifo.clear(),
             wire::FM_REG_RF_TXEN => assert_eq!(bytes, &[wire::FM_RF_TX_ENABLE]),
             _ => panic!("unexpected register {address:#x}"),
@@ -101,22 +108,27 @@ fn receive_boundaries_and_crc_gate() {
         (256, 0x10, false), // CRC error
         (256, 0x08, false), // Frame error
     ] {
-        let mut io = Radio::new(0);
+        let mut backing = [0; wire::MAX_FRAME_BYTES];
+        let mut io = Radio::new(0, Some(&mut backing));
         let mut chip = Frontend::new();
         let mut rx = vec![0x5a; length];
         rx[0] = wire::PCB_I_CHAIN;
         chip.receive(&mut io, &rx, aux);
-        let mut frame = [0x00; wire::MAX_FRAME_BYTES];
-        assert_eq!(io.take(&mut frame), valid.then_some(length));
+        let frame = io.take_frame();
+        assert_eq!(
+            frame.as_ref().map(|frame| frame.bytes().len()),
+            valid.then_some(length)
+        );
         assert_eq!(io.generation(), u32::from(!valid));
-        if valid {
-            assert_eq!(&frame[..length], rx);
+        if let Some(frame) = frame {
+            assert_eq!(frame.bytes(), rx);
             let mut input = [0x00; wire::MAX_FRAME_BYTES];
             assert_eq!(
-                Link::new().receive(&frame[..length], &mut input),
+                Link::new().receive(frame.bytes(), &mut input),
                 Ok(Event::Send(wire::Packet::acknowledgement(0)))
             );
             assert_eq!(&input[..length - wire::FRAME_OVERHEAD], &rx[1..length - 2]);
+            assert!(io.return_frame(frame));
         }
     }
 }
@@ -124,7 +136,8 @@ fn receive_boundaries_and_crc_gate() {
 #[test]
 fn exact_tx_backing_and_retry_across_watermarks() {
     let mut chip = Frontend::new();
-    let mut io = Radio::new(0);
+    let mut backing = [0; wire::MAX_FRAME_BYTES];
+    let mut io = Radio::new(0, Some(&mut backing));
     let mut link = Link::new();
     let mut frame = [0x00; wire::MAX_FRAME_BYTES];
     let mut input = [0x00; 1];
@@ -163,7 +176,8 @@ fn exact_tx_backing_and_retry_across_watermarks() {
 #[test]
 fn tx_watermark_refills_with_a_latched_empty_flag() {
     let mut chip = Frontend::new();
-    let mut io = Radio::new(0);
+    let mut backing = [0; wire::MAX_FRAME_BYTES];
+    let mut io = Radio::new(0, Some(&mut backing));
     chip.receive(&mut io, &[wire::PCB_I, 0x00, 0x00], 0x00);
     io.take(&mut [0x00; wire::MAX_FRAME_BYTES]).unwrap();
     let inf = [0x5a; wire::FIFO_BYTES];
@@ -198,7 +212,8 @@ fn faults_and_new_activation_cancel_partial_transfers() {
         (wire::FM_MAIN_POWER_ON, 0x00, 0x00),
     ] {
         let mut chip = Frontend::new();
-        let mut io = Radio::new(0);
+        let mut backing = [0; wire::MAX_FRAME_BYTES];
+        let mut io = Radio::new(0, Some(&mut backing));
         chip.receive(&mut io, &[wire::PCB_I, 0x00, 0x00], 0x00);
         io.take(&mut [0x00; wire::MAX_FRAME_BYTES]).unwrap();
         let response = canokey_transport_runtime::nfc::Response {
@@ -213,7 +228,8 @@ fn faults_and_new_activation_cancel_partial_transfers() {
     }
 
     let mut chip = Frontend::new();
-    let mut io = Radio::new(0);
+    let mut backing = [0; wire::MAX_FRAME_BYTES];
+    let mut io = Radio::new(0, Some(&mut backing));
     chip.push(&[wire::PCB_I; wire::RX_WATERMARK]);
     chip.signal(&mut io, 0x00, wire::FM_FIFO_WATER, 0x00);
     chip.signal(&mut io, 0x00, 0x00, wire::FM_AUX_HALT);
@@ -223,8 +239,90 @@ fn faults_and_new_activation_cancel_partial_transfers() {
 }
 
 #[test]
+fn activation_revokes_loan_and_discards_frames_until_backing_returns() {
+    let mut backing = [0; wire::MAX_FRAME_BYTES];
+    let mut io = Radio::new(0, Some(&mut backing));
+    let mut chip = Frontend::new();
+    let rx = [wire::PCB_I, 0x5a, 0x00, 0x00];
+    chip.receive(&mut io, &rx, 0x00);
+    let frame = io.take_frame().unwrap();
+    assert!(io.take_frame().is_none());
+    chip.signal(&mut io, wire::FM_MAIN_ACTIVE, 0x00, 0x00);
+    chip.receive(&mut io, &[wire::PCB_I, 0x00, 0x00], 0x00);
+
+    // Return the frame in the middle of another dropped frame. Its tail
+    // must not become a new mailbox even though backing is available again.
+    chip.push(&[0x5a; wire::RX_WATERMARK]);
+    chip.signal(&mut io, 0x00, wire::FM_FIFO_WATER, 0x00);
+    assert_eq!(frame.bytes(), rx);
+    assert!(!io.return_frame(frame));
+    chip.push(&[wire::PCB_I, 0x00, 0x00]);
+    chip.signal(&mut io, wire::FM_MAIN_RX_DONE, 0x00, 0x00);
+    assert!(io.take_frame().is_none());
+    chip.receive(&mut io, &rx, 0x00);
+    let frame = io.take_frame().unwrap();
+    assert_eq!(frame.bytes(), rx);
+    assert!(io.return_frame(frame));
+    assert_eq!(io.generation(), 1);
+}
+
+#[test]
+fn refill_failure_does_not_complete_or_advance_the_response() {
+    let mut backing = [0; wire::MAX_FRAME_BYTES];
+    let mut io = Radio::new(0, Some(&mut backing));
+    let mut chip = Frontend::new();
+    let mut link = Link::new();
+    chip.receive(&mut io, &[wire::PCB_I, 0x00, 0x00], 0x00);
+    let frame = io.take_frame().unwrap();
+    assert_eq!(link.receive(frame.bytes(), &mut []), Ok(Event::Execute(0)));
+    assert!(io.return_frame(frame));
+    let inf = [0x5a; wire::FIFO_BYTES];
+    let response = link
+        .response(inf.len(), false, io.tx_frame_limit(256))
+        .unwrap();
+    assert!(io.send_response(response, &inf, &mut chip));
+    chip.fifo.drain(..wire::RX_WATERMARK);
+    chip.reject_fifo_write = true;
+    chip.signal(&mut io, 0x00, wire::FM_FIFO_WATER, 0x00);
+    chip.signal(&mut io, wire::FM_MAIN_TX_DONE, wire::FM_FIFO_WATER, 0x00);
+    assert!(!io.take_tx_done());
+    assert!(link.response_pending());
+    assert_eq!(io.generation(), 1);
+}
+
+#[test]
+fn tx_done_with_watermark_and_rx_done_preserves_the_next_block() {
+    let mut backing = [0; wire::MAX_FRAME_BYTES];
+    let mut io = Radio::new(0, Some(&mut backing));
+    let mut chip = Frontend::new();
+    chip.receive(&mut io, &[wire::PCB_I, 0x00, 0x00], 0x00);
+    let frame = io.take_frame().unwrap();
+    assert!(io.return_frame(frame));
+    let response = canokey_transport_runtime::nfc::Response {
+        pcb: wire::PCB_I_CHAIN,
+        length: 1,
+    };
+    assert!(io.send_response(response, &[0x5a], &mut chip));
+    chip.fifo.clear(); // The preceding response has left the FIFO.
+    let ack = [wire::PCB_ACK_NEXT, 0x00, 0x00];
+    chip.push(&ack);
+    chip.signal(
+        &mut io,
+        wire::FM_MAIN_TX_DONE | wire::FM_MAIN_RX_DONE,
+        wire::FM_FIFO_WATER,
+        0x00,
+    );
+    assert!(io.take_tx_done());
+    let frame = io.take_frame().unwrap();
+    assert_eq!(frame.bytes(), ack);
+    assert!(io.return_frame(frame));
+    assert_eq!(io.generation(), 0);
+}
+
+#[test]
 fn reader_size_is_latched_only_after_rats_for_each_generation() {
-    let mut io = Radio::new(0);
+    let mut backing = [0; wire::MAX_FRAME_BYTES];
+    let mut io = Radio::new(0, Some(&mut backing));
     let mut chip = Frontend::new();
     let mut frame = [0x00; wire::MAX_FRAME_BYTES];
     let sizes = [

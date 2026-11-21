@@ -25,9 +25,23 @@ The FM11NT082C FIFO holds 32 bytes. Products with FSC above 32 bytes enable
 the FIFO watermark interrupt. RX drains 24 bytes at each watermark and uses
 the FIFO count at RX_DONE. For co-latched RX_DONE and watermark flags one
 counted drain handles both. The frontend checks CRC, parity and frame format.
-Hardware errors, a new activation or a reset revoke partial transfers. The
-main loop checks the generation before taking the completed RX mailbox.
+Hardware errors, a new activation or a reset revoke partial transfers.
 FIFO-sized profiles can read the complete frame at RX_DONE.
+
+Keep the zero-initialized `[u8; FSC]` separate from `Io` state. Initialize
+the static state with `Io::new(0, None)` and bind the exclusive backing
+reference at startup with `Io::new(now, Some(frame))` under the IRQ lock.
+Products with asynchronous polling supply their policy in
+`Io<'static, PollingPolicy, FSC>`.
+
+CanoKey checks the generation and calls `take_frame()` under the IRQ lock.
+The returned `ReceivedFrame` owns the only reference to the frame until
+`return_frame()`. IRQs continue to observe field loss and drain any new
+frame, including its tail if the loan ends midway through a drain. Link
+decoding and request staging run outside the lock. The main loop returns
+the loan under the IRQ lock before acting on its event. A changed generation
+suppresses the event and the next poll resets the old Link and request lease.
+Callers with their own frame buffer can use `take()` to copy the mailbox.
 
 TX stages the encoded I-block in the IRQ-owned frame buffer and starts with
 up to 32 bytes. When 8 bytes remain, each refill writes up to 24 bytes.
@@ -36,10 +50,18 @@ of operations. TX_DONE confirms delivery and lets the main loop advance its
 cursor. A premature TX_DONE, FIFO over/underflow or bus error cancels the
 transfer. The masked FIFO_EMPTY bit may still be latched from before TX.
 Only the FIFO over/underflow bit reports a FIFO error. The main loop retains
-PCB and INF length for exact retransmission
-from its existing APDU response window. ACK, WTX, deselect and asynchronous
-polling replies use the small inline packet. The IRQ owns only its frame
-staging and polling state.
+PCB and INF length for exact retransmission from the existing APDU response
+window. ACK, WTX, deselect and asynchronous polling replies use the small
+inline packet.
+
+The APDU window can already contain an accepted request prefix, bytes still
+needed for retransmission, or data owned by an applet while the next RX
+frame is unvalidated. Reusing it for FIFO fragments would overwrite live
+data before CRC and block-number checks. TX uses the same separate frame
+backing as RX. A direct TX read lease on the APDU reply would still require
+the RX allocation. The current contiguous wire representation requires
+FSC bytes for RX including PCB and CRC, and at most FSC minus two bytes
+for TX because hardware appends the CRC.
 
 In Level-4 mode the frontend handles RATS/ATS and PPS and delivers the
 subsequent frames via FIFO. The first complete data frame latches FSDI from
