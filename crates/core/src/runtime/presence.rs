@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Main-loop presence operation; no C callback may reenter the core.
 #![forbid(unsafe_code)]
-#[cfg(all(presence_applet, any(feature = "ctap", test)))]
+#[cfg(feature = "ctap")]
 pub use canokey_ctap::presence::Error;
 #[cfg(presence_applet)]
 pub use canokey_ctap::presence::Request;
@@ -83,6 +83,7 @@ pub fn strong(device: &mut (impl crate::ports::Device + ?Sized)) -> bool {
 mod tests {
     use super::*;
     use crate::ports::Device;
+    use canokey_ctap::presence::Error;
     struct Held {
         ticks: u32,
         connected: bool,

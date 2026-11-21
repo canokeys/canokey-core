@@ -29,6 +29,36 @@ jobs:
         python3 -m unittest discover -s tests -p test_c312_sync.py -v
         python3 tests/check_c312_sync.py --structure-only
 
+  rust_feature_tests:
+    name: ${{ matrix.package }} / ${{ matrix.profile }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - { package: canokey-rust-core, profile: none, features: "" }
+        - { package: canokey-rust-core, profile: admin, features: admin }
+        - { package: canokey-rust-core, profile: pass, features: pass }
+        - { package: canokey-rust-core, profile: oath, features: oath }
+        - { package: canokey-rust-core, profile: openpgp, features: openpgp }
+        - { package: canokey-rust-core, profile: piv, features: piv }
+        - { package: canokey-rust-core, profile: ctap, features: ctap }
+        - { package: canokey-rust-core, profile: ndef, features: ndef }
+        - { package: canokey-rust-core, profile: full, features: "admin,pass,oath,openpgp,piv,ctap,ndef" }
+        - { package: canokey-rust-ffi, profile: none, features: "" }
+        - { package: canokey-rust-ffi, profile: ctap, features: ctap }
+        - { package: canokey-rust-ffi, profile: full, features: "admin,pass,oath,openpgp,piv,ctap,ndef" }
+        # CTAP exposes mechanism features rather than applet selectors.
+        - { package: canokey-ctap, profile: none, features: "" }
+        - { package: canokey-ctap, profile: ctap, features: streaming }
+        - { package: canokey-ctap, profile: full, features: "streaming,schema" }
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        submodules: recursive
+        persist-credentials: false
+    - run: cargo test -p "${{ matrix.package }}" --no-default-features --features "${{ matrix.features }}"
+
   fuzz:
     name: APDU corpus and bounded fuzzing
     runs-on: ubuntu-latest

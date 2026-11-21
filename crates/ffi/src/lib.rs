@@ -34,7 +34,10 @@ macro_rules! lazy_state {
     };
 }
 pub mod composition;
-#[cfg(any(feature = "native-platform", test))]
+#[cfg(any(
+    feature = "native-platform",
+    all(test, any(feature = "usb-ccid", feature = "usb-hid"))
+))]
 mod platform;
 #[cfg(feature = "native-platform")]
 pub use platform::Native;
