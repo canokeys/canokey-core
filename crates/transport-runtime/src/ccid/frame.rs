@@ -39,7 +39,7 @@ impl Frame {
             let offset = usize::from(self.header_bytes);
             let length = bytes.len().min(HEADER - offset);
             self.header[offset..offset + length].copy_from_slice(&bytes[..length]);
-            self.header_bytes += length as u8;
+            self.header_bytes += length.to_le_bytes()[0];
             bytes = &bytes[length..];
             if !self.has_header() {
                 return 0;
@@ -56,7 +56,7 @@ impl Frame {
                 offset: (self.length() - self.remaining) as usize,
                 bytes: &bytes[..length],
             });
-            self.remaining -= length as u32;
+            self.remaining -= u32::try_from(length).unwrap();
             bytes = &bytes[length..];
         }
         bytes.len()

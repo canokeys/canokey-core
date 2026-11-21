@@ -63,6 +63,7 @@ impl<P: Provider> Backend for Platform<P> {
             return false;
         }
         #[cfg(feature = "usb-webusb")]
+        // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.
         unsafe {
             !crate::transport::webusb::block_competitor()
                 || crate::transport::webusb::try_preempt::<P>(true, false)
@@ -73,9 +74,11 @@ impl<P: Provider> Backend for Platform<P> {
         }
     }
     fn reset(&mut self) {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { core_ops::reset::<P>() }
     }
     fn slot_power(&mut self) -> bool {
+        // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.
         unsafe {
             // Power commands validate their complete envelope before reset.
             // A refused reset preserves foreign selection and continuations.
@@ -91,6 +94,7 @@ impl<P: Provider> Backend for Platform<P> {
     }
     fn exchange(&mut self, request: &[u8], out: &mut [u8]) -> Result<usize, ()> {
         let input = request;
+        // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.
         let n = unsafe {
             core_ops::exchange::<P>(
                 OWNER_CCID,
@@ -103,14 +107,24 @@ impl<P: Provider> Backend for Platform<P> {
         if n < 0 { Err(()) } else { Ok(n as usize) }
     }
     fn arm(&mut self, bytes: &[u8; 10], interval: u16) {
-        unsafe { ck_ccid_io_arm(self.generation, bytes.as_ptr(), bytes.len() as u8, interval) }
+        // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.
+        unsafe {
+            ck_ccid_io_arm(
+                self.generation,
+                bytes.as_ptr(),
+                bytes.len().to_le_bytes()[0],
+                interval,
+            )
+        }
     }
     fn disarm(&mut self) {
+        // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.
         unsafe { ck_ccid_io_disarm() }
     }
 }
 fn hid_busy() -> bool {
     #[cfg(feature = "ctap")]
+    // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.
     unsafe {
         ck_hid_busy() != 0
     }
@@ -119,7 +133,11 @@ fn hid_busy() -> bool {
         false
     }
 }
+///
+/// # Safety
+/// Call on the serialized main loop without holding a mutable borrow of the CCID engine.
 pub unsafe extern "C" fn ck_ccid_idle() -> u8 {
+    // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.
     unsafe {
         if hid_busy() {
             return 1;
@@ -150,6 +168,7 @@ unsafe fn receive_packet<P: Provider>(
     // An IRQ can enqueue a TRANSFER after an empty peek; taking that new packet
     // would bypass HID ownership.
     let n = if pending {
+        // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.
         unsafe { ck_ccid_io_take(platform.generation, packet.as_mut_ptr(), &mut tick) }
     } else {
         0
@@ -164,6 +183,7 @@ unsafe fn receive_packet<P: Provider>(
 }
 /// Serialized reset service, including while USB is not yet configured.
 pub(crate) unsafe fn service_reset<P: Provider>() -> bool {
+    // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.
     unsafe {
         let generation = ck_ccid_io_generation();
         if GENERATION == generation {
@@ -182,7 +202,11 @@ pub(crate) unsafe fn service_reset<P: Provider>() -> bool {
         true
     }
 }
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
 pub unsafe fn poll<P: Provider>() {
+    // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.
     unsafe {
         #[cfg(feature = "nfc")]
         if crate::transport::nfc::is_nfc() != 0 {
@@ -244,7 +268,7 @@ pub unsafe fn poll<P: Provider>() {
             if ck_ccid_io_submit(
                 generation,
                 reply.as_ptr(),
-                reply.len() as u16,
+                u16::try_from(reply.len()).unwrap(),
                 u8::from(reply.len() % 64 == 0),
             ) == 1
             {
@@ -265,6 +289,7 @@ pub fn ck_ccid_response_buffer() -> *mut u8 {
 #[cfg(all(feature = "usb-device", feature = "usb-hid"))]
 #[cfg_attr(test, allow(dead_code))]
 pub unsafe fn presence_progress<P: Provider>() {
+    // SAFETY: The serialized CCID loop owns the engine and uses the installed Provider for applet calls.
     unsafe {
         let generation = ck_ccid_io_generation();
         if GENERATION != generation || ck_ccid_io_idle() == 0 {
@@ -292,7 +317,13 @@ pub unsafe fn presence_progress<P: Provider>() {
         }
         if transport.presence_reply() {
             if let Some(reply) = transport.reply(&*core::ptr::addr_of!(CONTROL_RESPONSE)) {
-                if ck_ccid_io_submit(generation, reply.as_ptr(), reply.len() as u16, 0) == 1 {
+                if ck_ccid_io_submit(
+                    generation,
+                    reply.as_ptr(),
+                    u16::try_from(reply.len()).unwrap(),
+                    0,
+                ) == 1
+                {
                     transport.submitted();
                 }
             }

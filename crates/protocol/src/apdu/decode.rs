@@ -39,7 +39,7 @@ impl Layout {
         // trailing byte is permitted (absent Le or short Le).
         if short_lc != 0 {
             result.start = 5;
-            result.lc = short_lc as u16;
+            result.lc = u16::from(frame[4]);
             result.le_width = total.checked_sub(5 + short_lc).ok_or(Error::Length)?;
             if result.le_width > 1 {
                 return Err(Error::Length);
@@ -120,8 +120,7 @@ pub fn parse(bytes: &[u8]) -> Result<Command<'_>, Error> {
 /// the remaining body and Le bytes need not be buffered here. Shares decoder
 /// layout rules so malformed envelopes can be rejected before applet dispatch.
 pub fn validate_envelope(prefix: &[u8], total: usize) -> Result<(), Error> {
-    if total < 4
-        || total > super::MAX_FRAME
+    if !matches!(total, 4..=super::MAX_FRAME)
         || prefix.len() < total.min(super::EXTENDED_HEADER_BYTES)
     {
         return Err(Error::Length);
@@ -152,7 +151,7 @@ pub struct FrameDecoder {
 
 impl FrameDecoder {
     pub fn new(total: usize) -> Result<Self, Error> {
-        if total < 4 || total > super::MAX_FRAME {
+        if !matches!(total, 4..=super::MAX_FRAME) {
             return Err(Error::Length);
         }
         Ok(Self {

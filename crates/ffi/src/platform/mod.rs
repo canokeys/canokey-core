@@ -25,6 +25,7 @@ impl Native {
     /// # Safety
     /// Sample only on the serialized main loop, outside active Core calls.
     pub unsafe fn sample_presence() {
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe { device::presence_sample::<Runtime>() }
     }
 }
@@ -46,21 +47,27 @@ pub struct Scratch;
 #[cfg(feature = "ctap")]
 impl crate::composition::Staging for Scratch {
     fn capacity() -> usize {
+        // SAFETY: The serialized staging owner calls its matching native scratch backend.
         unsafe { crate::sys::pke_buffer_size() }
     }
     fn acquire(owner: u8) -> bool {
+        // SAFETY: The serialized staging owner calls its matching native scratch backend.
         unsafe { crate::sys::pke_buffer_acquire(owner) == 0 }
     }
     fn clear() -> bool {
+        // SAFETY: The serialized staging owner calls its matching native scratch backend.
         unsafe { crate::sys::pke_buffer_clear() == 0 }
     }
     fn release(owner: u8) -> bool {
+        // SAFETY: The serialized staging owner calls its matching native scratch backend.
         unsafe { crate::sys::pke_buffer_release(owner) == 0 }
     }
     fn read(offset: usize, out: &mut [u8]) -> bool {
+        // SAFETY: The serialized staging owner supplies a live slice for the pointer and byte count.
         unsafe { crate::sys::pke_buffer_read(offset, out.as_mut_ptr(), out.len()) == 0 }
     }
     fn write(offset: usize, bytes: &[u8]) -> bool {
+        // SAFETY: The serialized staging owner supplies a live slice for the pointer and byte count.
         unsafe { crate::sys::pke_buffer_write(offset, bytes.as_ptr(), bytes.len()) == 0 }
     }
 }
@@ -69,23 +76,28 @@ pub struct Runtime;
 impl DeviceRuntime for Runtime {
     #[cfg(feature = "device-runtime")]
     fn settings(flags: u32) {
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe { crate::runtime::device::ck_device_settings(flags) };
     }
     #[cfg(all(feature = "device-runtime", feature = "platform-device"))]
     fn led_idle() {
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe { crate::runtime::device::ck_device_led_idle() };
     }
     #[cfg(all(feature = "device-runtime", feature = "platform-device"))]
     fn progress() -> bool {
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe { crate::runtime::device::progress::<Native>() != 0 }
     }
     #[cfg(all(feature = "device-runtime", feature = "platform-serial"))]
     fn serial(out: &mut [u8; 4]) {
+        // SAFETY: The synchronous native callback receives the live slice pointer and its matching length.
         unsafe { crate::runtime::device::serial::<Native>(out.as_mut_ptr()) };
     }
     #[cfg(feature = "ctap")]
     fn keepalive(waiting: bool) {
         #[cfg(feature = "usb-hid")]
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe {
             crate::transport::hid::link::ck_hid_keepalive(u8::from(waiting))
         };
@@ -106,6 +118,7 @@ fn storage_status(
 impl crate::composition::FirmwareProvider for Native {
     unsafe fn storage_mount() -> Result<(), canokey_ports::StorageError> {
         #[cfg(all(feature = "storage", not(test)))]
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe {
             return storage_status(
                 crate::sys::ck_storage_init(),
@@ -113,6 +126,7 @@ impl crate::composition::FirmwareProvider for Native {
             );
         }
         #[cfg(all(feature = "storage", test))]
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe {
             return storage_status(
                 crate::runtime::device::tests::hal::ck_storage_init(),
@@ -126,6 +140,7 @@ impl crate::composition::FirmwareProvider for Native {
     }
     unsafe fn storage_format() -> Result<(), canokey_ports::StorageError> {
         #[cfg(all(feature = "storage", not(test)))]
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe {
             return storage_status(
                 crate::sys::ck_storage_format(),
@@ -133,6 +148,7 @@ impl crate::composition::FirmwareProvider for Native {
             );
         }
         #[cfg(all(feature = "storage", test))]
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe {
             return storage_status(
                 crate::runtime::device::tests::hal::ck_storage_format(),
@@ -147,10 +163,12 @@ impl crate::composition::FirmwareProvider for Native {
     #[cfg(feature = "ctap")]
     unsafe fn sample_presence() {
         #[cfg(not(test))]
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe {
             device::presence_sample::<Runtime>()
         };
         #[cfg(test)]
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe {
             crate::runtime::device::tests::ck_core_presence_sample()
         };

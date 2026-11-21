@@ -29,8 +29,12 @@ use canokey_rust_core::runtime::{
 };
 #[cfg(test)]
 use tests::deinit;
+// CTAP status returned inside the NFC APDU for an oversized FIDO request.
+#[cfg(not(test))]
+const CTAP_REQUEST_TOO_LARGE: u8 = 0x39;
 #[cfg(test)]
 unsafe fn ck_core_reset<P: Provider>() {
+    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe { tests::ck_core_reset() }
 }
 #[cfg(test)]
@@ -41,6 +45,7 @@ unsafe fn ck_core_exchange<P: Provider>(
     out: *mut u8,
     capacity: usize,
 ) -> i32 {
+    // SAFETY: The serialized fixture forwards the caller's validated input and output buffers.
     unsafe { tests::ck_core_exchange(owner, input, length, out, capacity) }
 }
 struct Hardware;
@@ -49,24 +54,31 @@ impl Chip for Hardware {
         let Ok(n) = u8::try_from(out.len()) else {
             return false;
         };
+        // SAFETY: The slice provides the live region for the checked chip I/O byte count.
         unsafe { ck_nfc_io_read(address, out.as_mut_ptr(), n) == 0 }
     }
     fn write(&mut self, address: u16, bytes: &[u8]) -> bool {
         let Ok(n) = u8::try_from(bytes.len()) else {
             return false;
         };
+        // SAFETY: The slice provides the live region for the checked chip I/O byte count.
         unsafe { ck_nfc_io_write(address, bytes.as_ptr(), n) == 0 }
     }
 }
 impl canokey_rust_core::runtime::nfc_provision::Provision for Hardware {
     fn select(&mut self, active: bool) {
+        // SAFETY: The NFC chip callbacks are installed; shared chip state is accessed under the NFC I/O lock.
         unsafe { ck_nfc_io_select(active as u8) }
     }
     fn delay_ms(&mut self, milliseconds: u16) {
+        // SAFETY: The NFC chip callbacks are installed; shared chip state is accessed under the NFC I/O lock.
         unsafe { ck_nfc_io_delay(milliseconds) }
     }
 }
 /// Boot-only, before GPIO NFC IRQ is enabled. EEPROM delays require SysTick.
+///
+/// # Safety
+/// Call during boot, before the GPIO NFC IRQ and transport polling can run. SysTick must be available for chip delays.
 pub unsafe fn ck_nfc_configure() -> i32 {
     if canokey_rust_core::runtime::nfc_provision::configure(&mut Hardware) {
         0
@@ -93,6 +105,7 @@ impl<P: Provider> ReceiveBackend for Stager<P> {
         }
         #[cfg(not(test))]
         {
+            // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
             let limit = unsafe {
                 crate::composition::core::with_core::<P, _>(|core, p| core.prepare_nfc(prefix, p))
             }
@@ -187,6 +200,7 @@ unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outco
             }
         }
     }
+    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe {
         crate::composition::core::with_core::<P, _>(|core, p| {
             let result = request.finish(
@@ -217,9 +231,7 @@ unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outco
                     match rejection {
                         Rejection::Status(sw) => (Reply::Status(sw), None),
                         Rejection::TooLarge => {
-                            buffer.write(
-                                canokey_rust_core::applets::ctap::Status::RequestTooLarge as u8,
-                            );
+                            buffer.write(CTAP_REQUEST_TOO_LARGE);
                             buffer.add(1).write(0x90);
                             buffer.add(2).write(0);
                             return Outcome {
@@ -238,20 +250,23 @@ unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outco
                     core::slice::from_raw_parts_mut(buffer, apdu::SHORT_REPLY_BYTES),
                     p,
                 )
-                .map_or(-1, |n| n as i32);
+                .map_or(-1, |n| i32::try_from(n).unwrap());
             Outcome { length, info, fido }
         })
     }
 }
 #[cfg(test)]
 unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outcome {
+    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe { tests::dispatch::<P>(request, buffer) }
 }
 #[cfg(not(test))]
 fn execution_live() -> bool {
+    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe { with_io(|io, _, _| io.generation() == GENERATION && io.live()) }
 }
 unsafe fn with_io<T>(f: impl FnOnce(&mut Io, &mut Hardware, u32) -> T) -> T {
+    // SAFETY: The NFC chip callbacks are installed; shared chip state is accessed under the NFC I/O lock.
     unsafe {
         let mask = ck_nfc_io_lock();
         let result = f(
@@ -263,13 +278,22 @@ unsafe fn with_io<T>(f: impl FnOnce(&mut Io, &mut Hardware, u32) -> T) -> T {
         result
     }
 }
+///
+/// # Safety
+/// Read the mode after the boot latch is set, or from the serialized code that sets it.
 pub unsafe fn is_nfc() -> u8 {
+    // SAFETY: The mode latch is set at boot before enabling controller IRQs.
     unsafe { ACTIVE as u8 }
 }
 pub unsafe extern "C" fn ck_nfc_progress() -> u8 {
+    // SAFETY: The NFC I/O lock protects the IRQ-owned execution flags until the snapshot is read.
     unsafe { with_io(|io, _, _| io.live() as u8) }
 }
+///
+/// # Safety
+/// Call only for the board NFC IRQ with the NFC chip callbacks installed.
 pub unsafe fn nfc_handler() {
+    // SAFETY: The NFC chip callbacks are installed; shared chip state is accessed under the NFC I/O lock.
     unsafe {
         with_io(|io, chip, now| {
             if ACTIVE {
@@ -281,6 +305,7 @@ pub unsafe fn nfc_handler() {
     }
 }
 unsafe extern "C" fn timer() {
+    // SAFETY: The NFC chip callbacks are installed; shared chip state is accessed under the NFC I/O lock.
     unsafe {
         with_io(|io, chip, now| {
             if ACTIVE {
@@ -293,6 +318,7 @@ unsafe extern "C" fn timer() {
     }
 }
 unsafe fn reset_link<P: Provider>() {
+    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe {
         (&mut *core::ptr::addr_of_mut!(LINK)).reset();
         PENDING = false;
@@ -305,13 +331,21 @@ unsafe fn reset_link<P: Provider>() {
     }
 }
 /// Boot-only mode latch, before any transport or applet is started.
+///
+/// # Safety
+/// Call during boot, before the GPIO NFC IRQ and transport polling can run.
 pub unsafe fn ck_nfc_set_mode(active: u8) {
+    // SAFETY: The mode latch is set at boot before enabling controller IRQs.
     unsafe {
         ACTIVE = active != 0;
     }
 }
 /// Main-loop startup only. Quiesce USB before leasing its byte allocation.
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop during NFC startup.
 pub unsafe fn init<P: Provider>() {
+    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe {
         deinit();
         let mask = ck_nfc_io_lock();
@@ -325,6 +359,7 @@ pub unsafe fn init<P: Provider>() {
     }
 }
 unsafe fn fault() {
+    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe {
         with_io(|io, _, _| {
             if io.generation() == GENERATION {
@@ -334,9 +369,11 @@ unsafe fn fault() {
     }
 }
 unsafe fn send(packet: &Packet) -> bool {
+    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe { with_io(|io, chip, _| io.generation() == GENERATION && io.send(packet, chip)) }
 }
 unsafe fn execute<P: Provider>(continuation: Option<&[u8]>) {
+    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe {
         let started = with_io(|io, _, now| {
             if io.generation() != GENERATION || !io.begin_execution(now) {
@@ -386,6 +423,7 @@ unsafe fn execute<P: Provider>(continuation: Option<&[u8]>) {
     }
 }
 unsafe fn next_response<P: Provider>() {
+    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe {
         if SENT == LENGTH && MORE {
             // The existing engine owns response sources/offsets. This request
@@ -414,6 +452,7 @@ unsafe fn next_response<P: Provider>() {
 // Keep the packet window off the applet/crypto call path.
 #[inline(never)]
 unsafe fn receive<P: Provider>() -> Option<Result<Event, canokey_rust_core::runtime::nfc::Error>> {
+    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe {
         let mut frame = [0; wire::FRAME_LIMIT];
         let n = with_io(|io, _, _| {
@@ -440,7 +479,11 @@ unsafe fn receive<P: Provider>() -> Option<Result<Event, canokey_rust_core::runt
         )
     }
 }
+///
+/// # Safety
+/// Run on the serialized main loop with its installed Provider while NFC owns the shared APDU buffer.
 pub unsafe fn poll<P: Provider>() {
+    // SAFETY: The NFC main loop owns the APDU buffer and link; chip access is serialized by the NFC I/O lock.
     unsafe {
         if !ACTIVE {
             return;
@@ -493,6 +536,9 @@ pub unsafe fn poll<P: Provider>() {
 }
 
 /// Boot-only stored NFC disable policy, before GPIO IRQ is enabled.
+///
+/// # Safety
+/// Call during boot, before the GPIO NFC IRQ and transport polling can run.
 pub unsafe fn ck_nfc_silence() -> i32 {
     if Hardware.write(wire::FM_REG_RESET_SILENCE, &[wire::FM_SILENCE]) {
         0

@@ -220,15 +220,15 @@ impl<'a> Encoder<&'a mut [u8]> {
         let mut head = [0u8; 5];
         let mt = major << 5;
         let n = if value < 24 {
-            head[0] = mt | value as u8;
+            head[0] = mt | value.to_le_bytes()[0];
             1
         } else if value <= 0xff {
             head[0] = mt | 24;
-            head[1] = value as u8;
+            head[1] = value.to_le_bytes()[0];
             2
         } else if value <= 0xffff {
             head[0] = mt | 25;
-            head[1..3].copy_from_slice(&(value as u16).to_be_bytes());
+            head[1..3].copy_from_slice(&value.to_be_bytes()[2..]);
             3
         } else {
             head[0] = mt | 26;
@@ -240,8 +240,8 @@ impl<'a> Encoder<&'a mut [u8]> {
     // Expose the width choice to typed callers while retaining full u64 CBOR.
     #[inline(always)]
     fn header(&mut self, major: u8, value: u64) -> &mut Self {
-        if value <= u64::from(u32::MAX) {
-            return self.header32(major, value as u32);
+        if let Ok(value) = u32::try_from(value) {
+            return self.header32(major, value);
         }
         let mut head = [0u8; 9];
         head[0] = (major << 5) | 27;
@@ -344,9 +344,9 @@ impl<const DEPTH_SLOTS: usize> BoundedDecoder<DEPTH_SLOTS> {
             head_len: 0,
             pending,
             depth_limit: if DEPTH_SLOTS <= MAX_DEPTH {
-                DEPTH_SLOTS.saturating_sub(1) as u8
+                DEPTH_SLOTS.saturating_sub(1).to_le_bytes()[0]
             } else {
-                MAX_DEPTH as u8
+                MAX_DEPTH.to_le_bytes()[0]
             },
             depth: 0,
             body: 0,
@@ -374,7 +374,7 @@ impl<const DEPTH_SLOTS: usize> BoundedDecoder<DEPTH_SLOTS> {
         {
             self.failed = true;
         } else {
-            self.depth_limit = depth as u8;
+            self.depth_limit = depth.to_le_bytes()[0];
         }
         self
     }
@@ -450,8 +450,10 @@ impl<const DEPTH_SLOTS: usize> BoundedDecoder<DEPTH_SLOTS> {
                 if self.text {
                     self.utf8.feed(value)?;
                 }
-                self.body -= n as u16;
-                self.budget -= n as u16;
+                let [lo, hi, ..] = n.to_le_bytes();
+                let consumed = u16::from_le_bytes([lo, hi]);
+                self.body -= consumed;
+                self.budget -= consumed;
                 *bytes = rest;
                 self.end_string = self.body == 0;
                 return Ok(Some(Event::Data(value)));

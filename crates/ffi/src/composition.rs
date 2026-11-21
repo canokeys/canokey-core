@@ -32,7 +32,11 @@ pub mod nfc {
 #[cfg(feature = "usb-hid")]
 pub mod hid {
     pub use crate::transport::hid::link::{ck_hid_active as active, ck_hid_busy as busy, poll};
+    ///
+    /// # Safety
+    /// Call on the serialized main loop during an active HID execution.
     pub unsafe fn keepalive(waiting: bool) {
+        // SAFETY: The caller is on the serialized main loop during an active HID execution.
         unsafe { crate::transport::hid::link::ck_hid_keepalive(u8::from(waiting)) }
     }
 }
@@ -58,6 +62,7 @@ pub mod usb {
     /// here. Enumeration must not dispatch application commands before boot
     /// self-checks; service reset/cleanup independently of normal transport poll.
     pub unsafe fn service<P: super::Provider>() {
+        // SAFETY: The caller serializes lifecycle cleanup with Core and uses the Provider that owns the leases.
         unsafe {
             let generation = crate::transport::usb::service_generation();
             #[cfg(feature = "usb-webusb")]
@@ -85,9 +90,18 @@ pub trait Provider {
 /// Firmware main-loop capabilities; presence sampling must never enter Core.
 #[cfg(feature = "device-runtime")]
 pub trait FirmwareProvider: Provider {
+    ///
+    /// # Safety
+    /// Call before application service starts and with exclusive access to the installed storage.
     unsafe fn storage_mount() -> Result<(), canokey_ports::StorageError>;
+    ///
+    /// # Safety
+    /// Call with exclusive access to the installed storage and no live record handles.
     unsafe fn storage_format() -> Result<(), canokey_ports::StorageError>;
     #[cfg(feature = "ctap")]
+    ///
+    /// # Safety
+    /// Call from the serialized main loop. The hardware sampler must not enter Core.
     unsafe fn sample_presence();
 }
 

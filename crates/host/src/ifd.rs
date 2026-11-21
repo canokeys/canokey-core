@@ -82,16 +82,20 @@ unsafe extern "C" fn get_capability(
     if length.is_null() {
         return COMMUNICATION_ERROR;
     }
+    // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     let capacity = unsafe { length.read() } as usize;
     if tag == TAG_POLL_TIMEOUT {
         if ck_pcsc_present(lun as u64) != 0 {
+            // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
             unsafe {
                 length.write(0);
             }
             return NO_SUCH_DEVICE;
         }
+        // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
         let callback = unsafe { ck_host_pcsc_poll_setup(ck_host_pcsc_poll_valid) };
         let size = mem::size_of_val(&callback);
+        // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
         unsafe {
             length.write(size as Dword);
         }
@@ -101,6 +105,7 @@ unsafe extern "C" fn get_capability(
         if value.is_null() {
             return COMMUNICATION_ERROR;
         }
+        // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
         unsafe {
             ptr::copy_nonoverlapping(ptr::from_ref(&callback).cast::<u8>(), value, size);
         }
@@ -115,7 +120,9 @@ unsafe extern "C" fn get_capability(
         _ => 255,
     };
     let mut size = 0;
+    // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     let result = unsafe { ck_pcsc_capability(lun as u64, kind, value, capacity, &mut size) };
+    // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     unsafe {
         length.write(size as Dword);
     }
@@ -149,7 +156,9 @@ unsafe extern "C" fn power(
         _ => 255,
     };
     let mut size = 0;
+    // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     let result = unsafe { ck_pcsc_power(lun as u64, kind, atr, length.read() as usize, &mut size) };
+    // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     unsafe {
         length.write(size as Dword);
     }
@@ -168,6 +177,7 @@ unsafe extern "C" fn transmit(
     if length.is_null() || receive.is_null() {
         return COMMUNICATION_ERROR;
     }
+    // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     unsafe {
         receive.write(IoHeader {
             protocol: send.protocol,
@@ -175,6 +185,7 @@ unsafe extern "C" fn transmit(
         });
     }
     let mut size = 0;
+    // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     let result = unsafe {
         ck_pcsc_transmit(
             lun as u64,
@@ -185,6 +196,7 @@ unsafe extern "C" fn transmit(
             &mut size,
         )
     };
+    // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     unsafe {
         length.write(size as Dword);
     }
@@ -203,6 +215,7 @@ unsafe extern "C" fn control(
     if returned.is_null() {
         return COMMUNICATION_ERROR;
     }
+    // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     unsafe {
         returned.write(0);
     }

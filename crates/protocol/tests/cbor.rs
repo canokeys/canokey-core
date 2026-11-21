@@ -269,7 +269,7 @@ fn minicbor_vectors_across_every_split() {
         .unwrap();
     let n = 1024 - encoder.writer().len();
     let bytes = &bytes[..n];
-    let expected = decode(&[bytes], n as u16).unwrap();
+    let expected = decode(&[bytes], u16::try_from(n).unwrap()).unwrap();
     assert_eq!(
         expected,
         [
@@ -304,19 +304,29 @@ fn minicbor_vectors_across_every_split() {
     );
     for split in 0..=n {
         assert_eq!(
-            decode(&[&bytes[..split], &bytes[split..]], n as u16).unwrap(),
+            decode(
+                &[&bytes[..split], &bytes[split..]],
+                u16::try_from(n).unwrap()
+            )
+            .unwrap(),
             expected
         );
     }
     let fragments: Vec<_> = bytes.chunks(1).collect();
-    assert_eq!(decode(&fragments, n as u16).unwrap(), expected);
+    assert_eq!(
+        decode(&fragments, u16::try_from(n).unwrap()).unwrap(),
+        expected
+    );
     for length in 0..n {
         assert!(
-            decode(&[&bytes[..length]], n as u16).is_err(),
+            decode(&[&bytes[..length]], u16::try_from(n).unwrap()).is_err(),
             "prefix {length}"
         );
     }
-    assert_eq!(decode(&[bytes], n as u16 - 1), Err(Error::Limit));
+    assert_eq!(
+        decode(&[bytes], u16::try_from(n).unwrap() - 1),
+        Err(Error::Limit)
+    );
 }
 
 #[test]
@@ -411,13 +421,14 @@ fn nesting_capacity_is_static_and_reconfiguration_fails_closed() {
         let mut input = vec![0x81; depth - 1];
         input.push(0x80);
         for split in 0..=input.len() {
-            let mut default = Decoder::new(input.len() as u16);
+            let mut default = Decoder::new(u16::try_from(input.len()).unwrap());
             let result = default
                 .feed(&input[..split], &mut |_| Ok(()))
                 .and_then(|_| default.feed(&input[split..], &mut |_| Ok(())))
                 .and_then(|_| default.finish());
             assert_eq!(result.is_ok(), depth <= 8);
-            let mut deep = BoundedDecoder::<18>::new(input.len() as u16).with_depth_limit(17);
+            let mut deep =
+                BoundedDecoder::<18>::new(u16::try_from(input.len()).unwrap()).with_depth_limit(17);
             let result = deep
                 .feed(&input[..split], &mut |_| Ok(()))
                 .and_then(|_| deep.feed(&input[split..], &mut |_| Ok(())))

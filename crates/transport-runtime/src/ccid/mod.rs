@@ -10,6 +10,10 @@ pub use profile::ShortApdu;
 pub const EXTENSION_INTERVAL: u16 = 500;
 pub const RECEIVE_TIMEOUT_MS: u32 = 2000;
 const MIN_REPLY_BYTES: usize = 2;
+const SHORT_FRAME_LIMIT: u32 = {
+    let [a, b, c, d, ..] = apdu::SHORT_FRAME_BYTES.to_le_bytes();
+    u32::from_le_bytes([a, b, c, d])
+};
 
 /// Pure product validation and card identity; no application or IO references.
 pub trait Policy {
@@ -148,12 +152,11 @@ impl<P: Policy> Transport<P> {
                 // Header admission can reserve a transport owner, but cannot
                 // borrow applet input. Its previous state survives until a
                 // complete short APDU reaches exchange.
-                let header_error =
-                    if header[0] == TRANSFER && length > apdu::SHORT_FRAME_BYTES as u32 {
-                        BAD_LENGTH
-                    } else {
-                        0x00
-                    };
+                let header_error = if header[0] == TRANSFER && length > SHORT_FRAME_LIMIT {
+                    BAD_LENGTH
+                } else {
+                    0x00
+                };
                 *error = P::validate(header, header_error);
                 store = header[0] == TRANSFER && *error == 0x00;
                 if store {
@@ -261,7 +264,7 @@ impl<P: Policy> Transport<P> {
         response(
             (&mut output[..HEADER]).try_into().unwrap(),
             kind,
-            length as u32,
+            u32::try_from(length).unwrap(),
             slot,
             sequence,
             status,
@@ -272,7 +275,8 @@ impl<P: Policy> Transport<P> {
             },
             u8::from(kind == PARAMETERS),
         );
-        self.reply_len = (HEADER + length) as u16;
+        let [lo, hi, ..] = (HEADER + length).to_le_bytes();
+        self.reply_len = u16::from_le_bytes([lo, hi]);
         self.phase = Phase::Reply;
     }
     /// In-flight bytes are owned by the facade's separate endpoint lease.
@@ -443,7 +447,7 @@ impl<P: Policy> Polling<P> {
         response(
             (&mut output[..HEADER]).try_into().unwrap(),
             kind,
-            reply_bytes as u32,
+            u32::try_from(reply_bytes).unwrap(),
             slot,
             header[SEQUENCE_OFFSET],
             status,

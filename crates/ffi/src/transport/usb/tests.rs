@@ -53,6 +53,7 @@ static mut CONTROLLER: Controller = Controller {
     foreign_progress: 0,
 };
 fn controller() -> &'static mut Controller {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { &mut *core::ptr::addr_of_mut!(CONTROLLER) }
 }
 fn endpoint(ep: u8) -> usize {
@@ -139,6 +140,7 @@ pub(crate) unsafe fn ck_usb_dcd_write(ep: u8, bytes: *const u8, length: u16) -> 
         return 0;
     }
     if n != 0 {
+        // SAFETY: The fixture caller supplies a live buffer for the ABI byte count.
         c.packets[ix][..n].copy_from_slice(unsafe { core::slice::from_raw_parts(bytes, n) });
     }
     c.lengths[ix] = n;
@@ -149,6 +151,7 @@ pub(crate) unsafe fn ck_usb_dcd_write(ep: u8, bytes: *const u8, length: u16) -> 
 fn complete(ep: u8) {
     assert!(controller().pending[endpoint(ep)]);
     controller().pending[endpoint(ep)] = false;
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { ck_usb_in(ep) };
 }
 fn setup(kind: u8, request: u8, value: u16, index: u16, length: u16) {
@@ -156,7 +159,8 @@ fn setup(kind: u8, request: u8, value: u16, index: u16, length: u16) {
     bytes[2..4].copy_from_slice(&value.to_le_bytes());
     bytes[4..6].copy_from_slice(&index.to_le_bytes());
     bytes[6..8].copy_from_slice(&length.to_le_bytes());
-    unsafe { ck_usb_setup(bytes.as_ptr(), bytes.len() as u16) };
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
+    unsafe { ck_usb_setup(bytes.as_ptr(), u16::try_from(bytes.len()).unwrap()) };
 }
 fn status() {
     assert!(controller().pending[0]);
@@ -174,6 +178,7 @@ fn read_control(output: &mut [u8]) -> usize {
         }
         complete(CONTROL_IN_EP);
     }
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     assert_eq!(unsafe { ck_usb_out(0, core::ptr::null(), 0) }, 1);
     n
 }
@@ -187,9 +192,11 @@ fn bus_reset() {
         c.opened[1] = true;
         c.address = 0;
     }
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { ck_usb_bus_reset() };
 }
 fn configure() {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { init() };
     assert_ne!(controller().masked, 0);
     assert_eq!(controller().address, 0);
@@ -200,9 +207,11 @@ fn configure() {
     assert_eq!(controller().address, ADDRESS);
     setup(0, SET_CONFIGURATION, 1, 0, 0);
     assert!(!controller().ready);
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     assert_ne!(unsafe { ck_usb_configured() }, 0);
     status();
     #[cfg(feature = "usb-webusb")]
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe {
         crate::transport::webusb::service_reset::<crate::platform::Native>();
     }
@@ -236,6 +245,7 @@ pub(crate) use web::{can_preempt, ck_ccid_idle, ck_core_reset, web_begin, web_fe
 #[test]
 fn usb_controller_control_endpoints_mailboxes_and_reset() {
     let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe {
         controller().masked = 1;
         configure();
@@ -326,7 +336,7 @@ fn usb_controller_control_endpoints_mailboxes_and_reset() {
         assert_eq!(ck_usb_submit(EP_CCID_IN, packet.as_ptr(), 64, 0), 0);
         ck_usb_resume();
         assert_ne!(ck_usb_configured(), 0);
-        let payload: [u8; 128] = core::array::from_fn(|i| i as u8);
+        let payload: [u8; 128] = core::array::from_fn(|i| i.to_le_bytes()[0]);
         assert_eq!(ck_usb_submit(EP_CCID_IN, payload.as_ptr(), 128, 1), 1);
         assert_eq!(ck_usb_tx_idle(EP_CCID_IN), 0);
         assert_eq!(controller().lengths[3], 64);
@@ -487,6 +497,7 @@ fn usb_controller_control_endpoints_mailboxes_and_reset() {
 #[test]
 fn lifecycle_cleanup_gates_class_input_and_rejects_stale_completion() {
     let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe {
         controller().masked = 1;
         configure();

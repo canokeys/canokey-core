@@ -27,6 +27,7 @@ static mut STAGE: Stage = Stage {
     closes: 0,
 };
 fn stage() -> &'static mut Stage {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { &mut *core::ptr::addr_of_mut!(STAGE) }
 }
 pub(super) fn prepare(prefix: &[u8; 7]) -> Result<(), Rejection> {
@@ -66,6 +67,7 @@ pub(super) fn stage_close() {
 pub(super) unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u8) -> Outcome {
     let mut backend = Stager::<P>(core::marker::PhantomData);
     let result = request.finish(
+        // SAFETY: The fixture caller supplies a live buffer for the ABI byte count.
         unsafe { core::slice::from_raw_parts(buffer, apdu::SHORT_FRAME_BYTES) },
         &mut backend,
     );
@@ -74,6 +76,7 @@ pub(super) unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u
         assert!(request.read(
             0,
             &mut input,
+            // SAFETY: The fixture caller supplies a live buffer for the ABI byte count.
             unsafe { core::slice::from_raw_parts(buffer, apdu::SHORT_FRAME_BYTES) },
             &mut backend
         ));
@@ -86,6 +89,7 @@ pub(super) unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u
                 Rejection::TooLarge => &[0x39, 0x90, 0],
                 Rejection::Status(sw) => {
                     let bytes = sw.bytes();
+                    // SAFETY: This fixture writes its reply within the caller's live output buffer.
                     unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, 2) };
                     return Outcome {
                         length: 2,
@@ -94,9 +98,10 @@ pub(super) unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u
                     };
                 }
             };
+            // SAFETY: This fixture writes its reply within the caller's live output buffer.
             unsafe { core::ptr::copy_nonoverlapping(response.as_ptr(), buffer, response.len()) };
             Outcome {
-                length: response.len() as i32,
+                length: i32::try_from(response.len()).unwrap(),
                 info: None,
                 fido: false,
             }
@@ -111,6 +116,7 @@ pub(super) unsafe fn dispatch<P: Provider>(request: &mut Request, buffer: *mut u
             } else {
                 input.as_ptr()
             };
+            // SAFETY: The transport fixture serializes this call and owns the fake controller state.
             let length = unsafe {
                 ck_core_exchange(
                     crate::transport::owners::OWNER_NFC,
@@ -180,6 +186,7 @@ impl Controller {
 }
 static mut CONTROLLER: Controller = Controller::new();
 fn controller() -> &'static mut Controller {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { &mut *core::ptr::addr_of_mut!(CONTROLLER) }
 }
 pub(crate) unsafe fn ck_nfc_io_lock() -> u32 {
@@ -205,6 +212,7 @@ pub(crate) unsafe fn ck_nfc_io_schedule(
     controller().timer = callback;
 }
 pub(crate) unsafe fn ck_nfc_io_read(address: u16, out: *mut u8, length: u8) -> i32 {
+    // SAFETY: The fixture caller supplies a live buffer for the ABI byte count.
     let out = unsafe { core::slice::from_raw_parts_mut(out, usize::from(length)) };
     let c = controller();
     assert_ne!(c.masked, 0);
@@ -215,7 +223,7 @@ pub(crate) unsafe fn ck_nfc_io_read(address: u16, out: *mut u8, length: u8) -> i
         }
         wire::FM_REG_FIFO_WORDCNT => {
             assert_eq!(out.len(), 1);
-            out[0] = c.rxlen as u8;
+            out[0] = u8::try_from(c.rxlen).unwrap();
         }
         wire::FM_REG_FIFO_ACCESS => out.copy_from_slice(&c.rx[..c.rxlen]),
         _ => panic!("unexpected NFC register {address:#x}"),
@@ -223,6 +231,7 @@ pub(crate) unsafe fn ck_nfc_io_read(address: u16, out: *mut u8, length: u8) -> i
     0
 }
 pub(crate) unsafe fn ck_nfc_io_write(address: u16, bytes: *const u8, length: u8) -> i32 {
+    // SAFETY: The fixture caller supplies a live buffer for the ABI byte count.
     let bytes = unsafe { core::slice::from_raw_parts(bytes, usize::from(length)) };
     let c = controller();
     assert_ne!(c.masked, 0);
@@ -253,10 +262,12 @@ fn frame(bytes: &[u8]) {
     c.rx[..bytes.len()].copy_from_slice(bytes);
     c.rxlen = bytes.len();
     c.flags[0] = wire::FM_MAIN_RX_DONE;
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { nfc_handler() };
 }
 fn activate() {
     controller().flags[0] = wire::FM_MAIN_ACTIVE;
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { nfc_handler() };
 }
 pub(crate) unsafe fn ck_core_exchange(
@@ -271,12 +282,15 @@ pub(crate) unsafe fn ck_core_exchange(
     assert_eq!(out, crate::transport::ccid::ck_ccid_response_buffer());
     assert_eq!(capacity, apdu::SHORT_REPLY_BYTES);
     controller().calls += 1;
+    // SAFETY: The fixture caller supplies a live buffer for the ABI byte count.
     let input = unsafe { core::slice::from_raw_parts(input, length) };
     // Read all input before mutating the aliased shared response allocation.
     if controller().fido {
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         assert_ne!(unsafe { ck_nfc_progress() }, 0);
         if input[1] == apdu::INS_SELECT {
             assert_eq!(length, FIDO_SELECT.len() - 3);
+            // SAFETY: The transport fixture serializes this call and owns the fake controller state.
             unsafe {
                 out.write(0x90);
                 out.add(1).write(0x00);
@@ -293,16 +307,20 @@ pub(crate) unsafe fn ck_core_exchange(
         } else {
             assert_eq!(&input[..4], &apdu::GET_RESPONSE[..4]);
             controller().continuation += 1;
-            controller().get_response_les.push(le as u32);
+            controller()
+                .get_response_les
+                .push(u32::try_from(le).unwrap());
         }
         let c = controller();
         let n = (c.response_total - c.response_offset)
             .min(c.response_chunk)
             .min(le);
         for i in 0..n {
-            unsafe { out.add(i).write((c.response_offset + i) as u8) };
+            // SAFETY: This fixture writes its reply within the caller's live output buffer.
+            unsafe { out.add(i).write((c.response_offset + i).to_le_bytes()[0]) };
         }
         c.response_offset += n;
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         unsafe {
             out.add(n).write(if c.response_offset < c.response_total {
                 0x61
@@ -311,7 +329,7 @@ pub(crate) unsafe fn ck_core_exchange(
             });
             out.add(n + 1).write(0);
         }
-        return (n + 2) as i32;
+        return i32::try_from(n + 2).unwrap();
     } else {
         assert_eq!(
             input,
@@ -321,37 +339,45 @@ pub(crate) unsafe fn ck_core_exchange(
                 &apdu::GET_RESPONSE
             }
         );
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         assert_ne!(unsafe { ck_nfc_progress() }, 0);
         if controller().waiting_in_core {
             controller().now += u32::from(wire::WTX_INTERVAL_MS);
             let callback = controller().timer.take().unwrap();
+            // SAFETY: The fixture invokes the callback it captured from the device timer registration.
             unsafe { callback() };
             assert_eq!(&controller().tx[..controller().txlen], &[wire::PCB_WTX, 1]);
         }
         if controller().reset_in_core {
             controller().resets_in_core = controller().resets;
             activate();
+            // SAFETY: The transport fixture serializes this call and owns the fake controller state.
             assert_eq!(unsafe { ck_nfc_progress() }, 0);
             assert_eq!(controller().resets, controller().resets_in_core);
         }
     }
     for i in 0..RESPONSE_PAYLOAD {
-        unsafe { out.add(i).write(i as u8) };
+        // SAFETY: This fixture writes its reply within the caller's live output buffer.
+        unsafe { out.add(i).write(i.to_le_bytes()[0]) };
     }
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe {
         out.add(RESPONSE_PAYLOAD).write(0x90);
         out.add(RESPONSE_PAYLOAD + 1).write(0);
     }
-    (RESPONSE_PAYLOAD + 2) as i32
+    i32::try_from(RESPONSE_PAYLOAD + 2).unwrap()
 }
 fn poll() {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { super::poll::<crate::platform::Native>() };
 }
 #[test]
 fn nfc_link_chaining_wtx_reset_and_fido_aggregation() {
     let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
     *controller() = Controller::new();
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { init::<crate::platform::Native>() };
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     assert_ne!(unsafe { is_nfc() }, 0);
     assert_eq!(controller().resets, 1);
     frame(&COMMAND);
@@ -363,7 +389,7 @@ fn nfc_link_chaining_wtx_reset_and_fido_aggregation() {
     assert_eq!(controller().txlen, 30);
     assert_eq!(controller().tx[0], 0x12);
     for i in 0..29 {
-        assert_eq!(controller().tx[i + 1], i as u8);
+        assert_eq!(controller().tx[i + 1], i.to_le_bytes()[0]);
     }
     // R-block with the current sequence requests the same chained reply again.
     frame(&[0xa2, 0, 0]);
@@ -446,7 +472,7 @@ fn nfc_link_chaining_wtx_reset_and_fido_aggregation() {
     assert_eq!(total, collected.len());
     assert_eq!(controller().continuation, 1);
     for (i, byte) in collected[..RESPONSE_PAYLOAD * 2].iter().enumerate() {
-        assert_eq!(*byte, i as u8);
+        assert_eq!(*byte, i.to_le_bytes()[0]);
     }
     assert_eq!(&collected[RESPONSE_PAYLOAD * 2..], &[0x90, 0]);
     controller().fido = false;
@@ -461,9 +487,11 @@ fn nfc_link_chaining_wtx_reset_and_fido_aggregation() {
     poll();
     assert_eq!(controller().resets, resets + 1);
     assert_eq!(controller().sends, sent);
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     assert_eq!(unsafe { ck_nfc_progress() }, 0);
     assert_eq!(controller().masked, 0);
     // Release the mode latch so the serialized USB fixture can run afterwards.
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { ck_nfc_set_mode(0) };
 }
 
@@ -520,6 +548,7 @@ fn large_requests_finite_le_remainder_and_staged_reset() {
         Some(65536),
     ] {
         *controller() = Controller::new();
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         unsafe { init::<crate::platform::Native>() };
         controller().fido = true;
         controller().response_total = 700;
@@ -527,7 +556,7 @@ fn large_requests_finite_le_remainder_and_staged_reset() {
         let mut command = std::vec![0x80, 0x10, 0, 0, 0, 0x03, 0x00];
         command.resize(7 + 768, 0x5a);
         if let Some(limit) = le {
-            command.extend_from_slice(&(limit as u16).to_be_bytes());
+            command.extend_from_slice(&u16::try_from(limit).unwrap().to_be_bytes());
         }
         let closed = stage().closes;
         let (result, number) = exchange_blocks(&command, 0, true);
@@ -546,7 +575,7 @@ fn large_requests_finite_le_remainder_and_staged_reset() {
             }
         );
         for (index, byte) in result[..emitted].iter().enumerate() {
-            assert_eq!(*byte, index as u8);
+            assert_eq!(*byte, index.to_le_bytes()[0]);
         }
         if le == Some(257) {
             assert_eq!(controller().get_response_les, [1]);
@@ -556,11 +585,13 @@ fn large_requests_finite_le_remainder_and_staged_reset() {
             let (remainder, _) = exchange_blocks(&apdu::GET_RESPONSE, number, false);
             let n = (700 - emitted).min(256);
             assert_eq!(remainder.len(), n + 2);
-            assert_eq!(remainder[0], emitted as u8);
+            assert_eq!(remainder[0], emitted.to_le_bytes()[0]);
         }
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         unsafe { ck_nfc_set_mode(0) };
     }
     *controller() = Controller::new();
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { init::<crate::platform::Native>() };
     controller().fido = true;
     let mut packet = std::vec![0x12, 0x80, 0x10, 0, 0, 0, 0x03, 0x00];
@@ -575,5 +606,6 @@ fn large_requests_finite_le_remainder_and_staged_reset() {
     assert!(!stage().held);
     assert_eq!(stage().closes, closes + 1);
     assert!(stage().bytes.iter().all(|byte| *byte == 0));
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { ck_nfc_set_mode(0) };
 }

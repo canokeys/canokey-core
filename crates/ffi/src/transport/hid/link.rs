@@ -51,15 +51,17 @@ impl Link {
 static mut LINK: Link = Link::new();
 // Serialized main-loop/progress state, never borrowed across mailbox or IO calls.
 unsafe fn execution() -> &'static mut Execution {
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe { &mut *core::ptr::addr_of_mut!(LINK.execution) }
 }
 unsafe fn peek_header(epoch: u32) -> Option<(u32, u8, u16)> {
     let mut header = [0; 7];
     let mut received = 0;
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     if unsafe {
         ck_hid_io_peek(
             header.as_mut_ptr(),
-            header.len() as u8,
+            header.len().to_le_bytes()[0],
             &mut received,
             epoch,
         )
@@ -73,18 +75,31 @@ unsafe fn peek_header(epoch: u32) -> Option<(u32, u8, u16)> {
         u16::from_be_bytes([header[5], header[6]]),
     ))
 }
+///
+/// # Safety
+/// Read the HID link from the serialized main loop.
 pub unsafe extern "C" fn ck_hid_active() -> u8 {
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe { u8::from(LINK.active) }
 }
 #[inline(never)]
+///
+/// # Safety
+/// Read the HID link from the serialized main loop.
 pub unsafe extern "C" fn ck_hid_busy() -> u8 {
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe { u8::from(LINK.active || LINK.retained || LINK.transmitting) }
 }
+///
+/// # Safety
+/// Call on the serialized main loop without holding a live borrow of the execution field.
 pub unsafe fn ck_hid_executing() -> u8 {
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe { u8::from(execution().executing()) }
 }
 /// Command admission supplies a nonzero CID; reserved CID zero marks inactivity.
 pub unsafe fn ck_hid_execution_begin(cid: u32) {
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe {
         LINK.execution = Execution::new(cid, ck_hid_io_epoch(), device_get_tick());
         LINK.active = true;
@@ -92,6 +107,7 @@ pub unsafe fn ck_hid_execution_begin(cid: u32) {
     }
 }
 pub unsafe fn ck_hid_keepalive(waiting: u8) {
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe {
         LINK.keepalive_status = if waiting != 0 {
             wire::STATUS_UPNEEDED
@@ -101,6 +117,7 @@ pub unsafe fn ck_hid_keepalive(waiting: u8) {
     }
 }
 unsafe fn send_control(cid: u32, command: u8, value: u8, epoch: u32) {
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe {
         let report = &mut *core::ptr::addr_of_mut!(CONTROL);
         wire::header(report, cid, command, 1)[0] = value;
@@ -117,6 +134,7 @@ unsafe fn send_control(cid: u32, command: u8, value: u8, epoch: u32) {
 #[cfg(any(feature = "usb-device", test))]
 #[cfg_attr(all(test, feature = "usb-device"), allow(dead_code))]
 pub unsafe fn ck_hid_foreign_progress() {
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe {
         if execution().executing()
             || ck_hid_io_reset_pending() != 0
@@ -138,7 +156,11 @@ pub unsafe fn ck_hid_foreign_progress() {
         ck_hid_io_receive();
     }
 }
+///
+/// # Safety
+/// Call on the serialized main loop with no live borrow of HID execution state. Core may be executing.
 pub unsafe fn ck_hid_progress() -> u8 {
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe {
         if !execution().executing() || ck_hid_io_reset_pending() != 0 || ck_hid_io_configured() == 0
         {
@@ -194,6 +216,7 @@ pub unsafe fn ck_hid_progress() -> u8 {
     }
 }
 pub unsafe fn ck_hid_execution_end() {
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe {
         while ck_hid_io_reset_pending() == 0 && ck_hid_io_idle() == 0 {
             if (&*core::ptr::addr_of!(LINK.deadline)).expired(device_get_tick()) {
@@ -207,6 +230,7 @@ pub unsafe fn ck_hid_execution_end() {
 }
 /// Main-loop cleanup only; never dispatch a queued report during enumeration.
 pub(crate) unsafe fn service_reset<P: Provider>() {
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe {
         if ck_hid_io_reset_pending() != 0 {
             let generation = ck_hid_io_epoch();
@@ -219,7 +243,11 @@ pub(crate) unsafe fn service_reset<P: Provider>() {
     }
 }
 #[inline(never)]
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
 pub unsafe fn poll<P: Provider>() -> u8 {
+    // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe {
         #[cfg(feature = "nfc")]
         if crate::transport::nfc::is_nfc() != 0 {
@@ -273,7 +301,7 @@ pub unsafe fn poll<P: Provider>() -> u8 {
         let mut received = 0;
         let has_input = ck_hid_io_peek(
             report.as_mut_ptr(),
-            report.len() as u8,
+            report.len().to_le_bytes()[0],
             &mut received,
             generation,
         ) != 0;

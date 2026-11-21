@@ -48,12 +48,14 @@ impl<P: Provider> Scratch for RequestScratch<P> {
         pke::capacity::<P>()
     }
     fn continuation_pending(&mut self) -> bool {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { core_ops::with_core::<P, _>(|core, _| core.ctap_continuation_pending()) }
     }
     fn begin(&mut self, use_pke: bool, preserve_context: bool) -> Result<(), Error> {
         if preserve_context {
             return Ok(());
         }
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe {
             if ck_ccid_idle() == 0 {
                 return Err(Error::Busy);
@@ -84,48 +86,66 @@ impl<P: Provider> Scratch for RequestScratch<P> {
         }
     }
     fn begin_request(&mut self, message_length: Option<usize>) {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { core_ops::with_core::<P, _>(|core, p| core.begin_hid_request(message_length, p)) };
     }
     fn consume_request(&mut self, bytes: &[u8]) {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { core_ops::with_core::<P, _>(|core, _| core.consume_hid_request(bytes)) };
     }
     fn finish_request(&mut self, cid: u32) -> usize {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { ck_hid_execution_begin(cid) };
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         let length = unsafe { core_ops::with_core::<P, _>(|core, p| core.finish_hid_request(p)) };
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { ck_hid_execution_end() };
         length
     }
     #[inline(never)]
     fn wink(&mut self, cid: u32) {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { ck_hid_execution_begin(cid) };
         P::with_platform(|p| p.device.wink());
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { ck_hid_execution_end() };
     }
     fn read_response(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Error> {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { core_ops::with_core::<P, _>(|core, p| core.read_ctap(offset, out, p)) }
             .map_err(|_| Error::Other)
     }
     fn close_response(&mut self) {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { core_ops::with_core::<P, _>(|core, p| core.close_ctap(p)) };
     }
     fn complete_response(&mut self) {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { core_ops::with_core::<P, _>(|core, p| core.complete_ctap(p)) };
     }
     fn discard_continuation(&mut self) {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { core_ops::with_core::<P, _>(|core, p| core.discard_ctap_continuation(p)) };
     }
     fn continue_message(&mut self, bytes: &[u8]) -> Option<usize> {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { core_ops::with_core::<P, _>(|core, p| core.continue_ctap_message(bytes, p)) }
     }
 
     fn close(&mut self) {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe {
             (&mut *core::ptr::addr_of_mut!(PKE_LEASE)).close::<P>();
         }
     }
 }
 #[inline(never)]
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
+/// Return any active staging lease to the same Provider that acquired it.
 pub unsafe fn reset<P: Provider>() {
+    // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
     unsafe {
         hid().reset(&mut RequestScratch::<P>(core::marker::PhantomData));
         core_ops::reset::<P>();
@@ -136,12 +156,17 @@ pub unsafe fn reset<P: Provider>() {
 /// output, bit 1 holds the shared session through RX and final TX completion,
 /// bit 2 retains a native MSG continuation after packet-level completion.
 #[inline(never)]
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
+/// The caller owns the HID framing session and report buffers for the duration of the call.
 pub unsafe fn poll<P: Provider>(
     input: *const [u8; 64],
     received: u32,
     now: u32,
     output: *mut [u8; 64],
 ) -> u8 {
+    // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
     unsafe {
         let hid = hid();
         let out = &mut *output;

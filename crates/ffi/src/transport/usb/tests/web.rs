@@ -26,6 +26,7 @@ static mut POLICY: Policy = Policy {
     input: std::vec::Vec::new(),
 };
 fn policy() -> &'static mut Policy {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { &mut *core::ptr::addr_of_mut!(POLICY) }
 }
 pub(crate) unsafe fn ck_ccid_idle() -> u8 {
@@ -66,7 +67,7 @@ pub(crate) unsafe fn web_finish(owner: u8, out: *mut u8, capacity: usize) -> i32
                 if length == 261 && i < header.len() {
                     header[i]
                 } else {
-                    i as u8
+                    i.to_le_bytes()[0]
                 }
             );
         }
@@ -79,25 +80,30 @@ pub(crate) unsafe fn web_finish(owner: u8, out: *mut u8, capacity: usize) -> i32
     assert_eq!(bytes[0], STATUS_PROCESSING);
     #[cfg(feature = "usb-hid")]
     let before = controller().foreign_progress;
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     assert_eq!(unsafe { ck_transport_progress() }, 1);
     #[cfg(feature = "usb-hid")]
     assert_eq!(controller().foreign_progress, before + 1);
     if policy().reset_during_exchange {
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         unsafe { ck_usb_reset() };
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         assert_eq!(unsafe { ck_transport_progress() }, 0);
     }
     if policy().exchange_error {
         return -1;
     }
+    // SAFETY: The fixture caller supplies a live buffer for the ABI byte count.
     let out = unsafe { core::slice::from_raw_parts_mut(out, capacity) };
     for (i, byte) in out[..256].iter_mut().enumerate() {
-        *byte = i as u8;
+        *byte = i.to_le_bytes()[0];
     }
     out[256..258].copy_from_slice(&[0x90, 0]);
-    RESPONSE_LIMIT as i32
+    i32::try_from(RESPONSE_LIMIT).unwrap()
 }
 
 pub(super) fn scenario() {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe {
         let mut bytes = [0; 256];
         let interface = u16::from(INTERFACES.hid);
@@ -115,7 +121,13 @@ pub(super) fn scenario() {
             assert!(!controller().ready);
             let exchanges = policy().exchanges;
             let blocked = block_competitor();
-            setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
+            setup(
+                VENDOR_INTERFACE_OUT,
+                0,
+                0,
+                interface,
+                u16::try_from(SELECT.len()).unwrap(),
+            );
             assert!(controller().halted[0] && controller().halted[1]);
             assert_eq!(block_competitor(), blocked);
             setup(VENDOR_INTERFACE_IN, 2, 0, interface, 1);
@@ -152,8 +164,17 @@ pub(super) fn scenario() {
                 continue;
             }
             let before = policy().resets;
-            setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
-            assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
+            setup(
+                VENDOR_INTERFACE_OUT,
+                0,
+                0,
+                interface,
+                u16::try_from(SELECT.len()).unwrap(),
+            );
+            assert_eq!(
+                ck_usb_out(0, SELECT.as_ptr(), u16::try_from(SELECT.len()).unwrap()),
+                0
+            );
             assert!(block_competitor());
             crate::transport::webusb::poll::<crate::platform::Native>();
             assert!(!block_competitor());
@@ -163,8 +184,17 @@ pub(super) fn scenario() {
         }
         policy().ccid_idle = true;
         policy().hid_busy = false;
-        setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
-        assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
+        setup(
+            VENDOR_INTERFACE_OUT,
+            0,
+            0,
+            interface,
+            u16::try_from(SELECT.len()).unwrap(),
+        );
+        assert_eq!(
+            ck_usb_out(0, SELECT.as_ptr(), u16::try_from(SELECT.len()).unwrap()),
+            0
+        );
         crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().exchanges, 1);
         setup(VENDOR_INTERFACE_IN, 2, 0, interface, 1);
@@ -173,7 +203,7 @@ pub(super) fn scenario() {
         setup(VENDOR_INTERFACE_IN, 1, 0, interface, 256);
         assert_eq!(read_control(&mut bytes), 256);
         for (i, byte) in bytes.iter().enumerate() {
-            assert_eq!(*byte, i as u8);
+            assert_eq!(*byte, i.to_le_bytes()[0]);
         }
         setup(VENDOR_INTERFACE_IN, 2, 0, interface, 1);
         assert_eq!(read_control(&mut bytes), 1);
@@ -194,16 +224,22 @@ pub(super) fn scenario() {
         assert_eq!(read_control(&mut bytes), 1);
         assert_eq!(bytes[0], STATUS_IDLE);
         setup(VENDOR_INTERFACE_OUT, 0, 0, interface, 261);
-        let mut fragment: [u8; EP0_PACKET_BYTES] = core::array::from_fn(|i| i as u8);
+        let mut fragment: [u8; EP0_PACKET_BYTES] = core::array::from_fn(|i| i.to_le_bytes()[0]);
         fragment[..5].copy_from_slice(&[0x80, 0x10, 0, 0, 255]);
-        assert_eq!(ck_usb_out(0, fragment.as_ptr(), fragment.len() as u16), 0);
+        assert_eq!(
+            ck_usb_out(0, fragment.as_ptr(), u16::try_from(fragment.len()).unwrap()),
+            0
+        );
         crate::transport::webusb::poll::<crate::platform::Native>();
         for offset in (EP0_PACKET_BYTES..261).step_by(EP0_PACKET_BYTES) {
             let count = (261 - offset).min(EP0_PACKET_BYTES);
             for (i, byte) in fragment.iter_mut().enumerate() {
-                *byte = (offset + i) as u8;
+                *byte = (offset + i).to_le_bytes()[0];
             }
-            assert_eq!(ck_usb_out(0, fragment.as_ptr(), count as u16), 0);
+            assert_eq!(
+                ck_usb_out(0, fragment.as_ptr(), u16::try_from(count).unwrap()),
+                0
+            );
             crate::transport::webusb::poll::<crate::platform::Native>();
         }
         // The mock execution issues a new SETUP after the final packet.
@@ -224,19 +260,43 @@ pub(super) fn scenario() {
         crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().exchanges, 2);
         policy().exchange_error = true;
-        setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
-        assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
+        setup(
+            VENDOR_INTERFACE_OUT,
+            0,
+            0,
+            interface,
+            u16::try_from(SELECT.len()).unwrap(),
+        );
+        assert_eq!(
+            ck_usb_out(0, SELECT.as_ptr(), u16::try_from(SELECT.len()).unwrap()),
+            0
+        );
         crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().exchanges, 3);
-        setup(VENDOR_INTERFACE_IN, 1, 0, interface, RESPONSE_LIMIT as u16);
+        setup(
+            VENDOR_INTERFACE_IN,
+            1,
+            0,
+            interface,
+            u16::try_from(RESPONSE_LIMIT).unwrap(),
+        );
         assert_eq!(read_control(&mut bytes), 2);
         assert_eq!(&bytes[..2], &[0x6f, 0]);
         controller().now += 2000;
         crate::transport::webusb::poll::<crate::platform::Native>();
         policy().exchange_error = false;
         policy().reset_during_exchange = true;
-        setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
-        assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
+        setup(
+            VENDOR_INTERFACE_OUT,
+            0,
+            0,
+            interface,
+            u16::try_from(SELECT.len()).unwrap(),
+        );
+        assert_eq!(
+            ck_usb_out(0, SELECT.as_ptr(), u16::try_from(SELECT.len()).unwrap()),
+            0
+        );
         crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().exchanges, 4);
         assert!(!controller().ready);
@@ -244,8 +304,17 @@ pub(super) fn scenario() {
         policy().reset_during_exchange = false;
         configure();
         crate::transport::webusb::poll::<crate::platform::Native>();
-        setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
-        assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
+        setup(
+            VENDOR_INTERFACE_OUT,
+            0,
+            0,
+            interface,
+            u16::try_from(SELECT.len()).unwrap(),
+        );
+        assert_eq!(
+            ck_usb_out(0, SELECT.as_ptr(), u16::try_from(SELECT.len()).unwrap()),
+            0
+        );
         bus_reset();
         assert!(!controller().ready);
         assert_eq!(ck_usb_configured(), 0);
@@ -264,8 +333,17 @@ pub(super) fn scenario() {
         retained_lifecycle();
         // Whole-envelope rejection must produce a pollable APDU status
         // without beginning a Core frame or cancelling its selected context.
-        setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
-        assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
+        setup(
+            VENDOR_INTERFACE_OUT,
+            0,
+            0,
+            interface,
+            u16::try_from(SELECT.len()).unwrap(),
+        );
+        assert_eq!(
+            ck_usb_out(0, SELECT.as_ptr(), u16::try_from(SELECT.len()).unwrap()),
+            0
+        );
         crate::transport::webusb::poll::<crate::platform::Native>();
         setup(VENDOR_INTERFACE_IN, 1, 0, interface, 2);
         assert_eq!(read_control(&mut bytes), 2);
@@ -277,9 +355,16 @@ pub(super) fn scenario() {
             0,
             0,
             interface,
-            malformed.len() as u16,
+            u16::try_from(malformed.len()).unwrap(),
         );
-        assert_eq!(ck_usb_out(0, malformed.as_ptr(), malformed.len() as u16), 0);
+        assert_eq!(
+            ck_usb_out(
+                0,
+                malformed.as_ptr(),
+                u16::try_from(malformed.len()).unwrap()
+            ),
+            0
+        );
         crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().exchanges, exchanges);
         assert_eq!(policy().resets, resets);
@@ -290,13 +375,23 @@ pub(super) fn scenario() {
 }
 
 fn retained_lifecycle() {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe {
         let interface = u16::from(INTERFACES.hid);
         let mut bytes = [0; 2];
         for reset in [false, true] {
             for hold in [false, true] {
-                setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
-                assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
+                setup(
+                    VENDOR_INTERFACE_OUT,
+                    0,
+                    0,
+                    interface,
+                    u16::try_from(SELECT.len()).unwrap(),
+                );
+                assert_eq!(
+                    ck_usb_out(0, SELECT.as_ptr(), u16::try_from(SELECT.len()).unwrap()),
+                    0
+                );
                 crate::transport::webusb::poll::<crate::platform::Native>();
                 if hold {
                     setup(VENDOR_INTERFACE_IN, 1, 0, interface, 2);
@@ -327,7 +422,7 @@ fn retained_lifecycle() {
                         request,
                         0,
                         interface,
-                        SELECT.len() as u16,
+                        u16::try_from(SELECT.len()).unwrap(),
                     );
                     assert!(controller().halted[0] && controller().halted[1]);
                 }

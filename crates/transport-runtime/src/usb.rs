@@ -40,7 +40,7 @@ pub const CTAP_HID: &[u8] = &[
     0x00,
     0x01,
     DESCRIPTOR_HID_REPORT,
-    CTAP_REPORT.len() as u8,
+    CTAP_REPORT.len().to_le_bytes()[0],
     0x00,
 ];
 
@@ -125,7 +125,9 @@ impl<P: Profile<BUFFER>, const BUFFER: usize> Device<P, BUFFER> {
         }
         let zero_value_and_index = s.value == 0x0000 && s.index == 0x0000;
         match (s.kind, s.request) {
-            (DEVICE_IN, GET_DESCRIPTOR) if s.value as u8 == 0x00 && s.index == 0x0000 => {
+            (DEVICE_IN, GET_DESCRIPTOR)
+                if s.value.to_le_bytes()[0] == 0x00 && s.index == 0x0000 =>
+            {
                 let desc = match (s.value >> 8) as u8 {
                     DESCRIPTOR_DEVICE => P::DEVICE,
                     DESCRIPTOR_CONFIGURATION => return Reply::Data(configuration.copy_into(out)),
@@ -143,7 +145,7 @@ impl<P: Profile<BUFFER>, const BUFFER: usize> Device<P, BUFFER> {
                 if s.value >> 8 == u16::from(DESCRIPTOR_STRING)
                     && (s.index == 0x0000 || s.index == LANGUAGE_EN_US) =>
             {
-                let Some(text) = P::string(s.value as u8, configuration) else {
+                let Some(text) = P::string(s.value.to_le_bytes()[0], configuration) else {
                     return Reply::Stall;
                 };
                 Reply::Data(string(text, out))
@@ -154,7 +156,7 @@ impl<P: Profile<BUFFER>, const BUFFER: usize> Device<P, BUFFER> {
                     && s.value <= MAX_DEVICE_ADDRESS
                     && !self.configured =>
             {
-                Reply::Address(s.value as u8)
+                Reply::Address(s.value.to_le_bytes()[0])
             }
             (DEVICE_OUT, SET_CONFIGURATION)
                 if s.index == 0x0000
@@ -205,7 +207,7 @@ impl<P: Profile<BUFFER>, const BUFFER: usize> Device<P, BUFFER> {
                     && s.value == 0x0000
                     && s.length == 0 =>
             {
-                Reply::Interface(s.index as u8)
+                Reply::Interface(s.index.to_le_bytes()[0])
             }
             (ENDPOINT_IN, GET_STATUS)
                 if s.value == 0x0000
@@ -223,7 +225,7 @@ impl<P: Profile<BUFFER>, const BUFFER: usize> Device<P, BUFFER> {
                     && self.valid_endpoint(configuration, s.index)
                     && s.index & u16::from(ENDPOINT_NUMBER_MASK) != 0x0000 =>
             {
-                Reply::Halt(s.index as u8, s.request == SET_FEATURE)
+                Reply::Halt(s.index.to_le_bytes()[0], s.request == SET_FEATURE)
             }
             _ => self.hid(configuration, s, out),
         }
@@ -245,7 +247,7 @@ impl<P: Profile<BUFFER>, const BUFFER: usize> Device<P, BUFFER> {
             return Reply::Stall;
         };
         match (s.kind, s.request) {
-            (INTERFACE_IN, GET_DESCRIPTOR) if s.value as u8 == 0x00 => {
+            (INTERFACE_IN, GET_DESCRIPTOR) if s.value.to_le_bytes()[0] == 0x00 => {
                 let bytes = match (s.value >> 8) as u8 {
                     DESCRIPTOR_HID => hid.descriptor,
                     DESCRIPTOR_HID_REPORT => hid.report,
@@ -255,7 +257,7 @@ impl<P: Profile<BUFFER>, const BUFFER: usize> Device<P, BUFFER> {
                 Reply::Data(bytes.len())
             }
             (CLASS_INTERFACE_OUT, HID_SET_IDLE)
-                if s.length == 0 && s.value as u8 <= hid.last_report_id =>
+                if s.length == 0 && s.value.to_le_bytes()[0] <= hid.last_report_id =>
             {
                 *self.policy.idle(hid.idle_slot) = (s.value >> 8) as u8;
                 Reply::Status
@@ -326,7 +328,7 @@ impl Default for ControlIn {
 
 pub fn string<const BUFFER: usize>(text: &[u8], out: &mut [u8; BUFFER]) -> usize {
     let n = text.len().min((BUFFER - 2) / 2);
-    out[0] = (2 + 2 * n) as u8;
+    out[0] = (2 + 2 * n).to_le_bytes()[0];
     out[1] = DESCRIPTOR_STRING;
     for (i, ch) in text[..n].iter().enumerate() {
         out[2 + 2 * i] = *ch;

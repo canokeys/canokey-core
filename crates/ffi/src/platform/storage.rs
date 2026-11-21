@@ -12,7 +12,9 @@ use canokey_ports::{Storage, StorageError};
     feature = "ctap",
     feature = "ndef"
 ))]
+#[allow(clippy::cast_possible_truncation)]
 fn io_count(n: i32, expected: Option<usize>, failure: StorageError) -> Result<usize, StorageError> {
+    // The native storage ABI uses signed 32-bit counts, including on 64-bit hosts.
     match expected {
         Some(count) if n == count as i32 => Ok(count),
         Some(_) => Err(failure),
@@ -33,6 +35,7 @@ fn io_count(n: i32, expected: Option<usize>, failure: StorageError) -> Result<us
 ))]
 fn stage(op: StageOperation, file: u8, data: *const u8, len: usize) -> Result<(), StorageError> {
     io_count(
+        // SAFETY: The stage opcode determines whether the caller supplies live input or the null control sentinel.
         unsafe { ck_platform_stage(op as u8, file, data, len) },
         Some(0),
         StorageError::Uncertain,
@@ -146,6 +149,7 @@ impl Storage for StorageBackend {
                 length: part.len(),
             };
         }
+        // SAFETY: The descriptors and each borrowed part remain live through the synchronous C call.
         if unsafe { ck_platform_stage_parts(native.as_ptr(), parts.len()) } == 0 {
             Ok(())
         } else {
@@ -156,6 +160,7 @@ impl Storage for StorageBackend {
         #[cfg(feature = "storage")]
         {
             let (mut used, mut total) = (0, 0);
+            // SAFETY: The storage ABI writes only to the two live usage counters.
             if unsafe { ck_platform_usage(&mut used, &mut total) } == 0 && used <= total {
                 Ok((used, total))
             } else {
@@ -171,6 +176,7 @@ impl Storage for StorageBackend {
     fn config_read(&mut self, offset: usize, bytes: &mut [u8]) -> Result<(), StorageError> {
         #[cfg(feature = "storage")]
         {
+            // SAFETY: The synchronous native callback receives the live slice pointer and its matching length.
             if unsafe { platform_config_page_read(offset, bytes.as_mut_ptr(), bytes.len()) } == 0 {
                 Ok(())
             } else {
@@ -187,6 +193,7 @@ impl Storage for StorageBackend {
         #[cfg(feature = "storage")]
         {
             io_count(
+                // SAFETY: The synchronous native callback receives the live slice pointer and its matching length.
                 unsafe { platform_config_page_write(bytes.as_ptr(), bytes.len()) },
                 Some(0),
                 StorageError::Uncertain,
@@ -202,6 +209,7 @@ impl Storage for StorageBackend {
     #[cfg(feature = "ndef")]
     fn resize(&mut self, record: Record, length: u32) -> Result<(), StorageError> {
         io_count(
+            // SAFETY: The native storage adapter runs synchronously on the serialized storage owner.
             unsafe { ck_platform_resize(record.id(), length) },
             Some(0),
             StorageError::Uncertain,
@@ -262,11 +270,12 @@ impl Storage for StorageBackend {
         #[cfg(feature = "storage")]
         {
             io_count(
+                // SAFETY: The native storage adapter runs synchronously on the serialized storage owner.
                 unsafe { ck_platform_size(file.id()) },
                 None,
                 StorageError::Unavailable,
             )
-            .map(|n| n as u32)
+            .map(|n| u32::try_from(n).unwrap())
         }
         #[cfg(not(feature = "storage"))]
         {
@@ -283,6 +292,7 @@ impl Storage for StorageBackend {
     ))]
     fn read_at(&mut self, file: Record, offset: u32, out: &mut [u8]) -> Result<(), StorageError> {
         io_count(
+            // SAFETY: The synchronous native callback receives the live slice pointer and its matching length.
             unsafe { ck_platform_read_at(file.id(), offset, out.as_mut_ptr(), out.len()) },
             Some(out.len()),
             StorageError::Unavailable,
@@ -297,6 +307,7 @@ impl Storage for StorageBackend {
         out: &mut [u8],
     ) -> Result<usize, StorageError> {
         let n = io_count(
+            // SAFETY: The synchronous native callback receives the live slice pointer and its matching length.
             unsafe { ck_platform_read_at(file.id(), offset, out.as_mut_ptr(), out.len()) },
             None,
             StorageError::Unavailable,
@@ -310,6 +321,7 @@ impl Storage for StorageBackend {
     #[cfg(feature = "storage")]
     fn replace_at(&mut self, file: Record, offset: u32, input: &[u8]) -> Result<(), StorageError> {
         io_count(
+            // SAFETY: The synchronous native callback receives the live slice pointer and its matching length.
             unsafe { ck_platform_write_at(file.id(), offset, input.as_ptr(), input.len()) },
             Some(input.len()),
             StorageError::Uncertain,
@@ -324,6 +336,7 @@ impl Storage for StorageBackend {
         feature = "ndef"
     ))]
     fn has_space(&mut self, bytes: u32, reserve: u32) -> Result<bool, StorageError> {
+        // SAFETY: The native storage adapter runs synchronously on the serialized storage owner.
         match unsafe { ck_platform_has_space(bytes, reserve) } {
             0 => Ok(false),
             1 => Ok(true),
@@ -335,6 +348,7 @@ impl Storage for StorageBackend {
         #[cfg(feature = "storage")]
         {
             io_count(
+                // SAFETY: The synchronous native callback receives the live slice pointer and its matching length.
                 unsafe { ck_platform_read(file.id(), out.as_mut_ptr(), out.len()) },
                 None,
                 StorageError::Unavailable,
@@ -350,6 +364,7 @@ impl Storage for StorageBackend {
         #[cfg(feature = "storage")]
         {
             io_count(
+                // SAFETY: The synchronous native callback receives the live slice pointer and its matching length.
                 unsafe { ck_platform_write(file.id(), input.as_ptr(), input.len()) },
                 Some(input.len()),
                 StorageError::Uncertain,

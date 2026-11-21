@@ -71,11 +71,10 @@ generic device runner and transport tests, executed by its `rust-transports`
 CTest across USB combinations, CCID, HID, NFC and device lifecycle profiles.
 Each runs with and without `native-platform`. CIU selects its own production
 Provider in `platform/rust-core` and disables the native fixture projection.
-Rust CI checks
-formatting, Clippy correctness/suspicious lints and supported applet/transport
-profiles. Style-only Clippy lints are not yet enforced; explicit adapter drops
-are allowed to end borrows before workspace erasure. Host/std and supported
-firmware feature profiles are checked in separate Cargo invocations.
+Rust CI checks formatting, workspace Clippy style and complexity, and supported
+applet and transport profiles. FFI and host also enforce unsafe-block comments
+and public unsafe API contracts. Protocol, transport-runtime and FFI run a
+focused truncation check. The workflow documents individual lint exceptions.
 
 `cargo test -p canokey-ports` checks the committed C projection of record IDs,
 board-information selectors and chip-ID size against the Rust contracts. After

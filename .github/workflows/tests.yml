@@ -12,17 +12,37 @@ jobs:
         persist-credentials: false
     - run: rustup show active-toolchain
     - run: cargo fmt --all --check
-    # Enforce correctness/suspicious lints without requiring unrelated style
-    # rewrites. Explicit drop ends borrowed adapter lifetimes before erasure.
-    - run: >-
-        cargo clippy --workspace --exclude canokey-rust-host --all-targets --all-features --
-        -D warnings -A clippy::all -D clippy::correctness -D clippy::suspicious
-        -A clippy::drop_non_drop
-    # Check the host's supported feature set separately from the workspace matrix.
-    - run: >-
-        cargo clippy -p canokey-rust-host --all-targets --features ctap-restrict-algorithms --
-        -D warnings -A clippy::all -D clippy::correctness -D clippy::suspicious
-        -A clippy::drop_non_drop
+    - name: Lint workspace style, complexity and safety
+      shell: bash
+      run: |
+        # Preserve inline storage, explicit adapter scope and fixed frame geometry.
+        layout=(-A clippy::large_enum_variant -A clippy::drop_non_drop
+                -A clippy::chunks_exact_to_as_chunks)
+        # Fixture signatures mirror production. Explicit constructors and compact
+        # status types express API intent without adding unused default methods.
+        api=(-A clippy::extra_unused_type_parameters -A clippy::new_without_default
+             -A clippy::len_without_is_empty -A clippy::result_unit_err
+             -A clippy::too_many_arguments -A clippy::type_complexity)
+        # Keep existing match/branch and borrow structure at firmware dispatch
+        # boundaries. Changing that structure needs a separate Flash/stack check.
+        dispatch=(-A clippy::collapsible_if -A clippy::needless_borrow
+                  -A clippy::needless_return -A clippy::unnecessary_mut_passed
+                  -A clippy::redundant_closure_call -A clippy::manual_inspect
+                  -A clippy::manual_map -A clippy::needless_range_loop
+                  -A clippy::manual_is_multiple_of -A clippy::redundant_pattern_matching
+                  -A clippy::map_or_identity -A clippy::manual_range_patterns)
+        # Keep existing fixture assertion wording and placement.
+        fixtures=(-A clippy::items_after_test_module -A clippy::bool_assert_comparison
+                  -A clippy::int_plus_one -A clippy::redundant_field_names
+                  -A clippy::redundant_closure)
+        cargo clippy --workspace --all-targets --all-features -- \
+          -D warnings -D clippy::style -D clippy::complexity \
+          "${layout[@]}" "${api[@]}" "${dispatch[@]}" "${fixtures[@]}"
+    - name: Check transport integer conversions
+      run: >-
+        cargo clippy --no-deps -p canokey-rust-ffi -p canokey-protocol
+        -p canokey-transport-runtime --all-targets --all-features --
+        -A clippy::all -D clippy::cast_possible_truncation
     - run: python3 tests/check_rust_profiles.py
     - name: Test synchronization gate and validate draft records (not release acceptance)
       run: |

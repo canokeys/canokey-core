@@ -81,6 +81,7 @@ static mut CONTROL_SOURCE: Option<canokey_rust_core::runtime::usb::bos::Descript
 static mut PHASE: Phase = Phase::Idle;
 
 unsafe fn stall() {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         #[cfg(feature = "usb-webusb")]
         if CONTROL_WEB || PHASE == Phase::WebReceive {
@@ -93,6 +94,7 @@ unsafe fn stall() {
     }
 }
 unsafe fn status(phase: Phase) {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         PHASE = phase;
         if ck_usb_dcd_write(0x80, core::ptr::null(), 0) == 0 {
@@ -101,6 +103,7 @@ unsafe fn status(phase: Phase) {
     }
 }
 unsafe fn next_control() {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         if let Some((offset, len)) = (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).next_packet() {
             let pointer = if let Some(source) = CONTROL_SOURCE {
@@ -115,7 +118,8 @@ unsafe fn next_control() {
             } else {
                 pointer
             };
-            if ck_usb_dcd_write(0x80, pointer, len as u16) == 0 {
+            let [lo, hi, ..] = len.to_le_bytes();
+            if ck_usb_dcd_write(0x80, pointer, u16::from_le_bytes([lo, hi])) == 0 {
                 stall();
             }
         } else {
@@ -130,6 +134,7 @@ unsafe fn next_control() {
     }
 }
 unsafe fn mailbox_reset(ep: u8) {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         TX[ep as usize] = Tx::EMPTY;
         HALTED &= !(HALT_PAIR_MASK << (ep * HALT_BITS_PER_ENDPOINT));
@@ -144,6 +149,7 @@ unsafe fn mailbox_reset(ep: u8) {
     }
 }
 unsafe fn reset_pipe(ep: u8, enabled: bool, receive: bool) {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         ck_usb_dcd_close(ep);
         ck_usb_dcd_close(ep | DIRECTION_IN);
@@ -158,6 +164,7 @@ unsafe fn reset_pipe(ep: u8, enabled: bool, receive: bool) {
     }
 }
 unsafe fn endpoints(enabled: bool) {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         #[cfg(feature = "usb-webusb")]
         crate::transport::webusb::lifecycle_reset();
@@ -171,16 +178,19 @@ unsafe fn endpoints(enabled: bool) {
 }
 
 unsafe fn ready() -> bool {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe { (&*core::ptr::addr_of!(LIFECYCLE)).ready(DEVICE.configured, ck_ccid_io_generation()) }
 }
 
 pub(crate) fn service_generation() -> u32 {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe { ck_ccid_io_generation() })
 }
 
 /// A reset IRQ during main-loop cleanup invalidates the captured generation.
 /// Reopen reception only after all cleanup completed without another reset.
 pub(crate) fn service_complete(generation: u32) -> bool {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         let Some(changed) = (&mut *core::ptr::addr_of_mut!(LIFECYCLE))
             .complete(generation, ck_ccid_io_generation())
@@ -203,6 +213,7 @@ pub(crate) fn service_complete(generation: u32) -> bool {
 
 // Invalidate software mailboxes without touching hardware FIFOs on BUSRST.
 unsafe fn reset_software_pipes() {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         for ep in EP_KEYBOARD..=EP_CCID {
             mailbox_reset(ep);
@@ -210,6 +221,7 @@ unsafe fn reset_software_pipes() {
     }
 }
 unsafe fn begin_data_in(length: usize, requested: u16, zero_phase: Option<Phase>) {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         if requested == 0
             && let Some(zero_phase) = zero_phase
@@ -221,13 +233,18 @@ unsafe fn begin_data_in(length: usize, requested: u16, zero_phase: Option<Phase>
     }
 }
 unsafe fn start_data_in(length: usize, requested: u16) {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).begin(length, requested);
         PHASE = Phase::DataIn;
         next_control();
     }
 }
+///
+/// # Safety
+/// Call from the serialized main loop with the board USB driver installed and USB startup quiescent.
 pub unsafe fn init() {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         ck_usb_dcd_start();
         // USBD_LL_Reset in the C stack only resets protocol state and opens
@@ -241,6 +258,7 @@ pub unsafe fn init() {
 }
 
 pub unsafe fn ck_usb_boot_reset() {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         ck_usb_bus_reset();
         // The controller initializes EP0; no SET_ADDRESS or FIFO writes here.
@@ -248,13 +266,18 @@ pub unsafe fn ck_usb_boot_reset() {
         ck_usb_dcd_open(0x80);
     }
 }
+///
+/// # Safety
+/// Call on the serialized main loop with the board USB driver installed.
 pub unsafe fn deinit() {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         ck_usb_dcd_stop();
         ck_usb_reset();
     });
 }
 pub unsafe fn ck_usb_reset() {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         endpoints(false);
         #[cfg(feature = "usb-webusb")]
@@ -276,7 +299,11 @@ pub unsafe fn ck_usb_reset() {
 /// Hardware bus reset is already latched and EP0 remains owned by the USB
 /// controller. Match the legacy C LL reset: reset protocol state and disable
 /// configured data pipes without closing/reopening EP0 from the IRQ.
+///
+/// # Safety
+/// Call only with the USB interrupt mask held, including from serialized IRQ dispatch. The controller must already have processed its hardware bus reset.
 pub unsafe fn ck_usb_bus_reset() {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         #[cfg(feature = "usb-webusb")]
         {
@@ -291,17 +318,30 @@ pub unsafe fn ck_usb_bus_reset() {
         CONTROL_SOURCE = None;
     }
 }
+///
+/// # Safety
+/// Call only with the USB interrupt mask held, including from serialized IRQ dispatch.
 pub unsafe fn ck_usb_suspend() {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         SUSPENDED = true;
     }
 }
+///
+/// # Safety
+/// Call only with the USB interrupt mask held, including from serialized IRQ dispatch.
 pub unsafe fn ck_usb_resume() {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         SUSPENDED = false;
     }
 }
+///
+/// # Safety
+/// Call only with the USB interrupt mask held, including from serialized IRQ dispatch.
+/// The setup packet memory must be readable for `length` bytes during the call.
 pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
+    // SAFETY: The IRQ owns the reported RX buffer and masks competing access while it is read.
     unsafe {
         // SETUP supersedes the preceding transfer, including unacknowledged IN.
         ck_usb_dcd_close(0);
@@ -348,7 +388,7 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
             return;
         }
         let halted = if INTERFACES.endpoint(s.index) {
-            HALTED & halt_bit(s.index as u8) != 0
+            HALTED & halt_bit(s.index.to_le_bytes()[0]) != 0
         } else {
             false
         };
@@ -418,10 +458,15 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
         }
     }
 }
+///
+/// # Safety
+/// Call only with the USB interrupt mask held, including from serialized IRQ dispatch.
 pub unsafe extern "C" fn ck_usb_configured() -> u8 {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe { DEVICE.configured as u8 }
 }
 pub unsafe fn ck_usb_tx_idle(ep: u8) -> u8 {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         u8::from(
             ep & !ENDPOINT_ADDRESS_MASK == 0
@@ -431,14 +476,15 @@ pub unsafe fn ck_usb_tx_idle(ep: u8) -> u8 {
     }
 }
 unsafe fn transmit(ep: u8) -> bool {
+    // SAFETY: The masked endpoint owns a live IN buffer whose remaining length bounds this pointer advance.
     unsafe {
         let tx = &mut TX[(ep & ENDPOINT_NUMBER_MASK) as usize];
         let n = tx
             .remaining
             .min(if ep & ENDPOINT_NUMBER_MASK == EP_KEYBOARD {
-                KEYBOARD_PACKET_BYTES as u16
+                u16::from(KEYBOARD_PACKET_BYTES.to_le_bytes()[0])
             } else {
-                DATA_PACKET_BYTES as u16
+                u16::from(DATA_PACKET_BYTES.to_le_bytes()[0])
             });
         if ck_usb_dcd_write(ep | DIRECTION_IN, tx.bytes, n) == 0 {
             return false;
@@ -451,6 +497,7 @@ unsafe fn transmit(ep: u8) -> bool {
     }
 }
 pub unsafe fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zlp: u8) -> i32 {
+    // SAFETY: The USB mask protects the IN lease, and the caller retains the buffer until completion.
     unsafe {
         if !DEVICE.configured
             || ep & DIRECTION_IN == 0
@@ -483,13 +530,19 @@ pub unsafe fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zlp: u8) -> i
     }
 }
 pub unsafe fn ck_usb_receive(ep: u8) {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         if ready() && ep & DIRECTION_IN == 0 && ep != 0 && INTERFACES.endpoint(ep as u16) {
             ck_usb_dcd_receive(ep);
         }
     }
 }
+///
+/// # Safety
+/// Call only with the USB interrupt mask held, including from serialized IRQ dispatch.
+/// The endpoint must identify the completed controller transfer.
 pub unsafe fn ck_usb_in(ep: u8) {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         if ep == 0 || ep == 0x80 {
             match PHASE {
@@ -523,7 +576,12 @@ pub unsafe fn ck_usb_in(ep: u8) {
         }
     }
 }
+///
+/// # Safety
+/// Call only with the USB interrupt mask held, including from serialized IRQ dispatch.
+/// The controller RX buffer must be readable for `length` bytes during the call.
 pub unsafe fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8 {
+    // SAFETY: The IRQ owns the reported RX buffer and masks competing access while it is read.
     unsafe {
         if ep == 0 {
             match PHASE {
@@ -580,6 +638,7 @@ pub unsafe fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8 {
 
 #[cfg(feature = "usb-webusb")]
 pub(crate) unsafe fn web_admission(accepted: bool, complete: bool) {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         if PHASE != Phase::WebReceive {
             return;
@@ -603,9 +662,13 @@ pub(crate) unsafe fn web_admission(accepted: bool, complete: bool) {
 /// one hardware tick before calling this function; no callback enters Core.
 #[cfg(test)]
 pub unsafe extern "C" fn ck_transport_progress() -> u8 {
+    // SAFETY: The serialized main loop services transport progress without borrowing Core.
     unsafe { progress::<crate::platform::Native>() }
 }
 
+///
+/// # Safety
+/// Call on the serialized main loop with the installed Provider. Core may already be executing.
 pub unsafe fn progress<P: crate::composition::Provider>() -> u8 {
     use crate::transport::ccid::io::ck_ccid_progress;
     #[cfg(all(feature = "usb-hid", not(test)))]
@@ -615,6 +678,7 @@ pub unsafe fn progress<P: crate::composition::Provider>() -> u8 {
     use crate::transport::hid::link::{ck_hid_executing, ck_hid_foreign_progress, ck_hid_progress};
     #[cfg(all(test, feature = "usb-hid"))]
     use tests::{ck_hid_executing, ck_hid_foreign_progress, ck_hid_progress, presence_progress};
+    // SAFETY: The serialized main loop services transport progress without borrowing Core.
     unsafe {
         #[cfg(feature = "nfc")]
         if crate::transport::nfc::is_nfc() != 0 {
@@ -641,7 +705,11 @@ pub unsafe fn progress<P: crate::composition::Provider>() -> u8 {
 
 /// Main-loop settings notification. Only the IRQ-local descriptor snapshot is
 /// changed; an in-flight descriptor keeps its captured immutable variant.
+///
+/// # Safety
+/// Call from the serialized settings path while the board USB driver and lock callbacks are installed.
 pub unsafe extern "C" fn ck_usb_set_landing(enabled: u8) {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         DEVICE.policy.landing = enabled != 0;
     });

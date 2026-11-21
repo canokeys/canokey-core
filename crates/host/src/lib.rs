@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Single-threaded virtual hardware for the production Rust core. Callbacks may
 //! maintain packet state but never reenter applet execution or hold HOST borrows.
+#![deny(clippy::undocumented_unsafe_blocks, clippy::missing_safety_doc)]
 #[cfg(target_os = "none")]
 compile_error!("the virtual-card host must never be linked into firmware");
 use canokey_rust_ffi::{
@@ -44,6 +45,7 @@ pub fn install_signal_handlers() -> io::Result<()> {
     }
     for signal in [libc::SIGTERM, libc::SIGINT] {
         // Only a lock-free atomic store runs in the signal handler.
+        // SAFETY: The handler has the C signal ABI and only stores to the stop flag.
         if unsafe { libc::signal(signal, stop as *const () as libc::sighandler_t) } == libc::SIG_ERR
         {
             return Err(io::Error::last_os_error());
@@ -81,6 +83,7 @@ unsafe fn input<'a>(p: *const u8, n: usize) -> &'a [u8] {
         &[]
     } else {
         assert!(!p.is_null() && n <= isize::MAX as usize);
+        // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
         unsafe { std::slice::from_raw_parts(p, n) }
     }
 }
@@ -90,6 +93,7 @@ unsafe fn output<'a>(p: *mut u8, n: usize) -> &'a mut [u8] {
         &mut []
     } else {
         assert!(!p.is_null() && n <= isize::MAX as usize);
+        // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
         unsafe { std::slice::from_raw_parts_mut(p, n) }
     }
 }
@@ -179,7 +183,9 @@ fn progress() -> bool {
     if host(|h| h.reboot) || stopping_signal() != 0 {
         return false;
     }
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     let result = if unsafe { ck_hid_executing() != 0 } {
+        // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
         unsafe { ck_hid_progress() }
     } else {
         1
@@ -224,6 +230,7 @@ unsafe extern "C" fn ck_usb_submit(ep: u8, p: *const u8, n: u16, zlp: u8) -> i32
         (ep, n, zlp),
         (usb::EP_HID_IN, usb::DATA_PACKET_BYTES as u16, 0)
     );
+    // SAFETY: The endpoint owner retains the IN buffer for the submitted byte count.
     let bytes = unsafe { input(p, n as usize) };
     host(|h| {
         h.socket
@@ -247,6 +254,7 @@ const INJECT: [u8; 12] = [
 fn receive() {
     // A full mailbox applies socket backpressure. Never overwrite an INIT
     // queued by execution-time resynchronization with a later UDP datagram.
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     if unsafe { rx_can_accept() == 0 } || host(|h| h.reboot || h.socket.is_none()) {
         return;
     }
@@ -266,16 +274,19 @@ fn receive() {
     let data = &data[..n];
     if data == REBOOT {
         host(|h| h.reboot = true);
+        // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
         unsafe { ck_hid_packet_reset() }; // invalidate execution, do not reenter CORE
     } else if data.starts_with(&INJECT) && data.len() > INJECT.len() + 2 {
         let tail = &data[INJECT.len()..];
         host(|h| h.storage.inject(tail[0], tail[1], &tail[2..]));
     } else if data.len() == 64 {
+        // SAFETY: The single-threaded host owns a full HID report until the input callback copies it.
         assert_ne!(unsafe { out_event(data.as_ptr()) }, 0);
     }
 }
 fn exchange(command: &[u8]) -> Vec<u8> {
     let mut out = [0; apdu_wire::SHORT_REPLY_BYTES];
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     let n = unsafe {
         core::exchange::<HostProvider>(
             if host(|h| h.nfc) { 4 } else { 1 },
@@ -327,6 +338,7 @@ fn provision() {
         exchange(&[0, 0x55, 1, 1, 5, 0x71, 3, b'a', b'b', b'c']),
         [0x90, 0]
     );
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     unsafe { core::reset::<HostProvider>() };
 }
 fn flag(name: &str, default: bool) -> bool {
@@ -374,6 +386,7 @@ fn initialize_storage(
     if touch_file && (host(|h| h.socket.is_some()) || !Path::new("/tmp/canokey-test-up").exists()) {
         std::fs::write("/tmp/canokey-test-up", "0\n")?;
     }
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     if unsafe { core::install::<HostProvider>() } != 0 {
         return Err(io::Error::other("core installation failed"));
     }
@@ -387,6 +400,7 @@ fn run() -> io::Result<()> {
     socket.set_nonblocking(true)?;
     initialize(Some(socket), "/tmp/canokey-fido-hid-over-udp-lfs-root")?;
     host(|h| h.nfc = flag("CANOKEY_VIRT_NFC", false));
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     unsafe {
         ck_hid_packet_reset();
         hid::poll::<HostProvider>();
@@ -405,18 +419,21 @@ fn run() -> io::Result<()> {
                 h.led = false;
                 h.gesture = Gesture::Idle;
             });
+            // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
             unsafe {
                 hid::poll::<HostProvider>();
                 assert_eq!(core::install::<HostProvider>(), 0);
             }
             println!("MAGIC REBOOT command received!");
         }
+        // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
         unsafe {
             presence_sample();
             hid::poll::<HostProvider>();
         }
         std::thread::sleep(Duration::from_micros(100));
     }
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     unsafe {
         ck_hid_packet_reset();
         hid::poll::<HostProvider>();
@@ -454,6 +471,7 @@ pub fn run_regression_driver() {
                 let _entry = ENTRY.lock().unwrap();
                 // PASS emits at most 33 bytes; the trailing canary catches overflow.
                 let mut bytes = [0xa5; 41];
+                // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
                 let n = unsafe {
                     core::touch::<HostProvider>(
                         words.next().unwrap().parse().unwrap(),
@@ -470,11 +488,13 @@ pub fn run_regression_driver() {
             }
             "INSTALL" => {
                 let _entry = ENTRY.lock().unwrap();
+                // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
                 assert_eq!(unsafe { core::install::<HostProvider>() }, 0);
                 "9000".to_owned()
             }
             "SLOT_POWER" => {
                 let _entry = ENTRY.lock().unwrap();
+                // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
                 unsafe { core::slot_power::<HostProvider>() };
                 "9000".to_owned()
             }
@@ -488,6 +508,7 @@ pub fn run_regression_driver() {
                 let mut bytes = [0; 8192];
                 let mut n = 0;
                 assert_eq!(
+                    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
                     unsafe {
                         pcsc::ck_pcsc_transmit(
                             LUN,

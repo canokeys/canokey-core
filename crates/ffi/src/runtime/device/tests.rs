@@ -200,6 +200,7 @@ pub(crate) mod abi {
                 b.installed += 1;
                 b.flags
             };
+            // SAFETY: The transport fixture serializes this call and owns the fake controller state.
             unsafe { ck_device_settings(flags) };
             0
         }
@@ -313,6 +314,7 @@ unsafe extern "C" fn timer_callback() {
         b.callbacks
     };
     if callbacks == 1 {
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         unsafe { super::super::timer::device_set_timeout(Some(timer_callback), 20) };
     }
 }
@@ -321,6 +323,7 @@ fn device_timer_rearming_cancellation_and_irq_mask() {
     let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
     *board() = Board::default();
     use super::super::timer::{ck_timer_irq, device_set_timeout};
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe {
         device_set_timeout(Some(timer_callback), 10);
         assert_eq!(board().armed, 10);
@@ -378,6 +381,7 @@ fn device_boot_modes_failures_settings_and_loop() {
             flags,
             ..Board::default()
         };
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         let result = unsafe { run() };
         let b = board();
         match scenario {
@@ -465,6 +469,7 @@ fn mode_pin_requires_full_high_window_and_handles_wrap() {
             low_at,
             ..Board::default()
         };
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         assert_eq!(unsafe { detect_nfc() }, low_at.is_none());
     }
     *board() = Board {
@@ -472,6 +477,7 @@ fn mode_pin_requires_full_high_window_and_handles_wrap() {
         tick: u32::MAX - 5,
         ..Board::default()
     };
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     assert!(unsafe { detect_nfc() });
     assert!(board().pin_reads >= 10);
 }

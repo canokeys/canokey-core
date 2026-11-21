@@ -66,8 +66,7 @@ impl Credential {
             || name.len() > NAME_LIMIT
             || key.is_empty()
             || key.len() > KEY_LIMIT
-            || digits < 4
-            || digits > 8
+            || !matches!(digits, 4..=8)
         {
             return Err(Error::Invalid);
         }

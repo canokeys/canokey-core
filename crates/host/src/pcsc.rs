@@ -35,6 +35,7 @@ unsafe fn copy(bytes: &[u8], out: *mut u8, cap: usize, length: *mut usize) -> i3
     if length.is_null() {
         return COMM;
     }
+    // SAFETY: The C caller supplies the live writable out-parameters for the duration of the call.
     unsafe {
         length.write(bytes.len());
     }
@@ -45,6 +46,7 @@ unsafe fn copy(bytes: &[u8], out: *mut u8, cap: usize, length: *mut usize) -> i3
         if out.is_null() {
             return COMM;
         }
+        // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
         unsafe { output(out, bytes.len()) }.copy_from_slice(bytes);
     }
     OK
@@ -64,6 +66,7 @@ pub(super) fn ck_pcsc_open(lun: u64) -> i32 {
         h.nfc = contactless();
     });
     // Flush mailbox/link state from any previous open before admission.
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     unsafe {
         ck_hid_packet_reset();
         hid::poll::<HostProvider>();
@@ -75,6 +78,7 @@ pub(super) fn ck_pcsc_close(lun: u64) -> i32 {
     if !valid(lun) {
         return MISSING;
     }
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     unsafe {
         core::reset::<HostProvider>();
     }
@@ -110,6 +114,7 @@ pub(super) unsafe fn ck_pcsc_capability(
         1 | 2 | 3 | 4 => &[1],
         _ => return TAG,
     };
+    // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     unsafe { copy(data, out, cap, length) }
 }
 pub(super) fn ck_pcsc_protocol(lun: u64, t1: u8) -> i32 {
@@ -133,6 +138,7 @@ pub(super) unsafe fn ck_pcsc_power(
     if length.is_null() {
         return COMM;
     }
+    // SAFETY: The C caller supplies the live writable out-parameters for the duration of the call.
     unsafe {
         length.write(0);
     }
@@ -143,6 +149,7 @@ pub(super) unsafe fn ck_pcsc_power(
         return UNSUPPORTED;
     }
     if action != POWER_DOWN && (cap < ATR.len() || out.is_null()) {
+        // SAFETY: The C caller supplies the live writable out-parameters for the duration of the call.
         unsafe {
             length.write(ATR.len());
         }
@@ -150,6 +157,7 @@ pub(super) unsafe fn ck_pcsc_power(
     }
     // As on USB CCID, slot power clears applet selection, authorization and
     // transient sessions. Device time and durable records survive slot cycles.
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     unsafe {
         core::slot_power::<HostProvider>();
     }
@@ -164,6 +172,7 @@ pub(super) unsafe fn ck_pcsc_power(
     let storage = match host(|h| h.storage.reopen()) {
         Ok(s) => s,
         Err(_) => {
+            // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
             unsafe {
                 core::reset::<HostProvider>();
             }
@@ -175,6 +184,7 @@ pub(super) unsafe fn ck_pcsc_power(
         h.nfc = contactless();
     });
     host(|h| h.powered = true);
+    // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     unsafe { copy(ATR, out, cap, length) }
 }
 // Contactless FIDO clients receive one assembled reply. Other applets retain
@@ -193,6 +203,7 @@ fn aggregate(request: &[u8]) -> bool {
             && request[2..4] != [apdu_wire::SELECT_BY_NAME, 0x00]))
 }
 fn reboot() -> Result<(), ()> {
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     unsafe {
         core::reset::<HostProvider>();
     }
@@ -203,6 +214,7 @@ fn reboot() -> Result<(), ()> {
         h.led = false;
         h.gesture = Gesture::Idle;
     });
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     if unsafe { core::install::<HostProvider>() } == 0 {
         Ok(())
     } else {
@@ -239,6 +251,7 @@ pub(super) unsafe fn ck_pcsc_transmit(
     if length.is_null() {
         return COMM;
     }
+    // SAFETY: The C caller supplies the live writable out-parameters for the duration of the call.
     unsafe {
         length.write(0);
     }
@@ -256,16 +269,19 @@ pub(super) unsafe fn ck_pcsc_transmit(
     {
         return SMALL;
     }
+    // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     let request = unsafe { input(tx, n) };
     let nfc = contactless();
     if host(|h| h.nfc) != nfc {
         // Switching the simulated reader transport is a new activation.
+        // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
         unsafe { core::reset::<HostProvider>() };
         host(|h| h.nfc = nfc);
     }
     presence_sample();
     if let Some(response) = test_control(request) {
         return match response {
+            // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
             Ok(bytes) => unsafe { copy(&bytes, rx, cap, length) },
             Err(()) => COMM,
         };
@@ -280,14 +296,17 @@ pub(super) unsafe fn ck_pcsc_transmit(
         let count = if more { data } else { response.len() };
         if count > cap - written {
             // No partial success and no response tail leaking into a later call.
+            // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
             unsafe {
                 core::reset::<HostProvider>();
             }
             return SMALL;
         }
+        // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
         unsafe { output(rx.add(written), count) }.copy_from_slice(&response[..count]);
         written += count;
         if !more {
+            // SAFETY: The C caller supplies the live writable out-parameters for the duration of the call.
             unsafe {
                 length.write(written);
             }
@@ -295,6 +314,7 @@ pub(super) unsafe fn ck_pcsc_transmit(
         }
         pending = &apdu_wire::GET_RESPONSE;
     }
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     unsafe {
         core::reset::<HostProvider>();
     }

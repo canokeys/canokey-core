@@ -74,7 +74,9 @@ pub fn header(out: &mut [u8; REPORT_SIZE], cid: u32, tag: u8, length: usize) -> 
     out[..4].copy_from_slice(&cid.to_be_bytes());
     out[4] = tag;
     if tag & CMD_INIT_BIT != 0 {
-        out[5..7].copy_from_slice(&(length as u16).to_be_bytes());
+        // The initial frame carries its total length as two big-endian bytes.
+        let [lo, hi, ..] = length.to_le_bytes();
+        out[5..7].copy_from_slice(&[hi, lo]);
         &mut out[7..]
     } else {
         assert_eq!(

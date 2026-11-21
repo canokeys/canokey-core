@@ -43,6 +43,8 @@ pub fn payload_length(header: &[u8; HEADER]) -> u32 {
     u32::from_le_bytes(header[1..5].try_into().unwrap())
 }
 
+// Each argument is an independent field in the fixed CCID wire header.
+#[allow(clippy::too_many_arguments)]
 pub fn response(
     out: &mut [u8; HEADER],
     kind: u8,

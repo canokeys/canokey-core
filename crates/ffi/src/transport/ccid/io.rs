@@ -31,27 +31,34 @@ static mut REPEATING: bool = false;
 static mut REPEAT_LENGTH: u8 = 0;
 static mut REPEAT_INTERVAL: u16 = 0;
 pub(super) fn now() -> u32 {
+    // SAFETY: The caller serializes access to the controller mailbox and keeps any transfer buffer live.
     unsafe { device_get_tick() }
 }
 pub unsafe fn ck_ccid_io_generation() -> u32 {
+    // SAFETY: This reads the controller's IRQ-published scalar without borrowing the mailbox.
     unsafe { core::ptr::read_volatile(core::ptr::addr_of!(GENERATION)) }
 }
 
 pub unsafe fn ck_ccid_io_pending() -> u8 {
+    // SAFETY: This reads the controller's IRQ-published scalar without borrowing the mailbox.
     unsafe { u8::from(core::ptr::read_volatile(core::ptr::addr_of!(QUEUED)) != 0) }
 }
 pub unsafe fn ck_ccid_io_peek() -> i32 {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe { if QUEUED != 0 { i32::from(RX[0]) } else { -1 } })
 }
 pub unsafe fn ck_ccid_io_idle() -> u8 {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe { ck_usb_tx_idle(EP_CCID_IN) })
 }
 pub unsafe fn ck_ccid_io_live() -> u8 {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         u8::from(REPEATING && REPEAT_GENERATION == GENERATION && ck_usb_configured() != 0)
     })
 }
 pub unsafe fn ck_ccid_io_submit(epoch: u32, bytes: *const u8, length: u16, zlp: u8) -> i32 {
+    // SAFETY: The USB mask protects the IN lease and the caller keeps its report buffer live.
     usb_locked(|| unsafe {
         if epoch != GENERATION || (bytes.is_null() && length != 0) {
             -1
@@ -61,6 +68,7 @@ pub unsafe fn ck_ccid_io_submit(epoch: u32, bytes: *const u8, length: u16, zlp: 
     })
 }
 unsafe extern "C" fn repeat_tick() {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         if ck_ccid_io_live() != 0 {
             ck_ccid_io_submit(
@@ -74,6 +82,7 @@ unsafe extern "C" fn repeat_tick() {
     });
 }
 pub unsafe fn ck_ccid_io_arm(epoch: u32, bytes: *const u8, length: u8, interval: u16) {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         // Never replace bytes retained by an in-flight extension transfer.
         if epoch == GENERATION
@@ -96,6 +105,7 @@ pub unsafe fn ck_ccid_io_arm(epoch: u32, bytes: *const u8, length: u8, interval:
     });
 }
 pub unsafe fn ck_ccid_io_disarm() {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         if REPEATING {
             device_set_timeout(None, 0);
@@ -104,6 +114,7 @@ pub unsafe fn ck_ccid_io_disarm() {
     });
 }
 pub unsafe fn ck_ccid_packet_reset() {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         if REPEATING {
             device_set_timeout(None, 0);
@@ -117,6 +128,7 @@ pub unsafe fn ck_ccid_packet_out(bytes: *const u8, length: u16) -> u8 {
     if length == 0 {
         return 1;
     }
+    // SAFETY: The USB mask protects the RX mailbox; the controller supplies the live packet bytes.
     usb_locked(|| unsafe {
         if QUEUED != 0 || length > 64 || bytes.is_null() {
             return 0;
@@ -127,11 +139,12 @@ pub unsafe fn ck_ccid_packet_out(bytes: *const u8, length: u16) -> u8 {
             usize::from(length),
         );
         RX_TICK = device_get_tick();
-        QUEUED = length as u8;
+        QUEUED = length.to_le_bytes()[0];
         0
     })
 }
 pub unsafe fn ck_ccid_io_take(epoch: u32, output: *mut u8, tick: *mut u32) -> i32 {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         if epoch != GENERATION || output.is_null() || tick.is_null() {
             return -1;
@@ -148,6 +161,7 @@ pub unsafe fn ck_ccid_io_take(epoch: u32, output: *mut u8, tick: *mut u32) -> i3
 }
 #[cfg(feature = "usb-device")]
 pub unsafe fn ck_ccid_progress() -> u8 {
+    // SAFETY: The caller serializes access to the controller mailbox and keeps any transfer buffer live.
     unsafe { ck_ccid_io_live() }
 }
 
@@ -156,6 +170,7 @@ pub unsafe fn ck_ccid_progress() -> u8 {
 #[cfg(all(feature = "usb-device", feature = "usb-hid"))]
 #[cfg_attr(test, allow(dead_code))]
 pub unsafe fn take_presence(epoch: u32, output: &mut [u8; canokey_protocol::ccid::HEADER]) -> bool {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         if epoch != GENERATION
             || usize::from(QUEUED) != canokey_protocol::ccid::HEADER

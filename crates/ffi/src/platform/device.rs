@@ -41,6 +41,7 @@ fn idle_led<R: DeviceRuntime>() {
     #[cfg(feature = "device-runtime")]
     R::led_idle();
     #[cfg(not(feature = "device-runtime"))]
+    // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
     unsafe {
         ck_platform_led(0);
     }
@@ -71,9 +72,11 @@ static mut PRESENCE: canokey_ports::Polling = canokey_ports::Polling::new();
 #[cfg(all(feature = "ctap", feature = "native-platform"))]
 pub unsafe fn presence_sample<R: DeviceRuntime>() {
     #[cfg(feature = "nfc")]
+    // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
     if unsafe { is_nfc() != 0 } {
         return;
     }
+    // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
     unsafe {
         let poll = &mut *core::ptr::addr_of_mut!(PRESENCE);
         if let Some(on) = poll.sample(ck_platform_touched() != 0, ck_platform_now()) {
@@ -89,6 +92,7 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
     fn recovery_word(&mut self) -> Option<u32> {
         #[cfg(feature = "device-runtime")]
         {
+            // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
             Some(unsafe { ck_board_recovery_word() })
         }
         #[cfg(not(feature = "device-runtime"))]
@@ -102,6 +106,7 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
         {
             if kind == board_info_kind::CHIP_ID {
                 let mut id = [0; canokey_ports::contracts::CHIP_ID_BYTES];
+                // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
                 unsafe {
                     ck_board_chip_id(id.as_mut_ptr());
                 }
@@ -110,11 +115,13 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
                 return len;
             }
             let mut len = 0;
+            // SAFETY: The board fills the live length out-parameter and returns a borrowed board-table pointer.
             let data = unsafe { ck_board_info(kind, &mut len) };
             if data.is_null() {
                 return 0;
             }
             let len = len.min(output.len());
+            // SAFETY: The board table owns the returned bytes; the null check and copy bound precede the borrow.
             output[..len].copy_from_slice(unsafe { core::slice::from_raw_parts(data, len) });
             len
         }
@@ -150,6 +157,7 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
     fn contactless(&mut self) -> bool {
         #[cfg(feature = "nfc")]
         {
+            // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
             unsafe { is_nfc() != 0 }
         }
         #[cfg(not(feature = "nfc"))]
@@ -159,12 +167,14 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
     }
     #[cfg(feature = "ctap")]
     fn wink(&mut self) {
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe {
             (&mut *core::ptr::addr_of_mut!(PRESENCE)).wink(ck_platform_now());
         }
     }
     #[cfg(feature = "ctap")]
     fn poll_presence(&mut self) -> bool {
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe {
             let accepted = (&mut *core::ptr::addr_of_mut!(PRESENCE)).take(ck_platform_now());
             if accepted {
@@ -175,6 +185,7 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
     }
     fn keepalive(&mut self, waiting: bool) {
         #[cfg(feature = "nfc")]
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         if unsafe { is_nfc() != 0 } {
             return;
         }
@@ -189,6 +200,7 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
             #[cfg(feature = "device-runtime")]
             R::serial(out);
             #[cfg(not(feature = "device-runtime"))]
+            // SAFETY: Serial output uses the caller's fixed four-byte buffer on the serialized board loop.
             unsafe {
                 ck_platform_serial(out.as_mut_ptr())
             }
@@ -203,6 +215,7 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
     fn now(&mut self) -> u32 {
         #[cfg(feature = "platform-device")]
         {
+            // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
             unsafe { ck_platform_now() }
         }
         #[cfg(not(feature = "platform-device"))]
@@ -213,11 +226,13 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
     }
     fn touched(&mut self) -> bool {
         #[cfg(feature = "ctap")]
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         unsafe {
             (&mut *core::ptr::addr_of_mut!(PRESENCE)).clear();
         }
         #[cfg(feature = "platform-device")]
         {
+            // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
             unsafe { ck_platform_touched() != 0 }
         }
         #[cfg(not(feature = "platform-device"))]
@@ -235,6 +250,7 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
             }
             #[cfg(not(feature = "device-runtime"))]
             {
+                // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
                 unsafe { ck_platform_progress() != 0 }
             }
         }
@@ -246,11 +262,13 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
     }
     fn led(&mut self, on: bool) {
         #[cfg(feature = "nfc")]
+        // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
         if on && unsafe { is_nfc() != 0 } {
             return;
         }
         #[cfg(feature = "platform-device")]
         {
+            // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.
             unsafe { ck_platform_led(u8::from(on)) }
         }
         #[cfg(not(feature = "platform-device"))]

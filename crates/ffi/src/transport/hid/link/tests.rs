@@ -45,9 +45,11 @@ static mut CONTROLLER: Controller = Controller {
     in_flight: core::ptr::null(),
 };
 fn controller() -> &'static mut Controller {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { &mut *core::ptr::addr_of_mut!(CONTROLLER) }
 }
 fn in_flight() -> &'static [u8; DATA_PACKET_BYTES] {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { &*controller().in_flight.cast::<[u8; DATA_PACKET_BYTES]>() }
 }
 pub(crate) unsafe fn device_get_tick() -> u32 {
@@ -68,12 +70,15 @@ pub(crate) unsafe fn ck_hid_poll<P: crate::composition::Provider>(
     assert_eq!(now, controller().now);
     if !input.is_null() {
         assert!(tick <= now);
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         assert_eq!(unsafe { &*input }, &PACKET);
         if controller().inject == 2 {
             controller().inject = 0;
             let mut next = PACKET;
             next[7] ^= 0xff;
+            // SAFETY: The transport fixture serializes this call and owns the fake controller state.
             assert_ne!(unsafe { out_event(next.as_ptr()) }, 0);
+            // SAFETY: The transport fixture serializes this call and owns the fake controller state.
             assert_eq!(unsafe { &*input }, &PACKET);
         }
         controller().received += 1;
@@ -81,14 +86,17 @@ pub(crate) unsafe fn ck_hid_poll<P: crate::composition::Provider>(
     if controller().inject != 0 {
         controller().inject = 0;
         assert!(input.is_null());
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         assert_ne!(unsafe { out_event(PACKET.as_ptr()) }, 0);
     }
     if controller().reset_during_poll {
         controller().reset_during_poll = false;
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         unsafe { ck_hid_packet_reset() };
     }
     if controller().respond {
         controller().respond = false;
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         unsafe { out.write([0x5a; DATA_PACKET_BYTES]) };
         return 3;
     }
@@ -104,6 +112,7 @@ pub(crate) unsafe fn ck_usb_dcd_lock() -> u32 {
         (prior, reset)
     };
     if reset {
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         unsafe { ck_hid_packet_reset() };
     }
     prior
@@ -135,18 +144,22 @@ pub(crate) unsafe fn ck_usb_receive(ep: u8) {
     assert_ne!(controller().masked, 0);
 }
 fn packet(bytes: &[u8; DATA_PACKET_BYTES]) {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     assert_ne!(unsafe { out_event(bytes.as_ptr()) }, 0);
 }
 fn poll() {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { super::poll::<crate::platform::Native>() };
 }
 fn empty_mailbox() -> bool {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { rx_can_accept() != 0 }
 }
 
 #[test]
 fn hid_link_interrupt_leases_progress_and_cancellation() {
     let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe {
         ck_hid_packet_reset();
         controller().inject = 1;

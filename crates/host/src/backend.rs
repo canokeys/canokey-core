@@ -18,6 +18,7 @@ impl Provider for HostProvider {
         BackendTypes<Records, canokey_native_crypto::CryptoBackend, Clock, MemoryBackend>;
     type Staging = Scratch;
     fn with_platform<T>(run: impl FnOnce(&mut Platform<'_, Self::Backends>) -> T) -> T {
+        // SAFETY: The host composition links the native crypto primitives and calls them on its serialized loop.
         let mut crypto = unsafe { canokey_native_crypto::CryptoBackend::new() };
         run(&mut Platform::new(
             &mut Records,
@@ -187,6 +188,7 @@ impl Device for Clock {
     }
     fn keepalive(&mut self, waiting: bool) {
         if !self.contactless() {
+            // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
             unsafe { hid::keepalive(waiting) };
         }
     }

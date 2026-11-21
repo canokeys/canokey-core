@@ -161,7 +161,9 @@ impl Response {
     ) -> Result<Chunk, StatusWord> {
         let p = self.pending.ok_or(StatusWord::COMMAND_NOT_ALLOWED)?;
         let remaining = p.remaining;
-        let n = remaining.min(le).min(output.len() as u32) as usize;
+        // The output limit is represented in the same width as the APDU cursor.
+        let [a, b, c, d, ..] = output.len().to_le_bytes();
+        let n = remaining.min(le).min(u32::from_le_bytes([a, b, c, d])) as usize;
         let len = if n == 0 {
             0
         } else {
@@ -183,7 +185,7 @@ impl Response {
         // actual read, keeping the final status until every byte is delivered.
         // The read bound above proves len <= remaining; no second plan or
         // addition is needed, including when total is u32::MAX.
-        let remaining = remaining - len as u32;
+        let remaining = remaining - u32::try_from(len).unwrap();
         let sw = if remaining == 0 {
             p.sw
         } else {
@@ -255,7 +257,7 @@ mod tests {
 
     #[test]
     fn segmented_windows_match_contiguous_reads() {
-        let bytes: [u8; 32] = core::array::from_fn(|i| i as u8);
+        let bytes: [u8; 32] = core::array::from_fn(|i| i.to_le_bytes()[0]);
         // Empty, adjacent and split segments, with every requested subrange.
         for split in 0..=bytes.len() {
             let segments = [&[][..], &bytes[..split], &[][..], &bytes[split..], &[][..]];
@@ -321,7 +323,7 @@ mod tests {
             } else {
                 self.limit.min(out.len())
             };
-            self.offset += n as u32;
+            self.offset += u32::try_from(n).unwrap();
             Ok(n)
         }
         fn close(&mut self) {
@@ -346,12 +348,21 @@ mod tests {
                                 }),
                             };
                             let mut out = [0xa5; 258];
-                            let plan =
-                                ResponsePlan::new(total, offset, le.min(capacity as u32), final_sw)
-                                    .unwrap();
+                            let plan = ResponsePlan::new(
+                                total,
+                                offset,
+                                le.min(u32::try_from(capacity).unwrap()),
+                                final_sw,
+                            )
+                            .unwrap();
                             let n = (plan.length as usize).min(limit);
-                            let expected =
-                                ResponsePlan::new(total, offset, n as u32, final_sw).unwrap();
+                            let expected = ResponsePlan::new(
+                                total,
+                                offset,
+                                u32::try_from(n).unwrap(),
+                                final_sw,
+                            )
+                            .unwrap();
                             let chunk = response
                                 .next(&mut source, &mut out[1..1 + capacity], le)
                                 .unwrap();

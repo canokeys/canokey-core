@@ -6,7 +6,11 @@ use super::device::tests::hal::{ck_timer_arm, usb_locked};
 use crate::{sys::ck_timer_arm, transport::usb_locked};
 type Callback = unsafe extern "C" fn();
 static mut CALLBACK: Option<Callback> = None;
+///
+/// # Safety
+/// A supplied callback must be callable from the board timer IRQ and remain valid until invoked or replaced.
 pub unsafe fn device_set_timeout(next: Option<Callback>, milliseconds: u16) {
+    // SAFETY: The USB interrupt mask serializes access to the board's timer callback slot.
     usb_locked(|| unsafe {
         ck_timer_arm(0);
         // A zero duration cancels the lease, including any stale IRQ callback.
@@ -16,7 +20,11 @@ pub unsafe fn device_set_timeout(next: Option<Callback>, milliseconds: u16) {
         }
     });
 }
+///
+/// # Safety
+/// Call from the board timer IRQ after acknowledging the timer event.
 pub unsafe fn ck_timer_irq() {
+    // SAFETY: The USB interrupt mask serializes access to the board's timer callback slot.
     let next = usb_locked(|| unsafe {
         ck_timer_arm(0);
         core::ptr::addr_of_mut!(CALLBACK).replace(None)
@@ -24,6 +32,7 @@ pub unsafe fn ck_timer_irq() {
     // Drop the old lease before calling out so the callback may rearm itself.
     // Only transport callbacks may register here: never Core/storage/crypto.
     if let Some(next) = next {
+        // SAFETY: The USB interrupt mask serializes access to the board's timer callback slot.
         unsafe {
             next();
         }

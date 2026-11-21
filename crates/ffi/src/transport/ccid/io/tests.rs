@@ -45,6 +45,7 @@ static mut CONTROLLER: Controller = Controller {
 
 // One serialized test owns these singleton states, like the firmware main loop.
 fn controller() -> &'static mut Controller {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { &mut *core::ptr::addr_of_mut!(CONTROLLER) }
 }
 fn hardware_reset() {
@@ -56,6 +57,7 @@ fn hardware_reset() {
         c.busy = false;
         c.zlp = false;
     }
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { ck_ccid_packet_reset() };
 }
 pub(crate) unsafe fn ck_usb_dcd_lock() -> u32 {
@@ -111,6 +113,7 @@ pub(crate) unsafe fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zlp: u
     c.tx = bytes;
     c.length = length;
     if length != 0 {
+        // SAFETY: The fixture caller supplies a live buffer for the ABI byte count.
         c.saved[..length].copy_from_slice(unsafe { core::slice::from_raw_parts(bytes, length) });
     }
     c.submissions += 1;
@@ -120,6 +123,7 @@ fn complete() {
     let c = controller();
     if c.length != 0 {
         assert_eq!(
+            // SAFETY: The fixture caller supplies a live buffer for the ABI byte count.
             unsafe { core::slice::from_raw_parts(c.tx, c.length) },
             &c.saved[..c.length]
         );
@@ -140,27 +144,33 @@ fn fire() {
         c.masked = 1;
         c.timer.take().unwrap()
     };
+    // SAFETY: The fixture invokes the callback it captured from the device timer registration.
     unsafe { callback() };
     assert_eq!(controller().masked, 1);
     controller().masked = 0;
 }
 fn packet(bytes: &[u8]) {
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     assert_eq!(unsafe { ck_ccid_io_pending() }, 0);
     assert!(bytes.len() <= 64);
     controller().masked = 1;
-    let result = unsafe { ck_ccid_packet_out(bytes.as_ptr(), bytes.len() as u16) };
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
+    let result = unsafe { ck_ccid_packet_out(bytes.as_ptr(), u16::try_from(bytes.len()).unwrap()) };
     controller().masked = 0;
     assert_eq!(result, u8::from(bytes.is_empty()));
 }
 fn configure() {
     hardware_reset();
     controller().configured = true;
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
 }
 fn normal_exchange() {
     packet(&POWER[..3]);
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     packet(&POWER[3..]);
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     {
         let c = controller();
@@ -168,10 +178,14 @@ fn normal_exchange() {
         assert_eq!((c.saved[0], c.saved[6], c.saved[7]), (DATA_BLOCK, 0x56, 0));
     }
     packet(&SELECT);
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     assert_ne!(unsafe { ck_ccid_io_pending() }, 0);
     complete();
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     assert_eq!(unsafe { ck_ccid_io_pending() }, 0);
     {
         let c = controller();
@@ -180,6 +194,7 @@ fn normal_exchange() {
         assert!(c.timer.is_none());
     }
     complete();
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
 }
 
@@ -187,8 +202,10 @@ fn receive_deadlines() {
     use canokey_protocol::ccid::{BAD_LENGTH, COMMAND_FAILED, HEADER};
     // Expire a header without invoking power/reset or publishing a reply.
     packet(&POWER[..3]);
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     controller().now = controller().now.wrapping_add(2000);
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     assert_eq!(controller().length, 0);
     normal_exchange();
@@ -196,27 +213,34 @@ fn receive_deadlines() {
     // A continuation arrives in the mailbox before the deadline. The loop
     // runs later: admission must use arrival time before servicing loop time.
     packet(&SELECT[..12]);
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     controller().now = controller().now.wrapping_add(1999);
     packet(&SELECT[12..]);
     controller().now = controller().now.wrapping_add(2);
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     assert_eq!(controller().length, 12);
     assert_eq!(controller().saved[8], canokey_protocol::ccid::SUCCESS_ERROR);
     complete();
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
 
     // The deadline aborts execution; the error waits for the declared drain.
     packet(&SELECT[..12]);
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     controller().now = controller().now.wrapping_add(2000);
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     assert_eq!(controller().length, 0);
     packet(&SELECT[12..]);
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     assert_eq!(controller().length, HEADER);
     assert_eq!(&controller().saved[7..9], &[COMMAND_FAILED, BAD_LENGTH]);
     complete();
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     normal_exchange();
 }
@@ -233,6 +257,7 @@ fn receive_deadlines() {
 #[test]
 fn ccid_controller_leases_timer_reset_and_fragmentation() {
     let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe {
         configure();
         normal_exchange();
@@ -244,7 +269,7 @@ fn ccid_controller_leases_timer_reset_and_fragmentation() {
         ck_ccid_io_arm(
             epoch,
             EXTENSION.as_ptr(),
-            EXTENSION.len() as u8,
+            u8::try_from(EXTENSION.len()).unwrap(),
             EXTENSION_INTERVAL,
         );
         assert!(controller().timer.is_some());
@@ -256,7 +281,12 @@ fn ccid_controller_leases_timer_reset_and_fragmentation() {
         fire();
         assert_eq!(controller().submissions, sent);
         let wrong = [0xff; 10];
-        ck_ccid_io_arm(epoch, wrong.as_ptr(), wrong.len() as u8, EXTENSION_INTERVAL);
+        ck_ccid_io_arm(
+            epoch,
+            wrong.as_ptr(),
+            u8::try_from(wrong.len()).unwrap(),
+            EXTENSION_INTERVAL,
+        );
         assert_eq!(
             core::slice::from_raw_parts(controller().tx, EXTENSION.len()),
             &EXTENSION

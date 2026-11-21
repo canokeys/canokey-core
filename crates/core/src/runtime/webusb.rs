@@ -165,7 +165,7 @@ impl Transport {
         if self.phase != Phase::Executing {
             return false;
         }
-        if length < 2 || length > RESPONSE_LIMIT {
+        if !matches!(length, 2..=RESPONSE_LIMIT) {
             *self = Self::new();
             return false;
         }

@@ -110,7 +110,7 @@ impl Packet {
             PCB_I | (number & PCB_NUMBER) | if chained { PCB_CHAIN_OR_NAK } else { 0 },
         );
         packet.bytes[1..1 + bytes.len()].copy_from_slice(bytes);
-        packet.length += bytes.len() as u8;
+        packet.length += bytes.len().to_le_bytes()[0];
         Ok(packet)
     }
     pub const fn acknowledgement(number: u8) -> Self {
@@ -120,7 +120,7 @@ impl Packet {
         Self::control(PCB_DESELECT)
     }
     pub fn waiting(multiplier: u8) -> Result<Self, Error> {
-        if multiplier < 1 || multiplier > WTX_MULTIPLIER_MAX {
+        if !matches!(multiplier, 1..=WTX_MULTIPLIER_MAX) {
             return Err(Error::Multiplier);
         }
         let mut packet = Self::control(PCB_WTX);

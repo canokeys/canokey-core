@@ -24,6 +24,7 @@ impl Fake {
     fn complete(&mut self) {
         assert!(self.busy);
         // REPORT must stay unchanged for the entire controller-owned lease.
+        // SAFETY: The transport fixture serializes this call and owns the fake controller state.
         let report = unsafe { &*core::ptr::addr_of!(REPORT) };
         assert_eq!(&report[..self.length], &self.snapshot[..self.length]);
         self.busy = false;
@@ -97,6 +98,7 @@ impl Io for Fake {
         self.length = usize::from(length);
         self.snapshot.fill(0);
         self.snapshot[..self.length]
+            // SAFETY: The fixture caller supplies a live buffer for the ABI byte count.
             .copy_from_slice(unsafe { core::slice::from_raw_parts(report, self.length) });
         self.busy = true;
         self.submissions += 1;
@@ -126,6 +128,7 @@ fn keyboard_controller_leases_retries_preemption_and_reset() {
         snapshot: [0; KEYBOARD_PACKET_BYTES],
         length: 0,
     };
+    // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe {
         KEYBOARD = Keyboard::new();
         REPORT = [0; KEYBOARD_PACKET_BYTES];

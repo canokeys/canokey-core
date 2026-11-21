@@ -31,9 +31,12 @@ const HMAC_COSE_REQUIRED_MASK: u8 = 0x07;
 #[inline(always)]
 pub(crate) fn admit_body<E: Error>(field: i8, length: usize) -> Result<(), E> {
     let valid = if field == SALT_ENC {
-        length >= crate::extensions::hmac_secret::SALT_BYTES && length <= MAX_ENCRYPTED_SALT_BYTES
+        matches!(
+            length,
+            crate::extensions::hmac_secret::SALT_BYTES..=MAX_ENCRYPTED_SALT_BYTES
+        )
     } else {
-        length >= wire::AUTH_V1_BYTES && length <= wire::AUTH_V2_BYTES
+        matches!(length, wire::AUTH_V1_BYTES..=wire::AUTH_V2_BYTES)
     };
     if valid {
         Ok(())

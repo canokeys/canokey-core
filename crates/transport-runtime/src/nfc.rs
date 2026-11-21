@@ -18,6 +18,9 @@ impl ResponseBudget {
             .map_or(0, |info| info.le.unwrap_or(65536));
     }
     #[inline]
+    // The caller supplies a bounded RF fragment. Preserve the 32-bit cursor
+    // arithmetic on hosts with a wider usize.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn consume(&mut self, payload: usize, sw1: u8) -> bool {
         self.0 -= self.0.min(payload as u32);
         self.0 != 0 && sw1 == canokey_protocol::apdu::MORE_DATA_SW1
@@ -25,7 +28,8 @@ impl ResponseBudget {
     #[inline]
     pub fn continuation(&self) -> [u8; 5] {
         let mut command = canokey_protocol::apdu::GET_RESPONSE;
-        command[4] = self.0.min(256) as u8;
+        // Short Le encodes 256 bytes as zero.
+        command[4] = self.0.min(256).to_le_bytes()[0];
         command
     }
 }

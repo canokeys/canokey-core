@@ -36,53 +36,66 @@ struct Native<P>(core::marker::PhantomData<P>);
 impl<P: Provider> Io for Native<P> {
     fn contactless(&mut self) -> bool {
         #[cfg(feature = "nfc")]
+        // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
         return unsafe { crate::transport::nfc::is_nfc() != 0 };
         #[cfg(not(feature = "nfc"))]
         false
     }
     fn web_busy(&mut self) -> bool {
         #[cfg(feature = "usb-webusb")]
+        // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
         return unsafe { crate::transport::webusb::block_competitor() };
         #[cfg(not(feature = "usb-webusb"))]
         false
     }
     fn competing(&mut self) -> bool {
         #[cfg(feature = "ctap")]
+        // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
         if unsafe { ck_hid_busy() != 0 } {
             return true;
         }
+        // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
         unsafe { ck_ccid_scratch_busy() != 0 }
     }
     fn epoch(&mut self) -> u32 {
+        // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
         unsafe { ck_keyboard_io_epoch() }
     }
     fn configured(&mut self) -> bool {
+        // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
         unsafe { ck_keyboard_io_configured() != 0 }
     }
     fn idle(&mut self) -> bool {
+        // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
         unsafe { ck_keyboard_io_idle() != 0 }
     }
     fn touched(&mut self) -> u8 {
+        // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
         unsafe { ck_platform_touched() }
     }
     fn now(&mut self) -> u32 {
+        // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
         unsafe { ck_platform_now() }
     }
     fn cancel(&mut self, pressed: u8) {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { core_ops::output_cancel::<P>(pressed) }
     }
     fn sample(&mut self, pressed: u8, now: u32, ready: bool) -> i32 {
+        // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
         unsafe { core_ops::output_sample::<P>(pressed, now, u8::from(ready)) }
     }
     fn usage(&mut self, ch: u8) -> i32 {
         core_ops::keyboard_usage::<P>(ch)
     }
     unsafe fn send(&mut self, report: *const u8, length: u8, epoch: u32) -> bool {
+        // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
         unsafe { ck_keyboard_io_send(report, length, epoch) != 0 }
     }
 }
 
 unsafe fn flush_pending(io: &mut impl Io, epoch: u32) {
+    // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
     unsafe {
         if PENDING != 0 && io.send(core::ptr::addr_of!(REPORT).cast(), PENDING, epoch) {
             (&mut *core::ptr::addr_of_mut!(KEYBOARD)).accepted(REPORT[0]);
@@ -91,11 +104,16 @@ unsafe fn flush_pending(io: &mut impl Io, epoch: u32) {
     }
 }
 #[inline(never)]
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
 pub unsafe fn poll_provider<P: Provider>() {
+    // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
     unsafe { poll(&mut Native::<P>(core::marker::PhantomData)) }
 }
 
 unsafe fn poll(io: &mut impl Io) {
+    // SAFETY: The serialized keyboard loop owns the report and arbitrates with other transports before entering Core.
     unsafe {
         if io.contactless() {
             return;
@@ -117,7 +135,8 @@ unsafe fn poll(io: &mut impl Io) {
             if io.idle() {
                 PENDING = (&*core::ptr::addr_of!(KEYBOARD))
                     .prepare(None, &mut *core::ptr::addr_of_mut!(REPORT))
-                    .unwrap_or(0) as u8;
+                    .unwrap_or(0)
+                    .to_le_bytes()[0];
                 flush_pending(io, epoch);
             }
             return;
@@ -148,11 +167,13 @@ unsafe fn poll(io: &mut impl Io) {
                 let usage = u8::try_from(ch).ok().and_then(|ch| {
                     let encoded = io.usage(ch);
                     // ABI packs modifier in the high byte, usage in the low byte.
-                    (encoded >= 0).then_some(((encoded >> 8) as u8, encoded as u8))
+                    let [usage, modifier, ..] = encoded.to_le_bytes();
+                    (encoded >= 0).then_some((modifier, usage))
                 });
                 keyboard.prepare_usage(usage, report)
             }
-            .unwrap_or(0) as u8;
+            .unwrap_or(0)
+            .to_le_bytes()[0];
         }
         flush_pending(io, epoch);
     }

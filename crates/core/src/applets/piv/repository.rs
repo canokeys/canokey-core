@@ -116,7 +116,7 @@ pub fn width(a: u8) -> usize {
     }
 }
 pub fn rsa(a: u8) -> bool {
-    a >= alg::RSA2048 && a <= alg::RSA4096
+    matches!(a, alg::RSA2048..=alg::RSA4096)
 }
 pub fn material(a: u8) -> usize {
     key_storage::length(rsa(a), width(a))

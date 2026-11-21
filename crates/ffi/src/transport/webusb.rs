@@ -36,6 +36,7 @@ static mut CLEAR_INPUT: bool = false;
 /// Competitors yield to an EP0 reservation. A command arriving during a Core
 /// call waits in the FIFO mailbox and cannot touch the shared byte buffer.
 pub unsafe fn block_competitor() -> bool {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         CLEANUP || CLEAR_INPUT || SESSION || (&*core::ptr::addr_of!(STATE)).busy()
     })
@@ -45,6 +46,7 @@ pub unsafe fn block_competitor() -> bool {
 /// and its completion restores the WebUSB card context. Mere polling must not
 /// revoke the previous owner's authorization.
 pub unsafe fn try_preempt<P: Provider>(requested: bool, preserve_context: bool) -> bool {
+    // SAFETY: The serialized main loop owns the WebUSB session; each mailbox access keeps its USB mask.
     unsafe {
         if !requested {
             return false;
@@ -70,12 +72,15 @@ pub unsafe fn try_preempt<P: Provider>(requested: bool, preserve_context: bool) 
     }
 }
 pub unsafe fn reset() {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe { invalidate(false) }
 }
 pub unsafe fn lifecycle_reset() {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe { invalidate(true) }
 }
 unsafe fn invalidate(deferred: bool) {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         // USB reset can interrupt an unrelated Core operation; only the main
         // loop performs cleanup, never this IRQ-side notification.
@@ -92,6 +97,7 @@ unsafe fn invalidate(deferred: bool) {
     }
 }
 pub unsafe fn abort_control() {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         if WAITING
             || matches!(
@@ -121,6 +127,7 @@ pub enum Action {
     Reject,
 }
 pub unsafe fn setup(s: Setup, interface: u8, usb_ready: bool) -> Option<Action> {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         let now = device_get_tick();
         (&mut *core::ptr::addr_of_mut!(STATE)).keepalive(now);
@@ -154,6 +161,7 @@ pub unsafe fn setup(s: Setup, interface: u8, usb_ready: bool) -> Option<Action> 
 }
 // 0: more data, 1: complete, 2: held FIFO awaiting main-loop admission.
 pub unsafe fn receive(bytes: *const u8, length: usize) -> i8 {
+    // SAFETY: The masked IRQ owns the live packet; the size check bounds the mailbox copy.
     unsafe {
         if length == 0 || length > 16 || matches!(PACKET_LENGTH, Some(_)) {
             return -1;
@@ -165,15 +173,18 @@ pub unsafe fn receive(bytes: *const u8, length: usize) -> i8 {
     }
 }
 pub unsafe fn pointer(offset: usize) -> *const u8 {
+    // SAFETY: The masked caller holds the WebUSB response lease and a cursor inside its buffer.
     unsafe { crate::transport::ccid::ck_ccid_response_buffer().add(offset) }
 }
 pub unsafe fn completed() {
+    // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
         (&mut *core::ptr::addr_of_mut!(STATE)).completed(device_get_tick());
     }
 }
 /// Consume an IRQ-published lifecycle event without admitting another command.
 pub(crate) unsafe fn service_reset<P: Provider>() {
+    // SAFETY: The serialized main loop owns the WebUSB session; each mailbox access keeps its USB mask.
     unsafe {
         let cleanup = usb_locked(|| {
             let cleanup = CLEANUP;
@@ -203,7 +214,11 @@ pub(crate) unsafe fn service_reset<P: Provider>() {
     }
 }
 #[inline(never)]
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
 pub unsafe fn poll<P: Provider>() {
+    // SAFETY: The serialized main loop owns the WebUSB session; each mailbox access keeps its USB mask.
     unsafe {
         #[cfg(feature = "nfc")]
         if crate::transport::nfc::is_nfc() != 0 {
@@ -313,6 +328,7 @@ pub unsafe fn poll<P: Provider>() {
 }
 
 pub unsafe fn progress() -> Option<bool> {
+    // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         (&*core::ptr::addr_of!(STATE))
             .execution_live()
@@ -322,12 +338,14 @@ pub unsafe fn progress() -> Option<bool> {
 
 #[cfg(test)]
 unsafe fn ck_core_reset<P: Provider>() {
+    // SAFETY: The serialized main loop owns the WebUSB session; each mailbox access keeps its USB mask.
     unsafe { crate::transport::usb::tests::ck_core_reset() }
 }
 #[cfg(not(test))]
 unsafe fn begin_frame<P: Provider>(
     length: usize,
 ) -> Result<(), canokey_protocol::response::StatusWord> {
+    // SAFETY: The serialized main loop owns the WebUSB session; each mailbox access keeps its USB mask.
     unsafe {
         crate::composition::core::with_core::<P, _>(|core, p| {
             core.begin_frame(OWNER_WEBUSB, length, p)
@@ -338,6 +356,7 @@ unsafe fn begin_frame<P: Provider>(
 unsafe fn feed_frame<P: Provider>(
     bytes: &[u8],
 ) -> Result<(), canokey_protocol::response::StatusWord> {
+    // SAFETY: The serialized main loop owns the WebUSB session; each mailbox access keeps its USB mask.
     unsafe { crate::composition::core::with_core::<P, _>(|core, p| core.feed_frame(bytes, p)) }
 }
 #[cfg(not(test))]
@@ -346,6 +365,7 @@ unsafe fn finish_frame<P: Provider>(
     out: *mut u8,
     capacity: usize,
 ) -> i32 {
+    // SAFETY: The serialized main loop owns the WebUSB session; each mailbox access keeps its USB mask.
     unsafe {
         crate::composition::core::with_core::<P, _>(|core, p| {
             let reply = if let Some(sw) = error {
@@ -355,7 +375,7 @@ unsafe fn finish_frame<P: Provider>(
                 core.end_frame(p)
             };
             core.transmit(reply, core::slice::from_raw_parts_mut(out, capacity), p)
-                .map_or(-1, |n| n as i32)
+                .map_or(-1, |n| i32::try_from(n).unwrap())
         })
     }
 }
@@ -380,5 +400,6 @@ unsafe fn finish_frame<P: Provider>(
     capacity: usize,
 ) -> i32 {
     assert!(error.is_none());
+    // SAFETY: The serialized main loop owns the WebUSB session; each mailbox access keeps its USB mask.
     unsafe { crate::transport::usb::tests::web_finish(OWNER_WEBUSB, out, capacity) }
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
+#![deny(clippy::undocumented_unsafe_blocks, clippy::missing_safety_doc)]
 #[cfg(test)]
 extern crate std;
 #[cfg(all(
@@ -20,10 +21,12 @@ macro_rules! lazy_state {
         #[inline(never)]
         unsafe fn $initializer(state: *mut $ty) {
             let initial = $init;
+            // SAFETY: The caller supplies the exclusive, aligned MaybeUninit storage for this state.
             unsafe { state.write(initial) }
         }
 
         unsafe fn $getter() -> &'static mut $ty {
+            // SAFETY: The caller serializes access to the state and holds no other borrow of it.
             unsafe {
                 let state = core::ptr::addr_of_mut!($state).cast::<$ty>();
                 if !$ready {

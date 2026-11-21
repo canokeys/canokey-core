@@ -24,7 +24,7 @@ fn native_msg_has_explicit_lc_even_when_empty() {
             let info = decoder.finish().unwrap();
             assert_eq!(
                 (actual, info.lc, info.le, info.extended),
-                (body.clone(), body.len() as u16, le, true)
+                (body.clone(), u16::try_from(body.len()).unwrap(), le, true)
             );
         }
     }
@@ -168,7 +168,10 @@ fn der_signature_preserves_coordinates_across_overlapping_moves() {
                         let negative = sign_bits & (1 << i) != 0;
                         let value = &mut raw[i * width + skip..(i + 1) * width];
                         value.fill(if negative { 0x80 } else { 0x01 });
-                        body.extend([2, (value.len() + usize::from(negative)) as u8]);
+                        body.extend([
+                            2,
+                            u8::try_from(value.len() + usize::from(negative)).unwrap(),
+                        ]);
                         if negative {
                             body.push(0);
                         }
@@ -178,7 +181,7 @@ fn der_signature_preserves_coordinates_across_overlapping_moves() {
                     if body.len() >= 128 {
                         expected.push(0x81);
                     }
-                    expected.push(body.len() as u8);
+                    expected.push(u8::try_from(body.len()).unwrap());
                     expected.extend(body);
                     raw.resize(width * 2 + 9, 0xa5);
                     let n = der_signature(&mut raw, width * 2).unwrap();

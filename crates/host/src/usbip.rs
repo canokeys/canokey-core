@@ -9,6 +9,7 @@ unsafe extern "C" fn ck_host_usbip_open(path: *const std::ffi::c_char, touch: u8
     if path.is_null() || HOST.lock().unwrap().is_some() {
         return -1;
     }
+    // SAFETY: The caller supplies a live, NUL-terminated C path for the duration of this call.
     let Ok(path) = (unsafe { std::ffi::CStr::from_ptr(path) }).to_str() else {
         return -1;
     };
@@ -24,6 +25,7 @@ unsafe extern "C" fn ck_host_usbip_open(path: *const std::ffi::c_char, touch: u8
             return -1;
         }
     }
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     unsafe { usb::init() };
     0
 }
@@ -31,6 +33,7 @@ unsafe extern "C" fn ck_host_usbip_open(path: *const std::ffi::c_char, touch: u8
 #[unsafe(no_mangle)]
 extern "C" fn ck_host_usbip_loop() {
     let _entry = ENTRY.lock().unwrap();
+    // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     unsafe {
         presence_sample();
         canokey_rust_ffi::composition::ccid::poll::<HostProvider>();

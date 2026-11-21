@@ -35,7 +35,11 @@ use hal::ck_board_usb_ready;
 use hal::ck_platform_led;
 use hal::device_delay;
 static mut LED_DEFAULT: bool = true;
+///
+/// # Safety
+/// Use the serialized device loop with the board LED callback installed.
 pub unsafe fn ck_device_led_idle() {
+    // SAFETY: The serialized device loop owns these board callbacks and settings.
     unsafe {
         #[cfg(feature = "nfc")]
         if transport::nfc::is_nfc() != 0 {
@@ -44,14 +48,22 @@ pub unsafe fn ck_device_led_idle() {
         ck_platform_led(LED_DEFAULT as u8);
     }
 }
+///
+/// # Safety
+/// Use the serialized device loop. Board settings callbacks must not enter Core.
 pub unsafe fn ck_device_settings(flags: u32) {
+    // SAFETY: The serialized device loop owns these board callbacks and settings.
     unsafe {
         LED_DEFAULT = flags & config::LED != 0;
         transport::usb::ck_usb_set_landing(u8::from(flags & config::WEBUSB != 0));
         ck_device_led_idle();
     }
 }
+///
+/// # Safety
+/// Use the installed Provider on the serialized device loop. Progress may run while Core is borrowed.
 pub unsafe fn progress<P: Provider>() -> u8 {
+    // SAFETY: The serialized device loop owns these board callbacks and settings.
     unsafe {
         device_delay(1);
         transport::usb::progress::<P>()
@@ -60,6 +72,7 @@ pub unsafe fn progress<P: Provider>() -> u8 {
 // Fatal/first-boot diagnostics deliberately use the raw LED, including NFC.
 unsafe fn blink(on_ms: i32, off_ms: i32) -> ! {
     loop {
+        // SAFETY: The device main loop owns the board startup and executes with its callbacks installed.
         unsafe {
             ck_platform_led(1);
             device_delay(on_ms);
@@ -68,10 +81,16 @@ unsafe fn blink(on_ms: i32, off_ms: i32) -> ! {
         }
     }
 }
+///
+/// # Safety
+/// Invoke once from the board main loop with exclusive ownership of startup and the installed Provider.
 pub unsafe fn main<P: FirmwareProvider>() -> ! {
+    // SAFETY: The device main loop owns the board startup and executes with its callbacks installed.
     match unsafe { run_with::<P>() } {
+        // SAFETY: The device main loop owns the board startup and executes with its callbacks installed.
         Stop::Blink(on, off) => unsafe { blink(on, off) },
         #[cfg(feature = "nfc")]
+        // SAFETY: The device main loop owns the board startup and executes with its callbacks installed.
         Stop::Reset => unsafe { ck_board_reset() },
         #[cfg(test)]
         Stop::Iteration => panic!("bounded device run is test-only"),
@@ -88,10 +107,12 @@ enum Stop {
 // Tests call this Rust runner directly; no panic/unwind crosses the C entrypoint.
 #[cfg(test)]
 unsafe fn run() -> Stop {
+    // SAFETY: The device main loop owns the board startup and executes with its callbacks installed.
     unsafe { run_with::<crate::platform::Native>() }
 }
 #[cfg(feature = "nfc")]
 unsafe fn detect_nfc() -> bool {
+    // SAFETY: The device main loop owns the board startup and executes with its callbacks installed.
     unsafe {
         canokey_transport_runtime::mode::detect_contactless(
             || hal::device_get_tick(),
@@ -100,6 +121,7 @@ unsafe fn detect_nfc() -> bool {
     }
 }
 unsafe fn run_with<P: FirmwareProvider>() -> Stop {
+    // SAFETY: The device main loop owns the board startup and executes with its callbacks installed.
     unsafe {
         ck_board_prepare();
         let stored_flags = core_ops::boot_flags::<P>();
@@ -203,6 +225,9 @@ unsafe fn run_with<P: FirmwareProvider>() -> Stop {
 }
 
 #[cfg(feature = "platform-serial")]
+///
+/// # Safety
+/// `out` must point to four writable bytes. Use the installed Provider on the serialized device loop.
 pub unsafe fn serial<P: Provider>(out: *mut u8) {
     if out.is_null() {
         return;
@@ -210,6 +235,7 @@ pub unsafe fn serial<P: Provider>(out: *mut u8) {
     // Device callbacks may only read this independent raw config page. No
     // reentry into Core, LittleFS cache, crypto or the caller's workspace.
     let serial = P::with_platform(|p| config::serial(p.storage));
+    // SAFETY: The caller provides the four writable serial bytes required by the board ABI.
     unsafe {
         core::ptr::copy_nonoverlapping(serial.as_ptr(), out, 4);
     }

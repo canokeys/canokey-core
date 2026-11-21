@@ -12,24 +12,44 @@ crate::lazy_state!(CORE, CORE_READY, Core, Core::new(), initialize_core, core);
 /// Serialized main-loop query. Never call from an IRQ or a progress callback
 /// while Core is executing; it would overlap the active mutable borrow.
 #[cfg(feature = "usb-ccid")]
+///
+/// # Safety
+/// Use the serialized main loop outside any Core operation or progress callback.
 pub unsafe fn can_preempt() -> bool {
+    // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
     unsafe { core().can_preempt() }
 }
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
 pub unsafe fn install<P: Provider>() -> i32 {
+    // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
     P::with_platform(|p| unsafe { core().install(p).map_or(-1, |_| 0) })
 }
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
 pub unsafe fn reset<P: Provider>() {
+    // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
     P::with_platform(|p| unsafe {
         core().reset(p);
     })
 }
 /// Reader logical power only; USB/device reset must use ck_core_reset.
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
 pub unsafe fn slot_power<P: Provider>() {
+    // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
     P::with_platform(|p| unsafe { core().slot_power(p) })
 }
 pub fn applet_count() -> u8 {
     Core::applet_count()
 }
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
+/// The input must be readable for `len` bytes and output writable for `capacity` bytes. Their regions may overlap.
 pub unsafe fn exchange<P: Provider>(
     owner: u8,
     input: *const u8,
@@ -45,6 +65,7 @@ pub unsafe fn exchange<P: Provider>(
     {
         return -1;
     }
+    // SAFETY: The caller supplies both live regions; RX ends before the possibly overlapping TX borrow.
     P::with_platform(|p| unsafe {
         let engine = core();
         // End the immutable RX borrow before creating mutable TX: C permits
@@ -52,21 +73,30 @@ pub unsafe fn exchange<P: Provider>(
         let reply = engine.receive(owner, core::slice::from_raw_parts(input, len), p);
         engine
             .transmit(reply, core::slice::from_raw_parts_mut(out, capacity), p)
-            .map_or(-1, |n| n as i32)
+            .map_or(-1, |n| i32::try_from(n).unwrap())
     })
 }
 #[cfg(feature = "pass")]
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
+/// The output must be writable for `capacity` bytes for this call.
 pub unsafe fn touch<P: Provider>(index: u8, out: *mut u8, capacity: usize) -> i32 {
     if out.is_null() || capacity > isize::MAX as usize {
         return -1;
     }
+    // SAFETY: The caller guarantees the validated buffer extents and exclusive access to Core.
     P::with_platform(|p| unsafe {
         core()
             .touch(index, core::slice::from_raw_parts_mut(out, capacity), p)
-            .map_or(-1, |n| n as i32)
+            .map_or(-1, |n| i32::try_from(n).unwrap())
     })
 }
 #[cfg(feature = "pass")]
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
+/// The input must be readable for `len` bytes and the output writable for 20 bytes.
 pub unsafe fn challenge<P: Provider>(index: u8, input: *const u8, len: usize, out: *mut u8) -> i32 {
     const MAX_CHALLENGE_BYTES: usize = 64;
     const CHALLENGE_OUTPUT_BYTES: usize = 20;
@@ -74,6 +104,7 @@ pub unsafe fn challenge<P: Provider>(index: u8, input: *const u8, len: usize, ou
     if input.is_null() || out.is_null() || len > MAX_CHALLENGE_BYTES {
         return -1;
     }
+    // SAFETY: The caller guarantees the validated buffer extents and exclusive access to Core.
     P::with_platform(|p| unsafe {
         let mut result = [0; CHALLENGE_OUTPUT_BYTES];
         let status = core().challenge(
@@ -91,12 +122,20 @@ pub unsafe fn challenge<P: Provider>(index: u8, input: *const u8, len: usize, ou
 }
 
 #[cfg(feature = "pass")]
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
 pub unsafe fn output_cancel<P: Provider>(pressed: u8) {
+    // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
     P::with_platform(|p| unsafe { core().cancel_output(pressed != 0, p) })
 }
 
 #[cfg(feature = "pass")]
+///
+/// # Safety
+/// Use the installed Provider on the serialized main loop, outside any existing Core borrow.
 pub unsafe fn output_sample<P: Provider>(pressed: u8, now: u32, ready: u8) -> i32 {
+    // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
     P::with_platform(|p| unsafe {
         core()
             .sample_output(pressed != 0, now, ready != 0, p)
@@ -137,6 +176,7 @@ pub fn keyboard_usage<P: Provider>(ch: u8) -> i32 {
 pub unsafe fn with_core<P: Provider, T>(
     run: impl FnOnce(&mut Core, &mut canokey_ports::Platform<'_, P::Backends>) -> T,
 ) -> T {
+    // SAFETY: The serialized main loop owns Core, and this call uses the installed Provider.
     P::with_platform(|p| unsafe { run(core(), p) })
 }
 

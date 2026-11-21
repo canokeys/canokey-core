@@ -35,9 +35,12 @@ fn tag_complete(i: usize, byte: u8) -> Result<bool, Error> {
     Ok((i == 0 && byte & 0x1f != 0x1f) || (i != 0 && byte & 0x80 == 0))
 }
 
+/// Encoded tag, header bytes consumed, and declared value length.
+pub type Header<'a> = (&'a [u8], usize, u16);
+
 /// Decode just the header. None means incomplete; the value may be absent.
 #[inline(always)]
-pub fn read_header(bytes: &[u8]) -> Result<Option<(&[u8], usize, u16)>, Error> {
+pub fn read_header(bytes: &[u8]) -> Result<Option<Header<'_>>, Error> {
     for (i, &byte) in bytes.iter().enumerate() {
         if tag_complete(i, byte)? {
             return Ok(length::read_prefix(&bytes[i + 1..])?
@@ -137,7 +140,8 @@ impl Decoder {
                 Phase::Value => {
                     let n = bytes.len().min(usize::from(self.remaining));
                     emit(Event::Value(&bytes[..n])).map_err(|_| Error::Consumer)?;
-                    self.remaining -= n as u16;
+                    let [lo, hi, ..] = n.to_le_bytes();
+                    self.remaining -= u16::from_le_bytes([lo, hi]);
                     bytes = &bytes[n..];
                     if self.remaining == 0 {
                         emit(Event::End).map_err(|_| Error::Consumer)?;

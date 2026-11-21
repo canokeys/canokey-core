@@ -70,7 +70,8 @@ impl<const CAPACITY: usize> Configuration<CAPACITY> {
                 * (composition.ctap.is_some() as usize + composition.keyboard.is_some() as usize)
             + INTERFACE_BYTES * composition.webusb_string.is_some() as usize;
         assert!(length <= CAPACITY && length <= u16::MAX as usize);
-        let total = (length as u16).to_le_bytes();
+        let [lo, hi, ..] = length.to_le_bytes();
+        let total = [lo, hi];
         let mut descriptor = Self {
             bytes: [0x00; CAPACITY],
             length: 0,
@@ -214,8 +215,8 @@ impl<const CAPACITY: usize> Configuration<CAPACITY> {
             0x00,
             0x02,
             0x00, // dwFeatures.
-            maximum_message_bytes as u8,
-            (maximum_message_bytes >> 8) as u8,
+            maximum_message_bytes.to_le_bytes()[0],
+            maximum_message_bytes.to_le_bytes()[1],
             0x00,
             0x00, // dwMaxCCIDMessageLength.
             0xff,
