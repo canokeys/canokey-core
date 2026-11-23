@@ -100,10 +100,13 @@ The default mapping is `01 E0 05 16 E1 53 15 54 E2 E3 E4 E5`.
 All extension IDs must be unique and avoid reserved values, including TDEA03;
 validation also applies with extensions disabled. TDEA keys are unsupported.
 Neither expanded private keys nor complete long messages are stored.
-The native1312-byte DSA stage is inside CryptoScratch2400. On CIU, DSA44
-emits32 challenge bytes, four576-byte z chunks and84 hint bytes; hints persist
-in the sign state outside the stage. Host primitives can coalesce chunks.
-Bounded reads drain each chunk before refill and return exactly2420 bytes.
+The native DSA stream shares the 2400-byte CryptoScratch with CTAP. Public
+operations retain the complete 1312- or 1952-byte public key there. Signing
+uses an overlapping 1888-byte stage. On CIU the stage holds packed key material
+from seed expansion through candidate acceptance, then holds signature chunks.
+DSA44 coalesces its 32-byte challenge and first 576-byte z polynomial. The
+remaining three z polynomials and 84 hint bytes complete the 2420-byte output.
+Bounded reads drain each chunk before refill.
 PQ GENERATE stages only the compact metadata/seed record. The previous slot and
 name remain intact until the final public-response chunk has been generated;
 that chunk commits the replacement before returning success. Selection, reset,

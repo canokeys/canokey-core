@@ -32,6 +32,7 @@ struct Fixture {
     events: Rc<RefCell<Vec<&'static str>>>,
     fault: Option<Fault>,
     opens: usize,
+    retained: bool,
     offset: usize,
     transcript: Vec<u8>,
 }
@@ -44,6 +45,13 @@ impl Storage for Fixture {
     }
 }
 impl Crypto for Fixture {
+    fn rewind_public(&mut self, _: &mut CryptoScratch) -> bool {
+        if self.retained {
+            self.events.borrow_mut().push("rewind");
+            self.offset = 0;
+        }
+        self.retained
+    }
     fn mac(&mut self, _: u8, _: &[u8], _: &[u8], _: &mut [u8; 64]) -> Result<(), CryptoError> {
         unreachable!()
     }
@@ -352,6 +360,52 @@ fn make_closes_public_generation_before_attestation_then_reopens_the_same_seed()
         assert_eq!(stream.framing.material(), &[0x00; 64]);
         stream.close(&mut harness.platform());
         erased(&stream);
+    }
+}
+#[test]
+fn retained_make_rewinds_once_and_closes_on_attestation_failure() {
+    for params in mldsa::PARAMETER_SETS {
+        for fault in [None, Some(Fault::Sign)] {
+            let request = plan(params.algorithm, Mode::Make);
+            let mut harness = Harness::new(fault);
+            harness.crypto.retained = true;
+            let mut framing = Framing::new();
+            stage(&mut framing, request, &harness.memory);
+            let mut scratch = CryptoScratch::new();
+            let mut stream = Stream {
+                crypto: &mut scratch,
+                framing: &mut framing,
+            };
+            let result = stream.prepare::<Material, _>(request, &mut harness.platform());
+            assert_eq!(harness.crypto.opens, 1);
+            assert_eq!(harness.crypto.offset, 0);
+            assert_eq!(
+                harness
+                    .crypto
+                    .events
+                    .borrow()
+                    .iter()
+                    .filter(|e| **e == "rewind")
+                    .count(),
+                1
+            );
+            if fault.is_some() {
+                assert_eq!(result, Err(Error::Invalid));
+            } else {
+                let mut bytes = vec![0; result.unwrap()];
+                stream
+                    .read::<Material, _>(0, &mut bytes, &mut harness.platform())
+                    .unwrap();
+                for (i, byte) in bytes[request.public_at..][..params.public_bytes]
+                    .iter()
+                    .enumerate()
+                {
+                    assert_eq!(*byte, (i % 251) as u8);
+                }
+                stream.close(&mut harness.platform());
+            }
+            erased(&stream);
+        }
     }
 }
 #[test]

@@ -95,6 +95,7 @@ unsafe extern "C" {
 }
 #[cfg(feature = "ctap")]
 unsafe extern "C" {
+    fn ck_stream_rewind_public(scratch: *mut canokey_ports::CryptoScratch) -> i32;
     fn ck_platform_p256_sign(scalar: *const u8, digest: *const u8, out: *mut u8) -> i32;
     fn ck_platform_sha256(input: *const u8, length: usize, out: *mut u8);
     fn ck_platform_aes256(
@@ -244,6 +245,10 @@ impl Crypto for CryptoBackend {
             }
         };
         rc_len(n, usize::MAX)
+    }
+    #[cfg(feature = "ctap")]
+    fn rewind_public(&mut self, scratch: &mut canokey_ports::CryptoScratch) -> bool {
+        unsafe { ck_stream_rewind_public(scratch) == 0 }
     }
 
     #[cfg(feature = "piv")]

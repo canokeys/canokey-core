@@ -124,6 +124,13 @@ pub trait Crypto {
         Err(CryptoError::Failure)
     }
 
+    /// Rewind a fully read ML-DSA public key retained in session RAM.
+    /// Returning true guarantees that the primitive no longer owns hardware.
+    #[cfg(feature = "ctap")]
+    fn rewind_public(&mut self, _scratch: &mut CryptoScratch) -> bool {
+        false
+    }
+
     #[cfg(feature = "piv")]
     fn aes192(
         &mut self,

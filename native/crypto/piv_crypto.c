@@ -3,6 +3,7 @@
 #include "crypto_ops.h"
 #include <ml-dsa-65.h>
 #include <ml-dsa-44.h>
+#include <mldsa-stream-cache.h>
 #include <ml-kem-768.h>
 #include <ml-kem-512.h>
 #include <sha3.h>
@@ -13,7 +14,6 @@
 #include <string.h>
 #include <stdint.h>
 enum {
-  MLDSA_STAGE_BYTES = 1312, // Bounded chunk reused for keygen and signing output.
   ED25519_SEED_BYTES = 32,
   EC_SIGNATURE_BYTES = 64,
   SM2_SCALAR_BYTES = 32,
@@ -36,13 +36,15 @@ typedef struct {
 #endif
     struct {
       union {
-        mldsa_keygen_state_t keygen;
+        struct {
+          uint8_t seed[MLDSA_SEEDBYTES];
+          SHA3_CTX_T hash;
+        } absorb;
         mldsa44_sign_state_t sign;
       } state;
-      uint8_t stage[MLDSA_STAGE_BYTES];
-      SHA3_CTX_T hash;
-      uint8_t mu[MLDSA_CRHBYTES];
+      uint8_t stage[CK_MLDSA_STAGE_BYTES];
     } dsa;
+    uint8_t public_key[MLDSA_PK_BYTES];
     struct {
       ecc_key_t key;
       sm3_ctx_t hash;
@@ -57,12 +59,8 @@ typedef struct {
 _Static_assert(sizeof(stream_t) <= CK_CRYPTO_SCRATCH_BYTES, "Shared Rust crypto scratch size");
 _Static_assert(_Alignof(stream_t) <= 8, "Rust CryptoScratch alignment");
 static int is_dsa(uint32_t alg) { return alg == MLDSA65 || alg == MLDSA44; }
-static uint32_t dsa_public_bytes(uint32_t alg) {
-  return alg == MLDSA44 ? MLDSA44_PUBLIC_KEY_BYTES : MLDSA_PK_BYTES;
-}
-static uint32_t dsa_signature_bytes(uint32_t alg) {
-  return alg == MLDSA44 ? MLDSA44_SIGNATURE_BYTES : MLDSA_SIG_BYTES;
-}
+static uint32_t dsa_public_bytes(uint32_t alg) { return alg == MLDSA44 ? MLDSA44_PUBLIC_KEY_BYTES : MLDSA_PK_BYTES; }
+static uint32_t dsa_signature_bytes(uint32_t alg) { return alg == MLDSA44 ? MLDSA44_SIGNATURE_BYTES : MLDSA_SIG_BYTES; }
 #ifdef RUST_CORE_PIV
 static int is_kem(uint32_t alg) { return alg == MLKEM768 || alg == MLKEM512; }
 static uint32_t kem_public_bytes(uint32_t alg) {
@@ -72,35 +70,27 @@ static uint32_t kem_ciphertext_bytes(uint32_t alg) {
   return alg == MLKEM512 ? MLKEM512_CIPHERTEXT_BYTES : MLKEM768_CIPHERTEXT_BYTES;
 }
 #endif
-// Advance the ML-DSA generator only after its previous stage bytes were read.
-// This preserves one-pass output without retaining a full public key/signature.
-static int refill(stream_t *s) {
-  const int public = s->kind == STREAM_PUBLIC;
-  const uint8_t phase = public ? s->data.dsa.state.keygen.phase : s->data.dsa.state.sign.core.phase;
-  const uint32_t total = public ? dsa_public_bytes(s->alg) : dsa_signature_bytes(s->alg);
+/* Portable backends may derive from seed on demand. CIU supplies the paired
+ * overrides that fill the stage during tr generation and consume it at sign. */
+__attribute__((weak)) int ck_mldsa_prepare(bool small, uint8_t *stage, uint8_t *tr, const uint8_t *seed) {
+  (void)stage;
+  return small ? ml_dsa_44_seed_to_tr(tr, seed) : ml_dsa_65_seed_to_tr(tr, seed);
+}
+__attribute__((weak)) int ck_mldsa_sign_chunk(bool small, uint8_t *stage, mldsa44_sign_state_t *state,
+                                              const uint8_t *mu) {
+  return small ? ml_dsa_44_sign_seed_mu_streaming(stage, CK_MLDSA_STAGE_BYTES, state, mu)
+               : ml_dsa_65_sign_seed_mu_streaming(stage, CK_MLDSA_STAGE_BYTES, &state->core, mu);
+}
+static int refill(stream_t *s, const uint8_t *mu) {
+  const uint8_t phase = s->data.dsa.state.sign.core.phase;
+  const uint32_t total = dsa_signature_bytes(s->alg);
   if (!is_dsa(s->alg) || s->emitted >= total || (s->emitted != 0 && phase == 0)) return -1;
-  int n;
-  if (public) {
-    n = s->alg == MLDSA44
-            ? ml_dsa_44_keygen_streaming(s->data.dsa.stage, sizeof(s->data.dsa.stage), &s->data.dsa.state.keygen, NULL)
-            : ml_dsa_65_keygen_streaming(s->data.dsa.stage, sizeof(s->data.dsa.stage), &s->data.dsa.state.keygen, NULL);
-  } else {
-    n = s->alg == MLDSA44
-            ? ml_dsa_44_sign_seed_mu_streaming(s->data.dsa.stage, sizeof(s->data.dsa.stage),
-                                               &s->data.dsa.state.sign, s->data.dsa.mu)
-            : ml_dsa_65_sign_seed_mu_streaming(s->data.dsa.stage, sizeof(s->data.dsa.stage),
-                                               &s->data.dsa.state.sign.core, s->data.dsa.mu);
-  }
+  int n = ck_mldsa_sign_chunk(s->alg == MLDSA44, s->data.dsa.stage, &s->data.dsa.state.sign, mu);
   if (n <= 0 || (size_t)n > sizeof(s->data.dsa.stage)) return -1;
   if ((uint32_t)n > total - s->emitted) return -1;
   const int last = s->emitted + (uint32_t)n == total;
-  const uint8_t next = public ? s->data.dsa.state.keygen.phase : s->data.dsa.state.sign.core.phase;
+  const uint8_t next = s->data.dsa.state.sign.core.phase;
   if (last != (next == 0)) return -1;
-  // Public44 is one1312-byte chunk; public65 is1312+640. Signing may
-  // coalesce differently on the host, but must terminate at the selected size.
-  if (public && (phase > 1 || (uint32_t)n != (phase == 0 ? MLDSA_STAGE_BYTES : total - MLDSA_STAGE_BYTES) ||
-                 (!last && next != 1)))
-    return -1;
   s->position = 0;
   s->length = (uint32_t)n;
   return 0;
@@ -134,17 +124,11 @@ static __attribute__((noinline)) int sm2_finish(stream_t *s) {
 }
 void ck_stream_abort(void *scratch) {
   stream_t *s = scratch;
-  if (is_dsa(s->alg)) {
-    // ML-DSA-44 and -65 share the keygen state type. Keygen abort only
-    // erases state and restores the PKE clock, independent of the parameters.
-    if (s->kind == STREAM_PUBLIC)
-      ml_dsa_65_keygen_streaming_abort(&s->data.dsa.state.keygen);
-    else if (s->kind == STREAM_SIGNING || s->kind == STREAM_SIGNATURE) {
-      if (s->alg == MLDSA44)
-        ml_dsa_44_sign_streaming_abort(&s->data.dsa.state.sign);
-      else
-        ml_dsa_65_sign_streaming_abort(&s->data.dsa.state.sign.core);
-    }
+  if (is_dsa(s->alg) && s->kind == STREAM_SIGNATURE) {
+    if (s->alg == MLDSA44)
+      ml_dsa_44_sign_streaming_abort(&s->data.dsa.state.sign);
+    else
+      ml_dsa_65_sign_streaming_abort(&s->data.dsa.state.sign.core);
   }
   if (s->alg == ED25519) ed25519_randomized_sign_clear(&s->data.ed.state);
   memzero(s, sizeof(*s));
@@ -167,13 +151,14 @@ int32_t ck_stream_read(void *scratch, uint8_t *out, size_t capacity) {
   if (s->emitted > total || capacity > total - s->emitted) return -1;
   while (written < capacity) {
     if (s->position == s->length) {
-      if (!is_dsa(s->alg) || refill(s) < 0) return -1;
+      if (s->kind != STREAM_SIGNATURE || !is_dsa(s->alg) || refill(s, NULL) < 0) return -1;
     }
     size_t count = s->length - s->position;
     if (count > capacity - written) count = capacity - written;
-    const uint8_t *source = s->alg == ED25519 ? s->data.ed.signature
-                            : s->alg == SM2     ? s->data.sm2.signature
-                                                : s->data.dsa.stage;
+    const uint8_t *source = s->kind == STREAM_PUBLIC ? s->data.public_key
+                            : s->alg == ED25519      ? s->data.ed.signature
+                            : s->alg == SM2          ? s->data.sm2.signature
+                                                     : s->data.dsa.stage;
 #ifdef RUST_CORE_PIV
     if (is_kem(s->alg)) source = s->data.kem.public_key;
 #endif
@@ -201,11 +186,32 @@ int32_t ck_stream_public_init(uint8_t alg, void *scratch, const uint8_t *input, 
   }
 #endif
   if (is_dsa(alg) && n == MLDSA_SEEDBYTES) {
-    memcpy(s->data.dsa.state.keygen.seed, input, MLDSA_SEEDBYTES);
-    if (refill(s) < 0) return -1;
-    return (int32_t)dsa_public_bytes(alg);
+    mldsa_keygen_state_t state = {0};
+    memcpy(state.seed, input, sizeof(state.seed));
+    const size_t total = dsa_public_bytes(alg);
+    do {
+      const size_t remaining = total - s->length;
+      uint8_t *dest = s->data.public_key + s->length;
+      const int chunk = alg == MLDSA44 ? ml_dsa_44_keygen_streaming(dest, remaining, &state, NULL)
+                                       : ml_dsa_65_keygen_streaming(dest, remaining, &state, NULL);
+      if (chunk <= 0 || (size_t)chunk > remaining) break;
+      s->length += (size_t)chunk;
+    } while (state.phase != 0 && s->length < total);
+    const bool complete = s->length == total && state.phase == 0;
+    ml_dsa_65_keygen_streaming_abort(&state);
+    if (!complete) {
+      ck_stream_abort(s);
+      return -1;
+    }
+    return (int32_t)total;
   }
   return -1;
+}
+int32_t ck_stream_rewind_public(void *scratch) {
+  stream_t *s = scratch;
+  if (s->kind != STREAM_PUBLIC || !is_dsa(s->alg) || s->emitted != dsa_public_bytes(s->alg)) return -1;
+  s->position = s->emitted = 0;
+  return 0;
 }
 int32_t ck_stream_sign_init(uint8_t alg, void *scratch, const uint8_t *input, size_t n) {
   stream_t *s = scratch;
@@ -219,14 +225,18 @@ int32_t ck_stream_sign_init(uint8_t alg, void *scratch, const uint8_t *input, si
     return 0;
   }
   if (is_dsa(alg) && n == MLDSA_SEEDBYTES) {
-    memcpy(s->data.dsa.state.sign.core.seed, input, MLDSA_SEEDBYTES);
-    int r = alg == MLDSA44 ? ml_dsa_44_seed_to_tr(s->data.dsa.mu, input)
-                           : ml_dsa_65_seed_to_tr(s->data.dsa.mu, input);
-    if (r < 0) return -1;
-    shake256_init(&s->data.dsa.hash);
-    shake_update(&s->data.dsa.hash, s->data.dsa.mu, MLDSA_CRHBYTES);
+    uint8_t tr[MLDSA_CRHBYTES];
+    int r = ck_mldsa_prepare(alg == MLDSA44, s->data.dsa.stage, tr, input);
+    if (r < 0) {
+      ck_stream_abort(s);
+      return -1;
+    }
+    memcpy(s->data.dsa.state.absorb.seed, input, MLDSA_SEEDBYTES);
+    SHA3_CTX_T *hash = &s->data.dsa.state.absorb.hash;
+    shake256_init(hash);
+    shake_update(hash, tr, sizeof(tr));
     const uint8_t prefix[2] = {0, 0};
-    shake_update(&s->data.dsa.hash, prefix, 2);
+    shake_update(hash, prefix, sizeof(prefix));
     return 0;
   }
   if (alg == ED25519 && n == ED25519_SEED_BYTES) {
@@ -247,7 +257,7 @@ int32_t ck_stream_sign_update(void *scratch, const uint8_t *input, size_t n) {
     return 0;
   }
   if (is_dsa(s->alg)) {
-    shake_update(&s->data.dsa.hash, input, n);
+    shake_update(&s->data.dsa.state.absorb.hash, input, n);
     return 0;
   }
   if (s->alg == ED25519) return ed25519_randomized_sign_update(&s->data.ed.state, input, n);
@@ -261,9 +271,19 @@ int32_t ck_stream_sign_final(void *scratch) {
     return sm2_finish(s);
   }
   if (is_dsa(s->alg)) {
-    shake_finalize(&s->data.dsa.hash);
-    shake_squeeze(&s->data.dsa.hash, s->data.dsa.mu, MLDSA_CRHBYTES);
-    if (refill(s) < 0) return -1;
+    uint8_t mu[MLDSA_CRHBYTES], seed[MLDSA_SEEDBYTES];
+    shake_finalize(&s->data.dsa.state.absorb.hash);
+    shake_squeeze(&s->data.dsa.state.absorb.hash, mu, sizeof(mu));
+    memcpy(seed, s->data.dsa.state.absorb.seed, sizeof(seed));
+    memzero(&s->data.dsa.state, sizeof(s->data.dsa.state));
+    memcpy(s->data.dsa.state.sign.core.seed, seed, sizeof(seed));
+    memzero(seed, sizeof(seed));
+    int r = refill(s, mu);
+    memzero(mu, sizeof(mu));
+    if (r < 0) {
+      ck_stream_abort(s);
+      return -1;
+    }
     return (int32_t)dsa_signature_bytes(s->alg);
   }
   if (s->alg == ED25519) {

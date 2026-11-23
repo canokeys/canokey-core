@@ -74,6 +74,7 @@ static void check(uint8_t algorithm, size_t public_bytes, size_t signature_bytes
       for (size_t j = 0; j < sizeof(out); ++j) assert(out[j] == GUARD);
       assert(ck_stream_read(w.scratch, out, 0) == 0);
       read_prefix(&w, out, total - 1, steps[i]);
+      assert(ck_stream_rewind_public(w.scratch) == -1);
       assert(ck_stream_read(w.scratch, out + total - 1, 2) == -1);
       assert(out[total - 1] == GUARD && out[total] == GUARD);
       assert(ck_stream_read(w.scratch, out + total - 1, 1) == 1);
@@ -81,6 +82,14 @@ static void check(uint8_t algorithm, size_t public_bytes, size_t signature_bytes
       assert(out[total] == GUARD);
       assert(ck_stream_read(w.scratch, out + total, 1) == -1);
       assert(ck_stream_read(w.scratch, out + total, 0) == 0);
+      if (signing) {
+        assert(ck_stream_rewind_public(w.scratch) == -1);
+      } else {
+        assert(ck_stream_rewind_public(w.scratch) == 0);
+        memset(out, GUARD, total);
+        read_prefix(&w, out, total, steps[i]);
+        assert(!memcmp(out, reference_public, total));
+      }
       abort_stream(&w);
     }
   }

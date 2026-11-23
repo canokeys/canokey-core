@@ -687,7 +687,10 @@ object or second output buffer bridges this transition. Retained hash/seed bytes
 are wiped after initialization on success and failure; close aborts the primitive
 and clears framing, material and counters. The transfer frame returns before
 primitive initialization; the crypto state remains in the sole shared workspace. Full enumeration returns the registration public key; metadata-only
-mode omits it. No second full public-key buffer or Flash scratch is introduced.
+mode omits it. During registration the native backend retains the complete
+ML-DSA public key in CryptoScratch, releases PKE, hashes the public bytes,
+then rewinds the stream for transmission. P-256 attestation can reuse PKE.
+Providers without retained public bytes close and reopen the stream.
 `ctap-normal` independently verifies packed attestation and ML-DSA signatures,
 decrypts hmac-secret-mc results and compares full/metadata mixed enumeration.
 Hardware stack measurements remain required for the repaired call paths.
@@ -704,7 +707,7 @@ this boundary does not establish a bound for all crypto call paths.
 Both classic and PQ resident registrations stage their complete group before
 response construction and publish in `Applet::complete` after command frames
 return. The retained transaction owns one nonzero record ID, with no request,
-workspace or PKE loan. PQ public hashing, attestation and stream reopening must
+workspace or PKE loan. PQ public hashing, attestation and response preparation must
 succeed before publication; classic signing completes during command dispatch.
 There is no transport yield between these phases. Preparation/commit errors,
 close, reset and command replacement discard unpublished staging and erase
@@ -895,7 +898,7 @@ cache lease before returning; unrelated reads and counter replacement preserve
 the unpublished stage because they use separate published/temporary paths.
 
 The shared registration engine publishes only after ordinary signing or PQ public
-hashing, attestation and public reopen succeed. Counter reservation remains its
+hashing, attestation and public response preparation succeed. Counter reservation remains its
 own earlier transaction: failure may consume a counter without installing a
 credential. A published new credential implies the counter was committed first.
 Response preparation failures abort the stage and retain the old credential and

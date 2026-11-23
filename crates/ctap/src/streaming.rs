@@ -254,15 +254,18 @@ impl Stream<'_> {
         if self.init::<P, B>(Op::PublicInit, p)? != self.parameters().public_bytes {
             return Err(P::invalid());
         }
-        // The stream API exposes public bytes only while the primitive
-        // is open. Close it after hashing the first public view, then
-        // reopen it to emit the response; retaining a second full public-key
-        // copy would exceed the shared workspace budget.
         let mut hash = HashState {
             bytes: [0x00; canokey_ports::HASH_STATE_BYTES],
         };
         let digest_result = self.attestation_digest::<P, B>(plan, &mut hash, p);
         let _ = p.crypto.digest(Hash::Abort, &mut hash, &[], &mut []);
+        // A retained public key can survive P-256 attestation. Streaming-only
+        // providers must release their hardware before signing the digest.
+        if let Ok(digest) = &digest_result
+            && p.crypto.rewind_public(self.crypto)
+        {
+            return self.attest::<P, B>(plan.signature_at + plan.auth, digest, p);
+        }
         let _ = p
             .crypto
             .stream(Op::Abort, self.framing.algorithm, self.crypto, &[], &mut []);

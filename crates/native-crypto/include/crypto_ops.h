@@ -85,6 +85,7 @@ int32_t ck_platform_key(uint8_t op, uint8_t alg, rsa_key_t *material, const uint
 int32_t ck_platform_aes192(const uint8_t *key, const uint8_t *input, uint8_t *output);
 /* Fixed-shape stream lifecycle operations avoid unused ABI arguments. */
 void ck_stream_abort(void *scratch);
+int32_t ck_stream_rewind_public(void *scratch);
 int32_t ck_stream_read(void *scratch, uint8_t *output, size_t capacity);
 int32_t ck_stream_public_init(uint8_t alg, void *scratch, const uint8_t *input, size_t n);
 int32_t ck_stream_sign_init(uint8_t alg, void *scratch, const uint8_t *input, size_t n);
