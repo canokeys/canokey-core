@@ -89,7 +89,7 @@ impl Options {
             // CanoKey requires a boolean for every option, including unknown
             // names. Command-only options reject after this type admission.
             let value = r.boolean()?;
-            schema::admit_option::<R::Error>(make, field)?;
+            schema::admit_boolean::<R::Error>(make, field, value)?;
             match field {
                 Field::Resident => options.rk = value,
                 Field::Up => options.up = Some(value),

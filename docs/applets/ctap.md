@@ -829,11 +829,12 @@ PIN-state probe even when `pinUvAuthProtocol` is omitted: it returns `PIN_INVALI
 when a PIN exists and `PIN_NOT_SET` otherwise. Nonempty authentication requires
 a protocol; a protocol/authentication-length mismatch returns `PIN_AUTH_INVALID`.
 
-Credential options are command-specific: makeCredential rejects explicit `up`
-with `INVALID_OPTION`, and getAssertion rejects explicit `rk` with
-`UNSUPPORTED_OPTION`, regardless of their boolean value. Omitted options retain
-the command defaults; getAssertion continues to support `up: false`.
-Both shared parsers apply these command-key rules after boolean type validation.
+MakeCredential accepts explicit `up: true` and requires user presence, as when
+`up` is omitted. Explicit `up: false` returns `INVALID_OPTION`. GetAssertion
+supports `up: false` and rejects either boolean value of `rk` with
+`UNSUPPORTED_OPTION`. Both shared parsers validate the option type first.
+For both commands, an explicit `largeBlobKey` extension must be boolean true.
+False returns `INVALID_OPTION` and other CBOR types return `CBOR_UNEXPECTED_TYPE`.
 Silent getAssertion with hmac-secret follows normal PIN/UV and credProtect
 policy and retains token permissions because it does not consume presence.
 MakeCredential exclude-list handling still requires presence.

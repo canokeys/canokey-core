@@ -519,7 +519,7 @@ impl<E: Error, const ALGORITHMS: usize> Fields<E, ALGORITHMS> {
                 let Event::Bool(value) = *event else {
                     return Err(E::UNEXPECTED_TYPE);
                 };
-                schema::admit_option::<E>(self.params.make, field)?;
+                schema::admit_boolean::<E>(self.params.make, field, value)?;
                 match field {
                     Field::Resident => self.params.resident = value,
                     Field::Uv => self.params.uv = value,
@@ -787,7 +787,7 @@ mod tests {
                 (Context::Extensions, b"hmac-secret") => Field::HmacSecret,
                 (Context::Extensions, b"hmac-secret-mc") if make => Field::HmacSecretMc,
                 (Context::Extensions, b"credBlob") => Field::CredBlob,
-                (Context::Extensions, b"largeBlobKey") if make => Field::LargeBlobKey,
+                (Context::Extensions, b"largeBlobKey") => Field::LargeBlobKey,
                 (Context::Extensions, b"minPinLength") if make => Field::MinPinLength,
                 (Context::Extensions, b"credProtect") if make => Field::Protection,
                 (Context::Rp, _) => Field::TextOnly,

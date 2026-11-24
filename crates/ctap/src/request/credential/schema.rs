@@ -42,13 +42,17 @@ pub(crate) enum Field {
     HmacSecretMc,
     Enterprise,
 }
-/// Command-only option keys are rejected independently of their boolean value.
-/// Both parsers call after checking the field type and before publishing options.
+/// Both parsers check the CBOR type before applying command-specific boolean rules.
 #[inline(always)]
-pub(super) fn admit_option<E: crate::request::Error>(make: bool, field: Field) -> Result<(), E> {
+pub(super) fn admit_boolean<E: crate::request::Error>(
+    make: bool,
+    field: Field,
+    value: bool,
+) -> Result<(), E> {
     match field {
         Field::Resident if !make => Err(E::UNSUPPORTED_OPTION),
-        Field::Up if make => Err(E::INVALID_OPTION),
+        Field::Up if make && !value => Err(E::INVALID_OPTION),
+        Field::LargeBlobKey if !value => Err(E::INVALID_OPTION),
         _ => Ok(()),
     }
 }
@@ -107,7 +111,7 @@ pub(crate) fn text_field(context: Context, key: &[u8], make: bool) -> Field {
         (Extensions, "hmac-secret", HmacSecret, false),
         (Extensions, "hmac-secret-mc", HmacSecretMc, true),
         (Extensions, "credBlob", CredBlob, false),
-        (Extensions, "largeBlobKey", LargeBlobKey, true),
+        (Extensions, "largeBlobKey", LargeBlobKey, false),
         (Extensions, "minPinLength", MinPinLength, true),
         (Extensions, "credProtect", Protection, true),
     ];

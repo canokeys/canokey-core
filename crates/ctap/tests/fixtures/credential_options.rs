@@ -62,7 +62,7 @@ pub fn cases() -> std::vec::Vec<(bool, std::vec::Vec<u8>, Option<u8>)> {
                         (_, _, value) if value != b"\xf4" && value != b"\xf5" => {
                             Some(Status::CborUnexpectedType as u8)
                         }
-                        (true, "up", _) => Some(Status::InvalidOption as u8),
+                        (true, "up", b"\xf4") => Some(Status::InvalidOption as u8),
                         (false, "rk", _) => Some(Status::UnsupportedOption as u8),
                         _ => None,
                     };

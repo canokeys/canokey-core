@@ -89,8 +89,11 @@ def run(wire):
             call(1, make_options | {2: {"id": rp, field: value}}, 0x11)
     metadata = call(1, make_options | {2: {"id": rp, "name": "", "icon": "https://example.com/icon"}})
     verify_attestation(metadata, client_hash)
+    call(1, make_options | {7: {"up": False}}, 0x2c)
+    present = call(1, make_options | {7: {"up": True}})
+    verify_attestation(present, client_hash)
+    assert AuthenticatorData(present[2]).is_user_present()
     for value in (False, True):
-        call(1, make_options | {7: {"up": value}}, 0x2c)
         call(2, {1: rp, 2: assertion_hash, 5: {"rk": value}}, 0x2b)
     credentials = []
     for algorithm in [-7, -8, -49, -48]:
@@ -195,7 +198,15 @@ def run(wire):
     assert len(blob_key) == 32
     blob_auth = AuthenticatorData(result[2])
     blob_descriptor = {"id": blob_auth.credential_data.credential_id, "type": "public-key"}
-    assert call(2, {1: "blob.example", 2: assertion_hash, 3: [blob_descriptor]})[7] == blob_key
+    assertion = {1: "blob.example", 2: assertion_hash, 3: [blob_descriptor]}
+    for command, params, extensions in [(1, request | {7: {"rk": True}}, 6), (2, assertion, 4)]:
+        call(command, params | {extensions: {"largeBlobKey": False}}, 0x2c)
+        for value in (0, -1, b"", "true", [], {}):
+            call(command, params | {extensions: {"largeBlobKey": value}}, 0x11)
+    for extra in ({}, {4: {"largeBlobKey": True}}):
+        response = call(2, assertion | extra)
+        assert response[7] == blob_key
+        blob_auth.credential_data.public_key.verify(response[2] + assertion_hash, response[3])
     wire.command("RESET")
     select()
     blob_assertion = call(2, {1: "blob.example", 2: assertion_hash, 4: {"credBlob": True}})
