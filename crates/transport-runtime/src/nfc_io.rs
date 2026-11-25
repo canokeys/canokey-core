@@ -472,7 +472,9 @@ impl<'a, P: Polling, const FSC: usize> Io<'a, P, FSC> {
     }
     /// Main-loop recovery. A lost WTX echo is dirty once Core has returned, so
     /// the ordinary 200 ms recovery window bounds the response wait as well.
-    pub fn poll(&mut self, now: u32, link_dirty: bool, chip: &mut impl Chip) {
+    /// Returns true when this poll completed with no pending transport work.
+    /// The caller still polls its mode pin and millisecond deadlines.
+    pub fn poll(&mut self, now: u32, link_dirty: bool, chip: &mut impl Chip) -> bool {
         let generation = self.generation();
         let dirty = link_dirty
             || self.length != 0
@@ -510,7 +512,9 @@ impl<'a, P: Polling, const FSC: usize> Io<'a, P, FSC> {
                 // Failed masking is covered by drain-only IRQ handling.
                 let _ = chip.write(wire::FM_REG_MAIN_IRQ_MASK, &[wire::FM_MAIN_IRQ_MASK_ALL]);
             }
+            return false;
         }
+        !dirty && !self.computing && !self.polling.active() && !self.recovery.drain_only()
     }
 }
 

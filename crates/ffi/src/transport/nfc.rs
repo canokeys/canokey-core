@@ -573,11 +573,15 @@ pub unsafe fn poll<P: Provider>() {
             if NFC.up_available && now >= NFC_UP_LIMIT_MS {
                 NFC.up_available = false;
             }
-            io.poll(now, dirty, chip);
-            (
-                io.generation(),
-                io.generation() == NFC.generation && io.take_tx_done(),
-            )
+            let idle = io.poll(now, dirty, chip);
+            let generation = io.generation();
+            let current = generation == NFC.generation;
+            if idle && current {
+                // Keep the I/O lock through the clock switch. A pending IRQ
+                // can then restore the active clock before touching the FIFO.
+                P::nfc_idle();
+            }
+            (generation, current && io.take_tx_done())
         });
         if generation != NFC.generation {
             NFC.generation = generation;

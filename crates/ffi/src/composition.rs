@@ -86,6 +86,10 @@ pub trait Provider {
     type Backends: Backends;
     #[cfg(feature = "ctap")]
     type Staging: Staging;
+    /// The NFC main loop holds the I/O lock and has no RX, TX or timer work.
+    /// A board may lower its clock here if its NFC IRQ restores it before chip I/O.
+    #[cfg(feature = "nfc")]
+    fn nfc_idle() {}
     fn with_platform<T>(run: impl FnOnce(&mut Platform<'_, Self::Backends>) -> T) -> T;
 }
 

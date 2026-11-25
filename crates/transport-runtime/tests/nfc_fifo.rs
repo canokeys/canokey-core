@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use canokey_protocol::nfc as wire;
-use canokey_transport_runtime::nfc::{Event, Link};
+use canokey_transport_runtime::nfc::{Event, Link, RECOVERY_PERIOD};
 use canokey_transport_runtime::nfc_io::{Chip, Io, NoPolling};
 use std::collections::VecDeque;
 
@@ -89,12 +89,45 @@ impl Chip for Frontend {
                 }
                 self.push(bytes);
             }
+            wire::FM_REG_MAIN_IRQ_MASK | wire::FM_REG_RESET_SILENCE => {}
             wire::FM_REG_FIFO_CLEAR => self.fifo.clear(),
             wire::FM_REG_RF_TXEN => assert_eq!(bytes, &[wire::FM_RF_TX_ENABLE]),
             _ => panic!("unexpected register {address:#x}"),
         }
         true
     }
+}
+
+#[test]
+fn idle_clock_requires_clean_link_fifo_and_recovery() {
+    let mut backing = [0; wire::MAX_FRAME_BYTES];
+    let mut io = Radio::new(0, Some(&mut backing));
+    let mut chip = Frontend::new();
+    assert!(!io.poll(0, false, &mut chip)); // initial IRQ mask write
+    assert!(io.poll(1, false, &mut chip));
+    assert!(!io.poll(1, true, &mut chip)); // outstanding link work
+    chip.push(&[wire::PCB_I; wire::RX_WATERMARK]);
+    chip.signal(&mut io, 0x00, wire::FM_FIFO_WATER, 0x00);
+    assert!(!io.poll(1, false, &mut chip)); // partial FIFO frame
+    chip.receive(&mut io, &[0x00, 0x00], 0x00);
+    assert!(!io.poll(1, false, &mut chip)); // complete frame in mailbox
+    io.take(&mut [0; wire::MAX_FRAME_BYTES]).unwrap();
+    assert!(io.begin_execution(1));
+    assert!(!io.poll(1, false, &mut chip)); // WTX timer owns the turn
+    io.computed(2);
+    assert_eq!(io.complete_execution(), Some(true));
+    assert!(io.send(&wire::Packet::acknowledgement(0), &mut chip));
+    assert!(!io.poll(2, false, &mut chip)); // TX still owns the FIFO
+    chip.transmit(&mut io);
+    assert!(io.poll(2, false, &mut chip));
+
+    io.fault();
+    assert!(!io.poll(3, false, &mut chip)); // silence request
+    assert!(!io.poll(4, false, &mut chip)); // waiting to unsilence
+    let resume = 3 + RECOVERY_PERIOD;
+    assert!(!io.poll(resume, false, &mut chip)); // unsilence
+    assert!(!io.poll(resume, false, &mut chip)); // configure IRQs
+    assert!(io.poll(resume, false, &mut chip));
 }
 
 #[test]
