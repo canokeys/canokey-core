@@ -33,6 +33,7 @@ pub enum Status {
     PinPolicyViolation = 0x37,
     PinTokenExpired = 0x38,
     RequestTooLarge = 0x39,
+    UpRequired = 0x3b,
     IntegrityFailure = 0x3d,
     InvalidSubcommand = 0x3e,
     UnauthorizedPermission = 0x40,

@@ -47,7 +47,19 @@ fn wait(device: &mut (impl Presence + ?Sized), minimum_ms: u32) -> Result<(), Er
 pub enum Error {
     Cancelled,
     Timeout,
+    UpRequired,
 }
+
+fn claim_nfc_up(device: &mut (impl Presence + ?Sized)) -> Result<(), Error> {
+    if !device.progress() {
+        return Err(Error::Cancelled);
+    }
+    if !device.take_nfc_up() {
+        return Err(Error::UpRequired);
+    }
+    Ok(())
+}
+
 /// An attempted request owns its gesture even when it times out or is cancelled.
 pub struct Request {
     attempted: bool,
@@ -62,7 +74,7 @@ impl Request {
     pub fn poll(&mut self, device: &mut (impl Presence + ?Sized)) -> bool {
         self.attempted = true;
         if device.contactless() {
-            device.progress()
+            claim_nfc_up(device).is_ok()
         } else {
             device.poll_presence()
         }
@@ -70,6 +82,17 @@ impl Request {
     pub fn wait_result(&mut self, device: &mut (impl Presence + ?Sized)) -> Result<(), Error> {
         self.attempted = true;
         wait(device, 0)
+    }
+    pub fn wait_for_credential(
+        &mut self,
+        device: &mut (impl Presence + ?Sized),
+    ) -> Result<(), Error> {
+        self.attempted = true;
+        if device.contactless() {
+            claim_nfc_up(device)
+        } else {
+            wait(device, 0)
+        }
     }
     pub fn wait_long(&mut self, device: &mut (impl Presence + ?Sized)) -> Result<(), Error> {
         self.attempted = true;

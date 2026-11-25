@@ -67,19 +67,15 @@ impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, B> {
     }
     #[inline(always)]
     fn presence(&mut self, up: bool) -> Result<(), Status> {
-        if up {
-            self.session.credential_presence(
-                &mut self.workspace.classic_with(self.platform.memory),
-                self.platform,
-            )
-        } else {
-            Ok(())
+        if !up {
+            return Ok(());
         }
+        self.session.credential_presence(self.platform)
     }
     #[inline(always)]
     fn excluded(result: Result<(), Status>) -> Status {
         match result {
-            Err(Status::Cancelled) => Status::Cancelled,
+            Err(status @ (Status::Cancelled | Status::UpRequired)) => status,
             _ => Status::CredentialExcluded,
         }
     }

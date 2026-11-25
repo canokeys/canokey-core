@@ -390,10 +390,45 @@ fn poll() {
     unsafe { super::poll::<crate::platform::Native>() };
     if controller().flags[0] & wire::FM_MAIN_TX_DONE != 0 {
         // Complete the RF send before the fixture advances its clock.
+        // SAFETY: The fixture owns the serialized NFC runtime and controller.
         unsafe {
             nfc_handler();
             super::poll::<crate::platform::Native>();
         }
+    }
+}
+#[cfg(feature = "ctap")]
+#[test]
+fn nfc_up_expires_and_is_rearmed_only_at_boot() {
+    let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
+    *controller() = Controller::new();
+    // SAFETY: The fixture owns the serialized NFC runtime and its clock.
+    unsafe {
+        ck_nfc_set_mode(0);
+        assert!(!take_up());
+        ck_nfc_set_mode(1);
+        init::<crate::platform::Native>();
+        activate();
+        poll();
+        controller().now = NFC_UP_LIMIT_MS - 1;
+        assert!(take_up());
+        activate();
+        poll();
+        assert!(!take_up());
+
+        // A command checks the deadline even before the next polling iteration.
+        ck_nfc_set_mode(1);
+        controller().now = NFC_UP_LIMIT_MS;
+        assert!(!take_up());
+
+        ck_nfc_set_mode(1);
+        poll();
+        controller().now = 0;
+        assert!(!take_up());
+        ck_nfc_set_mode(1);
+        assert!(take_up());
+        assert!(!take_up());
+        ck_nfc_set_mode(0);
     }
 }
 #[test]

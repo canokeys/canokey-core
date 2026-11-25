@@ -70,6 +70,12 @@ class FaultNfc(Faults, Nfc):
     replay_response = False
     retransmissions = 0
 
+    def retap(self):
+        self.process.stdin.write("POWER 0\n")
+        self.process.stdin.flush()
+        assert self.lines.get(timeout=30) == ("WIRE", "")
+        self.number = 0
+
     def transmit(self, frame):
         self.replay_first = True
         return super().transmit(frame)
@@ -290,6 +296,9 @@ def suite(wire, rust, encoding='short'):
     for label, record, ins, data, cla in sources:
         for skip in (0, 1):
             for returned in (-1, 0, 1):
+                if rust and wire.kind == 'nfc' and label != 'large-blob':
+                    wire.retap()
+                    checks.select()
                 assert wire.control(f'ARM {record} {skip} {returned}') == 'ARMED'
                 start = len(wire.trace)
                 result = request(wire, ins, data, cla, encoding)
@@ -317,6 +326,9 @@ def suite(wire, rust, encoding='short'):
                 probe = wire.transmit(bytes.fromhex('00c0000000'))
                 expected_probe = (b'', 0x6d, 0) if wire.kind == 'msg' else (b'', 0x69, 0x86)
                 assert probe == expected_probe, probe
+                if rust and wire.kind == 'nfc' and label != 'large-blob':
+                    wire.retap()
+                    checks.select()
                 recovery = request(wire, ins, data, cla, encoding)
                 verify_success(label, recovery)
                 cases.append(dict(case=f'{label}-skip{skip}-return{returned}', passed=True,

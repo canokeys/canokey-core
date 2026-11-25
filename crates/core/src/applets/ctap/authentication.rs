@@ -2,6 +2,7 @@
 //! Credential authorization and signing. All request bytes are owned before entry.
 use super::wire::{auth_data, pin_protocol};
 use super::{Session, Status, credential, credential_request::Parameters, pin, resident};
+use crate::runtime::presence::Error as PresenceError;
 use crate::{
     ports::{KeyOperation, Platform, alg},
     runtime::workspace::{SessionWorkspace, Workspace},
@@ -49,7 +50,6 @@ impl Session {
         workspace: &mut SessionWorkspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
-        let mut w = workspace.classic_with(p.memory);
         if params.make && params.algorithm.is_none() {
             return Err(Status::UnsupportedAlgorithm);
         }
@@ -87,7 +87,6 @@ impl Session {
             &mut CredentialAuthorization {
                 session: self,
                 parameters: params,
-                workspace: &mut w,
                 platform: p,
                 rp: &rp,
                 pin_set,
@@ -178,31 +177,29 @@ impl Session {
     }
     fn credential_presence(
         &mut self,
-        w: &mut Workspace,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
-        self.selection(w, p).map(|_| ()).map_err(|error| {
-            if error == Status::UserActionTimeout {
-                Status::OperationDenied
-            } else {
-                error
-            }
+        p.device.keepalive(true);
+        let result = self.presence.wait_for_credential(p.device);
+        p.device.keepalive(false);
+        result.map_err(|error| match error {
+            PresenceError::Cancelled => Status::Cancelled,
+            PresenceError::Timeout => Status::OperationDenied,
+            PresenceError::UpRequired => Status::UpRequired,
         })
     }
 }
 
-// The adapter lends the active session/workspace only for the synchronous
-// presence probe or existing token check. Policy and RP were validated above.
-struct CredentialAuthorization<'a, 'p, 'w, B: crate::ports::Backends> {
+// The adapter lends the active session for the PIN probe and token check.
+struct CredentialAuthorization<'a, 'p, B: crate::ports::Backends> {
     session: &'a mut Session,
     parameters: &'a Parameters,
-    workspace: &'a mut Workspace<'w>,
     platform: &'a mut Platform<'p, B>,
     rp: &'a [u8; 32],
     pin_set: bool,
     always_uv: bool,
 }
-impl<B: crate::ports::Backends> authorization::Backend for CredentialAuthorization<'_, '_, '_, B> {
+impl<B: crate::ports::Backends> authorization::Backend for CredentialAuthorization<'_, '_, B> {
     type Error = Status;
     type Authorization = ();
     fn policy(&mut self) -> Result<authorization::Policy, Status> {
@@ -212,8 +209,11 @@ impl<B: crate::ports::Backends> authorization::Backend for CredentialAuthorizati
         })
     }
     fn presence(&mut self) -> Result<(), Status> {
-        self.session
-            .credential_presence(self.workspace, self.platform)
+        // CTAP §5 reserves NFC power-on UP for the actual credential operation.
+        if self.platform.device.contactless() {
+            return Ok(());
+        }
+        self.session.credential_presence(self.platform)
     }
     fn verify(&mut self, auth_length: usize) -> Result<(), Status> {
         let params = self.parameters;

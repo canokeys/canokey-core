@@ -161,12 +161,13 @@ pub(super) unsafe fn ck_pcsc_power(
     unsafe {
         core::slot_power::<HostProvider>();
     }
-    host(|h| {
-        h.powered = false;
+    let was_powered = host(|h| {
         h.led = false;
         h.gesture = Gesture::Idle;
+        std::mem::replace(&mut h.powered, false)
     });
     if action == POWER_DOWN {
+        host(|h| h.nfc_up_since = None);
         return OK;
     }
     let storage = match host(|h| h.storage.reopen()) {
@@ -181,9 +182,13 @@ pub(super) unsafe fn ck_pcsc_power(
     };
     host(|h| {
         h.storage = storage;
-        h.nfc = contactless();
+        let nfc = contactless();
+        if !was_powered || h.nfc != nfc {
+            h.nfc_up_since = nfc.then(Instant::now);
+        }
+        h.nfc = nfc;
+        h.powered = true;
     });
-    host(|h| h.powered = true);
     // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     unsafe { copy(ATR, out, cap, length) }
 }
@@ -276,7 +281,10 @@ pub(super) unsafe fn ck_pcsc_transmit(
         // Switching the simulated reader transport is a new activation.
         // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
         unsafe { core::reset::<HostProvider>() };
-        host(|h| h.nfc = nfc);
+        host(|h| {
+            h.nfc = nfc;
+            h.nfc_up_since = nfc.then(Instant::now);
+        });
     }
     presence_sample();
     if let Some(response) = test_control(request) {

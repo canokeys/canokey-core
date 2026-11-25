@@ -104,8 +104,11 @@ def cases():
 
 
 def case(wire, rust, stimulus):
+    if rust and stimulus.get('wrap'):
+        # Set the fixture clock before selection gives the link its first activity.
+        assert wire.raw('DEFER TICK 4294967200') == b''
     assert wire.transmit(SELECT_FIDO) == (b'U2F_V2', 0x90, 0)
-    if stimulus.get('wrap'):
+    if not rust and stimulus.get('wrap'):
         # Place the real command start before u32 tick wrap; timer advances
         # across it using the same production wrapping arithmetic.
         assert wire.raw('TICK 4294967200') == b''

@@ -34,6 +34,10 @@ extern "C" fn ck_nfc_io_lock() -> u32 {
 #[unsafe(no_mangle)]
 extern "C" fn ck_nfc_io_unlock(prior: u32) {
     hw(|h| h.masked = prior);
+    if prior == 0 && registers(|r| r.irq[0] & wire::FM_MAIN_TX_DONE != 0) {
+        // SAFETY: The 32-byte frame is complete and the IO borrow has ended.
+        unsafe { nfc::interrupt() };
+    }
     execution::unlocked(prior);
 }
 #[unsafe(no_mangle)]
@@ -60,8 +64,13 @@ unsafe extern "C" fn ck_nfc_io_read(address: u16, out: *mut u8, length: u8) -> i
             r.irq.fill(0);
         }
         wire::FM_REG_FIFO_WORDCNT => out.copy_from_slice(&[r.rx.len() as u8]),
-        wire::FM_REG_FIFO_ACCESS => out.copy_from_slice(&r.rx),
+        wire::FM_REG_FIFO_ACCESS => {
+            out.copy_from_slice(&r.rx);
+            r.rx.clear();
+        }
         wire::FM_REG_RF_STATUS => out.copy_from_slice(&[r.rf_status]),
+        // The archived vectors model a reader with FSDI 2 (32-byte frames).
+        wire::FM_REG_RF_RATS => out.copy_from_slice(&[0x20]),
         _ => panic!("unexpected NFC read {address:#x}"),
     });
     0
@@ -78,18 +87,39 @@ unsafe extern "C" fn ck_nfc_io_write(address: u16, bytes: *const u8, length: u8)
         wire::FM_REG_RF_TXEN => {
             assert_eq!(bytes, &[wire::FM_RF_TX_ENABLE]);
             r.sends += 1;
+            r.irq[0] |= wire::FM_MAIN_TX_DONE;
             execution::transmitted(&r.tx);
+        }
+        wire::FM_REG_FIFO_CLEAR => {
+            assert_eq!(bytes, &[0x00]);
+            r.rx.clear();
         }
         wire::FM_REG_RESET_SILENCE | wire::FM_REG_MAIN_IRQ_MASK => {}
         _ => panic!("unexpected NFC write {address:#x}"),
     });
     0
 }
-pub(super) fn run() {
+fn power_on() {
     // Product main-loop execution runs with CPU IRQs enabled. A pending IRQ
     // may fire after a critical section restores that unmasked state.
-    hw(|h| h.masked = 0);
-    unsafe { nfc::init::<Fake>() };
+    hw(|h| {
+        h.masked = 0;
+        h.now = 0;
+    });
+    registers(|r| {
+        r.irq.fill(0);
+        r.rf_status = 0;
+        r.rx.clear();
+    });
+    // SAFETY: The fixture owns the serialized NFC runtime and clock.
+    unsafe {
+        canokey_rust_ffi::ck_nfc_set_mode(1);
+        nfc::init::<Fake>();
+    }
+}
+
+pub(super) fn run() {
+    power_on();
     transport::records(|records| records.set_read_hook(execution::storage_read));
     for line in io::stdin().lock().lines() {
         let line = line.unwrap();
@@ -136,6 +166,10 @@ pub(super) fn run() {
                 unsafe { nfc::interrupt() };
             }
             "TICK" => advance(value.parse().unwrap()),
+            "POWER" => {
+                assert_eq!(value, "0");
+                power_on();
+            }
             "POLL" => assert_eq!(value, "0"),
             _ => panic!("unknown NFC operation"),
         }

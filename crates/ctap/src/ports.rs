@@ -55,6 +55,9 @@ pub trait Presence {
     fn now(&mut self) -> u32;
     fn touched(&mut self) -> bool;
     fn contactless(&mut self) -> bool;
+    fn take_nfc_up(&mut self) -> bool {
+        false
+    }
     /// False means cancel, disconnect, reset or replacement of the owner.
     fn progress(&mut self) -> bool;
     fn led(&mut self, on: bool);
@@ -73,6 +76,9 @@ impl<T: canokey_ports::Device + ?Sized> Presence for T {
     }
     fn contactless(&mut self) -> bool {
         canokey_ports::Device::contactless(self)
+    }
+    fn take_nfc_up(&mut self) -> bool {
+        canokey_ports::Device::take_nfc_up(self)
     }
     fn progress(&mut self) -> bool {
         canokey_ports::Device::progress(self)

@@ -165,6 +165,11 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
             false
         }
     }
+    #[cfg(all(feature = "nfc", feature = "ctap"))]
+    fn take_nfc_up(&mut self) -> bool {
+        // SAFETY: The native device adapter runs on the serialized main loop.
+        unsafe { crate::transport::nfc::take_up() }
+    }
     #[cfg(feature = "ctap")]
     fn wink(&mut self) {
         // SAFETY: The device adapter is used by the serialized board loop with its callbacks installed.

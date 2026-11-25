@@ -17,6 +17,8 @@ use crate::sys::ck_nfc_io_unlock;
 use crate::sys::ck_nfc_io_write;
 #[cfg(not(test))]
 use crate::transport::usb::deinit;
+#[cfg(feature = "ctap")]
+use canokey_ports::contracts::NFC_UP_LIMIT_MS;
 use canokey_protocol::response::StatusWord as Sw;
 use canokey_protocol::{
     apdu,
@@ -95,6 +97,9 @@ struct NfcState {
     // The boot latch is read by both contexts. Writes take place before
     // IRQ enable or under the NFC I/O lock.
     active: bool,
+    // Main-loop-only FIDO UP, owned by the power cycle across link resets.
+    #[cfg(feature = "ctap")]
+    up_available: bool,
     // The main loop owns the accepted generation and all APDU link state.
     pending: bool,
     more: bool,
@@ -114,6 +119,8 @@ struct NfcState {
 static mut NFC_FRAME: [u8; FSC] = [0x00; FSC];
 static mut NFC: NfcState = NfcState {
     active: false,
+    #[cfg(feature = "ctap")]
+    up_available: false,
     pending: false,
     more: false,
     generation: 0,
@@ -317,6 +324,19 @@ pub unsafe extern "C" fn ck_nfc_progress() -> u8 {
     // SAFETY: The NFC I/O lock protects the IRQ-owned execution flags until the snapshot is read.
     unsafe { with_io(|io, _, _| io.live() as u8) }
 }
+/// Consume FIDO UP established by NFC power-on.
+///
+/// # Safety
+/// Call only on the serialized main loop, with the NFC clock callback installed.
+#[cfg(feature = "ctap")]
+pub unsafe fn take_up() -> bool {
+    // SAFETY: Only the main loop owns the flag. The tick is milliseconds since boot.
+    unsafe {
+        let available = NFC.up_available;
+        NFC.up_available = false;
+        available && ck_nfc_io_now() < NFC_UP_LIMIT_MS
+    }
+}
 ///
 /// # Safety
 /// Call only for the board NFC IRQ with the NFC chip callbacks installed.
@@ -367,6 +387,10 @@ pub unsafe fn ck_nfc_set_mode(active: u8) {
     // SAFETY: The mode latch is set at boot before enabling controller IRQs.
     unsafe {
         NFC.active = active != 0;
+        #[cfg(feature = "ctap")]
+        {
+            NFC.up_available = NFC.active;
+        }
     }
 }
 /// Main-loop startup only. Quiesce USB before leasing its byte allocation.
@@ -383,7 +407,7 @@ pub unsafe fn init<P: Provider>() {
         let now = ck_nfc_io_now();
         // Drop the previous binding before taking the sole static reference.
         NFC.io = Io::new(now, None);
-        NFC.io = Io::new(now, Some(&mut *(&raw mut NFC_FRAME)));
+        NFC.io = Io::new(now, Some(&mut *core::ptr::addr_of_mut!(NFC_FRAME)));
         NFC.generation = 0;
         ck_nfc_io_unlock(mask);
         reset_link::<P>();
@@ -544,6 +568,11 @@ pub unsafe fn poll<P: Provider>() {
         }
         let dirty = (&*core::ptr::addr_of!(NFC.link)).dirty() || NFC.pending;
         let (generation, tx_done) = with_io(|io, chip, now| {
+            // Keep UP expired even after the millisecond clock wraps.
+            #[cfg(feature = "ctap")]
+            if NFC.up_available && now >= NFC_UP_LIMIT_MS {
+                NFC.up_available = false;
+            }
             io.poll(now, dirty, chip);
             (
                 io.generation(),

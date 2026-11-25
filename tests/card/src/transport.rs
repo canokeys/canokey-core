@@ -61,6 +61,11 @@ impl Device for Clock {
         #[cfg(not(feature = "transport-nfc"))]
         false
     }
+    #[cfg(all(feature = "transport-nfc", feature = "ctap"))]
+    fn take_nfc_up(&mut self) -> bool {
+        // SAFETY: The card executable services the NFC facade on one thread.
+        unsafe { canokey_rust_ffi::composition::nfc::take_up() }
+    }
     fn progress(&mut self) -> bool {
         PROGRESS.with(|f| f.get()())
     }

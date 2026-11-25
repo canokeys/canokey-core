@@ -190,20 +190,66 @@ def run(library):
             def verify_attestation(result, challenge):
                 cert = x509.load_der_x509_certificate(result[3]['x5c'][0])
                 cert.public_key().verify(result[3]['sig'], result[2] + challenge, ec.ECDSA(hashes.SHA256()))
-            mixed_management(lambda command, params=None, status=0: ctap(command, params, status),
-                             verify_attestation)
+
+            def select_nfc_fido():
+                card.cmd('select NFC FIDO', 0xa4, 4, data=bytes.fromhex('a0000006472f0001'))
+
+            def retap():
+                assert d.power(501)[0] == 0
+                assert d.power(500)[0] == 0
+                select_nfc_fido()
+
+            def u2f_authenticate(control, handle, rp_hash, challenge):
+                body = challenge + rp_hash + bytes([len(handle)]) + handle
+                rc, reply, _ = d.raw(bytes([0x00, 0x02, control, 0x00, len(body)]) + body)
+                assert rc == 0
+                return reply
+
+            def mixed_ctap(command, params=None, status=0):
+                if command in (1, 2):
+                    retap()
+                result = ctap(command, params, status)
+                if result is not None and command in (2, 8):
+                    assert AuthenticatorData(result[2]).is_user_present()
+                return result
+
+            mixed_management(mixed_ctap, verify_attestation)
             ctap(6, {1: 1, 2: 2, 127: bytes(700)}) # full standalone extended input
             digest = hashlib.sha256(b'IFD boundary').digest()
             rp = 'rust-pcsc.example'
-            made = ctap(1, {1: digest, 2: {'id': rp}, 3: {'id': b'p'*64, 'name': 'n'*64, 'displayName': 'd'*64},
-                             4: [{'type': 'public-key', 'alg': -7}], 6: {'hmac-secret': True}, 7: {'rk': True}})
+            make = {1: digest, 2: {'id': rp}, 3: {'id': b'p'*64, 'name': 'n'*64, 'displayName': 'd'*64},
+                    4: [{'type': 'public-key', 'alg': -7}], 6: {'hmac-secret': True}, 7: {'rk': True}}
+            retap()
+            ctap(1, make | {8: b''}, expected=0x35)
+            made = ctap(1, make)
             auth = AuthenticatorData(made[2])
             key = auth.credential_data.public_key
             assert auth.extensions == {'hmac-secret': True}
+            assert auth.is_user_present()
             x509.load_der_x509_certificate(made[3]['x5c'][0]).public_key().verify(made[3]['sig'], made[2]+digest, ec.ECDSA(hashes.SHA256()))
+            interactive = {1: rp, 2: digest}
             request = {1: rp, 2: digest, 5: {'up': False}}
+            excluded = make | {5: [{'type': 'public-key', 'id': auth.credential_data.credential_id}]}
+            ctap(1, excluded, expected=0x3b)
+            select_nfc_fido()
+            ctap(2, interactive, expected=0x3b)
+            assert u2f_authenticate(0x03, auth.credential_data.credential_id,
+                                    hashlib.sha256(rp.encode()).digest(), digest) == b'\x69\x85'
+            assert d.power(502)[0] == 0
+            select_nfc_fido()
+            ctap(2, interactive, expected=0x3b)
+
+            retap()
             answer = ctap(2, request)
+            assert not AuthenticatorData(answer[2]).is_user_present()
+            ctap(2, interactive | {6: b''}, expected=0x35)
+            answer = ctap(2, interactive)
+            assert AuthenticatorData(answer[2]).is_user_present()
             key.verify(answer[2]+digest, answer[3])
+            ctap(2, interactive, expected=0x3b)
+            retap()
+            ctap(1, excluded, expected=0x19)
+            ctap(2, interactive, expected=0x3b)
             counter = AuthenticatorData(answer[2]).counter
             for operation in [0, 1]:
                 card.cmd('inject counter failure', 0xef, operation, data=b'4f')
@@ -254,6 +300,13 @@ def run(library):
                 width = tail[1] & 127
                 cert_len = 2+width+int.from_bytes(tail[2:2+width], 'big')
                 x509.load_der_x509_certificate(tail[:cert_len]).public_key().verify(tail[cert_len:], b'\0'+app+challenge+handle+registration[1:66], ec.ECDSA(hashes.SHA256()))
+                if nfc:
+                    assert u2f_authenticate(0x03, handle, app, challenge) == b'\x69\x85'
+                    retap()
+                    assert u2f_authenticate(0x07, handle, app, challenge) == b'\x69\x85'
+                    signature = u2f_authenticate(0x03, handle, app, challenge)
+                    assert signature[0] == 0x01 and signature[-2:] == b'\x90\x00'
+                    ctap(2, interactive, expected=0x3b)
 
             assert d.lib.IFDHCloseChannel(d.lun) == 0
             assert d.lib.IFDHICCPresence(d.lun) == 616

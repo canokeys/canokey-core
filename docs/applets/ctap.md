@@ -447,6 +447,7 @@ including a control ACK, and never rereads a forward-only response source.
 
 Interrupts publish bounded input; serialized main-loop code owns Core/PKE.
 USB/RF lifecycle resets close request/response leases and invalidate stale work.
+
 The common pinned-C boundary matrix is maintained in the platform alignment
 plan's `docs/c-3.1.2-extended-apdu-oracle.md`. Physical RF acceptance remains open.
 
@@ -460,6 +461,17 @@ C3.1.2's TinyCBOR build. Known schema parents do not consume it; strings consume
 no map/array depth. The incremental decoder retains its separate eight-container
 bound. Nonempty malformed CONFIG input reports its CBOR error even when the
 first fragment fails; a truly bare CONFIG keeps its legacy status.
+
+### NFC credential user presence
+
+On NFCC, NFC power-on establishes one user-presence grant for at most
+120 seconds. CTAP1 and CTAP2 credential commands share the grant,
+including when a client retries using U2F. With a spent or expired grant,
+CTAP2 returns `CTAP2_ERR_UP_REQUIRED` and U2F returns `0x6985` for commands
+that require UP. FIDO applet selection and ISO-DEP or CTAP session resets do
+not replenish the grant. A silent CTAP2 assertion, a zero-length
+`pinUvAuthParam` probe, or U2F check-only leaves it available.
+[CTAP 2.3 §5](https://fidoalliance.org/specs/fido-v2.3-ps-20260226/fido-client-to-authenticator-protocol-v2.3-ps-20260226.html#evidence-of-user-interaction)
 
 ## Endianness and USB composition
 

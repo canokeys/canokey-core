@@ -107,9 +107,10 @@ not change. ADMIN `07` resets NDEF and `08` sets read-only mode (P1=0/1); both
 require ADMIN authentication. Read-only failure reloads persisted permissions.
 NDEF read/write commands enforce the CC access bytes.
 
-Contactless ordinary presence waits and U2F polling check transport liveness
-without polling touch hardware. ADMIN factory reset is rejected in NFC mode with
-6985; five-touch reset remains available only over a contact interface.
+The NFC firmware skips the touch sensor. CTAP1 and CTAP2 credential commands
+share the [NFC power-on UP grant](../applets/ctap.md#nfc-credential-user-presence).
+Other ordinary presence waits check transport liveness. ADMIN factory reset
+returns `0x6985` in NFC mode. Five-touch ADMIN reset requires a contact interface.
 
 Validation entrypoints:
 

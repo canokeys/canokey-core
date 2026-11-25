@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // CIU board ABI writes the complete 13-byte chip identifier.
 pub const CHIP_ID_BYTES: usize = 13;
+/// CTAP §5 maximum lifetime of UP established by NFC power-on.
+pub const NFC_UP_LIMIT_MS: u32 = 120_000;
 /// CTAP owner in the PKE staging ABI. Transport sessions use separate IDs.
 pub const PKE_LEASE_CTAP: u8 = 0x80;
 /// Stable kinds passed to the board-information C ABI and ADMIN read command.
@@ -32,8 +34,12 @@ pub trait Device {
     }
     fn now(&mut self) -> u32;
     fn touched(&mut self) -> bool;
-    /// Active contactless mode supplies presence without a touch sensor.
+    /// Whether the device is operating in contactless mode.
     fn contactless(&mut self) -> bool {
+        false
+    }
+    /// Consume the unexpired UP shared by CTAP1 and CTAP2 credential commands.
+    fn take_nfc_up(&mut self) -> bool {
         false
     }
     /// Publish settings to disjoint device/IRQ state; must not reenter Core.

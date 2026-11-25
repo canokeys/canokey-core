@@ -63,6 +63,7 @@ struct Host {
     boot: Instant,
     ticks: Option<u32>,
     nfc: bool,
+    nfc_up_since: Option<Instant>,
     led: bool,
     gesture: Gesture,
     presence: canokey_ports::Polling,
@@ -376,6 +377,7 @@ fn initialize_storage(
         boot: Instant::now(),
         ticks: None,
         nfc: false,
+        nfc_up_since: None,
         led: false,
         gesture: Gesture::Idle,
         presence: canokey_ports::Polling::new(),
@@ -399,7 +401,10 @@ fn run() -> io::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:8111")?;
     socket.set_nonblocking(true)?;
     initialize(Some(socket), "/tmp/canokey-fido-hid-over-udp-lfs-root")?;
-    host(|h| h.nfc = flag("CANOKEY_VIRT_NFC", false));
+    host(|h| {
+        h.nfc = flag("CANOKEY_VIRT_NFC", false);
+        h.nfc_up_since = h.nfc.then_some(h.boot);
+    });
     // SAFETY: The single-threaded host uses its installed Provider without reentering Core.
     unsafe {
         ck_hid_packet_reset();
@@ -416,6 +421,7 @@ fn run() -> io::Result<()> {
                 h.storage = storage;
                 h.reboot = false;
                 h.boot = Instant::now();
+                h.nfc_up_since = h.nfc.then_some(h.boot);
                 h.led = false;
                 h.gesture = Gesture::Idle;
             });
@@ -461,6 +467,7 @@ pub fn run_regression_driver() {
     host(|h| {
         h.powered = true;
         h.nfc = true;
+        h.nfc_up_since = Some(h.boot);
     });
     let mut output = io::BufWriter::new(io::stdout().lock());
     for line in io::stdin().lock().lines() {

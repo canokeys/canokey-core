@@ -419,6 +419,7 @@ impl Session {
         result.map_err(|error| match error {
             crate::runtime::presence::Error::Cancelled => Status::Cancelled,
             crate::runtime::presence::Error::Timeout => Status::UserActionTimeout,
+            crate::runtime::presence::Error::UpRequired => Status::UpRequired,
         })?;
         w.output[0] = 0;
         Ok(1)
@@ -504,6 +505,7 @@ pub enum Status {
     InvalidOption = canokey_ctap::status::Status::InvalidOption as u8,
     CredentialExcluded = canokey_ctap::status::Status::CredentialExcluded as u8,
     OperationDenied = canokey_ctap::status::Status::OperationDenied as u8,
+    UpRequired = canokey_ctap::status::Status::UpRequired as u8,
     LimitExceeded = canokey_ctap::status::Status::LimitExceeded as u8,
     PuatRequired = canokey_ctap::status::Status::PuatRequired as u8,
     KeyStoreFull = canokey_ctap::status::Status::NoSpace as u8,

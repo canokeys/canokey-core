@@ -27,6 +27,8 @@ pub mod keyboard {
 }
 #[cfg(feature = "nfc")]
 pub mod nfc {
+    #[cfg(feature = "ctap")]
+    pub use crate::transport::nfc::take_up;
     pub use crate::transport::nfc::{init, is_nfc as mode, nfc_handler as interrupt, poll};
 }
 #[cfg(feature = "usb-hid")]

@@ -17,6 +17,7 @@ enum Call {
     Led(bool),
     Idle,
     Contactless(bool),
+    TakeNfcUp,
     Poll,
 }
 #[derive(Clone)]
@@ -28,6 +29,7 @@ struct Trace {
     progress: usize,
     cancel_at: usize,
     nfc: bool,
+    nfc_up: bool,
     calls: Vec<Call>,
 }
 impl Device for Trace {
@@ -54,6 +56,10 @@ impl Device for Trace {
     fn contactless(&mut self) -> bool {
         self.calls.push(Call::Contactless(self.nfc));
         self.nfc
+    }
+    fn take_nfc_up(&mut self) -> bool {
+        self.calls.push(Call::TakeNfcUp);
+        core::mem::take(&mut self.nfc_up)
     }
     fn led(&mut self, value: bool) {
         self.calls.push(Call::Led(value));
@@ -84,6 +90,7 @@ fn blocking_wait_preserves_all_device_calls_cancellation_and_wraparound() {
                                 progress: 0,
                                 cancel_at,
                                 nfc,
+                                nfc_up: nfc,
                                 calls: Vec::new(),
                             };
                             let mut after = before.clone();
@@ -126,6 +133,7 @@ fn polling_attempt_is_consumed_even_after_contactless_cancellation() {
                 progress: 0,
                 cancel_at,
                 nfc,
+                nfc_up: nfc,
                 calls: Vec::new(),
             };
             let mut request = Request::new();
@@ -134,12 +142,21 @@ fn polling_attempt_is_consumed_even_after_contactless_cancellation() {
             assert!(!request.take_attempt());
             assert_eq!(
                 trace.calls,
-                if nfc {
-                    vec![Call::Contactless(true), Call::Progress(cancel_at != 0)]
+                if nfc && cancel_at == 0 {
+                    vec![Call::Contactless(true), Call::Progress(false)]
+                } else if nfc {
+                    vec![
+                        Call::Contactless(true),
+                        Call::Progress(true),
+                        Call::TakeNfcUp,
+                    ]
                 } else {
                     vec![Call::Contactless(false), Call::Poll]
                 }
             );
+            if nfc {
+                assert_eq!(trace.nfc_up, cancel_at == 0);
+            }
         }
     }
 }

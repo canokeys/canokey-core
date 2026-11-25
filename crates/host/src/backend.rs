@@ -180,6 +180,15 @@ impl Device for Clock {
     fn contactless(&mut self) -> bool {
         host(|h| h.nfc)
     }
+    fn take_nfc_up(&mut self) -> bool {
+        let limit =
+            std::time::Duration::from_millis(canokey_ports::contracts::NFC_UP_LIMIT_MS.into());
+        host(|h| {
+            h.nfc_up_since
+                .take()
+                .is_some_and(|since| since.elapsed() < limit)
+        })
+    }
     fn led(&mut self, on: bool) {
         host(|h| h.led = on);
     }

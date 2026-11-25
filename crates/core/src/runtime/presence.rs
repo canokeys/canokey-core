@@ -258,7 +258,10 @@ pub use canokey_ports::Polling;
 ))]
 mod contactless_tests {
     use super::*;
-    struct Contactless(bool);
+    struct Contactless {
+        live: bool,
+        up: bool,
+    }
     impl crate::ports::Device for Contactless {
         fn serial(&mut self, _: &mut [u8; 4]) {}
         fn now(&mut self) -> u32 {
@@ -271,7 +274,10 @@ mod contactless_tests {
             true
         }
         fn progress(&mut self) -> bool {
-            self.0
+            self.live
+        }
+        fn take_nfc_up(&mut self) -> bool {
+            core::mem::take(&mut self.up)
         }
         fn led(&mut self, _: bool) {
             panic!("no LED prompts in NFC mode")
@@ -280,12 +286,20 @@ mod contactless_tests {
     #[test]
     fn contactless_presence_checks_transport_and_denies_factory_reset() {
         let mut request = Request::new();
-        let mut device = Contactless(true);
+        let mut device = Contactless {
+            live: true,
+            up: true,
+        };
         assert_eq!(request.wait_result(&mut device), Ok(()));
         assert_eq!(request.wait_long(&mut device), Ok(()));
-        assert!(request.poll(&mut device));
+        assert_eq!(request.wait_for_credential(&mut device), Ok(()));
+        assert!(!request.poll(&mut device));
+        assert_eq!(
+            request.wait_for_credential(&mut device),
+            Err(Error::UpRequired)
+        );
         assert!(!strong(&mut device));
-        device.0 = false;
+        device.live = false;
         assert_eq!(request.wait_result(&mut device), Err(Error::Cancelled));
         assert!(!request.poll(&mut device));
     }

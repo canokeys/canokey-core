@@ -225,6 +225,9 @@ impl Device for DeviceFixture {
     fn contactless(&mut self) -> bool {
         true
     }
+    fn take_nfc_up(&mut self) -> bool {
+        true
+    }
     fn progress(&mut self) -> bool {
         true
     }
