@@ -121,9 +121,9 @@ jobs:
       id: check_yubico_piv
       run: |
         if test -n "$(find . -maxdepth 1 -name 'yubico-piv-tool_*.deb' -print)"; then
-          echo "need_build=false" >> $GITHUB_OUTPUT
+          echo "need_build=false" >> "$GITHUB_OUTPUT"
         else
-          echo "need_build=true" >> $GITHUB_OUTPUT
+          echo "need_build=true" >> "$GITHUB_OUTPUT"
         fi
     - name: Package Install
       if: steps.check_yubico_piv.outputs.need_build == 'true'
@@ -136,13 +136,13 @@ jobs:
         set -x
         git clone https://github.com/z4yx/yubico-piv-tool.git
         sudo mk-build-deps yubico-piv-tool/debian/control -i
-        rm -f *.deb # remove useless build-deps pseudo package
+        rm -f -- *.deb # remove build-deps pseudo package
         cd yubico-piv-tool
         eval "$(dpkg-architecture -s)"
         dpkg-buildpackage -b -uc -us --no-sign
         rm -rf ../*dbgsym*.deb
         DEB_SUFFIX="$(dpkg-parsechangelog | sed -n 's/^Version: //p')_${DEB_HOST_ARCH}"
-        sudo apt-get install -q -y ../yubico-piv-tool_${DEB_SUFFIX}.deb ../libykpiv1_${DEB_SUFFIX}.deb # test installation
+        sudo apt-get install -q -y "../yubico-piv-tool_${DEB_SUFFIX}.deb" "../libykpiv1_${DEB_SUFFIX}.deb" # test installation
     - name: Upload package files
       uses: actions/upload-artifact@v7
       with:
@@ -185,15 +185,6 @@ jobs:
         ref: 130e11e87b5f5ec788a12037735c86a0d2c7c547
         path: piv-go
         persist-credentials: false
-
-    - name: Prepare - Checkout ckman
-      # Disabled: the legacy ckman fork is incompatible with the current Python/pyscard toolchain.
-      if: false
-      uses: actions/checkout@v7
-      with:
-        repository: canokeys/yubikey-manager
-        ref: canokey-next
-        path: yubikey-manager
 
     - name: Cache - GO Modules
       uses: actions/cache@v6
@@ -288,7 +279,7 @@ jobs:
         sudo killall -9 pcscd || true
         sudo cp build/libu2f-virt-card.so /usr/local/lib/
         sudo cp tests/pcsc/pcscd-reader.conf /etc/reader.conf.d/
-        bash -c 'sudo LD_PRELOAD="$(gcc -print-file-name=libasan.so) $(gcc -print-file-name=libubsan.so)" pcscd --disable-polkit -a -f >/tmp/pcscd.log &'
+        bash -c 'sudo CANOKEY_TEST_NFC_AUTO_TAP=1 LD_PRELOAD="$(gcc -print-file-name=libasan.so) $(gcc -print-file-name=libubsan.so)" pcscd --disable-polkit -a -f >/tmp/pcscd.log &'
         sleep 15 # wait for admin applet reset
         timeout 1s pcsc_scan || true
         go env -w GO111MODULE=on
@@ -303,16 +294,13 @@ jobs:
       run: go -C tests/pcsc test -v ndef_test.go
 
     - name: Tests - FIDO2 applet
+      timeout-minutes: 8
       run: |
         echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode for PCSC/NFC tests
-        cat /tmp/canokey-test-nfc
-        #pushd tests/hardware && ./test-libfido2.sh && popd
         cd fido2-tests
-        #../build/fido-hid-over-udp &
         .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc tests/standard/
         .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc \
           --ignore=tests/vendor/canokeys/test_mldsa65.py tests/vendor/canokeys/
-        #kill %1
 
     - name: Tests - CTAPHID applet
       run: |
@@ -377,6 +365,7 @@ jobs:
         trap - EXIT
 
     - name: Tests - U2F applet
+      timeout-minutes: 5
       run: |
         echo 1 >/tmp/canokey-test-nfc
         echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
@@ -391,16 +380,6 @@ jobs:
       # GPG requires a tty to work
       shell: script -e -c "bash {0}"
       run: bash tests/hardware/test-virtual-openpgp.sh
-    - name: Tests - Interoperate with ckman openpgp
-      # Disabled: the legacy ckman fork is incompatible with the current Python/pyscard toolchain.
-      if: false
-      run: |
-        cd yubikey-manager
-        pipx install poetry
-        poetry install
-        poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_openpgp.py -v
-        poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_piv.py -v
-
     - name: Tests - PIV applet
       run: bash tests/hardware/test-virtual-piv.sh
     - name: Wrap-up - Prepare test coverage report
@@ -431,7 +410,8 @@ jobs:
       run: |
         mkdir -p test-artifacts
         if sudo test -f /tmp/lfs-root; then
-          sudo cat /tmp/lfs-root >test-artifacts/virtual-card.image
+          # The image is root-owned and the artifact goes to the runner workspace.
+          sudo install -o "$(id -u)" -g "$(id -g)" -m 0600 /tmp/lfs-root test-artifacts/virtual-card.image
         fi
 
     - name: Wrap-up - Upload data files

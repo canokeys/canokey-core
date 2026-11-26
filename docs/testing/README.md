@@ -333,6 +333,11 @@ selection on disconnect and reselect FIDO after reconnect. Its fake-connection
 regressions run before any device tests; firmware still requires explicit FIDO
 selection after logical slot power/reset.
 
+The external FIDO2 and U2F suites set `CANOKEY_TEST_NFC_AUTO_TAP=1` on
+their virtual PC/SC daemon. This supplies a fresh NFC presence event for each
+FIDO APDU while preserving the session. The `virtual-pcsc` test
+exercises single-use NFC presence with this option disabled.
+
 Go manifests belong to `tests/pcsc/`. Compile/run each legacy Go test file
 separately because helper names overlap:
 

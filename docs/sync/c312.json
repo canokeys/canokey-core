@@ -354,7 +354,7 @@
         },
         {
           "path": "crates/host/src/pcsc.rs",
-          "sha256": "2dad3024c167ad14e1a20569944ba9a3cade6ae7382545fb2a0f0476f6c7d1d9"
+          "sha256": "7762ce3e227ad6139b0d6395f992acf18974b315f5e7771c9fdc4d7baf919721"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -594,7 +594,7 @@
         },
         {
           "path": "crates/host/src/pcsc.rs",
-          "sha256": "2dad3024c167ad14e1a20569944ba9a3cade6ae7382545fb2a0f0476f6c7d1d9"
+          "sha256": "7762ce3e227ad6139b0d6395f992acf18974b315f5e7771c9fdc4d7baf919721"
         },
         {
           "path": "crates/core/src/applets/ctap/apdu.rs",
@@ -11188,7 +11188,7 @@
           },
           "crates/host/src/pcsc.rs": {
             "previous_sha256": "334d6147bbb0c177c189f0dd9a67f2cb23937200342f7acfa744fdda611ef062",
-            "current_sha256": "20b45debfbf5b2a0f2d6caa5d5e4740f9e3c55958e066310a53bb3bed4bba89b",
+            "current_sha256": "7762ce3e227ad6139b0d6395f992acf18974b315f5e7771c9fdc4d7baf919721",
             "behaviors": [
               "G6",
               "A1"

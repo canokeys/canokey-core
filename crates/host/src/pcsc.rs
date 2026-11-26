@@ -294,7 +294,16 @@ pub(super) unsafe fn ck_pcsc_transmit(
             Err(()) => COMM,
         };
     }
-    let auto = host(|h| h.nfc) && aggregate(request);
+    let auto = nfc && aggregate(request);
+    // External interoperability suites simulate a fresh tap for each FIDO
+    // command while keeping the card session alive for PIN and assertion state.
+    let u2f_credential = matches!(
+        request,
+        [0, apdu_wire::U2F_REGISTER | apdu_wire::U2F_AUTHENTICATE, ..]
+    );
+    if nfc && (auto || u2f_credential) && flag("CANOKEY_TEST_NFC_AUTO_TAP", false) {
+        host(|h| h.nfc_up_since = Some(Instant::now()));
+    }
     let mut pending = request;
     let mut written = 0usize;
     for _ in 0..apdu_wire::RESPONSE_CHAIN_LIMIT {

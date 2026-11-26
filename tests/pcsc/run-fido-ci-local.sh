@@ -64,7 +64,8 @@ cp "${BUILD_DIR}/libu2f-virt-card.so" /usr/local/lib/
 mkdir -p /etc/reader.conf.d
 cp tests/pcsc/pcscd-reader.conf /etc/reader.conf.d/
 
-LD_PRELOAD="$(gcc -print-file-name=libasan.so) $(gcc -print-file-name=libubsan.so)" \
+CANOKEY_TEST_NFC_AUTO_TAP=1 \
+  LD_PRELOAD="$(gcc -print-file-name=libasan.so) $(gcc -print-file-name=libubsan.so)" \
   pcscd --disable-polkit -a -f >/tmp/pcscd.log &
 PCSCD_PID="$!"
 cleanup() {
