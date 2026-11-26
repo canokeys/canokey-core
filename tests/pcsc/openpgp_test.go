@@ -290,9 +290,13 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(code, ShouldEqual, 0x9000)
 
 			verifyUser(0x81)
-			_, code, err = app.Send(append([]byte{0x00, 0x2A, 0x9E, 0x9A, 0x31}, make([]byte, 0x31)...))
+			// secp256k1 signs the leftmost 256 bits of a SHA-512 digest.
+			const sha512DigestBytes = 64
+			const secp256k1SignatureBytes = 64 // Raw r || s, 32 bytes each.
+			signature, code, err := app.Send(append([]byte{0x00, 0x2A, 0x9E, 0x9A, sha512DigestBytes}, make([]byte, sha512DigestBytes)...))
 			So(err, ShouldBeNil)
-			So(code, ShouldEqual, 0x6700) // data too long for ECDSA
+			So(code, ShouldEqual, 0x9000)
+			So(len(signature), ShouldEqual, secp256k1SignatureBytes)
 
 			// add a RSA key
 			verifyAdmin()
@@ -387,9 +391,12 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(code, ShouldEqual, 0x9000)
 
 			verifyUser(0x82)
-			_, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, 0x31}, make([]byte, 0x31)...))
+			// P-384 INTERNAL AUTHENTICATE also accepts a SHA-512 digest.
+			const p384SignatureBytes = 96 // Raw r || s, 48 bytes each.
+			signature, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, sha512DigestBytes}, make([]byte, sha512DigestBytes)...))
 			So(err, ShouldBeNil)
-			So(code, ShouldEqual, 0x6700) // data too long for ECDSA
+			So(code, ShouldEqual, 0x9000)
+			So(len(signature), ShouldEqual, p384SignatureBytes)
 
 			// add a RSA key
 			verifyAdmin()
