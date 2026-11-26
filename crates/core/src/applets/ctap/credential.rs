@@ -196,6 +196,7 @@ struct OpenCredential<'a, 'p, B: crate::ports::Backends> {
     rp: &'a [u8; shared::RP_HASH_BYTES],
     sm2: super::settings::Sm2,
     scheme: Scheme,
+    selecting: bool,
     key: &'a mut KeyMaterial,
     platform: &'a mut Platform<'p, B>,
 }
@@ -228,6 +229,15 @@ impl<B: crate::ports::Backends> shared::Opening for OpenCredential<'_, '_, B> {
         // The outer owner clears the complete key backing on every failure.
     }
     fn accept(&mut self, id: &Id) -> Result<Option<u8>, Status> {
+        // Every seed is valid for these schemes. List selection only needs the authenticated ID.
+        if self.selecting
+            && matches!(
+                self.scheme,
+                Scheme::Ed25519 | Scheme::MlDsa44 | Scheme::MlDsa65
+            )
+        {
+            return Ok(Some(native_algorithm(self.scheme)));
+        }
         // The seed view takes exactly KEY_BYTES from the fixed key workspace.
         let seed: &mut [u8; shared::KEY_BYTES] = (&mut self.key.bytes[..shared::KEY_BYTES])
             .try_into()
@@ -252,6 +262,27 @@ pub(super) fn open(
     key: &mut KeyMaterial,
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<u8, Status> {
+    open_handle(id, sm2, rp, key, false, p)
+}
+
+pub(super) fn select(
+    id: &Id,
+    sm2: super::settings::Sm2,
+    rp: &[u8; 32],
+    key: &mut KeyMaterial,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Status> {
+    open_handle(id, sm2, rp, key, true, p).map(|_| ())
+}
+
+fn open_handle(
+    id: &Id,
+    sm2: super::settings::Sm2,
+    rp: &[u8; 32],
+    key: &mut KeyMaterial,
+    selecting: bool,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<u8, Status> {
     let result = (|| {
         let scheme = Scheme::decode(id[shared::ALGORITHM_OFFSET]).ok_or(Status::NoCredentials)?;
         let mut master = master(false, p)?;
@@ -262,6 +293,7 @@ pub(super) fn open(
                 rp,
                 sm2,
                 scheme,
+                selecting,
                 key,
                 platform: p,
             },

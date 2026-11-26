@@ -125,14 +125,15 @@ impl Session {
         {
             return Err(Status::NotAllowed);
         }
-        let (index, id) = resident::discover(
-            &mut self.assertion.next,
-            &self.assertion.rp,
-            self.assertion.uv,
-            w.input,
-            p,
-        )?
-        .ok_or(Status::NoCredentials)?;
+        let (index, id) = resident::Scan::new()
+            .discover(
+                &mut self.assertion.next,
+                &self.assertion.rp,
+                self.assertion.uv,
+                w.input,
+                p,
+            )?
+            .ok_or(Status::NoCredentials)?;
         self.assertion.remaining -= 1;
         self.sign_assertion(&id, Some(index), 0, true, w, p)
     }

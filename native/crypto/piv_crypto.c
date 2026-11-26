@@ -74,6 +74,22 @@ static uint32_t kem_ciphertext_bytes(uint32_t alg) {
   return alg == MLKEM512 ? MLKEM512_CIPHERTEXT_BYTES : MLKEM768_CIPHERTEXT_BYTES;
 }
 #endif
+/* Portable providers expose the public key as a four-row chunk and an optional two-row tail. */
+__attribute__((weak)) int ck_mldsa_public(bool small, uint8_t *out, const uint8_t *seed) {
+  mldsa_keygen_state_t state = {0};
+  memcpy(state.seed, seed, sizeof(state.seed));
+  const size_t first = MLDSA44_PUBLIC_KEY_BYTES;
+  int n = small ? ml_dsa_44_keygen_streaming(out, first, &state, NULL)
+                : ml_dsa_65_keygen_streaming(out, MLDSA_PK_BYTES, &state, NULL);
+  bool complete = n == (int)first && state.phase == (small ? 0 : 1);
+  if (complete && !small) {
+    const size_t tail = MLDSA_PK_BYTES - first;
+    n = ml_dsa_65_keygen_streaming(out + first, tail, &state, NULL);
+    complete = n == (int)tail && state.phase == 0;
+  }
+  ml_dsa_65_keygen_streaming_abort(&state);
+  return complete ? 0 : -1;
+}
 /* Portable backends may derive from seed on demand. CIU supplies the paired
  * overrides that fill the stage during tr generation and consume it at sign. */
 __attribute__((weak)) int ck_mldsa_prepare(bool small, uint8_t *stage, uint8_t *tr, const uint8_t *seed) {
@@ -201,27 +217,12 @@ int32_t ck_stream_public_init(uint8_t alg, void *scratch, const uint8_t *input, 
   }
 #endif
   if (is_dsa(alg) && n == MLDSA_SEEDBYTES) {
-    mldsa_keygen_state_t state = {0};
-    memcpy(state.seed, input, sizeof(state.seed));
     const size_t total = dsa_public_bytes(alg);
-    do {
-      const size_t remaining = total - s->length;
-      uint8_t *dest = s->data.public_key + s->length;
-      const int chunk = alg == MLDSA44 ? ml_dsa_44_keygen_streaming(dest, remaining, &state, NULL)
-                                       : ml_dsa_65_keygen_streaming(dest, remaining, &state, NULL);
-      /* Phase zero emits rho and four t1 rows for both parameter sets.
-       * Only 65 has a second chunk, containing its last two rows. */
-      const size_t expected = s->length == 0 ? MLDSA44_PUBLIC_KEY_BYTES : remaining;
-      const unsigned next_phase = expected < remaining;
-      if (chunk != (int)expected || state.phase != next_phase) break;
-      s->length += expected;
-    } while (state.phase != 0 && s->length < total);
-    const bool complete = s->length == total && state.phase == 0;
-    ml_dsa_65_keygen_streaming_abort(&state);
-    if (!complete) {
+    if (ck_mldsa_public(alg == MLDSA44, s->data.public_key, input) < 0) {
       ck_stream_abort(s);
       return -1;
     }
+    s->length = total;
     return (int32_t)total;
   }
   return -1;

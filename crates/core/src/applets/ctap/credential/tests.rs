@@ -269,3 +269,47 @@ fn root_read_failure_and_unknown_scheme_erase_key_without_any_mac() {
     assert!(crypto.domains.is_empty());
     assert!(key.bytes.iter().all(|byte| *byte == 0x00));
 }
+
+#[test]
+fn list_selection_authenticates_every_tag_and_checks_only_scalar_seeds() {
+    for scheme in [
+        Scheme::MlDsa65,
+        Scheme::MlDsa44,
+        Scheme::Ed25519,
+        Scheme::P256,
+        Scheme::Sm2,
+    ] {
+        for valid_tag in [false, true] {
+            let mut id = handle(scheme);
+            if !valid_tag {
+                id[shared::TAG_OFFSET] ^= 1;
+            }
+            let mut crypto = mac_backend(&id);
+            crypto.seed = Some([0; shared::KEY_BYTES]);
+            let mut key = KeyMaterial::new();
+            let result = select(
+                &id,
+                super::super::settings::Sm2::DEFAULT,
+                &RP,
+                &mut key,
+                &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                    crypto: &mut crypto,
+                    storage: &mut Backend::default(),
+                    device: &mut Backend::default(),
+                    memory: &Backend::default(),
+                },
+            );
+            let scalar = matches!(scheme, Scheme::P256 | Scheme::Sm2);
+            assert_eq!(
+                result,
+                if valid_tag && !scalar {
+                    Ok(())
+                } else {
+                    Err(Status::NoCredentials)
+                }
+            );
+            let expected: &[u8] = if valid_tag && scalar { &[0, 1] } else { &[0] };
+            assert_eq!(crypto.domains, expected);
+        }
+    }
+}

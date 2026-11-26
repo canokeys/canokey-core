@@ -226,6 +226,26 @@ impl Scan {
     ) -> Result<Option<(usize, Entry<'a>)>, Status> {
         decode_loaded(self.load(index, out, p)?, out)
     }
+    /// Descending discovery shared by initial counting and getNextAssertion.
+    /// The cursor excludes the last returned slot, preserving legacy ordering.
+    #[inline(never)]
+    pub(super) fn discover(
+        &mut self,
+        next: &mut u8,
+        rp: &[u8; RP_HASH_BYTES],
+        uv: bool,
+        out: &mut [u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<Option<(u8, Id)>, Status> {
+        scan::descending(next, |index| {
+            Ok(self.read(index, out, p)?.and_then(|(_, entry)| {
+                (entry.rp_hash == rp
+                    && (uv || entry.id[1] & super::credential::CRED_PROTECT_MASK == 1)
+                    && super::credential::permitted_id(entry.id))
+                .then_some(*entry.id)
+            }))
+        })
+    }
 }
 /// Load and validate one occupied resident slot without copying its fields.
 #[inline(never)]
@@ -289,26 +309,6 @@ pub(super) fn find(
     scan::ascending(0, Record::CTAP_CREDENTIALS, |index| {
         Ok(scan.read(index, out, p)?.and_then(|(length, entry)| {
             (equal(entry.id, id) && equal(entry.rp_hash, rp_hash)).then_some(length)
-        }))
-    })
-}
-
-/// Descending discovery shared by initial counting and getNextAssertion.
-/// The cursor excludes the last returned slot, preserving legacy ordering.
-#[inline(never)]
-pub(super) fn discover(
-    next: &mut u8,
-    rp: &[u8; RP_HASH_BYTES],
-    uv: bool,
-    out: &mut [u8],
-    p: &mut Platform<'_, impl crate::ports::Backends>,
-) -> Result<Option<(u8, Id)>, Status> {
-    scan::descending(next, |index| {
-        Ok(read(index, out, p)?.and_then(|(_, entry)| {
-            (entry.rp_hash == rp
-                && (uv || entry.id[1] & super::credential::CRED_PROTECT_MASK == 1)
-                && super::credential::permitted_id(entry.id))
-            .then_some(*entry.id)
         }))
     })
 }
@@ -789,12 +789,22 @@ pub(super) mod tests {
         for uv in [false, true] {
             let mut next = Record::CTAP_CREDENTIALS;
             let mut found = Vec::new();
-            while let Some((index, id)) =
-                discover(&mut next, &[7; 32], uv, &mut out, &mut p).unwrap()
+            let mut scan = Scan::new();
+            let size_calls = p.storage.size_calls;
+            let read_calls = p.storage.read_calls;
+            while let Some((index, id)) = scan
+                .discover(&mut next, &[7; 32], uv, &mut out, &mut p)
+                .unwrap()
             {
                 assert_eq!(id[2], index);
                 found.push(index);
             }
+            assert_eq!(
+                p.storage.size_calls - size_calls,
+                usize::from(Record::CTAP_GROUPS)
+            );
+            // Three occupied group headers and four credential bodies.
+            assert_eq!(p.storage.read_calls - read_calls, 3 + 4);
             assert_eq!(
                 found,
                 if uv {
@@ -804,7 +814,7 @@ pub(super) mod tests {
                 }
             );
             assert!(
-                discover(&mut next, &[7; 32], uv, &mut out, &mut p)
+                scan.discover(&mut next, &[7; 32], uv, &mut out, &mut p)
                     .unwrap()
                     .is_none()
             );

@@ -95,12 +95,17 @@ signature counter. A 34-byte credential ID contains algorithm, policy flags,
 private keys and largeBlob keys; all bind the RP hash. Nonresident credentials
 use no per-credential Flash. Counters commit before signatures are published.
 
-Records `50`..`b3` hold up to 100 discoverable credentials. Each contains the ID,
-RP hash and length-prefixed RP display prefix, user ID, name, display name and
-credBlob. Empty fields cost one byte; no padding, version prefix or auxiliary
-index is stored. Re-registering the same RP/user replaces one atomic record,
-invalidating the old resident ID. Enumeration scans these records and keeps only
-small cursors in RAM. getNextAssertion expires after 30 seconds or another command.
+For allowList and excludeList selection, every handle must authenticate its tag.
+P-256 and SM2 also require a valid private scalar. Ed25519 and ML-DSA accept
+every 32-byte seed, so selection can defer seed derivation until signing.
+
+Records `0x50` through `0x68` hold 100 discoverable credentials in groups of
+four. Each occupied slot contains the credential ID, RP hash, RP display
+prefix, user ID, name, display name and credBlob. Re-registering the same
+RP/user atomically replaces its entry and invalidates the old resident ID.
+During discovery, getAssertion validates each group header once while counting
+matches in descending slot order. getNextAssertion resumes with a slot cursor
+and freshly read metadata. The cursor expires after 30 seconds or another command.
 
 For makeCredential, a credBlob longer than 32 bytes is consumed within the
 normal request-size limit and reported as `credBlob: false`; the credential

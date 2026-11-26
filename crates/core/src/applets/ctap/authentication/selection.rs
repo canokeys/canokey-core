@@ -39,7 +39,7 @@ impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, B> {
                 } else {
                     None
                 };
-                match credential::open(id, session.sm2, rp, w.key, p) {
+                match credential::select(id, session.sm2, rp, w.key, p) {
                     Ok(_) if id[1] & credential::CRED_PROTECT_MASK != 3 || self.uv => {
                         Ok(Some((*id, user_slot)))
                     }
@@ -54,7 +54,8 @@ impl<B: crate::ports::Backends> selection::Backend for Operation<'_, '_, B> {
         }
         if !params.make && !params.list_present {
             let mut next = crate::ports::Record::CTAP_CREDENTIALS;
-            while let Some((index, id)) = resident::discover(&mut next, rp, self.uv, w.input, p)? {
+            let mut scan = resident::Scan::new();
+            while let Some((index, id)) = scan.discover(&mut next, rp, self.uv, w.input, p)? {
                 self.count += 1;
                 if self.selected.is_none() {
                     self.selected = Some(id);
