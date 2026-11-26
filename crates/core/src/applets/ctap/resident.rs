@@ -325,15 +325,16 @@ pub(super) fn count(
     let buffer = reservation.bytes();
     let mut sizes = [0; Record::CTAP_GROUPS as usize];
     p.storage
-        .resident_group_sizes(&mut sizes)
+        .record_sizes(Record::CTAP_GROUP_BASE, &mut sizes)
         .map_err(|_| Status::Other)?;
     let mut count = 0;
-    for (index, size) in sizes.into_iter().enumerate() {
-        if size == u16::MAX {
+    for index in 0..sizes.len() {
+        let size = sizes[index];
+        if size == canokey_ports::RECORD_ABSENT {
             continue;
         }
         let record = Record::ctap_group(index as u8).ok_or(Status::Other)?;
-        let size = usize::from(size);
+        let size = size as usize;
         if !(GROUP_HEADER..=group::MAX_GROUP_BYTES).contains(&size) {
             return Err(Status::Other);
         }

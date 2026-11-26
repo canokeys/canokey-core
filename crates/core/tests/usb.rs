@@ -279,9 +279,9 @@ fn control_in_every_length_and_short_termination() {
     }
 }
 #[test]
-fn configurations_match_c312_short_only_wire_fixtures() {
-    // Retained interface fixtures with C Core a349b268 CCID field values:
-    // IFSD254, dwFeatures0x000200FE, max CCID message271 for every profile.
+fn configurations_match_short_apdu_wire_fixtures() {
+    // Every profile advertises IFSD 254, dwFeatures 0x000200FE and a
+    // maximum CCID message size of 271 bytes.
     let fixtures = [
         include_str!("vectors/usb-config-00.hex"),
         include_str!("vectors/usb-config-01.hex"),

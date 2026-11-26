@@ -68,10 +68,10 @@ these are host compatibility identifiers, not device release metadata.
   filename injects one matching record failure. Operation 2 models a lost
   acknowledgement after commit and blocks further storage access until reboot.
   Names follow the Rust ABI: two lowercase hexadecimal digits (`4f` is the CTAP
-  counter), with `E103`/`NDEF` exceptions. Legacy C record names do not identify
-  the new layout.
+  counter, `6d`/`6e` are the NDEF capability container and message). Legacy C
+  record names do not identify the new layout.
 
-The `CKRHOST1` image uses big-endian record lengths and bounded records; writes
+The `CKRHOST2` image uses big-endian record lengths and bounded records; writes
 sync a private temporary file, atomically rename it and sync the parent directory.
 Any uncertain host I/O commit disables storage until reopen. Staged objects are
 not published until commit. This is host persistence/error-path coverage, **not**

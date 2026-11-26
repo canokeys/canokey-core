@@ -9,15 +9,19 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from card_test import Card, connection
 from ctap_fixture import provision
 
+# Compact CTAP storage ABI: SM2 settings and attestation private key.
+SM2_RECORD = 0x6a
+KEY_RECORD = 0x6b
+
 
 def run(wire):
     card = Card(wire)
     provision(card)
     assert card.cmd("fido", 0xa4, 4, data=bytes.fromhex("f043414e4f464944")) == b"U2F_V2"
     # U2F is P-256-only: unrelated SM2 provisioning must not gate its commands.
-    sm2_record = wire.command("RECORD 181")
+    sm2_record = wire.command(f"RECORD {SM2_RECORD}")
     assert sm2_record[-2:] == b"\x90\x00"
-    wire.command("RECORD 181 00")
+    wire.command(f"RECORD {SM2_RECORD} 00")
     # CCID rejects extended encoding before dispatch; short unknown commands
     # still report INS. NFC success/error precedence lives in the Link fixture.
     for ins in (0, 4, 0xff):
@@ -42,7 +46,7 @@ def run(wire):
     cert_len = 2 + width + int.from_bytes(tail[2:2+width], "big") if tail[1] & 128 else 2 + tail[1]
     cert = x509.load_der_x509_certificate(tail[:cert_len])
     cert.public_key().verify(tail[cert_len:], b"\x00" + app + challenge + handle + result[1:66], ec.ECDSA(hashes.SHA256()))
-    wire.command(f"RECORD 181 {sm2_record[:-2].hex()}")
+    wire.command(f"RECORD {SM2_RECORD} {sm2_record[:-2].hex()}")
     request = challenge + app + bytes([n]) + handle
     for algorithm in (1, 2, 3, 255):
         other = request[:65] + bytes([algorithm]) + handle[1:]
@@ -65,10 +69,10 @@ def run(wire):
     wire.command("POLL 100")
     card.cmd("check only preserves gesture", 2, 7, data=request, status=0x6985)
     previous = 0
-    wire.command("RECORD 181 00")
+    wire.command(f"RECORD {SM2_RECORD} 00")
     for p1 in (3, 8): # The C implementation requires presence for both values.
         if p1 == 8:
-            wire.command(f"RECORD 181 {sm2_record[:-2].hex()}")
+            wire.command(f"RECORD {SM2_RECORD} {sm2_record[:-2].hex()}")
             # Reinstall must preserve the credential and monotonic signing counter,
             # while volatile presence is cleared by a real session reset.
             wire.command("RESET")
@@ -98,7 +102,7 @@ def run(wire):
     card.cmd("no partial empty-certificate registration", 0xc0, status=0x6986)
     provision(card)
     assert card.cmd("fido", 0xa4, 4, data=bytes.fromhex("f043414e4f464944")) == b"U2F_V2"
-    wire.command("REMOVE 182") # CtapAttestationKey; certificate remains provisioned.
+    wire.command(f"REMOVE {KEY_RECORD}") # Certificate remains provisioned.
     wire.command("POLL 100")
     assert card.cmd("missing attestation key", 1, data=challenge+app, status=0x6900) == b""
     card.cmd("no partial registration response", 0xc0, status=0x6986)

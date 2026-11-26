@@ -101,9 +101,9 @@ arms FIFO service, including on later boots after EEPROM has been updated.
 
 NDEF uses the existing applet-state union and response cursor. Complete UPDATE
 BINARY frames commit through storage; truncated frames do not publish data. The
-1024-byte file is streamed. Records 184/185 map to legacy `E103`/`NDEF` paths on
-CIU, retaining existing contents and permissions. Other Rust record mappings do
-not change. ADMIN `07` resets NDEF and `08` sets read-only mode (P1=0/1); both
+1024-byte file is streamed. Records `0x6D`/`0x6E` use the ordinary `6d`/`6e`
+filenames; NDEF contents from the C firmware's `E103`/`NDEF` files are not
+carried over. ADMIN `07` resets NDEF and `08` sets read-only mode (P1=0/1); both
 require ADMIN authentication. Read-only failure reloads persisted permissions.
 NDEF read/write commands enforce the CC access bytes.
 

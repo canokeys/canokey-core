@@ -422,8 +422,6 @@ encoding with6700 before applet routing. Oversized XfrBlock payloads drain to
 the declared length without PKE or a receive-gap deadline, then return the
 command-specific CCID error (valid XfrBlock parameters: bError01). Short ISO
 command chaining and streamed GET RESPONSE remain available for PQ operations.
-The removed extended-CCID feature and historical tests are pinned in
-[the provenance archive](../history/ccid-extended-removed/README.md).
 
 WebUSB admits structurally valid APDUs within a288-byte envelope, with no
 large-body exception. It receives the complete envelope in the shared CCID/EP0
@@ -455,17 +453,16 @@ including a control ACK, and never rereads a forward-only response source.
 Interrupts publish bounded input; serialized main-loop code owns Core/PKE.
 USB/RF lifecycle resets close request/response leases and invalidate stale work.
 
-The common pinned-C boundary matrix is maintained in the platform alignment
-plan's `docs/c-3.1.2-extended-apdu-oracle.md`. Physical RF acceptance remains open.
+The host wire tests cover the APDU boundaries described here. Physical RF
+acceptance remains open.
 
 During initial USB enumeration, `composition::usb::service` consumes deferred
 CCID/HID/WebUSB reset events on the serialized main loop. It closes leases and
 revokes stale authorization without dispatching queued application commands.
 Normal transport polls share those reset handlers after boot self-checks.
 
-Unknown CBOR values have an independent four-map/array skip budget, matching
-C3.1.2's TinyCBOR build. Known schema parents do not consume it; strings consume
-no map/array depth. The incremental decoder retains its separate eight-container
+Unknown CBOR values have an independent four-map/array skip budget. Known
+schema parents and strings consume none of this budget. The incremental decoder retains its separate eight-container
 bound. Nonempty malformed CONFIG input reports its CBOR error even when the
 first fragment fails; a truly bare CONFIG keeps its legacy status.
 
@@ -968,9 +965,9 @@ pending-turn guard drains early reader frames while Core executes, until an
 APDU response or WTX is actually transmitted. A matching WTX echo permits the
 response; IRQ/field errors may still revoke execution. A deselect after WTX
 cancels the command and retains its protocol echo for main-loop service.
-Wrong echo/ACK/NAK/deselect after WTX still differ from pinned C's permissive
-continuation. Those cases, WTX retransmission-cache semantics and physical
-IRQ/RF timing acceptance remain explicitly unresolved.
+Wrong echoes, ACKs and NAKs after WTX cancel the pending response. The host
+execution test covers those events and deselect. WTX retransmission-cache
+semantics and physical IRQ/RF timing still require acceptance.
 
 
 AuthenticatorData construction shares one public-before-extension sequence in

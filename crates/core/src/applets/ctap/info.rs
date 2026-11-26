@@ -45,14 +45,14 @@ mod tests {
     use super::*;
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/fixtures/c312-getinfo/vectors.rs"
+        "/../../tests/fixtures/ctap-getinfo/vectors.rs"
     ));
 
     #[test]
-    fn schema_matches_executed_pinned_c_vectors() {
+    fn schema_matches_getinfo_vectors() {
         let mut tested = 0;
         for &(flags, configured, minimum, used, algorithm, restricted, nfc, before, after) in
-            C312_VECTORS
+            VECTORS
         {
             if restricted != cfg!(feature = "ctap-restrict-algorithms")
                 || nfc != cfg!(feature = "ctap-nfc")
@@ -82,8 +82,7 @@ mod tests {
         );
     }
 
-    // Field-by-field schema follows C Core a349b268, with explicit product
-    // identity and transport capabilities. Keep array order and omissions exact.
+    // Encode the product schema field by field to check ordering and omissions.
     fn reference(
         output: &mut [u8],
         flags: u8,

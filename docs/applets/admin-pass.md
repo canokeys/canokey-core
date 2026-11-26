@@ -78,14 +78,17 @@ encoded as a single byte. P1 1 returns 48 bytes: eight six-byte entries
 | 2 | OpenPGP | `0x04..0x0D` |
 | 3 | PIV | `0x0E..0x4C` |
 | 4 | OATH | `0x02..0x03` |
-| 5 | CTAP | `0x4D..0xB7`, including reserved holes |
-| 6 | NDEF | `0xB8..0xB9` |
+| 5 | CTAP | `0x4D..0x6C` |
+| 6 | NDEF | `0x6D..0x6E` |
 | 7 | PASS | `0x00` |
 | 0 | System overhead (last entry) | Physical allocation minus attributed sizes |
 
 Applet sizes sum logical record lengths, not their allocated filesystem pages.
+The breakdown makes one `Storage::record_sizes` pass; directory-backed
+platforms implement it with a single scan rather than one lookup per ID.
 Flag `0x01` means at least one record in that namespace is missing; optional
-records and reserved holes count, so this flag does not indicate corruption.
+records and unused CTAP resident groups count, so this flag does not indicate
+corruption.
 Other flag bits are zero. The final system entry has zero flags and includes
 filesystem metadata, page slack and unattributed allocation. Its size saturates
 at zero if attributed sizes exceed physical usage. A storage error other than

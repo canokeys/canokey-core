@@ -122,7 +122,7 @@ its validity period, random serial, CanoKey subject, device serial and policy
 extensions. Serial numbers use minimal positive DER INTEGER encoding, including
 leading-zero removal and sign padding; the unit suite covers these boundaries.
 It covers RSA, all supported EC/Ed/X curves, both ML-DSA sets and both ML-KEM
-sets. KEM subject attestation extends the C3.1.2 command contract; F9 remains
+sets. KEM subject attestation uses the same command; F9 remains
 a P-256 issuer. The response is an 18-segment plan with at most
 256 encoded bytes; issuer/validity are read from storage, and the PQ public
 key is regenerated for the hashing and response passes, restarting its stream

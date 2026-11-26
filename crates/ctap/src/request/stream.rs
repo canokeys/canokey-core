@@ -217,8 +217,7 @@ pub fn skip_cbor_event<E: Error>(
     if *depth == 0 {
         return Ok(false);
     }
-    // Pinned C TinyCBOR skips each unknown value with at most four nested
-    // maps/arrays. Known schema nesting keeps the decoder's separate budget.
+    // Skip each unknown value with at most four nested maps or arrays. Known schema nesting keeps the decoder's separate budget.
     // Strings have matching End events but cannot contain another container.
     const MAX_UNKNOWN_CONTAINERS: u8 = 4;
     if matches!(

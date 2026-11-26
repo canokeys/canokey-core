@@ -524,20 +524,20 @@ fn main() {
     assert_eq!(unsafe { core::install::<Fake>() }, 0);
     configure();
     loops();
-    if std::env::args().nth(1).as_deref() == Some("--c312-wire") {
+    if std::env::args().nth(1).as_deref() == Some("--ccid-wire") {
         portable::run();
         return;
     }
-    if std::env::args().nth(1).as_deref() == Some("--c312-webusb-wire") {
+    if std::env::args().nth(1).as_deref() == Some("--webusb-wire") {
         portable_webusb::run(false);
         return;
     }
-    if std::env::args().nth(1).as_deref() == Some("--c312-usb-wire") {
+    if std::env::args().nth(1).as_deref() == Some("--usb-wire") {
         portable_webusb::run(true);
         return;
     }
     #[cfg(feature = "transport-nfc")]
-    if std::env::args().nth(1).as_deref() == Some("--c312-nfc-wire") {
+    if std::env::args().nth(1).as_deref() == Some("--nfc-wire") {
         portable_nfc::run();
         return;
     }
@@ -847,7 +847,7 @@ fn preemption(cid: u32) {
     assert!(pending(usb_wire::EP_CCID));
     web_apdu(GET_RESPONSE, 0x9000);
     // Refusal is immediate and latched; it never becomes a queued SELECT
-    // after the foreign continuation completes (pinned C E32).
+    // after the foreign continuation completes.
     sw(&ccid_read()[ccid_wire::HEADER..], 0x6400);
     ccid_apdu(SELECT_ADMIN, 0x9000);
     ccid_apdu(QUERY, 0x63c3);

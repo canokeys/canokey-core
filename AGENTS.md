@@ -13,10 +13,6 @@ crypto facades in `native/crypto`, and filesystem
 helpers in `native/storage`. Dependencies in `third_party/` are Git submodules;
 retain their gitlinks and pinned revisions when relocating them.
 
-Git history retains the immutable legacy C migration snapshot and its
-checksums. The synchronization gate uses the separately pinned C source tree.
-`docs/history` holds the archived CCID evidence referenced by the manifest.
-
 ## Boundaries
 
 - `core` is `no_std` and forbids unsafe code. Keep applet policy, authorization,

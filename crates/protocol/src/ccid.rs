@@ -23,7 +23,7 @@ pub const BAD_RFU2: u8 = 0x08;
 pub const SLOT_BUSY: u8 = 0xe0;
 pub const MUTE: u8 = 0xfe; // USB CCID 1.1 bError: ICC_MUTE (ICC did not respond).
 pub const HARDWARE: u8 = 0xfb; // USB CCID 1.1 bError: HW_ERROR (hardware failure).
-// C 3.1.2 puts its internal no-error sentinel in successful CCID replies.
+// Successful replies put the no-error sentinel in bError.
 // bStatus determines success; bError is interpreted only for failed commands.
 pub const SUCCESS_ERROR: u8 = 0x81;
 // ISO 7816-3 ATR: direct convention; seven historical bytes "Canokey".

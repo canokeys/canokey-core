@@ -71,7 +71,7 @@ def run(wire):
     custom = bytes.fromhex("ffff0000fffeffff") # curve -65536, algorithm -65537
     card.cmd("configure", 0x12, data=custom)
     assert card.cmd("read custom", 0x11) == custom
-    assert wire.command("SIZE 181") == bytes.fromhex("00000008")
+    assert wire.command(f"SIZE {SM2_RECORD}") == bytes.fromhex("00000008")
     wire.command("RESET")
     fido()
     info = call(4)
@@ -103,16 +103,15 @@ def run(wire):
     call(2, {1: "example.com", 2: request[1], 3: [handle]}, 0x2e)
     assert [a["alg"] for a in call(4)[10]] == [-7, -8, -49, -48, -65537]
     verify_attestation(call(1, request), request[1])
-    wire.command("FAIL_READ 182")
+    wire.command(f"FAIL_READ {KEY_RECORD}")
     call(1, request, 0x7f)
     card.cmd("no partial failed-read attestation", 0xc0, status=0x6986)
     verify_attestation(call(1, request), request[1])
     admin()
     card.cmd("verify", 0x20, data=b"123456")
     card.cmd("restore", 0x12, data=default)
-    # Manufacturing record IDs from the compact CTAP storage ABI.
-    key_record = 182
-    certificate_record = 183
+    key_record = KEY_RECORD
+    certificate_record = CERTIFICATE_RECORD
     saved_key = wire.command(f"RECORD {key_record}")[:-2]
     assert len(saved_key) == 32
     fido()
@@ -164,10 +163,10 @@ MASTER_RECORD = 0x4e
 COUNTER_RECORD = 0x4f
 GROUP_BASE = 0x50
 GROUP_COUNT = 25
-BLOB_RECORD = 0xb4
-SM2_RECORD = 0xb5
-KEY_RECORD = 0xb6
-CERTIFICATE_RECORD = 0xb7
+BLOB_RECORD = 0x69
+SM2_RECORD = 0x6a
+KEY_RECORD = 0x6b
+CERTIFICATE_RECORD = 0x6c
 BOOT_CASES = (
     "missing-key", "short-key", "empty-cert", "missing-cert", "malformed-cert", "key-io",
     "missing-sm2", "short-sm2", "invalid-sm2", "sm2-io",

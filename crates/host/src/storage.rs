@@ -11,7 +11,8 @@ use std::{
 // Synthetic accounting allowance for image metadata/configuration; deliberately
 // conservative, independent of serialized length and not a LittleFS page cost.
 const IMAGE_OVERHEAD_BYTES: usize = 4096;
-const MAGIC: &[u8; 8] = b"CKRHOST1";
+// Version 2 closes the reserved CTAP hole; version 1 images use other record IDs.
+const MAGIC: &[u8; 8] = b"CKRHOST2";
 const COUNT: usize = Record::COUNT;
 const CAPACITY: usize = 128 * 1024;
 // A shared OATH file may consume the available image budget. Do not impose a
@@ -135,13 +136,8 @@ impl Storage {
         if self.uncertain || usize::from(id) >= COUNT {
             return Err(-2);
         }
-        // Legacy fault-injection path labels: E103 is the NFC Forum Type 4
-        // capability-container file ID; NDEF names the message file.
-        let path = match Record::from_id(id) {
-            Some(Record::NdefCapability) => b"E103".to_vec(),
-            Some(Record::NdefMessage) => b"NDEF".to_vec(),
-            _ => format!("{id:02x}").into_bytes(),
-        };
+        // Fault-injection labels match the device filenames: two hex digits.
+        let path = format!("{id:02x}").into_bytes();
         if self
             .fault
             .as_ref()
@@ -348,7 +344,7 @@ mod tests {
         assert_eq!(store.read(3, 0, &mut data, true), Err(-2));
         assert_eq!(store.read(3, 0, &mut data, true), Ok(7));
         assert_eq!(store.read(3, 7, &mut [0], false), Err(-2));
-        assert_eq!(store.write(186, b"bad"), Err(-2));
+        assert_eq!(store.write(COUNT as u8, b"bad"), Err(-2));
         store.inject(2, 0, b"03");
         assert_eq!(store.write(3, b"committed"), Err(-2));
         assert_eq!(store.size(3), Err(-2));

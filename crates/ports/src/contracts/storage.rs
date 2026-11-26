@@ -17,6 +17,9 @@ pub enum StorageError {
     Unavailable,
     Uncertain,
 }
+/// `Storage::record_sizes` marker for an absent record. LittleFS files are
+/// bounded by `0x7fffffff` bytes, so no record has this size.
+pub const RECORD_ABSENT: u32 = u32::MAX;
 /// CanoKey record service. Path-based engines and other products need not use
 /// this record namespace or its resident-credential capacity.
 pub trait Storage {
@@ -81,20 +84,17 @@ pub trait Storage {
     fn size(&mut self, _record: Record) -> Result<u32, StorageError> {
         Err(StorageError::Unavailable)
     }
-    /// Sizes of resident credential group records in slot order.
-    /// A missing record is represented by `u16::MAX`.
-    #[cfg(feature = "ctap")]
-    fn resident_group_sizes(
-        &mut self,
-        sizes: &mut [u16; Record::CTAP_GROUPS as usize],
-    ) -> Result<(), StorageError> {
-        for (index, size) in sizes.iter_mut().enumerate() {
-            let record = Record::ctap_group(index as u8).ok_or(StorageError::Unavailable)?;
-            *size = match self.size(record) {
-                Ok(n) if n < u32::from(u16::MAX) => n as u16,
-                Err(StorageError::Missing) => u16::MAX,
+    /// Fill `sizes[i]` with the logical size of record `first + i`, or
+    /// [`RECORD_ABSENT`] when it does not exist; IDs past the namespace end are absent.
+    /// An error reading any requested record fails the call. Backends with a
+    /// directory listing can also report malformed entries in the same scan.
+    fn record_sizes(&mut self, first: u8, sizes: &mut [u32]) -> Result<(), StorageError> {
+        sizes.fill(RECORD_ABSENT);
+        for (id, slot) in (first..Record::COUNT as u8).zip(sizes.iter_mut()) {
+            *slot = match self.size(Record::from_id(id).unwrap()) {
+                Ok(size) => size,
+                Err(StorageError::Missing) => RECORD_ABSENT,
                 Err(error) => return Err(error),
-                Ok(_) => return Err(StorageError::Unavailable),
             };
         }
         Ok(())
@@ -142,4 +142,60 @@ pub trait Storage {
     fn load(&mut self, record: Record, output: &mut [u8]) -> Result<usize, StorageError>;
     /// Atomic replacement. Any failed mutation invalidates cached state.
     fn replace(&mut self, record: Record, input: &[u8]) -> Result<(), StorageError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Records `0x00`, `0x50` and the last ID exist; `0x51` fails to read.
+    struct Lookups {
+        fail: bool,
+    }
+    impl Storage for Lookups {
+        fn size(&mut self, record: Record) -> Result<u32, StorageError> {
+            match record.id() {
+                0x00 => Ok(1),
+                0x50 => Ok(2),
+                0x51 if self.fail => Err(StorageError::Unavailable),
+                id if usize::from(id) == Record::COUNT - 1 => Ok(3),
+                _ => Err(StorageError::Missing),
+            }
+        }
+        fn load(&mut self, _: Record, _: &mut [u8]) -> Result<usize, StorageError> {
+            unreachable!()
+        }
+        fn replace(&mut self, _: Record, _: &[u8]) -> Result<(), StorageError> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn default_record_sizes_bounds_ids_to_the_namespace() {
+        let mut storage = Lookups { fail: false };
+        let last = (Record::COUNT - 1) as u8;
+        // A window past the namespace end, up to the u8 limit, is absent.
+        let mut sizes = [0; 256];
+        let window = 256 - usize::from(last);
+        assert_eq!(storage.record_sizes(last, &mut sizes[..window]), Ok(()));
+        assert_eq!(sizes[0], 3);
+        assert!(sizes[1..window].iter().all(|&size| size == RECORD_ABSENT));
+        // Every start at or beyond the end, including 0xFF, yields only absences.
+        for first in [Record::COUNT as u8, u8::MAX] {
+            sizes.fill(0);
+            assert_eq!(storage.record_sizes(first, &mut sizes), Ok(()));
+            assert!(sizes.iter().all(|&size| size == RECORD_ABSENT));
+        }
+        // Slots map to first + index; missing records are absent.
+        let mut window = [0; 3];
+        assert_eq!(storage.record_sizes(0x4f, &mut window), Ok(()));
+        assert_eq!(window, [RECORD_ABSENT, 2, RECORD_ABSENT]);
+        assert_eq!(storage.record_sizes(0, &mut []), Ok(()));
+        // A read error other than Missing fails the whole call.
+        storage.fail = true;
+        assert_eq!(
+            storage.record_sizes(0x50, &mut window),
+            Err(StorageError::Unavailable)
+        );
+    }
 }

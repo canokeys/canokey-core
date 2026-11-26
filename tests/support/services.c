@@ -5,8 +5,8 @@
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
 #ifndef CK_TEST_LITTLEFS
-static uint8_t files[186][32768];
-static int32_t sizes[186];
+static uint8_t files[CK_RECORD_COUNT][32768];
+static int32_t sizes[CK_RECORD_COUNT];
 static int initialized;
 static int failed_write_record = -1;
 static int failed_read_record = -1;
@@ -14,7 +14,7 @@ void ck_test_fail_read(uint8_t id) { failed_read_record = id; }
 void ck_test_fail_write(uint8_t id) { failed_write_record = id; }
 static void storage_init(void) {
   if (!initialized) {
-    for (size_t i = 0; i < 186; i++)
+    for (size_t i = 0; i < CK_RECORD_COUNT; i++)
       sizes[i] = -1;
     initialized = 1;
   }
@@ -22,13 +22,13 @@ static void storage_init(void) {
 // Host-only corruption fixture: exercise use-time validation after a valid import.
 void ck_test_corrupt_record(uint8_t id, size_t offset, uint8_t mask) {
   storage_init();
-  assert(id < 186 && sizes[id] >= 0 && offset < (size_t)sizes[id]);
+  assert(id < CK_RECORD_COUNT && sizes[id] >= 0 && offset < (size_t)sizes[id]);
   files[id][offset] ^= mask;
 }
 // Host-only fixture for absent persistent prerequisites; not a device command.
 void ck_test_remove_record(uint8_t id) {
   storage_init();
-  assert(id < 186);
+  assert(id < CK_RECORD_COUNT);
   memset(files[id], 0, sizeof(files[id]));
   sizes[id] = -1;
 }
@@ -36,18 +36,18 @@ int32_t ck_platform_usage(uint32_t *used, uint32_t *total) {
   storage_init();
   *used = 4096;
   *total = 128 * 1024;
-  for (size_t i = 0; i < 186; i++)
+  for (size_t i = 0; i < CK_RECORD_COUNT; i++)
     if (sizes[i] > 0) *used += (uint32_t)sizes[i];
   return *used <= *total ? 0 : -2;
 }
 int32_t ck_platform_size(uint8_t id) {
   storage_init();
-  assert(id < 186);
+  assert(id < CK_RECORD_COUNT);
   return sizes[id];
 }
 int32_t ck_platform_read(uint8_t id, uint8_t *out, size_t n) {
   storage_init();
-  assert(id < 186);
+  assert(id < CK_RECORD_COUNT);
   if (sizes[id] < 0) return -1;
   if ((size_t)sizes[id] > n) return -2;
   memcpy(out, files[id], sizes[id]);
@@ -64,7 +64,7 @@ int32_t ck_platform_write(uint8_t id, const uint8_t *input, size_t n) {
     return -2;
   }
   storage_init();
-  assert(id < 186 && n <= sizeof(files[id]));
+  assert(id < CK_RECORD_COUNT && n <= sizeof(files[id]));
   memcpy(files[id], input, n);
   sizes[id] = (int32_t)n;
   return (int32_t)n;
@@ -79,7 +79,7 @@ void ck_platform_hmac_sha1(const uint8_t key[20], const uint8_t *input, size_t n
 #ifndef CK_TEST_LITTLEFS
 int32_t ck_platform_read_at(uint8_t id, uint32_t offset, uint8_t *out, size_t n) {
   storage_init();
-  assert(id < 186);
+  assert(id < CK_RECORD_COUNT);
   if (sizes[id] < 0 || offset > (uint32_t)sizes[id] || n > (uint32_t)sizes[id] - offset) return -2;
   memcpy(out, files[id] + offset, n);
   // Streaming repository reads must consume the same one-shot fault as full reads.
@@ -95,7 +95,7 @@ int32_t ck_platform_write_at(uint8_t id, uint32_t offset, const uint8_t *input, 
     return -2;
   }
   storage_init();
-  assert(id < 186 && offset + n <= sizeof(files[id]));
+  assert(id < CK_RECORD_COUNT && offset + n <= sizeof(files[id]));
   if (sizes[id] < 0 || offset > (uint32_t)sizes[id]) return -2;
   memcpy(files[id] + offset, input, n);
   if (offset + n > (uint32_t)sizes[id]) sizes[id] = (int32_t)(offset + n);
@@ -153,13 +153,13 @@ int32_t ck_platform_stage(uint8_t operation, uint8_t id, const uint8_t *b, size_
     return -2;
   }
   if (operation == 4) {
-    assert(id < 186);
+    assert(id < CK_RECORD_COUNT);
     memset(files[id], 0, sizeof(files[id]));
     sizes[id] = -1;
     return 0;
   }
   if (operation == 5) {
-    assert(id < 186 && n == 1 && b[0] < 186);
+    assert(id < CK_RECORD_COUNT && n == 1 && b[0] < CK_RECORD_COUNT);
     uint8_t to = b[0];
     if (sizes[id] < 0) return -2;
     memcpy(files[to], files[id], sizes[id]);
@@ -248,7 +248,7 @@ int pke_buffer_write(size_t offset, const uint8_t *in, size_t n) {
 #ifndef CK_TEST_LITTLEFS
 int32_t ck_platform_resize(uint8_t id, uint32_t length) {
   storage_init();
-  assert(id < 186 && length <= sizeof(files[id]));
+  assert(id < CK_RECORD_COUNT && length <= sizeof(files[id]));
   if (sizes[id] < 0) return -1;
   if (length > (uint32_t)sizes[id]) memset(files[id] + sizes[id], 0, length - (uint32_t)sizes[id]);
   sizes[id] = (int32_t)length;

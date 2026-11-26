@@ -6,12 +6,12 @@ use std::vec::Vec;
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../tests/fixtures/c312-cbor-skip/vectors.rs"
+    "/../../tests/fixtures/cbor-skip/vectors.rs"
 ));
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../tests/fixtures/c312-parser/vectors.rs"
+    "/../../tests/fixtures/ctap-parser/vectors.rs"
 ));
 
 // Unknown positive integer and short text labels precede/follow recognized
@@ -141,7 +141,7 @@ fn finish(request: &mut Request) -> Result<(), Status> {
 
 #[test]
 fn request_status_matches_executed_c_parsers_at_every_fragment_boundary() {
-    for &(id, wire, expected) in C312_PARSER_VECTORS {
+    for &(id, wire, expected) in PARSER_VECTORS {
         for split in 0..=wire.len() {
             let mut request = Request::new();
             request.consume(&wire[..split]);
@@ -191,8 +191,8 @@ fn check_result(wire: &[u8], expected: Result<(), Status>) {
 }
 
 #[test]
-fn unknown_skip_matches_pinned_c_at_every_fragment_boundary() {
-    for &(value, accepted) in C312_UNKNOWN_VALUES {
+fn unknown_skip_matches_expected_status_at_every_fragment_boundary() {
+    for &(value, accepted) in UNKNOWN_VALUES {
         for command in [CLIENT_PIN, LARGE_BLOBS] {
             let wire = encoded(|e| {
                 e.u8(command);
@@ -252,7 +252,7 @@ fn hmac(value: &[u8], in_agreement: bool) -> Vec<u8> {
 
 #[test]
 fn nested_agreement_and_hmac_skip_have_independent_budgets() {
-    for &(value, accepted) in C312_UNKNOWN_VALUES {
+    for &(value, accepted) in UNKNOWN_VALUES {
         for in_agreement in [false, true] {
             let wire = hmac(value, in_agreement);
             for split in 0..=wire.len() {

@@ -1,7 +1,6 @@
 # Developer documentation
 
-Current contracts are organized by ownership. Migration checkpoints under
-`history/` are explanatory records, not current feature or build instructions.
+Current contracts are organized by ownership.
 
 - [Architecture](architecture/README.md) and [PIN mechanism](architecture/pin-mechanism.md)
 - Applets: [ADMIN/PASS](applets/admin-pass.md), [OATH](applets/oath.md),

@@ -2,7 +2,7 @@
 //! Bounded NFC envelope storage. Large FIDO bodies use a transient staging lease.
 use canokey_protocol::{apdu, response::StatusWord as Sw};
 
-// C 3.1.2 NFC reserves the largest extended header/trailer even for Case3E.
+// Reserve space for the largest extended header and trailer, including on Case3E.
 pub const INLINE_BYTES: usize = 288;
 pub const INLINE_DATA: usize = INLINE_BYTES - apdu::EXTENDED_OVERHEAD_BYTES;
 const TAIL_BYTES: usize = INLINE_BYTES - apdu::SHORT_FRAME_BYTES;

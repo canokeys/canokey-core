@@ -5,8 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "port_abi.h"
-/* Root-level two-digit hexadecimal filenames, IDs 0..183 (00..b7).
- * IDs 184/185 map to the NDEF-compatible E103/NDEF filenames.
+/* Root-level two-digit lower-case hexadecimal filenames, IDs 0x00..0x6E.
  * Record assignments are defined in crates/ports/src/contracts/storage.rs.
  * File 0 = versioned slots, file 1 = versioned PIN,
  * file 2 = OATH metadata, file 3 = OATH records.

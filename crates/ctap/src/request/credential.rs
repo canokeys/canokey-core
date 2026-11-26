@@ -378,7 +378,7 @@ impl<E: Error, const ALGORITHMS: usize> Fields<E, ALGORITHMS> {
         map.previous_len = self.key_len;
         map.previous_text[..key.len()].copy_from_slice(key);
         map.seen_text = true;
-        // All recognized labels fit the key window. Like pinned C, consume
+        // All recognized labels fit the key window. Consume
         // longer unknown labels without retaining their full spelling or
         // comparing equal-length unknown names. The decoder still validates
         // their complete UTF-8 body; bounded labels retain exact ordering.

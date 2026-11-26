@@ -2,7 +2,7 @@
 //! CanoKey product storage ABI; these limits are not shared CTAP constraints.
 /// CanoKey persisted record IDs, including its product-specific CTAP capacity.
 /// Other products choose their own paths and resident-credential bounds.
-/// The native backend preserves legacy NDEF filenames.
+/// Backends name every record by its ID as two lower-case hex digits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Record(u8);
@@ -88,15 +88,17 @@ impl Record {
     pub const CtapPin: Self = Self(0x4d);
     pub const CtapMaster: Self = Self(0x4e);
     pub const CtapCounter: Self = Self(0x4f);
-    pub const CtapLargeBlob: Self = Self(0xb4);
-    pub const CtapSm2: Self = Self(0xb5);
-    pub const CtapAttestationKey: Self = Self(0xb6);
-    pub const CtapCertificate: Self = Self(0xb7);
-    pub const NdefCapability: Self = Self(0xb8);
-    pub const NdefMessage: Self = Self(0xb9);
+    // 0x50..=0x68 are the 25 CTAP resident groups (see CTAP_GROUP_BASE).
+    // The remaining singletons follow without reserved holes.
+    pub const CtapLargeBlob: Self = Self(0x69);
+    pub const CtapSm2: Self = Self(0x6a);
+    pub const CtapAttestationKey: Self = Self(0x6b);
+    pub const CtapCertificate: Self = Self(0x6c);
+    pub const NdefCapability: Self = Self(0x6d);
+    pub const NdefMessage: Self = Self(0x6e);
     pub const COUNT: usize = Self::NdefMessage.id() as usize + 1;
-    /// Validate a raw ID in the backend namespace 0..=185, including reserved
-    /// holes and CTAP group IDs. This does not imply an assigned or existing record.
+    /// Validate a raw ID in the contiguous backend namespace 0..=110, including
+    /// CTAP group IDs. This does not imply an existing record.
     pub const fn from_id(id: u8) -> Option<Self> {
         if id <= Self::NdefMessage.0 {
             Some(Self(id))
@@ -120,3 +122,12 @@ impl Record {
         }
     }
 }
+
+// Changing the resident count or group size moves every later record and
+// requires fresh storage provisioning.
+const _: () = assert!(Record::CTAP_GROUP_BASE == Record::CtapCounter.id() + 1);
+const _: () = assert!(
+    Record::CTAP_GROUPS as u16 * Record::CTAP_GROUP_MEMBERS as u16
+        == Record::CTAP_CREDENTIALS as u16
+);
+const _: () = assert!(Record::CtapLargeBlob.id() == Record::CTAP_GROUP_BASE + Record::CTAP_GROUPS);

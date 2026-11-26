@@ -15,15 +15,6 @@ T=1 direct convention/checksum, guard time, BWI/CWI, clock stop, IFSC and NAD
 At the descriptor's 4 MHz clock, ISO 7816-3 gives BWT approximately 5.715 s,
 longer than the common 500 ms CCID time-extension interval.
 
-This deliberately corrects pinned C 3.1.2's `11 10 00 15 00 fe 00` parameters.
-BWI1 gives BWT approximately 180 ms, expiring before that extension interval.
-The ATR and descriptor remain unchanged for CanoKey. The three archived input
-cases that query parameters during HID/WebUSB ownership retain literal C
-expectations in `expected_ccid_c` and literal corrected Rust expectations in
-`expected_ccid`. Their explicit intentional differences link this decision and
-are excluded from C/Rust wire-parity totals. Saved historical reports remain
-unchanged. No response normalization or broad exception is applied.
-
 Both ingress strategies now reassemble the ten-byte header and reject bytes
 beyond dwLength with BAD_LENGTH, retaining the shared slot/control error
 precedence. CCID 1.1 section 6 defines the message header, not a complete-header
@@ -69,9 +60,6 @@ time. This accepts a continuation that arrived before the deadline even if the
 loop runs later. Presence progress remains a transport-only bodyless slot-status
 path: it never expires a session or consumes power/APDU packets.
 
-The archived short-header recovery inputs retain literal C expectations in
-expected_c and intentional Rust differences linked here. Separate successful
-fragmentation and WebUSB completion inputs establish actual reassembly and
-ownership revocation; these are excluded from C/Rust wire-parity totals.
-Historical reports remain unchanged. Physical USB/timing acceptance and the
-CanoKey complete product stack/resource gates remain open.
+Host wire cases exercise split-header reassembly, recovery and WebUSB
+ownership release. Physical USB timing and the CanoKey product stack require
+board acceptance.

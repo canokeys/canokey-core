@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ADMIN usage attribution over the durable Rust record namespace.
-use crate::ports::{Record, Storage, StorageError};
+use crate::ports::{Record, Storage};
 use canokey_protocol::response::StatusWord as Sw;
 const BYTES_PER_KIB: u32 = 1024;
 pub(super) const SUMMARY_BYTES: usize = 2;
@@ -21,9 +21,8 @@ const APPLET_COUNT: usize = 7;
 const SYSTEM_OFFSET: usize = APPLET_COUNT * ENTRY_BYTES;
 pub(super) const APPLET_BYTES: usize = SYSTEM_OFFSET + ENTRY_BYTES;
 
-fn applet_id(record: Record) -> usize {
-    // Include reserved CTAP IDs in its namespace; absent files set the flag.
-    let id = record.id();
+fn applet_id(id: u8) -> usize {
+    // Absent optional records, including unused CTAP groups, set the flag.
     if id == Record::Pass.id() {
         PASS
     } else if id == Record::AdminPin.id() {
@@ -55,24 +54,34 @@ pub fn read(
             .copy_from_slice(&[(used / BYTES_PER_KIB) as u8, (total / BYTES_PER_KIB) as u8]);
         return Ok(SUMMARY_BYTES);
     }
-    out[..APPLET_BYTES].fill(0);
-    for slot in 0..APPLET_COUNT {
-        out[slot * ENTRY_BYTES] = (slot + 1) as u8;
-    }
-    let mut attributed = 0u32;
-    for id in Record::Pass.id()..=Record::NdefMessage.id() {
-        let record = Record::from_id(id).unwrap();
-        let offset = (applet_id(record) - 1) * ENTRY_BYTES;
-        let size_range = offset + SIZE_OFFSET..offset + ENTRY_BYTES;
-        match storage.size(record) {
-            Ok(size) => {
-                let bytes = u32::from_be_bytes(out[size_range.clone()].try_into().unwrap());
-                out[size_range].copy_from_slice(&bytes.saturating_add(size).to_be_bytes());
-                attributed = attributed.saturating_add(size);
-            }
-            Err(StorageError::Missing) => out[offset + FLAGS_OFFSET] |= MISSING_RECORD,
-            Err(_) => return Err(Sw::UNABLE_TO_PROCESS),
+    // One record scan; ADMIN runs no crypto, so the 444-byte table stays far
+    // from the crypto call-path stack budget.
+    let mut records = [0u32; Record::COUNT];
+    storage
+        .record_sizes(0, &mut records)
+        .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+    let mut absent = [false; APPLET_COUNT];
+    let mut sizes = [0u32; APPLET_COUNT];
+    for id in 0..Record::COUNT {
+        let (slot, size) = (applet_id(id as u8) - 1, records[id]);
+        if size == canokey_ports::RECORD_ABSENT {
+            absent[slot] = true;
+        } else {
+            sizes[slot] = sizes[slot].saturating_add(size);
         }
+    }
+    out[..APPLET_BYTES].fill(0);
+    let mut attributed = 0u32;
+    for (slot, entry) in out[..SYSTEM_OFFSET]
+        .chunks_exact_mut(ENTRY_BYTES)
+        .enumerate()
+    {
+        entry[0] = (slot + 1) as u8;
+        if absent[slot] {
+            entry[FLAGS_OFFSET] = MISSING_RECORD;
+        }
+        entry[SIZE_OFFSET..].copy_from_slice(&sizes[slot].to_be_bytes());
+        attributed = attributed.saturating_add(sizes[slot]);
     }
     // Physical allocation includes metadata/page slack that record lengths omit.
     out[SYSTEM_OFFSET + SIZE_OFFSET..APPLET_BYTES]
@@ -83,7 +92,7 @@ pub fn read(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ports::Storage;
+    use crate::ports::{Storage, StorageError};
     const TOTAL_BYTES: u32 = 128 * BYTES_PER_KIB;
     const OVERHEAD_BYTES: u32 = 4 * BYTES_PER_KIB;
     // One record per applet, sized to its response ID (sum 1..=7 is 28).
@@ -162,5 +171,51 @@ mod tests {
         disk.error = false;
         disk.physical = TOTAL_BYTES + 1;
         assert_eq!(read(&mut disk, false, &mut out), Err(Sw::UNABLE_TO_PROCESS));
+    }
+    /// A directory-scanning backend visits records in its own order.
+    struct Scanned(Disk);
+    impl Storage for Scanned {
+        fn load(&mut self, _: Record, _: &mut [u8]) -> Result<usize, StorageError> {
+            unreachable!()
+        }
+        fn replace(&mut self, _: Record, _: &[u8]) -> Result<(), StorageError> {
+            unreachable!()
+        }
+        fn usage(&mut self) -> Result<(u32, u32), StorageError> {
+            self.0.usage()
+        }
+        fn size(&mut self, _: Record) -> Result<u32, StorageError> {
+            unreachable!("the breakdown must use one record_sizes call")
+        }
+        fn record_sizes(&mut self, first: u8, sizes: &mut [u32]) -> Result<(), StorageError> {
+            // Fill in reverse order, as a directory scan need not follow IDs.
+            for (index, slot) in sizes.iter_mut().enumerate().rev() {
+                let id = first + index as u8;
+                *slot = match self.0.size(Record::from_id(id).unwrap()) {
+                    Ok(size) => size,
+                    Err(StorageError::Missing) => canokey_ports::RECORD_ABSENT,
+                    Err(error) => return Err(error),
+                };
+            }
+            Ok(())
+        }
+    }
+    #[test]
+    fn scanning_backends_match_per_record_lookups() {
+        let disk = || Disk {
+            error: false,
+            physical: OVERHEAD_BYTES + ATTRIBUTED_BYTES,
+            piv_extra: PIV_GROWTH_BYTES,
+        };
+        let (mut expected, mut actual) = ([0; APPLET_BYTES], [0; APPLET_BYTES]);
+        assert_eq!(read(&mut disk(), true, &mut expected), Ok(APPLET_BYTES));
+        let mut scanned = Scanned(disk());
+        assert_eq!(read(&mut scanned, true, &mut actual), Ok(APPLET_BYTES));
+        assert_eq!(actual, expected);
+        scanned.0.error = true;
+        assert_eq!(
+            read(&mut scanned, true, &mut actual),
+            Err(Sw::UNABLE_TO_PROCESS)
+        );
     }
 }
