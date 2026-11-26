@@ -432,7 +432,7 @@ impl Session {
     ) -> Result<usize, Status> {
         let policy = pin::policy(p)?;
         w.output[0] = 0;
-        let used = resident::count(w.input, p)?;
+        let used = resident::count(&mut w.key.bytes, w.input, p)?;
         let n = info::encode(
             &mut w.output[1..],
             policy.flags,

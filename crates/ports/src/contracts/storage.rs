@@ -81,6 +81,24 @@ pub trait Storage {
     fn size(&mut self, _record: Record) -> Result<u32, StorageError> {
         Err(StorageError::Unavailable)
     }
+    /// Sizes of resident credential group records in slot order.
+    /// A missing record is represented by `u16::MAX`.
+    #[cfg(feature = "ctap")]
+    fn resident_group_sizes(
+        &mut self,
+        sizes: &mut [u16; Record::CTAP_GROUPS as usize],
+    ) -> Result<(), StorageError> {
+        for (index, size) in sizes.iter_mut().enumerate() {
+            let record = Record::ctap_group(index as u8).ok_or(StorageError::Unavailable)?;
+            *size = match self.size(record) {
+                Ok(n) if n < u32::from(u16::MAX) => n as u16,
+                Err(StorageError::Missing) => u16::MAX,
+                Err(error) => return Err(error),
+                Ok(_) => return Err(StorageError::Unavailable),
+            };
+        }
+        Ok(())
+    }
     fn read_at(
         &mut self,
         _record: Record,

@@ -314,13 +314,60 @@ pub(super) fn find(
 }
 
 pub(super) fn count(
+    buffer: &mut [u8; crate::ports::key_layout::SIZE],
     out: &mut [u8],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<u8, Status> {
-    let mut scan = Scan::new();
-    scan::count(Record::CTAP_CREDENTIALS, |index| {
-        Ok(scan.read(index, out, p)?.is_some())
-    })
+    // GetInfo lends the idle key workspace for a group read. Only the last
+    // member of a large group can extend beyond this buffer.
+    const { assert!(GROUP_HEADER + COPY_BYTES <= crate::ports::key_layout::SIZE) };
+    let mut reservation = canokey_ctap::workspace::Reservation::new(buffer, p.memory);
+    let buffer = reservation.bytes();
+    let mut sizes = [0; Record::CTAP_GROUPS as usize];
+    p.storage
+        .resident_group_sizes(&mut sizes)
+        .map_err(|_| Status::Other)?;
+    let mut count = 0;
+    for (index, size) in sizes.into_iter().enumerate() {
+        if size == u16::MAX {
+            continue;
+        }
+        let record = Record::ctap_group(index as u8).ok_or(Status::Other)?;
+        let size = usize::from(size);
+        if !(GROUP_HEADER..=group::MAX_GROUP_BYTES).contains(&size) {
+            return Err(Status::Other);
+        }
+        let prefix = buffer.len().min(size);
+        let bytes = &mut buffer[..prefix];
+        p.storage
+            .read_at(record, 0, bytes)
+            .map_err(|_| Status::Other)?;
+        let header = bytes[..GROUP_HEADER].try_into().unwrap();
+        group::validate(header, size).map_err(|_| Status::Other)?;
+        let mut offset = GROUP_HEADER;
+        for member in 0..GROUP_MEMBERS {
+            let length = member_length(header, member);
+            if length == 0 {
+                continue;
+            }
+            let end = offset + length;
+            let entry = if let Some(entry) = bytes.get(offset..end) {
+                entry
+            } else {
+                let entry = &mut out[..length];
+                let (loaded, missing) = entry.split_at_mut(prefix - offset);
+                loaded.copy_from_slice(&bytes[offset..]);
+                p.storage
+                    .read_at(record, prefix as u32, missing)
+                    .map_err(|_| Status::Other)?;
+                entry
+            };
+            decode(entry)?;
+            count += 1;
+            offset = end;
+        }
+    }
+    Ok(count)
 }
 
 /// Small getNextAssertion cursor, not another request or key workspace.
@@ -378,6 +425,7 @@ pub(super) mod tests {
         pub fail: Option<StorageError>,
         pub size_calls: usize,
         pub read_calls: usize,
+        pub read_bytes: usize,
         pub mutations: usize,
         aborts: usize,
         pub patch_bytes: usize,
@@ -450,6 +498,7 @@ pub(super) mod tests {
         fn read_at(&mut self, id: Record, at: u32, out: &mut [u8]) -> Result<(), StorageError> {
             assert!(!self.stage_open, "read closes the staging cache lease");
             self.read_calls += 1;
+            self.read_bytes += out.len();
             let bytes = self.group(id)?;
             let at = at as usize;
             let value = bytes
@@ -785,7 +834,11 @@ pub(super) mod tests {
             memory: &canokey_ports::default_memory(),
         };
         let mut out = [0; MAX_BYTES];
-        assert_eq!(count(&mut out, &mut p), Ok(4));
+        let mut buffer = [0xa5; crate::ports::key_layout::SIZE];
+        assert_eq!(count(&mut buffer, &mut out, &mut p), Ok(4));
+        assert_eq!(p.storage.size_calls, usize::from(Record::CTAP_GROUPS));
+        assert_eq!(p.storage.read_calls, 3);
+        assert!(buffer.iter().all(|&byte| byte == 0));
         for uv in [false, true] {
             let mut next = Record::CTAP_CREDENTIALS;
             let mut found = Vec::new();
@@ -822,6 +875,46 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn capacity_scan_reads_large_groups_in_two_reads_and_validates_last_member() {
+        let mut member = record();
+        let n = encode_fields(
+            &mut member[HEADER..],
+            &[
+                &[b'r'; 32],
+                &[0xff; 64],
+                &[b'n'; 64],
+                &[b'd'; 64],
+                &[0xfe; 32],
+            ],
+        );
+        assert_eq!(HEADER + n, MAX_BYTES);
+        let mut storage = Records {
+            records: (0..Record::CTAP_GROUP_MEMBERS)
+                .map(|index| (index, member.to_vec()))
+                .collect(),
+            ..Records::default()
+        };
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+            storage: &mut storage,
+            crypto: &mut Records::default(),
+            device: &mut Records::default(),
+            memory: &canokey_ports::default_memory(),
+        };
+        let mut buffer = [0xa5; crate::ports::key_layout::SIZE];
+        let mut out = [0; MAX_BYTES];
+        assert!(group::MAX_GROUP_BYTES > buffer.len());
+        assert_eq!(
+            count(&mut buffer, &mut out, &mut p),
+            Ok(Record::CTAP_GROUP_MEMBERS)
+        );
+        assert_eq!(p.storage.read_calls, 2);
+        assert_eq!(p.storage.read_bytes, group::MAX_GROUP_BYTES);
+        p.storage.records.last_mut().unwrap().1[1] = 0;
+        assert_eq!(count(&mut buffer, &mut out, &mut p), Err(Status::Other));
+        assert!(buffer.iter().all(|&byte| byte == 0));
+    }
+
+    #[test]
     fn resident_reads_distinguish_empty_slots_corruption_and_io_failure() {
         let mut storage = Records {
             records: std::vec![resident(4, 7, 1)],
@@ -851,7 +944,8 @@ pub(super) mod tests {
                 assert_eq!(entry.rp_hash, &[7; 32]);
             } else {
                 assert!(matches!(read(4, &mut out, &mut p), Err(Status::Other)));
-                assert_eq!(count(&mut out, &mut p), Err(Status::Other));
+                let mut buffer = [0; crate::ports::key_layout::SIZE];
+                assert_eq!(count(&mut buffer, &mut out, &mut p), Err(Status::Other));
             }
         }
     }

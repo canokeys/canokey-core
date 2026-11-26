@@ -106,6 +106,8 @@ RP/user atomically replaces its entry and invalidates the old resident ID.
 During discovery, getAssertion validates each group header once while counting
 matches in descending slot order. getNextAssertion resumes with a slot cursor
 and freshly read metadata. The cursor expires after 30 seconds or another command.
+GetInfo obtains the group sizes and validates occupied groups in the idle
+key workspace before encoding the remaining discoverable capacity.
 
 For makeCredential, a credBlob longer than 32 bytes is consumed within the
 normal request-size limit and reported as `credBlob: false`; the credential
