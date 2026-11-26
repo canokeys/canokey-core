@@ -36,11 +36,11 @@ fn hw<T>(run: impl FnOnce(&mut Hardware) -> T) -> T {
     HW.with(|h| run(&mut h.borrow_mut()))
 }
 #[unsafe(no_mangle)]
-extern "C" fn device_get_tick() -> u32 {
+extern "C" fn ck_platform_now() -> u32 {
     hw(|h| h.ticks)
 }
 #[unsafe(no_mangle)]
-extern "C" fn device_delay(ms: i32) {
+extern "C" fn ck_device_delay(ms: i32) {
     assert!(ms >= 0);
     hw(|h| h.ticks += ms as u32);
 }
@@ -239,7 +239,7 @@ const MSG_INFO: &[u8] = &[0x80, 0x10, 0, 0, 0, 0, 1, 4, 0, 0];
 // Native MSG GET RESPONSE with explicit zero Lc and unlimited Le.
 const MORE: &[u8] = &[0, 0xc0, 0, 0, 0, 0, 0, 0, 0];
 fn main() {
-    transport::device_hooks(|| device_get_tick(), progress);
+    transport::device_hooks(|| ck_platform_now(), progress);
     assert_eq!(unsafe { core::install::<Fake>() }, 0);
     reset();
     let nonce = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -431,7 +431,7 @@ fn main() {
         assert_eq!(response(cid, wire::PING), data[..193]);
     }
     clear_output();
-    let at = device_get_tick();
+    let at = ck_platform_now();
     hw(|h| {
         h.injected = vec![
             (at + 3, packet(cid + 1, wire::PING, 1)),
@@ -446,7 +446,7 @@ fn main() {
         |r| r[4] == wire::KEEPALIVE && r[7] == wire::STATUS_UPNEEDED
     )));
     clear_output();
-    let at = device_get_tick();
+    let at = ck_platform_now();
     let mut init = packet(cid, wire::INIT, nonce.len());
     init[7..15].copy_from_slice(&nonce);
     hw(|h| h.injected = vec![(at + 3, init)]);
@@ -456,7 +456,7 @@ fn main() {
     assert_eq!(&response(cid, wire::INIT)[..8], nonce);
     assert!(hw(|h| h.output.iter().all(|r| r[4] != wire::CBOR)));
     clear_output();
-    let at = device_get_tick();
+    let at = ck_platform_now();
     hw(|h| h.disconnect = Some(at + 3));
     command(cid, wire::CBOR, &[0x0b]);
     assert!(hw(|h| h.output.iter().all(|r| r[4] != wire::CBOR)));

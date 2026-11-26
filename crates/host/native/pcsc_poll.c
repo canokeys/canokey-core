@@ -13,9 +13,9 @@ static RESPONSECODE wait_change(DWORD lun, int milliseconds) {
   validate_callback check = atomic_load_explicit(&validate, memory_order_relaxed);
   if (!check || !check(lun)) return IFD_NO_SUCH_DEVICE;
   if (milliseconds < 0) return IFD_COMMUNICATION_ERROR;
-  struct timespec delay = {.tv_sec = milliseconds / 1000,
-                          .tv_nsec = (milliseconds % 1000) * 1000000L};
-  while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {}
+  struct timespec delay = {.tv_sec = milliseconds / 1000, .tv_nsec = (milliseconds % 1000) * 1000000L};
+  while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {
+  }
   return IFD_RESPONSE_TIMEOUT;
 }
 poll_callback ck_host_pcsc_poll_setup(validate_callback check) {

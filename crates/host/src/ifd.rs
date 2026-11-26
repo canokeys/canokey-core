@@ -14,6 +14,17 @@ type Dword = u32;
 #[cfg(not(target_os = "macos"))]
 type Dword = c_ulong;
 type ResponseCode = c_long;
+// PC/SC uses a 32-bit DWORD on macOS and unsigned long on pcsc-lite.
+fn lun_number(lun: Dword) -> u64 {
+    #[cfg(any(target_os = "macos", target_pointer_width = "32"))]
+    {
+        u64::from(lun)
+    }
+    #[cfg(all(not(target_os = "macos"), target_pointer_width = "64"))]
+    {
+        lun
+    }
+}
 #[repr(C)]
 pub struct IoHeader {
     protocol: Dword,
@@ -54,15 +65,15 @@ fn status(result: i32) -> ResponseCode {
 }
 #[unsafe(export_name = "IFDHCreateChannel")]
 extern "C" fn create(lun: Dword, _: Dword) -> ResponseCode {
-    status(ck_pcsc_open(lun as u64))
+    status(ck_pcsc_open(lun_number(lun)))
 }
 #[unsafe(export_name = "IFDHCreateChannelByName")]
 extern "C" fn create_named(lun: Dword, _: *mut c_char) -> ResponseCode {
-    status(ck_pcsc_open(lun as u64))
+    status(ck_pcsc_open(lun_number(lun)))
 }
 #[unsafe(export_name = "IFDHCloseChannel")]
 extern "C" fn close(lun: Dword) -> ResponseCode {
-    status(ck_pcsc_close(lun as u64))
+    status(ck_pcsc_close(lun_number(lun)))
 }
 unsafe extern "C" {
     fn ck_host_pcsc_poll_setup(
@@ -70,7 +81,7 @@ unsafe extern "C" {
     ) -> unsafe extern "C" fn(Dword, c_int) -> ResponseCode;
 }
 extern "C" fn ck_host_pcsc_poll_valid(lun: Dword) -> c_int {
-    i32::from(ck_pcsc_present(lun as u64) == 0)
+    i32::from(ck_pcsc_present(lun_number(lun)) == 0)
 }
 #[unsafe(export_name = "IFDHGetCapabilities")]
 unsafe extern "C" fn get_capability(
@@ -85,7 +96,7 @@ unsafe extern "C" fn get_capability(
     // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     let capacity = unsafe { length.read() } as usize;
     if tag == TAG_POLL_TIMEOUT {
-        if ck_pcsc_present(lun as u64) != 0 {
+        if ck_pcsc_present(lun_number(lun)) != 0 {
             // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
             unsafe {
                 length.write(0);
@@ -121,7 +132,7 @@ unsafe extern "C" fn get_capability(
     };
     let mut size = 0;
     // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
-    let result = unsafe { ck_pcsc_capability(lun as u64, kind, value, capacity, &mut size) };
+    let result = unsafe { ck_pcsc_capability(lun_number(lun), kind, value, capacity, &mut size) };
     // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     unsafe {
         length.write(size as Dword);
@@ -135,7 +146,7 @@ extern "C" fn set_capability(_: Dword, _: Dword, _: Dword, _: *mut u8) -> Respon
 #[unsafe(export_name = "IFDHSetProtocolParameters")]
 extern "C" fn protocol(lun: Dword, protocol: Dword, _: u8, _: u8, _: u8, _: u8) -> ResponseCode {
     status(ck_pcsc_protocol(
-        lun as u64,
+        lun_number(lun),
         u8::from(protocol == PROTOCOL_T1),
     ))
 }
@@ -157,7 +168,15 @@ unsafe extern "C" fn power(
     };
     let mut size = 0;
     // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
-    let result = unsafe { ck_pcsc_power(lun as u64, kind, atr, length.read() as usize, &mut size) };
+    let result = unsafe {
+        ck_pcsc_power(
+            lun_number(lun),
+            kind,
+            atr,
+            length.read() as usize,
+            &mut size,
+        )
+    };
     // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     unsafe {
         length.write(size as Dword);
@@ -188,7 +207,7 @@ unsafe extern "C" fn transmit(
     // SAFETY: The C caller guarantees the buffer extents and writable out-parameters required by the ABI.
     let result = unsafe {
         ck_pcsc_transmit(
-            lun as u64,
+            lun_number(lun),
             tx,
             n as usize,
             rx,
@@ -223,7 +242,7 @@ unsafe extern "C" fn control(
 }
 #[unsafe(export_name = "IFDHICCPresence")]
 extern "C" fn presence(lun: Dword) -> ResponseCode {
-    if ck_pcsc_present(lun as u64) == 0 {
+    if ck_pcsc_present(lun_number(lun)) == 0 {
         ICC_PRESENT
     } else {
         ICC_NOT_PRESENT

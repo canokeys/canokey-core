@@ -43,6 +43,7 @@ INF_BYTES = 29
 class Nfc:
     def __init__(self, runner, rust, kind="nfc"):
         self.kind = kind
+        self.rust = rust
         self.directory = tempfile.TemporaryDirectory(prefix="c312-auth-response-")
         self.process = subprocess.Popen(
             [str(runner)] + (["--c312-nfc-wire"] if rust and kind == "nfc" else
@@ -75,6 +76,13 @@ class Nfc:
 
     def _errors(self):
         self.stderr.extend(self.process.stderr)
+
+    def retap(self):
+        self.process.stdin.write("POWER 0\n")
+        self.process.stdin.flush()
+        assert self.lines.get(timeout=30) == ("WIRE", "")
+        self.trace.append(dict(control="POWER 0", response=""))
+        self.number = 0
 
     def packet(self, frame):
         self.process.stdin.write("NFC " + (frame + b"\0\0").hex() + "\n")
@@ -265,6 +273,13 @@ class Checks:
         if aid in (NFC_AID, USB_AID):
             assert reply == b"U2F_V2"
 
+    def fresh_nfc_presence(self):
+        if self.wire.kind == "nfc" and self.wire.rust:
+            # Each power-on grant covers one credential operation. Reselect
+            # FIDO after the simulated lift and re-tap clears the selection.
+            self.wire.retap()
+            self.select()
+
     def certificate(self, data):
         self.select(ADMIN_AID)
         self.card.cmd("verify admin", 0x20, data=b"123456")
@@ -324,6 +339,10 @@ class Checks:
                                windows=windows, apdus=self.wire.apdus[start:]))
         return bytes(response)
 
+    def ctap_with_presence(self, label, command, params, **kwargs):
+        self.fresh_nfc_presence()
+        return self.ctap(label, command, params, **kwargs)
+
     def ctap(self, label, command, params=None, **kwargs):
         answer = self.command(label, 0x10, bytes([command]) + (cbor.encode(params) if params is not None else b""),
                               cla=0x80, **kwargs)
@@ -341,16 +360,16 @@ def suite(wire, small_pq=False):
     for algorithm in [-7, -8, -49] + ([-48] if small_pq else []):
         params = {1: challenge, 2: {"id": rp}, 3: {"id": bytes([len(credentials) + 1]) * 64},
                   4: [{"type": "public-key", "alg": algorithm}]}
-        result = checks.ctap(f"make-{algorithm}", 1, params, source=True)
+        result = checks.ctap_with_presence(f"make-{algorithm}", 1, params, source=True)
         verify_attestation(result, challenge)
         auth = AuthenticatorData(result[2])
         assert auth.rp_id_hash == hashlib.sha256(rp.encode()).digest()
         descriptor = {"type": "public-key", "id": auth.credential_data.credential_id}
-        short = checks.ctap(f"assert-{algorithm}-no-extensions", 2,
+        short = checks.ctap_with_presence(f"assert-{algorithm}-no-extensions", 2,
                             {1: rp, 2: challenge, 3: [descriptor]}, source=algorithm in (-49, -48))
         verify_credential(auth.credential_data.public_key, short[2] + challenge, short[3])
         assert short[1] == descriptor and AuthenticatorData(short[2]).counter > auth.counter
-        resident = checks.ctap(f"make-{algorithm}-resident", 1,
+        resident = checks.ctap_with_presence(f"make-{algorithm}-resident", 1,
                                params | {3: params[3] | {"name": "n" * 63, "displayName": "d" * 63},
                                          6: {"credBlob": b"b" * 32, "largeBlobKey": True}, 7: {"rk": True}},
                                source=True)
@@ -361,7 +380,7 @@ def suite(wire, small_pq=False):
         descriptor = {"type": "public-key", "id": auth.credential_data.credential_id}
         # The classic response crosses256 with the resident user, credBlob and
         # largeBlobKey. The request uses its real stored credential, never a record injection.
-        large = checks.ctap(f"assert-{algorithm}-extensions", 2,
+        large = checks.ctap_with_presence(f"assert-{algorithm}-extensions", 2,
                             {1: rp, 2: challenge, 3: [descriptor], 4: {"credBlob": True}}, source=True)
         assert len(cbor.encode(large)) + 1 > BUFFER_CHUNK
         verify_credential(auth.credential_data.public_key, large[2] + challenge, large[3])
@@ -369,6 +388,7 @@ def suite(wire, small_pq=False):
 
     # GetNextAssertion uses the same ordinary-CBOR source classification.
     by_id = {auth.credential_id: auth.public_key for _, auth in credentials}
+    checks.fresh_nfc_presence()
     for index in range(len(credentials)):
         result = checks.ctap(f"discover-{index}", 2 if index == 0 else 8,
                              {1: rp, 2: challenge, 4: {"credBlob": True}} if index == 0 else None,
@@ -381,12 +401,12 @@ def suite(wire, small_pq=False):
     classic = {1: challenge, 2: {"id": rp}, 3: {"id": b"finite"},
                4: [{"type": "public-key", "alg": -7}]}
     for le in (1, 249, 250, 251, 255, 256):
-        result = checks.ctap(f"make-Le-{le}", 1, classic, source=True, limit=le)
+        result = checks.ctap_with_presence(f"make-Le-{le}", 1, classic, source=True, limit=le)
         verify_attestation(result, challenge)
     if wire.kind == "nfc":
-        result = checks.ctap("make-extended-unlimited", 1, classic, source=True, extended=True, limit=65536)
+        result = checks.ctap_with_presence("make-extended-unlimited", 1, classic, source=True, extended=True, limit=65536)
         verify_attestation(result, challenge)
-        result = checks.ctap("make-extended-finite", 1, classic, source=True, extended=True, limit=251)
+        result = checks.ctap_with_presence("make-extended-finite", 1, classic, source=True, extended=True, limit=251)
         verify_attestation(result, challenge)
     elif wire.kind == "msg":
         result = checks.ctap("make-native-unlimited", 1, classic, source=True, limit=65536)
@@ -428,6 +448,7 @@ def suite(wire, small_pq=False):
             3: bytes(64), 4: {"id": bytes(n)}, 7: bytes(32)})) + 1 == target)
         # Setting a PIN above makes subsequent MC require a PIN authorization.
         # Obtain a token for MC/GA on this RP through the real PIN protocol.
+        checks.fresh_nfc_presence()
         public, secret = protocol.encapsulate(checks.ctap(f"boundary-agreement-{target}", 6, {1: 1, 2: 2})[1])
         hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
         boundary_token = protocol.decrypt(secret, checks.ctap(f"boundary-token-{target}", 6,
@@ -441,6 +462,11 @@ def suite(wire, small_pq=False):
         auth = AuthenticatorData(result[2])
         descriptor = {"type": "public-key", "id": auth.credential_data.credential_id}
         # A successful presence-authorized MC consumes MC/GA permissions.
+        checks.fresh_nfc_presence()
+        if wire.kind == "nfc" and wire.rust:
+            public, secret = protocol.encapsulate(
+                checks.ctap(f"boundary-assertion-agreement-{target}", 6, {1: 1, 2: 2})[1])
+            hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
         boundary_token = protocol.decrypt(secret, checks.ctap(f"boundary-assertion-token-{target}", 6,
             {1: 1, 2: 9, 3: public, 6: hashed, 9: 2, 10: boundary_rp})[2])
         auth_param = protocol.authenticate(boundary_token, challenge)
@@ -469,6 +495,7 @@ def suite(wire, small_pq=False):
     app = hashlib.sha256(rp.encode()).digest()
 
     def register(label):
+        checks.fresh_nfc_presence()
         result = checks.command(label, 1, challenge + app, source=True)
         assert result[:2] == b"\x05\x04"
         handle = result[67:67 + result[66]]
@@ -487,6 +514,7 @@ def suite(wire, small_pq=False):
     private.public_key().verify(tail[len(certificate):], b"\0" + app + challenge + handle + result[1:66], ec.ECDSA(hashes.SHA256()))
 
     # Replacement closes a partially consumed certificate source.
+    checks.fresh_nfc_presence()
     checks.command("register-abandoned", 1, challenge + app, source=True, limit=1, drain=False)
     checks.select()
     assert wire.transmit(bytes.fromhex("00c0000000")) == (b"", 0x69, 0x86)

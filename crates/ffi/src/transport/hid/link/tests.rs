@@ -52,10 +52,10 @@ fn in_flight() -> &'static [u8; DATA_PACKET_BYTES] {
     // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe { &*controller().in_flight.cast::<[u8; DATA_PACKET_BYTES]>() }
 }
-pub(crate) unsafe fn device_get_tick() -> u32 {
+pub(crate) unsafe fn ck_platform_now() -> u32 {
     controller().now
 }
-pub(crate) unsafe fn device_delay(ms: i32) {
+pub(crate) unsafe fn ck_device_delay(ms: i32) {
     controller().now += ms as u32;
 }
 pub(crate) unsafe fn ck_hid_reset<P: crate::composition::Provider>() {

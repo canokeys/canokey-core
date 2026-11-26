@@ -5,62 +5,7 @@
 
 #include <stdbool.h>
 
-#include "common.h"
-#include "nfc.h"
-
-#define TOUCH_NO 0
-#define TOUCH_SHORT 1
-#define TOUCH_LONG 2
-
-// functions should be implemented by device
-/**
- * Delay processing for specific milliseconds
- *
- * @param ms Time to delay
- */
-void device_delay(int ms);
-uint32_t device_get_tick(void);
-
-/**
- * Get a spinlock.
- *
- * @param lock      The lock handler, which should be pointed to a uint32_t variable.
- * @param blocking  If we should wait the lock to be released.
- *
- * @return 0 for locking successfully, -1 for failure.
- */
-int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking);
-
-/**
- * Unlock the specific handler.
- *
- * @param lock  The lock handler.
- */
-void device_spinlock_unlock(volatile uint32_t *lock);
-
-/**
- * Update the value of a variable atomically.
- *
- * @param var    The address of variable to update.
- * @param expect The value required for the update to succeed.
- * @param update The new value of the variable.
- */
-int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update);
-
-void led_on(void);
-void led_off(void);
-void device_set_timeout(void (*callback)(void), uint16_t timeout);
-
-// NFC related
-/**
- * Enable FM chip by pull down CSN
- */
-void fm_csn_low(void);
-
-/**
- * Disable FM chip by pull up CSN
- */
-void fm_csn_high(void);
+#include <stdint.h>
 
 // only for test
 #define TESTMODE_ERR_WRITE 0

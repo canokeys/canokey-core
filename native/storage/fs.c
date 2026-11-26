@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <fs.h>
 #include <device.h>
+#include <stdalign.h>
 
 static lfs_t lfs;
 
@@ -137,7 +138,6 @@ int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len
   const int flags = trunc ? LFS_O_CREAT | LFS_O_TRUNC : LFS_O_CREAT;
   return write_attrs_at(path, flags, NULL, 0, buf, off, len);
 }
-
 
 int append_file(const char *path, const void *buf, lfs_size_t len) {
   return write_attrs_at(path, LFS_O_CREAT | LFS_O_APPEND, NULL, 0, buf, 0, len);

@@ -59,6 +59,7 @@ python3 tools/toolchain/rust/check-c312-sync.py \
 
 Ordinary CI uses `--structure-only` during the audit; its output explicitly
 says **NOT release acceptance**. Release-tag CI runs the strict gate against
-pinned C checkouts. No checker fetches refs, approves source units or compiles
-`reference/legacy-c`. Portable fixtures are documented in
+separate pinned C checkouts. The former migration snapshot and its checksums
+are available in [Git history](https://github.com/canokeys/canokey-core/tree/06ba95922ed18373c1f7a4a7a5288fc85e2f768f/reference).
+Portable fixtures are documented in
 [testing](../testing/README.md#c-312-synchronization-gate).

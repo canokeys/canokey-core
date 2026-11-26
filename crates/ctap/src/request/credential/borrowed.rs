@@ -207,7 +207,7 @@ impl<'a, P: Profile<'a>> Request<'a, P> {
                     rp = entity(&mut r, false)?
                         .id
                         .map(|id| {
-                            core::str::from_utf8(id).map_err(|_| ParseError::<'a, P>::INVALID_CBOR)
+                            canokey_protocol::utf8::str(id).ok_or(ParseError::<'a, P>::INVALID_CBOR)
                         })
                         .transpose()?;
                 }

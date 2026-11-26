@@ -7,9 +7,9 @@ pub(crate) use crate::transport::nfc::tests::{
 };
 #[cfg(all(test, feature = "usb-device"))]
 pub(crate) use crate::transport::usb::tests::{
-    ck_usb_dcd_address, ck_usb_dcd_close, ck_usb_dcd_enable_irq, ck_usb_dcd_lock, ck_usb_dcd_open,
-    ck_usb_dcd_ready, ck_usb_dcd_receive, ck_usb_dcd_stall, ck_usb_dcd_start, ck_usb_dcd_stop,
-    ck_usb_dcd_unlock, ck_usb_dcd_write, device_get_tick,
+    ck_platform_now, ck_usb_dcd_address, ck_usb_dcd_close, ck_usb_dcd_enable_irq, ck_usb_dcd_lock,
+    ck_usb_dcd_open, ck_usb_dcd_ready, ck_usb_dcd_receive, ck_usb_dcd_stall, ck_usb_dcd_start,
+    ck_usb_dcd_stop, ck_usb_dcd_unlock, ck_usb_dcd_write,
 };
 unsafe extern "C" {
     #[cfg(all(feature = "device-runtime", not(test)))]
@@ -36,7 +36,7 @@ unsafe extern "C" {
     pub(crate) fn ck_platform_led(on: u8);
     #[cfg(any(feature = "device-runtime", feature = "usb-hid"))]
     #[cfg_attr(test, allow(dead_code))]
-    pub(crate) fn device_delay(milliseconds: i32);
+    pub(crate) fn ck_device_delay(milliseconds: i32);
     #[cfg(all(
         feature = "native-platform",
         feature = "device-runtime",
@@ -109,12 +109,15 @@ unsafe extern "C" {
     pub(crate) fn ck_usb_dcd_unlock(mask: u32);
     #[cfg(feature = "usb-keyboard")]
     pub(crate) fn ck_platform_touched() -> u8;
-    #[cfg(feature = "usb-keyboard")]
-    pub(crate) fn ck_platform_now() -> u32;
-    #[cfg(any(feature = "usb-ccid", feature = "usb-hid", feature = "usb-webusb"))]
+    #[cfg(any(
+        feature = "usb-ccid",
+        feature = "usb-hid",
+        feature = "usb-webusb",
+        feature = "usb-keyboard"
+    ))]
     #[cfg_attr(test, allow(dead_code))]
     #[cfg(not(all(test, feature = "usb-device")))]
-    pub(crate) fn device_get_tick() -> u32;
+    pub(crate) fn ck_platform_now() -> u32;
 }
 
 #[cfg(all(

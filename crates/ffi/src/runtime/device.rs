@@ -32,8 +32,8 @@ use hal::ck_board_reset;
 use hal::ck_board_stack_paint;
 use hal::ck_board_stack_report;
 use hal::ck_board_usb_ready;
+use hal::ck_device_delay;
 use hal::ck_platform_led;
-use hal::device_delay;
 static mut LED_DEFAULT: bool = true;
 ///
 /// # Safety
@@ -65,7 +65,7 @@ pub unsafe fn ck_device_settings(flags: u32) {
 pub unsafe fn progress<P: Provider>() -> u8 {
     // SAFETY: The serialized device loop owns these board callbacks and settings.
     unsafe {
-        device_delay(1);
+        ck_device_delay(1);
         transport::usb::progress::<P>()
     }
 }
@@ -75,9 +75,9 @@ unsafe fn blink(on_ms: i32, off_ms: i32) -> ! {
         // SAFETY: The device main loop owns the board startup and executes with its callbacks installed.
         unsafe {
             ck_platform_led(1);
-            device_delay(on_ms);
+            ck_device_delay(on_ms);
             ck_platform_led(0);
-            device_delay(off_ms);
+            ck_device_delay(off_ms);
         }
     }
 }
@@ -115,7 +115,7 @@ unsafe fn detect_nfc() -> bool {
     // SAFETY: The device main loop owns the board startup and executes with its callbacks installed.
     unsafe {
         canokey_transport_runtime::mode::detect_contactless(
-            || hal::device_get_tick(),
+            || hal::ck_platform_now(),
             || ck_board_mode_pin() != 0,
         )
     }

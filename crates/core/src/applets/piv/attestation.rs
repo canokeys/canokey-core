@@ -91,7 +91,7 @@ impl Public {
                 key.reserved = 0;
                 memory.wipe(bytes);
             }
-            Self::Pq(s) => memory.wipe(&mut s.bytes),
+            Self::Pq(s) => memory.wipe(s.bytes_mut()),
         }
     }
     fn bytes(&self) -> &[u8] {

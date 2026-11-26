@@ -254,7 +254,10 @@ impl<'a, P: Polling, const FSC: usize> Io<'a, P, FSC> {
         if !chunk.is_empty() && !chip.read(wire::FM_REG_FIFO_ACCESS, chunk) {
             return false;
         }
-        self.length = end as u16;
+        let Ok(length) = u16::try_from(end) else {
+            return false;
+        };
+        self.length = length;
         if !done {
             return true;
         }
@@ -268,7 +271,7 @@ impl<'a, P: Polling, const FSC: usize> Io<'a, P, FSC> {
             if !chip.read(wire::FM_REG_RF_RATS, &mut rats) {
                 return false;
             }
-            self.fsd = wire::reader_frame_size(rats[0]) as u16;
+            self.fsd = wire::reader_frame_size(rats[0]);
         }
         match &*frame {
             &[wire::PCB_WTX, multiplier, _, _] => {
@@ -390,7 +393,10 @@ impl<'a, P: Polling, const FSC: usize> Io<'a, P, FSC> {
     /// Copy the I-block into owned staging before arming TX. IRQs never
     /// borrow APDU backing and no call waits for a future FIFO interrupt.
     pub fn send_response(&mut self, response: Response, inf: &[u8], chip: &mut impl Chip) -> bool {
-        let length = inf.len() + 1;
+        let Some(tx_length) = response.length.checked_add(1) else {
+            return false;
+        };
+        let length = usize::from(tx_length);
         if !self.can_send()
             || inf.len() != usize::from(response.length)
             || length + 2 > self.tx_frame_limit(FSC)
@@ -404,9 +410,15 @@ impl<'a, P: Polling, const FSC: usize> Io<'a, P, FSC> {
         *pcb = response.pcb;
         payload.copy_from_slice(inf);
 
-        let initial = length.min(wire::FIFO_BYTES);
+        const FIFO_BYTES: u8 = {
+            assert!(wire::FIFO_BYTES <= u8::MAX as usize);
+            #[allow(clippy::cast_possible_truncation)]
+            let bytes = wire::FIFO_BYTES as u8;
+            bytes
+        };
+        let initial = tx_length.min(FIFO_BYTES);
         if (length > wire::FIFO_BYTES && !chip.write(wire::FM_REG_FIFO_CLEAR, &[0x00]))
-            || !start_fifo(&frame[..initial], chip)
+            || !start_fifo(&frame[..usize::from(initial)], chip)
         {
             self.fault();
             return false;
@@ -414,8 +426,8 @@ impl<'a, P: Polling, const FSC: usize> Io<'a, P, FSC> {
         self.turn = false;
         self.tx = Tx::Response;
         if FSC > wire::FIFO_BYTES {
-            self.tx_loaded = initial as u8;
-            self.tx_length = length as u8;
+            self.tx_loaded = initial;
+            self.tx_length = tx_length;
         }
         true
     }
@@ -428,14 +440,25 @@ impl<'a, P: Polling, const FSC: usize> Io<'a, P, FSC> {
     }
     fn refill(&mut self, chip: &mut impl Chip) -> bool {
         let start = usize::from(self.tx_loaded);
-        let end = (start + wire::FIFO_BYTES - wire::TX_WATERMARK).min(usize::from(self.tx_length));
+        const REFILL_BYTES: u8 = {
+            let bytes = wire::FIFO_BYTES - wire::TX_WATERMARK;
+            assert!(bytes <= u8::MAX as usize);
+            #[allow(clippy::cast_possible_truncation)]
+            let bytes = bytes as u8;
+            bytes
+        };
+        let loaded = self
+            .tx_loaded
+            .saturating_add(REFILL_BYTES)
+            .min(self.tx_length);
+        let end = usize::from(loaded);
         if !chip.write(
             wire::FM_REG_FIFO_ACCESS,
             &self.frame.as_deref().unwrap()[start..end],
         ) {
             return false;
         }
-        self.tx_loaded = end as u8;
+        self.tx_loaded = loaded;
         true
     }
     pub fn take_tx_done(&mut self) -> bool {

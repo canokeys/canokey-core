@@ -73,10 +73,10 @@ pub(crate) unsafe fn ck_usb_dcd_lock() -> u32 {
 pub(crate) unsafe fn ck_usb_dcd_unlock(prior: u32) {
     controller().masked = prior;
 }
-pub(crate) unsafe fn device_get_tick() -> u32 {
+pub(crate) unsafe fn ck_platform_now() -> u32 {
     controller().now
 }
-pub(crate) unsafe fn device_set_timeout(next: Option<unsafe extern "C" fn()>, ms: u16) {
+pub(crate) unsafe fn ck_timer_set_timeout(next: Option<unsafe extern "C" fn()>, ms: u16) {
     let c = controller();
     c.timer = next;
     c.interval = ms;

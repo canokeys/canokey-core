@@ -35,13 +35,11 @@ int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {
 static char *portable_fault_fgets(char *line, int size, FILE *stream) {
   while (fgets(line, size, stream)) {
     if (strcmp(line, "FAULT STATUS\n") == 0) {
-      printf("FAULT %u %u %ld %lu %d\n", portable_fault_path != NULL,
-             portable_fault_hits, (long)portable_fault_offset,
+      printf("FAULT %u %u %ld %lu %d\n", portable_fault_path != NULL, portable_fault_hits, (long)portable_fault_offset,
              (unsigned long)portable_fault_requested, portable_fault_return);
     } else if (strncmp(line, "FAULT ARM ", 10) == 0) {
       unsigned record;
-      assert_int_equal(sscanf(line + 10, "%u %u %d", &record,
-                             &portable_fault_skip, &portable_fault_return), 3);
+      assert_int_equal(sscanf(line + 10, "%u %u %d", &record, &portable_fault_skip, &portable_fault_return), 3);
       assert_true(record == FAULT_RECORD_BLOB || record == FAULT_RECORD_CERTIFICATE);
       assert_true(portable_fault_return >= -1 && portable_fault_return <= 1);
       portable_fault_path = record == FAULT_RECORD_BLOB ? "ctap_lb" : "ctap_cert";

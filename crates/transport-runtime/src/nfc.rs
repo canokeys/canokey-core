@@ -259,7 +259,7 @@ impl Link {
         }
         let response = Response {
             pcb: nfc::information_pcb(self.number(), remaining > n || more_chunks),
-            length: n as u8,
+            length: u8::try_from(n).map_err(|_| Error::Wire(nfc::Error::Length))?,
         };
         self.cached = Cached::Response(response);
         self.pending = true;

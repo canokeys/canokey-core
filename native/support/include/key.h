@@ -64,8 +64,7 @@ typedef struct {
 
 _Static_assert(sizeof(mldsa65_private_key_t) == MLDSA_SEEDBYTES + MLDSA_TRBYTES,
                "ML-DSA persistent private material must be seed || tr");
-_Static_assert(sizeof(mldsa65_private_key_t) <= sizeof(rsa_key_t),
-               "ML-DSA private material must not enlarge ck_key_t");
+_Static_assert(sizeof(mldsa65_private_key_t) <= sizeof(rsa_key_t), "ML-DSA private material must not enlarge ck_key_t");
 _Static_assert(sizeof(mlkem768_private_key_t) == MLKEM768_KEYGEN_SEED_BYTES,
                "ML-KEM persistent private material must contain only d || z");
 _Static_assert(sizeof(mlkem768_private_key_t) <= sizeof(rsa_key_t),

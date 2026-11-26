@@ -109,7 +109,7 @@ impl<'a> SliceDecoder<'a> {
     }
     #[inline(never)]
     pub fn str(&mut self) -> Result<&'a str, DecodeError> {
-        core::str::from_utf8(self.bytes_of(3)?).map_err(|_| DecodeError)
+        crate::utf8::str(self.bytes_of(3)?).ok_or(DecodeError)
     }
     #[inline(never)]
     pub fn skip(&mut self) -> Result<(), DecodeError> {
@@ -441,7 +441,7 @@ impl<const DEPTH_SLOTS: usize> BoundedDecoder<DEPTH_SLOTS> {
         }
         loop {
             if self.end_string {
-                if self.text && self.utf8.len != 0 {
+                if self.text && !self.utf8.complete() {
                     return Err(Error::Invalid);
                 }
                 self.end_string = false;
@@ -586,39 +586,20 @@ impl<const DEPTH_SLOTS: usize> BoundedDecoder<DEPTH_SLOTS> {
     }
 }
 
-// Retain only an incomplete UTF-8 code point across transport boundaries.
-// The standard library validates all encoding rules, including overlong forms.
-struct Utf8 {
-    tail: [u8; 4],
-    len: usize,
-}
+// Retain only the state of an incomplete UTF-8 scalar across transport boundaries.
+struct Utf8(crate::utf8::Validator);
 impl Utf8 {
     const fn new() -> Self {
-        Self {
-            tail: [0; 4],
-            len: 0,
+        Self(crate::utf8::Validator::new())
+    }
+    fn feed(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        if bytes.iter().all(|&byte| self.0.push(byte)) {
+            Ok(())
+        } else {
+            Err(Error::Invalid)
         }
     }
-    fn feed(&mut self, mut bytes: &[u8]) -> Result<(), Error> {
-        while self.len != 0 && !bytes.is_empty() {
-            self.tail[self.len] = bytes[0];
-            self.len += 1;
-            bytes = &bytes[1..];
-            match core::str::from_utf8(&self.tail[..self.len]) {
-                Ok(_) => self.len = 0,
-                Err(error) if error.error_len().is_none() => (),
-                Err(_) => return Err(Error::Invalid),
-            }
-        }
-        match core::str::from_utf8(bytes) {
-            Ok(_) => Ok(()),
-            Err(error) if error.error_len().is_none() => {
-                let tail = &bytes[error.valid_up_to()..];
-                self.tail[..tail.len()].copy_from_slice(tail);
-                self.len = tail.len();
-                Ok(())
-            }
-            Err(_) => Err(Error::Invalid),
-        }
+    fn complete(&self) -> bool {
+        self.0.complete()
     }
 }

@@ -19,7 +19,7 @@ pub mod device {
 }
 #[cfg(feature = "device-runtime")]
 pub mod timer {
-    pub use crate::runtime::timer::{ck_timer_irq as irq, device_set_timeout as set_timeout};
+    pub use crate::runtime::timer::{ck_timer_irq as irq, ck_timer_set_timeout as set_timeout};
 }
 #[cfg(feature = "usb-keyboard")]
 pub mod keyboard {

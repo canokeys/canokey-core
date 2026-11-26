@@ -27,7 +27,7 @@ class Driver:
         self.lib = C.CDLL(library)
         # Internal Rust composition must not grow the external IFD ABI.
         for symbol in ('ck_core_install', 'ck_core_touch', 'ck_platform_read',
-                       'ck_platform_now', 'pke_buffer_acquire', 'pke_buffer_read'):
+                       'pke_buffer_acquire', 'pke_buffer_read'):
             assert not hasattr(self.lib, symbol), symbol
         self.lun = 0x10000 # reader number need not be zero; slot remains zero
         signatures = {
@@ -131,11 +131,11 @@ def run(library):
             admin(); edit(0x6982); verify()
             saved = card.cmd('slots', 0x43)
             assert saved[0] == 2
-            d.lib.device_get_tick.restype = C.c_uint32
+            d.lib.ck_platform_now.restype = C.c_uint32
             time.sleep(.025)
-            before_reset = d.lib.device_get_tick()
+            before_reset = d.lib.ck_platform_now()
             assert d.power(502)[0] == 0
-            assert d.lib.device_get_tick() >= before_reset, 'slot reset restarted the power-on window'
+            assert d.lib.ck_platform_now() >= before_reset, 'slot reset restarted the power-on window'
             admin(); edit(0x6982)
             card.cmd('fido', 0xa4, 4, data=bytes.fromhex('f043414e4f464944'))
 

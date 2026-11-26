@@ -38,7 +38,7 @@ platform-stream = ["canokey-ports/platform-stream", "canokey-native-crypto?/plat
 platform-stage = ["canokey-ports/platform-stage"]
 admin = ["canokey-rust-core/admin", "storage", "platform-device", "canokey-ports/admin"]
 ctap = ["canokey-rust-core/ctap", "storage", "platform-device", "platform-serial", "platform-mac", "platform-stream", "platform-key", "platform-stage", "canokey-ports/ctap", "canokey-native-crypto?/ctap"]
-openpgp = ["canokey-rust-core/openpgp", "storage", "platform-device", "platform-serial", "platform-random", "platform-key", "canokey-ports/openpgp"]
+openpgp = ["canokey-rust-core/openpgp", "storage", "platform-device", "platform-serial", "platform-random", "platform-key", "canokey-ports/openpgp", "canokey-native-crypto?/platform-rsa", "canokey-native-crypto?/platform-x25519"]
 piv = ["canokey-rust-core/piv", "storage", "platform-device", "platform-serial", "platform-random", "platform-stream", "platform-key", "platform-stage", "canokey-ports/piv", "canokey-native-crypto?/piv"]
 
 # Native callback Provider for the explicit platform storage fixture.

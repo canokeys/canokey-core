@@ -63,10 +63,10 @@ static void test_fs_file_operations(void **state) {
 // Fault-injecting block device wrappers for the fs-helper error-path tests,
 // swapping cfg.prog/erase/sync like test_piv.c's container_name_prog does.
 static const struct lfs_config *test_fs_cfg;
-static int fault_prog_budget = -1;  // >= 0: fail the (budget+1)-th call
+static int fault_prog_budget = -1; // >= 0: fail the (budget+1)-th call
 static int fault_erase_budget = -1;
 static int fault_sync_budget = -1;
-static bool fault_after;            // run the underlying op before failing
+static bool fault_after; // run the underlying op before failing
 static unsigned bd_prog_count, bd_erase_count;
 
 static int counted_bd_prog(const struct lfs_config *cfg, lfs_block_t block, lfs_off_t off, const void *buffer,

@@ -13,7 +13,11 @@ static int failed_read_record = -1;
 void ck_test_fail_read(uint8_t id) { failed_read_record = id; }
 void ck_test_fail_write(uint8_t id) { failed_write_record = id; }
 static void storage_init(void) {
-  if (!initialized) { for (size_t i = 0; i < 186; i++) sizes[i] = -1; initialized = 1; }
+  if (!initialized) {
+    for (size_t i = 0; i < 186; i++)
+      sizes[i] = -1;
+    initialized = 1;
+  }
 }
 // Host-only corruption fixture: exercise use-time validation after a valid import.
 void ck_test_corrupt_record(uint8_t id, size_t offset, uint8_t mask) {
@@ -29,9 +33,12 @@ void ck_test_remove_record(uint8_t id) {
   sizes[id] = -1;
 }
 int32_t ck_platform_usage(uint32_t *used, uint32_t *total) {
-  storage_init();*used=4096;*total=128*1024;
-  for(size_t i=0;i<186;i++) if(sizes[i]>0) *used+=(uint32_t)sizes[i];
-  return *used<=*total ? 0 : -2;
+  storage_init();
+  *used = 4096;
+  *total = 128 * 1024;
+  for (size_t i = 0; i < 186; i++)
+    if (sizes[i] > 0) *used += (uint32_t)sizes[i];
+  return *used <= *total ? 0 : -2;
 }
 int32_t ck_platform_size(uint8_t id) {
   storage_init();
@@ -45,11 +52,17 @@ int32_t ck_platform_read(uint8_t id, uint8_t *out, size_t n) {
   if ((size_t)sizes[id] > n) return -2;
   memcpy(out, files[id], sizes[id]);
   // A backend may supply private bytes before reporting a failed read.
-  if (failed_read_record == id) { failed_read_record = -1; return -2; }
+  if (failed_read_record == id) {
+    failed_read_record = -1;
+    return -2;
+  }
   return sizes[id];
 }
 int32_t ck_platform_write(uint8_t id, const uint8_t *input, size_t n) {
-  if (failed_write_record == id) { failed_write_record = -1; return -2; }
+  if (failed_write_record == id) {
+    failed_write_record = -1;
+    return -2;
+  }
   storage_init();
   assert(id < 186 && n <= sizeof(files[id]));
   memcpy(files[id], input, n);
@@ -61,7 +74,8 @@ void ck_platform_hmac_sha1(const uint8_t key[20], const uint8_t *input, size_t n
   unsigned len = 20;
   assert(HMAC(EVP_sha1(), key, 20, input, n, out, &len));
 }
-#if defined(WITH_ADMIN) || defined(WITH_PASS) || defined(WITH_OATH) || defined(WITH_OPENPGP) || defined(WITH_PIV) || defined(WITH_CTAP) || defined(WITH_NDEF)
+#if defined(WITH_ADMIN) || defined(WITH_PASS) || defined(WITH_OATH) || defined(WITH_OPENPGP) || defined(WITH_PIV) ||   \
+    defined(WITH_CTAP) || defined(WITH_NDEF)
 #ifndef CK_TEST_LITTLEFS
 int32_t ck_platform_read_at(uint8_t id, uint32_t offset, uint8_t *out, size_t n) {
   storage_init();
@@ -69,11 +83,17 @@ int32_t ck_platform_read_at(uint8_t id, uint32_t offset, uint8_t *out, size_t n)
   if (sizes[id] < 0 || offset > (uint32_t)sizes[id] || n > (uint32_t)sizes[id] - offset) return -2;
   memcpy(out, files[id] + offset, n);
   // Streaming repository reads must consume the same one-shot fault as full reads.
-  if (failed_read_record == id) { failed_read_record = -1; return -2; }
+  if (failed_read_record == id) {
+    failed_read_record = -1;
+    return -2;
+  }
   return (int32_t)n;
 }
 int32_t ck_platform_write_at(uint8_t id, uint32_t offset, const uint8_t *input, size_t n) {
-  if (failed_write_record == id) { failed_write_record = -1; return -2; }
+  if (failed_write_record == id) {
+    failed_write_record = -1;
+    return -2;
+  }
   storage_init();
   assert(id < 186 && offset + n <= sizeof(files[id]));
   if (sizes[id] < 0 || offset > (uint32_t)sizes[id]) return -2;
@@ -128,11 +148,37 @@ int32_t ck_platform_stage_parts(const struct ck_storage_part *parts, size_t coun
 }
 int32_t ck_platform_stage(uint8_t operation, uint8_t id, const uint8_t *b, size_t n) {
   storage_init();
-  if (operation == 4 && failed_write_record == id) { failed_write_record = -1; return -2; }
-  if (operation == 4) { assert(id < 186); memset(files[id],0,sizeof(files[id]));sizes[id]=-1;return 0; }
-  if (operation == 5) { assert(id < 186 && n == 1 && b[0] < 186);uint8_t to=b[0];if(sizes[id]<0)return -2;memcpy(files[to],files[id],sizes[id]);sizes[to]=sizes[id];memset(files[id],0,sizeof(files[id]));sizes[id]=-1;return 0; }
-  if (operation == 0 || operation == 3) { memset(stage,0,sizeof(stage)); stage_size=0; return 0; }
-  if (operation == 1) { assert(stage_size+n<=sizeof(stage));memcpy(stage+stage_size,b,n);stage_size+=n;return 0; }
+  if (operation == 4 && failed_write_record == id) {
+    failed_write_record = -1;
+    return -2;
+  }
+  if (operation == 4) {
+    assert(id < 186);
+    memset(files[id], 0, sizeof(files[id]));
+    sizes[id] = -1;
+    return 0;
+  }
+  if (operation == 5) {
+    assert(id < 186 && n == 1 && b[0] < 186);
+    uint8_t to = b[0];
+    if (sizes[id] < 0) return -2;
+    memcpy(files[to], files[id], sizes[id]);
+    sizes[to] = sizes[id];
+    memset(files[id], 0, sizeof(files[id]));
+    sizes[id] = -1;
+    return 0;
+  }
+  if (operation == 0 || operation == 3) {
+    memset(stage, 0, sizeof(stage));
+    stage_size = 0;
+    return 0;
+  }
+  if (operation == 1) {
+    assert(stage_size + n <= sizeof(stage));
+    memcpy(stage + stage_size, b, n);
+    stage_size += n;
+    return 0;
+  }
   assert(operation == 2);
   int32_t result = ck_platform_write(id, stage, stage_size);
   memset(stage, 0, sizeof(stage));
@@ -152,9 +198,9 @@ int32_t ck_platform_aes256(uint8_t encrypt, const uint8_t key[32], const uint8_t
   EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
   if (!ctx) return -1;
   int length = 0, final = 0;
-  int ok = EVP_CipherInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv, encrypt) &&
-           EVP_CIPHER_CTX_set_padding(ctx, 0) && EVP_CipherUpdate(ctx, data, &length, data, (int)n) &&
-           EVP_CipherFinal_ex(ctx, data + length, &final) && (size_t)(length + final) == n;
+  int ok = EVP_CipherInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv, encrypt) && EVP_CIPHER_CTX_set_padding(ctx, 0) &&
+           EVP_CipherUpdate(ctx, data, &length, data, (int)n) && EVP_CipherFinal_ex(ctx, data + length, &final) &&
+           (size_t)(length + final) == n;
   EVP_CIPHER_CTX_free(ctx);
   return ok ? 0 : -1;
 }
@@ -163,17 +209,39 @@ int32_t ck_platform_aes256(uint8_t encrypt, const uint8_t key[32], const uint8_t
 #if defined(WITH_CTAP) && !defined(WITH_HID)
 /* The host card uses APDUs; native USB/PKE entrypoints must stay unused. */
 uint8_t ck_ccid_idle(void) { return 1; }
-void ck_hid_execution_begin(uint32_t cid) { (void)cid; assert(0); }
+void ck_hid_execution_begin(uint32_t cid) {
+  (void)cid;
+  assert(0);
+}
 void ck_hid_execution_end(void) { assert(0); }
 size_t pke_buffer_size(void) { return 0; }
-int pke_buffer_acquire(uint8_t owner) { (void)owner; assert(0); return -1; }
-int pke_buffer_release(uint8_t owner) { (void)owner; assert(0); return -1; }
-int pke_buffer_clear(void) { assert(0); return -1; }
+int pke_buffer_acquire(uint8_t owner) {
+  (void)owner;
+  assert(0);
+  return -1;
+}
+int pke_buffer_release(uint8_t owner) {
+  (void)owner;
+  assert(0);
+  return -1;
+}
+int pke_buffer_clear(void) {
+  assert(0);
+  return -1;
+}
 int pke_buffer_read(size_t offset, uint8_t *out, size_t n) {
-  (void)offset; (void)out; (void)n; assert(0); return -1;
+  (void)offset;
+  (void)out;
+  (void)n;
+  assert(0);
+  return -1;
 }
 int pke_buffer_write(size_t offset, const uint8_t *in, size_t n) {
-  (void)offset; (void)in; (void)n; assert(0); return -1;
+  (void)offset;
+  (void)in;
+  (void)n;
+  assert(0);
+  return -1;
 }
 #endif
 
@@ -181,9 +249,10 @@ int pke_buffer_write(size_t offset, const uint8_t *in, size_t n) {
 int32_t ck_platform_resize(uint8_t id, uint32_t length) {
   storage_init();
   assert(id < 186 && length <= sizeof(files[id]));
-  if(sizes[id] < 0)return -1;
-  if(length > (uint32_t)sizes[id])memset(files[id]+sizes[id],0,length-(uint32_t)sizes[id]);
-  sizes[id]=(int32_t)length;return 0;
+  if (sizes[id] < 0) return -1;
+  if (length > (uint32_t)sizes[id]) memset(files[id] + sizes[id], 0, length - (uint32_t)sizes[id]);
+  sizes[id] = (int32_t)length;
+  return 0;
 }
 #endif
 
@@ -191,11 +260,17 @@ int32_t ck_platform_resize(uint8_t id, uint32_t length) {
 static uint8_t config_page[512];
 static int config_page_ready;
 int platform_config_page_read(size_t offset, void *out, size_t length) {
-  if (!config_page_ready) { memset(config_page, 0xff, sizeof(config_page)); config_page_ready=1; }
+  if (!config_page_ready) {
+    memset(config_page, 0xff, sizeof(config_page));
+    config_page_ready = 1;
+  }
   assert(offset <= sizeof(config_page) && length <= sizeof(config_page) - offset);
-  memcpy(out, config_page + offset, length);return 0;
+  memcpy(out, config_page + offset, length);
+  return 0;
 }
 int platform_config_page_write(const void *page, size_t length) {
   assert(length == sizeof(config_page) && ((uintptr_t)page & 3) == 0);
-  config_page_ready=1;memcpy(config_page, page, length);return 0;
+  config_page_ready = 1;
+  memcpy(config_page, page, length);
+  return 0;
 }

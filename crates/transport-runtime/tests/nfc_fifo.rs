@@ -68,7 +68,7 @@ impl Chip for Frontend {
     fn read(&mut self, address: u16, out: &mut [u8]) -> bool {
         match address {
             wire::FM_REG_MAIN_IRQ => out.copy_from_slice(&std::mem::take(&mut self.irq)),
-            wire::FM_REG_FIFO_WORDCNT => out[0] = self.fifo.len() as u8,
+            wire::FM_REG_FIFO_WORDCNT => out[0] = u8::try_from(self.fifo.len()).unwrap(),
             wire::FM_REG_FIFO_ACCESS => {
                 assert!(out.len() <= wire::FIFO_BYTES);
                 for byte in out {
@@ -216,7 +216,7 @@ fn tx_watermark_refills_with_a_latched_empty_flag() {
     let inf = [0x5a; wire::FIFO_BYTES];
     let response = canokey_transport_runtime::nfc::Response {
         pcb: wire::PCB_I,
-        length: inf.len() as u8,
+        length: u8::try_from(inf.len()).unwrap(),
     };
     assert!(io.send_response(response, &inf, &mut chip));
     let consumed = wire::FIFO_BYTES - wire::TX_WATERMARK;
@@ -365,7 +365,7 @@ fn reader_size_is_latched_only_after_rats_for_each_generation() {
         chip.status = 0x80; // Selected, before RATS.
         chip.signal(&mut io, wire::FM_MAIN_ACTIVE, 0x00, 0x00);
         assert_eq!(io.tx_frame_limit(256), 0);
-        chip.rats = ((fsdi as u8) << 4) | 0x0a;
+        chip.rats = ((u8::try_from(fsdi).unwrap()) << 4) | 0x0a;
         chip.status = wire::FM_STATE_PPS << 4;
         chip.receive(&mut io, &[wire::PCB_I, 0x00, 0x00], 0x00);
         assert_eq!(io.take(&mut frame), Some(3));
@@ -377,6 +377,6 @@ fn reader_size_is_latched_only_after_rats_for_each_generation() {
             usize::from(link.response(260, false, fsd).unwrap().length) + wire::FRAME_OVERHEAD,
             fsd
         );
-        assert_eq!(io.generation(), fsdi as u32 + 1);
+        assert_eq!(io.generation(), u32::try_from(fsdi).unwrap() + 1);
     }
 }

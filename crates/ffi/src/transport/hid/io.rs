@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! USB IRQ report mailbox and reset epochs, disjoint from CTAPHID execution.
 #[cfg(all(test, not(feature = "usb-device")))]
-use super::link::tests::device_get_tick;
+use super::link::tests::ck_platform_now;
 #[cfg(not(all(test, not(feature = "usb-device"))))]
-use crate::sys::device_get_tick;
+use crate::sys::ck_platform_now;
 use crate::transport::usb_io::{ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle};
 use crate::transport::usb_locked;
 use canokey_protocol::usb::*;
@@ -29,7 +29,7 @@ pub unsafe fn out_event(data: *const u8) -> u8 {
             return 0;
         }
         core::ptr::copy_nonoverlapping(data, core::ptr::addr_of_mut!(INCOMING).cast(), 64);
-        RECEIVED = device_get_tick();
+        RECEIVED = ck_platform_now();
         QUEUED = true;
         1
     })

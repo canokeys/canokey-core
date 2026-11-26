@@ -53,8 +53,7 @@ int main(void) {
   assert(setenv("CANOKEY_VIRT_RESET_STORAGE", "1", 1) == 0);
   assert(IFDHCreateChannel(lun, 0) == IFD_SUCCESS);
   length = sizeof(polling);
-  assert(IFDHGetCapabilities(lun, TAG_IFD_POLLING_THREAD_WITH_TIMEOUT,
-                            &length, (PUCHAR)&polling) == IFD_SUCCESS);
+  assert(IFDHGetCapabilities(lun, TAG_IFD_POLLING_THREAD_WITH_TIMEOUT, &length, (PUCHAR)&polling) == IFD_SUCCESS);
   assert(length == sizeof(polling));
   assert(polling(lun, -1) == IFD_COMMUNICATION_ERROR);
   assert(polling(lun, 0) == IFD_RESPONSE_TIMEOUT);

@@ -25,9 +25,9 @@ int32_t ck_platform_aes256(uint8_t encrypt, const uint8_t key[32], const uint8_t
   EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
   if (!ctx) return -1;
   int length = 0, final = 0;
-  int ok = EVP_CipherInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv, encrypt) &&
-           EVP_CIPHER_CTX_set_padding(ctx, 0) && EVP_CipherUpdate(ctx, data, &length, data, (int)n) &&
-           EVP_CipherFinal_ex(ctx, data + length, &final) && (size_t)(length + final) == n;
+  int ok = EVP_CipherInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv, encrypt) && EVP_CIPHER_CTX_set_padding(ctx, 0) &&
+           EVP_CipherUpdate(ctx, data, &length, data, (int)n) && EVP_CipherFinal_ex(ctx, data + length, &final) &&
+           (size_t)(length + final) == n;
   EVP_CIPHER_CTX_free(ctx);
   return ok ? 0 : -1;
 }

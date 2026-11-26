@@ -29,7 +29,8 @@ pub(super) fn encode(
             client_pin: configured,
             force_change: flags & pin::FORCE_CHANGE != 0,
             minimum_pin_length: minimum,
-            remaining_credentials: Record::CTAP_CREDENTIALS - used,
+            // Storage scans report at most the record capacity; never wrap.
+            remaining_credentials: Record::CTAP_CREDENTIALS.saturating_sub(used),
             long_reset: flags & pin::LONG_RESET != 0,
             nfc: cfg!(feature = "ctap-nfc"),
             algorithm: sm2_algorithm,

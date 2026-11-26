@@ -21,8 +21,6 @@ pub enum KeyOperation {
     Sm2MessageDigest = 9,
 }
 
-/// Stable primitive ABI; mirrored in crates/native-crypto/include/crypto_ops.h.
-#[cfg(any(feature = "piv", feature = "ctap"))]
 #[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum StreamOperation {
@@ -38,7 +36,6 @@ pub enum StreamOperation {
     Sm2Identity = 9,
 }
 
-/// Stable primitive ABI; mirrored in crates/native-crypto/include/crypto_ops.h.
 #[cfg(any(feature = "piv", feature = "ctap"))]
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -53,7 +50,7 @@ pub enum DigestOperation {
 #[cfg(any(feature = "piv", feature = "ctap"))]
 #[repr(C, align(8))]
 pub struct CryptoScratch {
-    pub bytes: [u8; CRYPTO_SCRATCH_BYTES],
+    bytes: [u8; CRYPTO_SCRATCH_BYTES],
 }
 #[cfg(any(feature = "piv", feature = "ctap"))]
 impl CryptoScratch {
@@ -61,6 +58,24 @@ impl CryptoScratch {
         Self {
             bytes: [0; CRYPTO_SCRATCH_BYTES],
         }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes[..STREAM_DATA_BYTES]
+    }
+
+    /// Reuse the byte storage after the backend has closed its active stream.
+    /// Clear the native stream state before returning writable bytes.
+    pub fn bytes_mut(&mut self) -> &mut [u8] {
+        let (data, state) = self.bytes.split_at_mut(STREAM_DATA_BYTES);
+        state.fill(0);
+        data
+    }
+
+    /// Native storage, including the stream state. The backend is responsible
+    /// for keeping the state and selected primitive's data consistent.
+    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.bytes.as_mut_ptr()
     }
 }
 #[cfg(any(feature = "piv", feature = "ctap"))]
@@ -197,12 +212,10 @@ impl Default for KeyMaterial {
     }
 }
 
-/// Byte offsets in the fixed SM2 key-exchange input packet, mirrored in
-/// crates/native-crypto/include/crypto_ops.h. Bytes 0..32 hold our ephemeral scalar;
+/// Byte offsets in the fixed SM2 key-exchange input packet. Bytes 0..32 hold our ephemeral scalar;
 /// each peer point is 64 raw X||Y bytes (no 04 prefix). Each ID occupies a
 /// one-byte length plus 32-byte capacity. ROLE selects initiator/responder;
 /// OUTPUT_LENGTH is the requested shared-key byte count (1..128).
-#[cfg(feature = "piv")]
 pub mod sm2_packet {
     pub const PEER_STATIC: usize = 32;
     pub const PEER_EPHEMERAL: usize = 96;
@@ -257,8 +270,11 @@ pub mod key_layout {
 /// Encoded elliptic-curve point prefix, independent of applet wire tags.
 pub const EC_POINT_UNCOMPRESSED: u8 = 4;
 
-/// Buffer contracts mirrored by ck_crypto_workspace in crypto_ops.h.
+/// Workspace limits projected by ports codegen.
 pub const CRYPTO_SCRATCH_BYTES: usize = 2400;
+// The native union occupies the aligned prefix. Rust owns the trailing state.
+pub const STREAM_DATA_ALIGN: usize = 8;
+pub const STREAM_DATA_BYTES: usize = CRYPTO_SCRATCH_BYTES - 16;
 pub const HASH_STATE_BYTES: usize = 256;
 pub const RSA_OUTPUT_BYTES: usize = 512;
 /// Parameter metadata shared by applet selection, encoding and stream bounds.

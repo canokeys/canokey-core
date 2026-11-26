@@ -104,17 +104,17 @@ fn next_sequence() -> u8 {
     })
 }
 #[unsafe(no_mangle)]
-extern "C" fn device_get_tick() -> u32 {
+extern "C" fn ck_platform_now() -> u32 {
     now()
 }
 #[unsafe(no_mangle)]
-extern "C" fn device_delay(ms: i32) {
+extern "C" fn ck_device_delay(ms: i32) {
     assert!(ms >= 0);
     advance(ms as u32);
     portable_webusb::drain_during_delay();
 }
 #[unsafe(no_mangle)]
-extern "C" fn device_set_timeout(_: Option<unsafe extern "C" fn()>, _: u16) {}
+extern "C" fn ck_timer_set_timeout(_: Option<unsafe extern "C" fn()>, _: u16) {}
 #[unsafe(no_mangle)]
 extern "C" fn ck_usb_dcd_lock() -> u32 {
     hw(|h| {

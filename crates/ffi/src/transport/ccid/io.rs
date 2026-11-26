@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IRQ mailbox and timed CCID extension lease, disjoint from Core execution.
 #[cfg(all(feature = "device-runtime", not(test)))]
-use crate::runtime::timer::device_set_timeout;
+use crate::runtime::timer::ck_timer_set_timeout;
 #[cfg(not(all(test, not(feature = "usb-device"))))]
-use crate::sys::device_get_tick;
+use crate::sys::ck_platform_now;
 #[cfg(all(test, feature = "usb-device"))]
-use crate::transport::usb::tests::device_set_timeout;
+use crate::transport::usb::tests::ck_timer_set_timeout;
 #[cfg(not(all(test, not(feature = "usb-device"))))]
 use crate::transport::usb_io::{ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle};
 #[cfg(all(test, not(feature = "usb-device")))]
@@ -14,12 +14,12 @@ use crate::transport::usb_locked;
 use canokey_protocol::usb::*;
 #[cfg(all(test, not(feature = "usb-device")))]
 use tests::{
-    ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle, device_get_tick,
-    device_set_timeout,
+    ck_platform_now, ck_timer_set_timeout, ck_usb_configured, ck_usb_receive, ck_usb_submit,
+    ck_usb_tx_idle,
 };
 #[cfg(all(not(feature = "device-runtime"), not(test)))]
 unsafe extern "C" {
-    fn device_set_timeout(callback: Option<unsafe extern "C" fn()>, milliseconds: u16);
+    fn ck_timer_set_timeout(callback: Option<unsafe extern "C" fn()>, milliseconds: u16);
 }
 static mut RX: [u8; 64] = [0; 64];
 static mut REPEAT: [u8; 16] = [0; 16];
@@ -32,7 +32,7 @@ static mut REPEAT_LENGTH: u8 = 0;
 static mut REPEAT_INTERVAL: u16 = 0;
 pub(super) fn now() -> u32 {
     // SAFETY: The caller serializes access to the controller mailbox and keeps any transfer buffer live.
-    unsafe { device_get_tick() }
+    unsafe { ck_platform_now() }
 }
 pub unsafe fn ck_ccid_io_generation() -> u32 {
     // SAFETY: This reads the controller's IRQ-published scalar without borrowing the mailbox.
@@ -77,7 +77,7 @@ unsafe extern "C" fn repeat_tick() {
                 u16::from(REPEAT_LENGTH),
                 0,
             );
-            device_set_timeout(Some(repeat_tick), REPEAT_INTERVAL);
+            ck_timer_set_timeout(Some(repeat_tick), REPEAT_INTERVAL);
         }
     });
 }
@@ -100,7 +100,7 @@ pub unsafe fn ck_ccid_io_arm(epoch: u32, bytes: *const u8, length: u8, interval:
             REPEAT_INTERVAL = interval;
             REPEAT_GENERATION = epoch;
             REPEATING = true;
-            device_set_timeout(Some(repeat_tick), interval);
+            ck_timer_set_timeout(Some(repeat_tick), interval);
         }
     });
 }
@@ -108,7 +108,7 @@ pub unsafe fn ck_ccid_io_disarm() {
     // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         if REPEATING {
-            device_set_timeout(None, 0);
+            ck_timer_set_timeout(None, 0);
         }
         REPEATING = false;
     });
@@ -117,7 +117,7 @@ pub unsafe fn ck_ccid_packet_reset() {
     // SAFETY: The USB interrupt mask serializes the mailbox access inside this closure.
     usb_locked(|| unsafe {
         if REPEATING {
-            device_set_timeout(None, 0);
+            ck_timer_set_timeout(None, 0);
         }
         GENERATION = GENERATION.wrapping_add(1);
         QUEUED = 0;
@@ -138,7 +138,7 @@ pub unsafe fn ck_ccid_packet_out(bytes: *const u8, length: u16) -> u8 {
             core::ptr::addr_of_mut!(RX).cast(),
             usize::from(length),
         );
-        RX_TICK = device_get_tick();
+        RX_TICK = ck_platform_now();
         // The mailbox guard bounds length to 64 bytes.
         QUEUED = u8::try_from(length).unwrap();
         0

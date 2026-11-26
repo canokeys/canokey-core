@@ -11,7 +11,7 @@ fn abort_stream(
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) {
     let _ = p.crypto.stream(StreamOperation::Abort, a, s, &[], &mut []);
-    p.memory.wipe(&mut s.bytes);
+    p.memory.wipe(s.bytes_mut());
 }
 
 impl Piv {

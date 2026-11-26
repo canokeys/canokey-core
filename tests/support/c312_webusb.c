@@ -106,17 +106,20 @@ static void portable_webusb_step(const char *line) {
   if (USBD_LL_IsStallEP(&usb_device, 0) || USBD_LL_IsStallEP(&usb_device, 0x80)) {
     printf("STALL");
   } else if (portable_ep0_pending) {
-    for (size_t i = 0; i < portable_ep0_length; ++i) printf("%02x", portable_ep0_bytes[i]);
+    for (size_t i = 0; i < portable_ep0_length; ++i)
+      printf("%02x", portable_ep0_bytes[i]);
   }
   putchar('\n');
   if (portable_include_hid) {
     printf("HID ");
-    for (size_t i = 0; i < portable_hid_length; ++i) printf("%02x", portable_hid_bytes[i]);
+    for (size_t i = 0; i < portable_hid_length; ++i)
+      printf("%02x", portable_hid_bytes[i]);
     portable_hid_length = 0;
     putchar('\n');
   }
   printf("BULK ");
-  for (size_t i = 0; i < portable_length; ++i) printf("%02x", portable_response[i]);
+  for (size_t i = 0; i < portable_length; ++i)
+    printf("%02x", portable_response[i]);
   putchar('\n');
   portable_length = 0;
   portable_ccid_complete();

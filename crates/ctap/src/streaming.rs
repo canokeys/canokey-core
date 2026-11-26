@@ -448,7 +448,7 @@ impl Stream<'_> {
         let _ = p
             .crypto
             .stream(Op::Abort, self.framing.algorithm, self.crypto, &[], &mut []);
-        p.memory.wipe(&mut self.crypto.bytes);
+        p.memory.wipe(self.crypto.bytes_mut());
         self.framing.clear(p.memory);
     }
 }

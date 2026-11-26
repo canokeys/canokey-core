@@ -11,10 +11,19 @@ canokey-ports = { path = "../ports", default-features = false }
 default = []
 platform-hmac = ["canokey-ports/platform-hmac"]
 platform-key = ["canokey-ports/platform-key"]
+platform-rsa = ["platform-key"]
+platform-x25519 = ["platform-key"]
+stack-report = []
 platform-random = ["canokey-ports/platform-random"]
 platform-mac = ["platform-random", "canokey-ports/platform-mac"]
 platform-stream = ["canokey-ports/platform-stream"]
 ctap = ["platform-mac", "platform-stream", "platform-key", "canokey-ports/ctap"]
-piv = ["platform-random", "platform-stream", "platform-key", "canokey-ports/piv"]
+piv = ["platform-random", "platform-stream", "platform-rsa", "platform-x25519", "canokey-ports/piv"]
 [lints]
 workspace = true
+
+[[example]]
+name = "crypto-fixture"
+path = "examples/crypto_fixture.rs"
+crate-type = ["staticlib"]
+required-features = ["platform-key"]

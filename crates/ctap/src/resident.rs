@@ -61,9 +61,9 @@ impl<'a> Entry<'a> {
         if user.is_empty() || !rest.is_empty() || id[1] & RESIDENT == 0x00 {
             return Err(InvalidRecord);
         }
-        let rp = core::str::from_utf8(rp).map_err(|_| InvalidRecord)?;
-        let name = core::str::from_utf8(name).map_err(|_| InvalidRecord)?;
-        let display = core::str::from_utf8(display).map_err(|_| InvalidRecord)?;
+        let rp = canokey_protocol::utf8::str(rp).ok_or(InvalidRecord)?;
+        let name = canokey_protocol::utf8::str(name).ok_or(InvalidRecord)?;
+        let display = canokey_protocol::utf8::str(display).ok_or(InvalidRecord)?;
         let entry = Self {
             id,
             rp_hash,
@@ -89,10 +89,7 @@ fn take<'a>(rest: &mut &'a [u8], limit: usize) -> Result<&'a [u8], InvalidRecord
     Ok(value)
 }
 pub fn text_prefix(bytes: &[u8]) -> &[u8] {
-    match core::str::from_utf8(bytes) {
-        Ok(_) => bytes,
-        Err(error) => &bytes[..error.valid_up_to()],
-    }
+    &bytes[..canokey_protocol::utf8::valid_up_to(bytes)]
 }
 // Preserve scheme and domain suffix for the legacy 32-byte RP display field.
 // Hashing and credential matching always use the complete original RP ID.

@@ -99,14 +99,14 @@ unsafe fn output<'a>(p: *mut u8, n: usize) -> &'a mut [u8] {
     }
 }
 #[unsafe(no_mangle)]
-extern "C" fn device_get_tick() -> u32 {
+extern "C" fn ck_platform_now() -> u32 {
     host(|h| {
         h.ticks
             .unwrap_or_else(|| h.boot.elapsed().as_millis() as u32)
     })
 }
 #[unsafe(no_mangle)]
-extern "C" fn device_delay(ms: i32) {
+extern "C" fn ck_device_delay(ms: i32) {
     assert!(ms >= 0);
     if !host(|h| {
         if let Some(ticks) = &mut h.ticks {

@@ -123,7 +123,7 @@ impl Crypto for Abort {
     ) -> Result<usize, CryptoError> {
         assert!(matches!(operation, crate::ports::StreamOperation::Abort));
         // The opaque primitive must be released while its handle is intact.
-        assert!(scratch.bytes.iter().all(|byte| *byte == 0xc7));
+        assert!(scratch.bytes().iter().all(|byte| *byte == 0xc7));
         self.calls += 1;
         if self.fail {
             Err(CryptoError::Failure)
@@ -148,7 +148,7 @@ fn iso_stream_close_aborts_before_erasing_even_when_abort_fails() {
             memory: &Wipe,
         };
         let mut scratch = crate::ports::CryptoScratch::new();
-        scratch.bytes.fill(0xc7);
+        scratch.bytes_mut().fill(0xc7);
         let super::super::workspace::SessionWorkspace::Working(working) = &mut registry.workspace
         else {
             unreachable!()
@@ -157,7 +157,7 @@ fn iso_stream_close_aborts_before_erasing_even_when_abort_fails() {
         working.framing.bytes.fill(0xa6);
         registry.view().close_response(&mut platform);
         let stream = registry.workspace.ctap_stream().unwrap();
-        assert!(stream.crypto.bytes.iter().all(|byte| *byte == 0x00));
+        assert!(stream.crypto.bytes().iter().all(|byte| *byte == 0x00));
         assert!(stream.framing.bytes.iter().all(|byte| *byte == 0x00));
         assert_eq!(crypto.calls, 1);
     }

@@ -23,7 +23,6 @@ machines. Platform repositories supply hardware drivers and firmware startup.
 | `tools` | Developer utilities |
 | `third_party` | Pinned Git submodules: canokey-crypto, LittleFS and minicbor |
 | `docs` | Current architecture, applet contracts, platform integration and testing |
-| `reference/legacy-c` | Immutable historical snapshot, excluded from builds |
 
 CTAP applet policy, storage and response backing live in
 `crates/core/src/applets/ctap`.
@@ -53,7 +52,6 @@ prerequisites, feature profiles, sanitizers and external-client tests.
 - [Product protocols and compatibility](docs/applets/product-protocol.md)
 - [Host virtual card](crates/host/README.md)
 - [Contributor instructions](AGENTS.md)
-- [Historical snapshot provenance](reference/README.md)
 
 Firmware builds and physical acceptance belong to each platform repository.
 Full CIU Flash capacity, runtime stack and physical compatibility acceptance

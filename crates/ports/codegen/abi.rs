@@ -12,6 +12,12 @@ mod device;
 #[cfg(test)]
 use super::device;
 use crate::canokey::Record;
+#[cfg(not(test))]
+#[allow(unused_imports)]
+#[path = "../src/contracts/crypto.rs"]
+mod crypto;
+#[cfg(test)]
+use super::crypto;
 
 fn header() -> String {
     let mut text = String::from(
@@ -44,6 +50,111 @@ fn header() -> String {
     ] {
         text.push_str(&std::format!("#define {name} 0x{value:02X}u\n"));
     }
+    text.push_str("#include <stdint.h>\n\n");
+    text.push_str("void ck_device_delay(int32_t milliseconds);\n");
+    text.push_str("uint32_t ck_platform_now(void);\n");
+    text.push_str("void ck_platform_led(uint8_t on);\n");
+    text.push_str("void ck_timer_set_timeout(void (*callback)(void), uint16_t milliseconds);\n\n");
+    text.push_str("enum ck_crypto_workspace {\n");
+    for (name, value) in [
+        (
+            "CK_KEY_METADATA_BYTES",
+            core::mem::offset_of!(crypto::KeyMaterial, bytes),
+        ),
+        ("CK_RSA_EXPONENT_BYTES", crypto::key_layout::EXPONENT_BYTES),
+        ("CK_RSA_LIMB_BYTES", crypto::key_layout::RSA_LIMB_BYTES),
+        ("CK_RSA_LIMBS", crypto::key_layout::RSA_LIMBS),
+        ("CK_KEY_BYTES", crypto::key_layout::SIZE),
+        ("CK_RSA_OUTPUT_BYTES", crypto::RSA_OUTPUT_BYTES),
+        ("CK_CRYPTO_SCRATCH_BYTES", crypto::CRYPTO_SCRATCH_BYTES),
+        ("CK_HASH_STATE_BYTES", crypto::HASH_STATE_BYTES),
+        ("CK_STREAM_DATA_BYTES", crypto::STREAM_DATA_BYTES),
+        ("CK_STREAM_DATA_ALIGN", crypto::STREAM_DATA_ALIGN),
+    ] {
+        text.push_str(&std::format!("  {name} = {value},\n"));
+    }
+    text.push_str("};\n");
+    text.push_str("enum ck_key_operation {\n");
+    for (name, value) in [
+        ("CK_KEY_GENERATE", crypto::KeyOperation::Generate as usize),
+        ("CK_KEY_VALIDATE", crypto::KeyOperation::Validate as usize),
+        ("CK_KEY_PUBLIC", crypto::KeyOperation::Public as usize),
+        (
+            "CK_KEY_RSA_PKCS1_SIGN",
+            crypto::KeyOperation::RsaPkcs1Sign as usize,
+        ),
+        (
+            "CK_KEY_RSA_PKCS1_DECIPHER",
+            crypto::KeyOperation::RsaPkcs1Decipher as usize,
+        ),
+        ("CK_KEY_AGREE", crypto::KeyOperation::Agree as usize),
+        ("CK_KEY_EC_SIGN", crypto::KeyOperation::EcSign as usize),
+        ("CK_KEY_RSA_RAW", crypto::KeyOperation::RsaRaw as usize),
+        (
+            "CK_KEY_SM2_EXCHANGE",
+            crypto::KeyOperation::Sm2Exchange as usize,
+        ),
+        (
+            "CK_KEY_SM2_MESSAGE_DIGEST",
+            crypto::KeyOperation::Sm2MessageDigest as usize,
+        ),
+    ] {
+        text.push_str(&std::format!("  {name} = 0x{value:02X},\n"));
+    }
+    text.push_str("};\n");
+    text.push_str("enum ck_stream_operation {\n");
+    for (name, value) in [
+        (
+            "CK_STREAM_PUBLIC_INIT",
+            crypto::StreamOperation::PublicInit as usize,
+        ),
+        ("CK_STREAM_READ", crypto::StreamOperation::Read as usize),
+        (
+            "CK_STREAM_SIGN_INIT",
+            crypto::StreamOperation::SignInit as usize,
+        ),
+        (
+            "CK_STREAM_SIGN_UPDATE",
+            crypto::StreamOperation::SignUpdate as usize,
+        ),
+        (
+            "CK_STREAM_SIGN_FINAL",
+            crypto::StreamOperation::SignFinal as usize,
+        ),
+        ("CK_STREAM_ABORT", crypto::StreamOperation::Abort as usize),
+        (
+            "CK_STREAM_DECAPSULATE_INIT",
+            crypto::StreamOperation::DecapsulateInit as usize,
+        ),
+        (
+            "CK_STREAM_DECAPSULATE_UPDATE",
+            crypto::StreamOperation::DecapsulateUpdate as usize,
+        ),
+        (
+            "CK_STREAM_DECAPSULATE_FINAL",
+            crypto::StreamOperation::DecapsulateFinal as usize,
+        ),
+        (
+            "CK_STREAM_SM2_IDENTITY",
+            crypto::StreamOperation::Sm2Identity as usize,
+        ),
+    ] {
+        text.push_str(&std::format!("  {name} = 0x{value:02X},\n"));
+    }
+    text.push_str("};\n");
+    text.push_str("enum ck_sm2_packet {\n");
+    for (name, value) in [
+        ("CK_SM2_PEER_STATIC", crypto::sm2_packet::PEER_STATIC),
+        ("CK_SM2_PEER_EPHEMERAL", crypto::sm2_packet::PEER_EPHEMERAL),
+        ("CK_SM2_OWN_ID", crypto::sm2_packet::OWN_ID),
+        ("CK_SM2_PEER_ID", crypto::sm2_packet::PEER_ID),
+        ("CK_SM2_ROLE", crypto::sm2_packet::ROLE),
+        ("CK_SM2_OUTPUT_LENGTH", crypto::sm2_packet::OUTPUT_LENGTH),
+        ("CK_SM2_SIZE", crypto::sm2_packet::SIZE),
+    ] {
+        text.push_str(&std::format!("  {name} = {value},\n"));
+    }
+    text.push_str("};\n");
     text.push_str("#endif\n");
     text
 }

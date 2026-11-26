@@ -97,7 +97,7 @@ pub(crate) mod hal {
         u32::from(b.scenario == 8 && which == 1)
     }
     #[cfg(feature = "nfc")]
-    pub(crate) unsafe fn device_get_tick() -> u32 {
+    pub(crate) unsafe fn ck_platform_now() -> u32 {
         let mut b = board();
         let tick = b.tick;
         b.tick = b.tick.wrapping_add(1);
@@ -162,7 +162,7 @@ pub(crate) mod hal {
         b.mounted += 1;
         if b.scenario == 3 { -1 } else { 0 }
     }
-    pub(crate) unsafe fn device_delay(milliseconds: i32) {
+    pub(crate) unsafe fn ck_device_delay(milliseconds: i32) {
         assert_eq!(milliseconds, 1);
     }
     pub(crate) unsafe fn ck_timer_arm(milliseconds: u16) {
@@ -315,17 +315,17 @@ unsafe extern "C" fn timer_callback() {
     };
     if callbacks == 1 {
         // SAFETY: The transport fixture serializes this call and owns the fake controller state.
-        unsafe { super::super::timer::device_set_timeout(Some(timer_callback), 20) };
+        unsafe { super::super::timer::ck_timer_set_timeout(Some(timer_callback), 20) };
     }
 }
 #[test]
 fn device_timer_rearming_cancellation_and_irq_mask() {
     let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
     *board() = Board::default();
-    use super::super::timer::{ck_timer_irq, device_set_timeout};
+    use super::super::timer::{ck_timer_irq, ck_timer_set_timeout};
     // SAFETY: The transport fixture serializes this call and owns the fake controller state.
     unsafe {
-        device_set_timeout(Some(timer_callback), 10);
+        ck_timer_set_timeout(Some(timer_callback), 10);
         assert_eq!(board().armed, 10);
         assert_eq!(board().masked, 0);
         ck_timer_irq();
@@ -338,15 +338,15 @@ fn device_timer_rearming_cancellation_and_irq_mask() {
         assert_eq!(board().masked, 0);
         ck_timer_irq();
         assert_eq!(board().callbacks, 2);
-        device_set_timeout(Some(timer_callback), 10);
-        device_set_timeout(None, 0);
+        ck_timer_set_timeout(Some(timer_callback), 10);
+        ck_timer_set_timeout(None, 0);
         ck_timer_irq();
         assert_eq!(board().callbacks, 2);
-        device_set_timeout(Some(timer_callback), 0);
+        ck_timer_set_timeout(Some(timer_callback), 0);
         ck_timer_irq();
         assert_eq!(board().callbacks, 2);
         board().masked = 1;
-        device_set_timeout(Some(timer_callback), 3);
+        ck_timer_set_timeout(Some(timer_callback), 3);
         assert_eq!(board().masked, 1);
         assert_eq!(board().armed, 3);
         ck_timer_irq();

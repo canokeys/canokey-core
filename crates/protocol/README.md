@@ -1,8 +1,19 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Common Rust protocol foundation
 
-`canokey-protocol` is allocation-free safe `no_std` Rust without applet, platform
-or C ABI dependencies. It belongs to the root Cargo workspace.
+`canokey-protocol` is allocation-free `no_std` Rust without applet, platform
+or C ABI dependencies. It belongs to the root Cargo workspace. The crate denies
+unsafe code except in `utf8::str`, which borrows bytes only after the compact
+validator has accepted all of them.
+
+## UTF-8
+
+`utf8` validates RFC 3629 text one byte at a time and counts scalar values.
+It replaces `core::str::from_utf8` and `chars().count()`, whose unrolled forms
+cost about 600 bytes of Thumb-1 Flash. Tests compare it with the standard
+library for every input of up to three bytes and every four-byte range
+boundary. The CBOR streaming decoder carries only the validator state across
+fragments.
 
 ## APDU
 

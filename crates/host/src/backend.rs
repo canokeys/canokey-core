@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Host capabilities lock callback state per operation, never across Core entry.
-use super::{PKE_BYTES, device_get_tick, host, progress, touched};
+use super::{PKE_BYTES, ck_platform_now, host, progress, touched};
 use canokey_ports::canokey::Record;
 use canokey_ports::{
     BackendTypes, Device, MemoryBackend, Platform, Storage, StorageError, stage_operation as stage,
@@ -172,7 +172,7 @@ impl Device for Clock {
         n
     }
     fn now(&mut self) -> u32 {
-        device_get_tick()
+        ck_platform_now()
     }
     fn touched(&mut self) -> bool {
         touched()
@@ -202,11 +202,11 @@ impl Device for Clock {
         }
     }
     fn wink(&mut self) {
-        host(|h| h.presence.wink(device_get_tick_unlocked(h)));
+        host(|h| h.presence.wink(now_unlocked(h)));
     }
     fn poll_presence(&mut self) -> bool {
         host(|h| {
-            let accepted = h.presence.take(device_get_tick_unlocked(h));
+            let accepted = h.presence.take(now_unlocked(h));
             if accepted {
                 h.led = false;
             }
@@ -214,7 +214,7 @@ impl Device for Clock {
         })
     }
 }
-fn device_get_tick_unlocked(h: &super::Host) -> u32 {
+fn now_unlocked(h: &super::Host) -> u32 {
     h.ticks
         .unwrap_or_else(|| h.boot.elapsed().as_millis() as u32)
 }
@@ -224,7 +224,7 @@ pub(crate) fn presence_sample() {
     }
     let pressed = touched();
     host(|h| {
-        if let Some(on) = h.presence.sample(pressed, device_get_tick_unlocked(h)) {
+        if let Some(on) = h.presence.sample(pressed, now_unlocked(h)) {
             h.led = on;
         }
     });

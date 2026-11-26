@@ -27,13 +27,3 @@ int32_t ck_digest_abort(void *state) {
   memzero(state, CK_HASH_STATE_BYTES);
   return 0;
 }
-// Compatibility facade for native callers; firmware uses the typed entries.
-int32_t ck_platform_digest(uint8_t op, void *state, const uint8_t *input, size_t n, uint8_t *out, size_t capacity) {
-  switch (op) {
-  case CK_DIGEST_INIT: return ck_digest_init(state);
-  case CK_DIGEST_UPDATE: return ck_digest_update(state, input, n);
-  case CK_DIGEST_FINAL: return ck_digest_final(state, out, capacity);
-  case CK_DIGEST_ABORT: return ck_digest_abort(state);
-  default: return -1;
-  }
-}

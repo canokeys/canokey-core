@@ -93,8 +93,8 @@ pub fn validate_pin(bytes: &[u8], minimum: usize) -> Option<&str> {
     if bytes.is_empty() || bytes.len() > MAX_PIN_BYTES || bytes.contains(&0x00) {
         return None;
     }
-    let text = core::str::from_utf8(bytes).ok()?;
-    if text.chars().count() < minimum {
+    let text = canokey_protocol::utf8::str(bytes)?;
+    if canokey_protocol::utf8::chars(text) < minimum {
         return None;
     }
     Some(text)

@@ -11,7 +11,7 @@ It includes the release's test initialization and replaces only USB output or
 FM11NT register access. WebUSB runs the actual EP0 SETUP/OUT/IN/status lifecycle
 with16-byte FIFO packets. Rust uses the production CCID/NFC/WebUSB facade, real Core
 and applets with the existing test backend. Neither runner substitutes an APDU
-parser or applet. Never use `reference/legacy-c` as the C source checkout.
+parser or applet. Use the pinned C Git checkout for native runs.
 
 Build the Rust host composition with CTAP, PASS, OpenPGP and NDEF enabled, then
 run from the Rust Core root (paths are examples):

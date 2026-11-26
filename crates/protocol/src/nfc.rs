@@ -12,10 +12,10 @@ pub const TX_WATERMARK: usize = 8;
 const FRAME_SIZES: [u16; 9] = [16, 24, 32, 40, 48, 64, 96, 128, 256];
 
 pub const fn fsci(fsc: usize) -> u8 {
-    let mut code = 0;
-    while code < FRAME_SIZES.len() {
-        if FRAME_SIZES[code] as usize == fsc {
-            return code as u8;
+    let mut code = 0_u8;
+    while (code as usize) < FRAME_SIZES.len() {
+        if FRAME_SIZES[code as usize] as usize == fsc {
+            return code;
         }
         code += 1;
     }
@@ -23,13 +23,11 @@ pub const fn fsci(fsc: usize) -> u8 {
 }
 
 /// RF_RATS stores FSDI in the high nibble and CID in the low nibble.
-pub fn reader_frame_size(rats: u8) -> usize {
+pub fn reader_frame_size(rats: u8) -> u16 {
     // A reserved FSDI carries no usable size promise. Use the mandatory minimum.
-    usize::from(
-        *FRAME_SIZES
-            .get(usize::from(rats >> 4))
-            .unwrap_or(&FRAME_SIZES[0]),
-    )
+    *FRAME_SIZES
+        .get(usize::from(rats >> 4))
+        .unwrap_or(&FRAME_SIZES[0])
 }
 // ISO 14443-4 PCB fields; bit 0 is the alternating block number.
 pub const PCB_NUMBER: u8 = 0x01;

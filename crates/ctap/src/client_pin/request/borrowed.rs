@@ -121,6 +121,6 @@ pub fn decode<E: Error, const LIMIT: u16>(
         new_pin: new_pin.bytes(input),
         pin_hash: pin_hash.bytes(input),
         // Decoder has already validated UTF-8 and the nonempty RP bound.
-        rp_id: (rp.length != 0).then(|| core::str::from_utf8(rp.bytes(input)).unwrap()),
+        rp_id: (rp.length != 0).then(|| canokey_protocol::utf8::str(rp.bytes(input)).unwrap()),
     })
 }

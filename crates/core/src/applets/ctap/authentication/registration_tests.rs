@@ -182,7 +182,7 @@ impl Crypto for Primitives {
         out: &mut [u8],
     ) -> Result<usize, CryptoError> {
         if matches!(op, Op::Abort) {
-            scratch.bytes.fill(0x00);
+            scratch.bytes_mut().fill(0x00);
             return Ok(0);
         }
         let params = mldsa::parameters(algorithm).unwrap();
@@ -190,7 +190,7 @@ impl Crypto for Primitives {
             Op::PublicInit => {
                 self.opens += 1;
                 self.trace.borrow_mut().push("public-open");
-                scratch.bytes.fill(0xc7);
+                scratch.bytes_mut().fill(0xc7);
                 if self.fault == Fault::PublicOpen
                     || (self.opens == 2 && self.fault == Fault::Reopen)
                 {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Real native primitives through the production bounded stream adapter.
-#include "crypto_ops.h"
+#include "crypto_fixture.h"
 #include <ml-dsa-44.h>
 #include <assert.h>
 #include <stdalign.h>
@@ -24,27 +24,28 @@ static void guards(const workspace_t *w) {
 }
 static void abort_stream(workspace_t *w) {
   for (unsigned repeat = 0; repeat < 2; ++repeat) {
-    ck_stream_abort(w->scratch);
-    for (size_t i = 0; i < sizeof(w->scratch); ++i) assert(w->scratch[i] == 0);
+    fixture_stream_abort(w->scratch);
+    for (size_t i = 0; i < sizeof(w->scratch); ++i)
+      assert(w->scratch[i] == 0);
     guards(w);
   }
   uint8_t out = GUARD;
-  assert(ck_stream_read(w->scratch, &out, 1) == -1 && out == GUARD);
+  assert(fixture_stream_read(w->scratch, &out, 1) == -1 && out == GUARD);
 }
 static void read_prefix(workspace_t *w, uint8_t *out, size_t length, size_t step) {
   for (size_t at = 0; at < length;) {
     size_t count = length - at < step ? length - at : step;
-    assert(ck_stream_read(w->scratch, out + at, count) == (int32_t)count);
+    assert(fixture_stream_read(w->scratch, out + at, count) == (int32_t)count);
     at += count;
     guards(w);
   }
 }
-static void sign_start(workspace_t *w, uint8_t algorithm, const uint8_t *seed,
-                       const uint8_t *message, size_t length, size_t total) {
-  assert(ck_stream_sign_init(algorithm, w->scratch, seed, MLDSA_SEEDBYTES) == 0);
-  assert(ck_stream_sign_update(w->scratch, message, 1) == 0);
-  assert(ck_stream_sign_update(w->scratch, message + 1, length - 1) == 0);
-  assert(ck_stream_sign_final(w->scratch) == (int32_t)total);
+static void sign_start(workspace_t *w, uint8_t algorithm, const uint8_t *seed, const uint8_t *message, size_t length,
+                       size_t total) {
+  assert(fixture_stream_sign_init(algorithm, w->scratch, seed, MLDSA_SEEDBYTES) == 0);
+  assert(fixture_stream_sign_update(w->scratch, message, 1) == 0);
+  assert(fixture_stream_sign_update(w->scratch, message + 1, length - 1) == 0);
+  assert(fixture_stream_sign_final(w->scratch) == (int32_t)total);
 }
 static void check(uint8_t algorithm, size_t public_bytes, size_t signature_bytes) {
   const uint8_t message[] = "fragmented native ML-DSA signing";
@@ -56,15 +57,14 @@ static void check(uint8_t algorithm, size_t public_bytes, size_t signature_bytes
                                : ml_dsa_65_keygen(reference_public, NULL, tr, seed);
   assert(r == 0);
   size_t n = 0;
-  r = algorithm == MLDSA44
-          ? ml_dsa_44_sign_seed(reference_signature, &n, message, sizeof(message), NULL, 0, seed, tr)
-          : ml_dsa_65_sign_seed(reference_signature, &n, message, sizeof(message), NULL, 0, seed, tr);
+  r = algorithm == MLDSA44 ? ml_dsa_44_sign_seed(reference_signature, &n, message, sizeof(message), NULL, 0, seed, tr)
+                           : ml_dsa_65_sign_seed(reference_signature, &n, message, sizeof(message), NULL, 0, seed, tr);
   assert(r == 0 && n == signature_bytes);
 
   // Abort while the seed, live hash and prepared row cache share the workspace.
   prepare(&w);
-  assert(ck_stream_sign_init(algorithm, w.scratch, seed, sizeof(seed)) == 0);
-  assert(ck_stream_sign_update(w.scratch, message, sizeof(message)) == 0);
+  assert(fixture_stream_sign_init(algorithm, w.scratch, seed, sizeof(seed)) == 0);
+  assert(fixture_stream_sign_update(w.scratch, message, sizeof(message)) == 0);
   abort_stream(&w);
 
   // Oversized reads must fail before changing either output or stream position.
@@ -74,28 +74,35 @@ static void check(uint8_t algorithm, size_t public_bytes, size_t signature_bytes
       prepare(&w);
       memset(out, GUARD, sizeof(out));
       size_t total = signing ? signature_bytes : public_bytes;
-      if (signing) sign_start(&w, algorithm, seed, message, sizeof(message), total);
-      else assert(ck_stream_public_init(algorithm, w.scratch, seed, sizeof(seed)) == (int32_t)total);
-      assert(ck_stream_read(w.scratch, out, total + 1) == -1);
-      for (size_t j = 0; j < sizeof(out); ++j) assert(out[j] == GUARD);
-      assert(ck_stream_read(w.scratch, out, 0) == 0);
+      if (signing)
+        sign_start(&w, algorithm, seed, message, sizeof(message), total);
+      else
+        assert(fixture_stream_public_init(algorithm, w.scratch, seed, sizeof(seed)) == (int32_t)total);
+      assert(fixture_stream_read(w.scratch, out, total + 1) == -1);
+      for (size_t j = 0; j < sizeof(out); ++j)
+        assert(out[j] == GUARD);
+      assert(fixture_stream_read(w.scratch, out, 0) == 0);
       read_prefix(&w, out, total - 1, steps[i]);
-      assert(ck_stream_rewind_public(w.scratch) == -1);
-      assert(ck_stream_read(w.scratch, out + total - 1, 2) == -1);
+#ifdef RUST_CORE_CTAP
+      assert(ck_test_rewind_public(w.scratch) == -1);
+#endif
+      assert(fixture_stream_read(w.scratch, out + total - 1, 2) == -1);
       assert(out[total - 1] == GUARD && out[total] == GUARD);
-      assert(ck_stream_read(w.scratch, out + total - 1, 1) == 1);
+      assert(fixture_stream_read(w.scratch, out + total - 1, 1) == 1);
       assert(!memcmp(out, signing ? reference_signature : reference_public, total));
       assert(out[total] == GUARD);
-      assert(ck_stream_read(w.scratch, out + total, 1) == -1);
-      assert(ck_stream_read(w.scratch, out + total, 0) == 0);
+      assert(fixture_stream_read(w.scratch, out + total, 1) == -1);
+      assert(fixture_stream_read(w.scratch, out + total, 0) == 0);
+#ifdef RUST_CORE_CTAP
       if (signing) {
-        assert(ck_stream_rewind_public(w.scratch) == -1);
+        assert(ck_test_rewind_public(w.scratch) == -1);
       } else {
-        assert(ck_stream_rewind_public(w.scratch) == 0);
+        assert(ck_test_rewind_public(w.scratch) == 0);
         memset(out, GUARD, total);
         read_prefix(&w, out, total, steps[i]);
         assert(!memcmp(out, reference_public, total));
       }
+#endif
       abort_stream(&w);
     }
   }
@@ -107,12 +114,13 @@ static void check(uint8_t algorithm, size_t public_bytes, size_t signature_bytes
     sign_start(&w, algorithm, seed, message, sizeof(message), signature_bytes);
     read_prefix(&w, out, positions[i], 73);
     abort_stream(&w);
-    assert(ck_stream_public_init(algorithm, w.scratch, seed, sizeof(seed)) == (int32_t)public_bytes);
+    assert(fixture_stream_public_init(algorithm, w.scratch, seed, sizeof(seed)) == (int32_t)public_bytes);
     read_prefix(&w, out, public_bytes, 73);
     assert(!memcmp(out, reference_public, public_bytes));
     abort_stream(&w);
   }
-  for (size_t i = 0; i < sizeof(seed); ++i) assert(seed[i] == 0x3c);
+  for (size_t i = 0; i < sizeof(seed); ++i)
+    assert(seed[i] == 0x3c);
 }
 int main(void) {
   check(MLDSA44, MLDSA44_PUBLIC_KEY_BYTES, MLDSA44_SIGNATURE_BYTES);

@@ -21,11 +21,10 @@ static void portable_ccid_complete(void) {
 }
 #include "c312_webusb.c"
 
-USBD_StatusTypeDef portable_dummy_transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num,
-                                         const uint8_t *pbuf, uint16_t size);
+USBD_StatusTypeDef portable_dummy_transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, const uint8_t *pbuf,
+                                           uint16_t size);
 
-USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num,
-                                  const uint8_t *pbuf, uint16_t size) {
+USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, const uint8_t *pbuf, uint16_t size) {
   if (ep_num == EP_IN(ccid) && size != 0) {
     assert_true(size <= sizeof(portable_response));
     assert_int_equal(portable_length, 0);
@@ -140,13 +139,15 @@ static void portable_ccid_loop(void) {
     if (nfc_started) {
       if (service) nfc_test_loop();
       printf("WIRE ");
-      for (size_t i = 0; i < nfc_test_tx_len; ++i) printf("%02x", nfc_test_tx[i]);
+      for (size_t i = 0; i < nfc_test_tx_len; ++i)
+        printf("%02x", nfc_test_tx[i]);
       putchar('\n');
       continue;
     }
     CCID_Loop();
     printf("WIRE ");
-    for (size_t i = 0; i < portable_length; ++i) printf("%02x", portable_response[i]);
+    for (size_t i = 0; i < portable_length; ++i)
+      printf("%02x", portable_response[i]);
     putchar('\n');
     portable_length = 0;
     portable_ccid_complete();

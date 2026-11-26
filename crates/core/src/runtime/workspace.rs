@@ -140,7 +140,7 @@ impl Working {
         match &mut self.primitive {
             Primitive::Classic(c) => c.clear(memory),
             #[cfg(feature = "ctap")]
-            Primitive::Ctap(c) => memory.wipe(&mut c.bytes),
+            Primitive::Ctap(c) => memory.wipe(c.bytes_mut()),
         }
         #[cfg(feature = "ctap")]
         self.framing.clear(memory);
@@ -175,7 +175,7 @@ impl SessionWorkspace {
             #[cfg(feature = "ctap")]
             Self::U2fRequest(r) => r.clear(memory),
             #[cfg(feature = "piv")]
-            Self::Stream(s) => memory.wipe(&mut s.bytes),
+            Self::Stream(s) => memory.wipe(s.bytes_mut()),
             #[cfg(feature = "piv")]
             Self::Attestation(a) => a.clear(memory),
             #[cfg(feature = "ctap")]

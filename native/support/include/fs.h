@@ -55,9 +55,8 @@ int truncate_file(const char *path, lfs_size_t len);
  * closing commit is returned. Success is never reported when the commit
  * failed.
  */
-int write_file_attrs(const char *path,
-                     const struct lfs_attr *attrs, int attr_count,
-                     const void *buf, lfs_size_t len, uint8_t trunc);
+int write_file_attrs(const char *path, const struct lfs_attr *attrs, int attr_count, const void *buf, lfs_size_t len,
+                     uint8_t trunc);
 
 /**
  * Commit several attributes on an existing file in a single commit, without
@@ -67,8 +66,7 @@ int write_file_attrs(const char *path,
  * fails and is not created. The atomic-update contract, error contract, and
  * pre-open validation rules of write_file_attrs apply unchanged.
  */
-int set_attrs_commit(const char *path,
-                     const struct lfs_attr *attrs, int attr_count);
+int set_attrs_commit(const char *path, const struct lfs_attr *attrs, int attr_count);
 
 /**
  * Scoped read-only file reader.

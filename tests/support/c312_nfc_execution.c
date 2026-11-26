@@ -8,7 +8,8 @@ static bool portable_execution_pending, portable_execution_before;
 
 static void portable_execution_tx(void) {
   printf("RF ");
-  for (unsigned i = 0; i < nfc_test_tx_len; ++i) printf("%02x", nfc_test_tx[i]);
+  for (unsigned i = 0; i < nfc_test_tx_len; ++i)
+    printf("%02x", nfc_test_tx[i]);
   putchar('\n');
   if (portable_execution_pending) {
     portable_execution_pending = false;
@@ -56,7 +57,8 @@ static char *portable_execution_fgets(char *line, int size, FILE *stream) {
       char frame[65];
       portable_execution_before = strncmp(line, "EXEC BEFORE ", 12) == 0;
       assert_int_equal(sscanf(line + (portable_execution_before ? 12 : 9), "%u %u %64s", &portable_execution_elapsed,
-                             &portable_execution_remaining, frame), 3);
+                              &portable_execution_remaining, frame),
+                       3);
       assert_true(portable_execution_elapsed >= WTX_PERIOD);
       assert_true(portable_execution_remaining >= 1 && portable_execution_remaining <= 4);
       const size_t characters = strlen(frame);

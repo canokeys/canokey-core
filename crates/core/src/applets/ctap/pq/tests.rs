@@ -55,14 +55,14 @@ impl Crypto for Backend {
         let params = mldsa::parameters(algorithm).unwrap();
         if self.fail.is_some_and(|fail| fail as u8 == op as u8) {
             // Model a primitive that has written sensitive state before failing.
-            scratch.bytes.fill(0xc7);
+            scratch.bytes_mut().fill(0xc7);
             return Err(CryptoError::Failure);
         }
         Ok(match op {
             Op::SignInit | Op::PublicInit => {
                 assert_eq!(input, [0x5a; 32]);
-                assert!(scratch.bytes.iter().all(|&b| b == 0));
-                scratch.bytes.fill(0xc7);
+                assert!(scratch.bytes().iter().all(|&b| b == 0));
+                scratch.bytes_mut().fill(0xc7);
                 self.offset = 0;
                 self.opens += 1;
                 params.public_bytes
@@ -81,7 +81,7 @@ impl Crypto for Backend {
             }
             Op::Abort => {
                 self.aborts += 1;
-                scratch.bytes.fill(0);
+                scratch.bytes_mut().fill(0);
                 0
             }
             _ => unreachable!(),
@@ -194,7 +194,7 @@ fn staged(plan: Pending, memory: &Backend) -> SessionWorkspace {
     w
 }
 fn erased(stream: &Stream<'_>) {
-    assert!(stream.crypto.bytes.iter().all(|&b| b == 0));
+    assert!(stream.crypto.bytes().iter().all(|&b| b == 0));
     assert!(stream.framing.bytes.iter().all(|&b| b == 0));
     assert_eq!(*stream.framing.material(), [0; 64]);
 }

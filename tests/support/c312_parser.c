@@ -47,8 +47,11 @@ static void portable_parser_loop(void) {
       assert_int_equal(sscanf(hex + i * 2, "%2x", &byte), 1);
       input.bytes[3 + i] = (uint8_t)byte;
     }
-    const ctap_req_src_t source = {.read = parser_source_read, .cancelled = parser_source_cancelled,
-                                  .ctx = &input, .base_offset = 3, .len = input.length};
+    const ctap_req_src_t source = {.read = parser_source_read,
+                                   .cancelled = parser_source_cancelled,
+                                   .ctx = &input,
+                                   .base_offset = 3,
+                                   .len = input.length};
     CborParser parser;
     union {
       CTAP_make_credential mc;
@@ -60,16 +63,30 @@ static void portable_parser_loop(void) {
     } fields;
     uint8_t result;
 #define PARSE(name, member)                                                                                            \
-  (input.mode == 5 ? parse_##name(&parser, &fields.member, input.bytes + 3, input.length)                                \
+  (input.mode == 5 ? parse_##name(&parser, &fields.member, input.bytes + 3, input.length)                              \
                    : parse_##name##_src(&parser, &fields.member, &source, input.length))
     switch (command) {
-    case CTAP_MAKE_CREDENTIAL: result = PARSE(make_credential, mc); break;
-    case CTAP_GET_ASSERTION: result = PARSE(get_assertion, ga); break;
-    case CTAP_CLIENT_PIN: result = PARSE(client_pin, pin); break;
-    case CTAP_CREDENTIAL_MANAGEMENT: result = PARSE(credential_management, cm); break;
-    case CTAP_CONFIG: result = PARSE(config, config); break;
-    case CTAP_LARGE_BLOBS: result = PARSE(large_blobs, blob); break;
-    default: assert_true(false); return;
+    case CTAP_MAKE_CREDENTIAL:
+      result = PARSE(make_credential, mc);
+      break;
+    case CTAP_GET_ASSERTION:
+      result = PARSE(get_assertion, ga);
+      break;
+    case CTAP_CLIENT_PIN:
+      result = PARSE(client_pin, pin);
+      break;
+    case CTAP_CREDENTIAL_MANAGEMENT:
+      result = PARSE(credential_management, cm);
+      break;
+    case CTAP_CONFIG:
+      result = PARSE(config, config);
+      break;
+    case CTAP_LARGE_BLOBS:
+      result = PARSE(large_blobs, blob);
+      break;
+    default:
+      assert_true(false);
+      return;
     }
 #undef PARSE
     printf("RESULT %u %zu %zu %u %zu\n", result, input.reads, input.failures, input.cancelled, input.largest);

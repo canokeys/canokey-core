@@ -11,4 +11,56 @@
 #define CK_BOARD_INFO_CORE 0x02u
 #define CK_BOARD_INFO_CHIP_ID 0x03u
 #define CK_PKE_LEASE_CTAP 0x80u
+#include <stdint.h>
+
+void ck_device_delay(int32_t milliseconds);
+uint32_t ck_platform_now(void);
+void ck_platform_led(uint8_t on);
+void ck_timer_set_timeout(void (*callback)(void), uint16_t milliseconds);
+
+enum ck_crypto_workspace {
+  CK_KEY_METADATA_BYTES = 4,
+  CK_RSA_EXPONENT_BYTES = 4,
+  CK_RSA_LIMB_BYTES = 256,
+  CK_RSA_LIMBS = 5,
+  CK_KEY_BYTES = 1284,
+  CK_RSA_OUTPUT_BYTES = 512,
+  CK_CRYPTO_SCRATCH_BYTES = 2400,
+  CK_HASH_STATE_BYTES = 256,
+  CK_STREAM_DATA_BYTES = 2384,
+  CK_STREAM_DATA_ALIGN = 8,
+};
+enum ck_key_operation {
+  CK_KEY_GENERATE = 0x00,
+  CK_KEY_VALIDATE = 0x01,
+  CK_KEY_PUBLIC = 0x02,
+  CK_KEY_RSA_PKCS1_SIGN = 0x03,
+  CK_KEY_RSA_PKCS1_DECIPHER = 0x04,
+  CK_KEY_AGREE = 0x05,
+  CK_KEY_EC_SIGN = 0x06,
+  CK_KEY_RSA_RAW = 0x07,
+  CK_KEY_SM2_EXCHANGE = 0x08,
+  CK_KEY_SM2_MESSAGE_DIGEST = 0x09,
+};
+enum ck_stream_operation {
+  CK_STREAM_PUBLIC_INIT = 0x00,
+  CK_STREAM_READ = 0x01,
+  CK_STREAM_SIGN_INIT = 0x02,
+  CK_STREAM_SIGN_UPDATE = 0x03,
+  CK_STREAM_SIGN_FINAL = 0x04,
+  CK_STREAM_ABORT = 0x05,
+  CK_STREAM_DECAPSULATE_INIT = 0x06,
+  CK_STREAM_DECAPSULATE_UPDATE = 0x07,
+  CK_STREAM_DECAPSULATE_FINAL = 0x08,
+  CK_STREAM_SM2_IDENTITY = 0x09,
+};
+enum ck_sm2_packet {
+  CK_SM2_PEER_STATIC = 32,
+  CK_SM2_PEER_EPHEMERAL = 96,
+  CK_SM2_OWN_ID = 160,
+  CK_SM2_PEER_ID = 193,
+  CK_SM2_ROLE = 226,
+  CK_SM2_OUTPUT_LENGTH = 227,
+  CK_SM2_SIZE = 228,
+};
 #endif

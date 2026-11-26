@@ -86,7 +86,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -100,7 +100,7 @@
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -114,7 +114,8 @@
       ],
       "remaining": [
         "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -128,7 +129,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -142,7 +143,7 @@
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -156,7 +157,8 @@
       ],
       "remaining": [
         "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -170,11 +172,11 @@
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37"
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "835075b3c741d5dbc42b45cf8e6c6cf3eaea8675fa6941c693c3fd844a4bcc36"
+          "sha256": "6e452e38618ae5f1c7b3a3c0ededee7f238a1595d858755cbd27a0ec5a73a4ee"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -186,13 +188,13 @@
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
-          "sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a"
+          "sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -219,7 +221,8 @@
         "Full-product physical NFC capability acceptance is open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
         "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
-        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -233,7 +236,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37"
         },
         {
           "path": "crates/core/src/applets/ctap/pq.rs",
@@ -251,7 +254,7 @@
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -265,7 +268,8 @@
       ],
       "remaining": [
         "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/core/src/applets/ctap/pq.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -279,7 +283,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -293,7 +297,7 @@
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -307,7 +311,8 @@
       ],
       "remaining": [
         "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -321,7 +326,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37"
         },
         {
           "path": "crates/protocol/src/ctaphid.rs",
@@ -329,7 +334,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "584a9aa162b3700ab8948ac1cf6ebef3e0d2f31c8e89796f3f2d857fe716ed0a"
+          "sha256": "f068f9092f2d40b33584bb0c4aa813748b8e93f8f92b89fdffb51fbf8c976ef2"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
@@ -345,7 +350,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "835075b3c741d5dbc42b45cf8e6c6cf3eaea8675fa6941c693c3fd844a4bcc36"
+          "sha256": "6e452e38618ae5f1c7b3a3c0ededee7f238a1595d858755cbd27a0ec5a73a4ee"
         },
         {
           "path": "crates/host/src/pcsc.rs",
@@ -361,13 +366,13 @@
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
-          "sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a"
+          "sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b"
         }
       ],
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37",
           "id": "schema_matches_executed_pinned_c_vectors"
         },
         {
@@ -433,7 +438,8 @@
         "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs, crates/host/src/pcsc.rs, crates/protocol/src/ctaphid.rs, tests/card/src/bin/usb_sessions/envelopes.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
         "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
         "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
-        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -447,7 +453,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -461,7 +467,7 @@
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -475,7 +481,8 @@
       ],
       "remaining": [
         "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -489,7 +496,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37"
         },
         {
           "path": "crates/core/codegen/release.rs",
@@ -507,7 +514,7 @@
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -521,7 +528,8 @@
       ],
       "remaining": [
         "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -535,7 +543,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5"
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -549,7 +557,7 @@
       "regressions": [
         {
           "path": "crates/core/src/applets/ctap/info.rs",
-          "sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+          "sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37",
           "id": "schema_matches_executed_pinned_c_vectors"
         }
       ],
@@ -563,7 +571,8 @@
       ],
       "remaining": [
         "Shared-code extraction changed these target/regression artifacts: crates/core/codegen/ctap.rs, crates/core/src/applets/ctap/info.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: GetInfo now uses the shared RequestConfig constant; the CanoKey advertised value remains 1296. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -668,7 +677,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
+          "sha256": "3daa04a5754dc50a8f93ea5beb42549a158eaebb0f217e61f5e0333ccbe5ffd2",
           "id": "explicit_selection"
         },
         {
@@ -711,7 +720,8 @@
         "E64/E65/E66 cover listed AID/rejection, disabled-target, CLA/P1/Case2E/Case4E, grant and EF matrices. Further header/body/inline mutations, pending/config transitions, volatile native-HID state and physical acceptance remain open.",
         "E63 after-WTX differences, mixed NFC source hunk19, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-ccid/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -731,7 +741,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
+          "sha256": "3daa04a5754dc50a8f93ea5beb42549a158eaebb0f217e61f5e0333ccbe5ffd2",
           "id": "explicit_selection_and_power_and_irq"
         }
       ],
@@ -762,7 +772,8 @@
       "remaining": [
         "Physical USB slot-reset acceptance remains open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, tests/card/src/bin/usb_sessions.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -794,7 +805,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
+          "sha256": "3daa04a5754dc50a8f93ea5beb42549a158eaebb0f217e61f5e0333ccbe5ffd2",
           "id": "ccid_drain"
         },
         {
@@ -842,7 +853,8 @@
       "remaining": [
         "Complete the E02-E04 matrix and physical USB acceptance; archived dual CCID cases cover a subset.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/core/src/runtime/usb/descriptors.rs, crates/ffi/src/transport/ccid/mod.rs, crates/protocol/src/ccid.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-ccid/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -860,7 +872,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "835075b3c741d5dbc42b45cf8e6c6cf3eaea8675fa6941c693c3fd844a4bcc36"
+          "sha256": "6e452e38618ae5f1c7b3a3c0ededee7f238a1595d858755cbd27a0ec5a73a4ee"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
@@ -868,7 +880,7 @@
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
-          "sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a"
+          "sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b"
         }
       ],
       "regressions": [
@@ -954,7 +966,8 @@
         "Functional regression restoration remains release-blocked on physical NFC/RF/WTX and CIU resources.",
         "Extend PKE faults/cancellation beyond the41 Rust source schedules to other CTAP commands, write/cleanup failures and paired C transport runs; broader aggregation remains.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc.rs, crates/core/src/runtime/nfc/request.rs, crates/core/tests/streaming.rs, crates/ffi/src/transport/nfc.rs, tests/card/src/bin/usb_sessions/envelopes.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -1046,7 +1059,7 @@
         },
         {
           "path": "crates/ffi/src/transport/ccid/io.rs",
-          "sha256": "2117cdd70803bedf310ccf657745b07538c27543ed5bb9cd271dc37dfa23d552"
+          "sha256": "da3a2ed5c2deb22dd5c7ba0841523a9f957d0b8538aa4966754c7f58e9aa42ba"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
@@ -1066,7 +1079,7 @@
         },
         {
           "path": "tests/integration/pcsc_normal.py",
-          "sha256": "713debfb711bd1c50b7bbcca0106f48b7f5ee13a6b66de8cb7a2278f0bd8dd6b",
+          "sha256": "193c1cbbccc44f209818a27e04ea6e8c22d03585fc4968b62f70464eadcfa975",
           "id": "virtual-pcsc-ATR"
         },
         {
@@ -1102,7 +1115,8 @@
       ],
       "remaining": [
         "Complete auxiliary/busy/endpoint-race dual comparisons and physical USB acceptance.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/core/tests/ccid.rs, crates/ffi/src/transport/ccid/io.rs, crates/ffi/src/transport/ccid/mod.rs, crates/protocol/src/ccid.rs, tests/fixtures/c312-ccid/vectors.json, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/core/tests/ccid.rs, crates/ffi/src/transport/ccid/io.rs, crates/ffi/src/transport/ccid/mod.rs, crates/protocol/src/ccid.rs, tests/fixtures/c312-ccid/vectors.json, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -1120,11 +1134,11 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "835075b3c741d5dbc42b45cf8e6c6cf3eaea8675fa6941c693c3fd844a4bcc36"
+          "sha256": "6e452e38618ae5f1c7b3a3c0ededee7f238a1595d858755cbd27a0ec5a73a4ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
-          "sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a"
+          "sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b"
         }
       ],
       "regressions": [
@@ -1172,7 +1186,8 @@
       "remaining": [
         "Broader large-response aggregation, WTX and physical RF execution remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs, crates/ffi/src/transport/nfc/tests.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -1190,7 +1205,7 @@
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "ac1a8dbd84f9cea5e69570be8142d8b0037586417714f7c9e0ddd785b62b01a6"
+          "sha256": "932e0cab82c067ac1488842dc22804c90057528ce0c7dc309ab3c0be12bc092c"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
@@ -1252,7 +1267,8 @@
       ],
       "remaining": [
         "Physical EP0 lifecycle acceptance and broader cross-transport/endpoint-failure schedules remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/ffi/src/transport/ccid/mod.rs, tests/card/src/bin/usb_sessions/envelopes.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/ffi/src/transport/ccid/mod.rs, tests/card/src/bin/usb_sessions/envelopes.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -1277,7 +1293,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
+          "sha256": "3daa04a5754dc50a8f93ea5beb42549a158eaebb0f217e61f5e0333ccbe5ffd2",
           "id": "ccid_drain"
         },
         {
@@ -1319,7 +1335,8 @@
       "remaining": [
         "Complete physical USB delayed-fragment/reset acceptance.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/core/tests/ccid.rs, crates/ffi/src/transport/ccid/mod.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-ccid/vectors.json, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -1387,13 +1404,13 @@
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "df27a2ac0c0df30f3dbf15c4341d6bc67915b50a8d2b6c81f046d3f1d5ac0996"
+          "sha256": "7dea3866e5d6e76021f186543db1a72b9cdc02f02a7880ac7766cf5dc331937e"
         }
       ],
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
+          "sha256": "3daa04a5754dc50a8f93ea5beb42549a158eaebb0f217e61f5e0333ccbe5ffd2",
           "id": "ownership_and_pending-power_and_irq-staging_and_presence"
         },
         {
@@ -1424,7 +1441,8 @@
       "remaining": [
         "Dual C/Rust busy/auxiliary queue schedules and physical USB acceptance remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ccid.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/hid/link.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-hid-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -1501,7 +1519,7 @@
       "targets": [
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "df27a2ac0c0df30f3dbf15c4341d6bc67915b50a8d2b6c81f046d3f1d5ac0996"
+          "sha256": "7dea3866e5d6e76021f186543db1a72b9cdc02f02a7880ac7766cf5dc331937e"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
@@ -1519,7 +1537,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
+          "sha256": "3daa04a5754dc50a8f93ea5beb42549a158eaebb0f217e61f5e0333ccbe5ffd2",
           "id": "ownership_and_pending-native-MSG-two3000ms-gaps"
         },
         {
@@ -1594,7 +1612,8 @@
       "remaining": [
         "Recorded same/other-CID controls retain exact output and foreign MSG is refused without advancing it. CID1/E43 is an intentional isolation difference; broader channel/withheld-IN/endpoint/IRQ and physical USB schedules remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/hid/link.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-hid-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -1608,11 +1627,11 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "835075b3c741d5dbc42b45cf8e6c6cf3eaea8675fa6941c693c3fd844a4bcc36"
+          "sha256": "6e452e38618ae5f1c7b3a3c0ededee7f238a1595d858755cbd27a0ec5a73a4ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
-          "sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a"
+          "sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b"
         }
       ],
       "regressions": [
@@ -1648,7 +1667,8 @@
       ],
       "remaining": [
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -1662,7 +1682,7 @@
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "ac1a8dbd84f9cea5e69570be8142d8b0037586417714f7c9e0ddd785b62b01a6"
+          "sha256": "932e0cab82c067ac1488842dc22804c90057528ce0c7dc309ab3c0be12bc092c"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
@@ -1686,7 +1706,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
+          "sha256": "3daa04a5754dc50a8f93ea5beb42549a158eaebb0f217e61f5e0333ccbe5ffd2",
           "id": "preemption: expired-Hold-continuation-exclusion and aborted-WebUSB-reservation-preserves-CCID-PIN"
         },
         {
@@ -1745,7 +1765,8 @@
       "remaining": [
         "Beyond the explicit E32 serialized schedule: HID ownership, auxiliary/in-flight endpoint contention, failure/IRQ races and physical USB acceptance remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/tests/webusb.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/usb.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -1759,7 +1780,7 @@
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "ac1a8dbd84f9cea5e69570be8142d8b0037586417714f7c9e0ddd785b62b01a6"
+          "sha256": "932e0cab82c067ac1488842dc22804c90057528ce0c7dc309ab3c0be12bc092c"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
@@ -1783,7 +1804,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
+          "sha256": "3daa04a5754dc50a8f93ea5beb42549a158eaebb0f217e61f5e0333ccbe5ffd2",
           "id": "preemption: expired-Hold-continuation-exclusion and aborted-WebUSB-reservation-preserves-CCID-PIN"
         },
         {
@@ -1820,7 +1841,8 @@
       "remaining": [
         "Beyond the explicit E32 serialized schedule: HID ownership, auxiliary/in-flight endpoint contention, failure/IRQ races and physical USB acceptance remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/tests/webusb.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/usb.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -2134,7 +2156,7 @@
       "targets": [
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "df27a2ac0c0df30f3dbf15c4341d6bc67915b50a8d2b6c81f046d3f1d5ac0996"
+          "sha256": "7dea3866e5d6e76021f186543db1a72b9cdc02f02a7880ac7766cf5dc331937e"
         },
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
@@ -2144,12 +2166,12 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/hid.rs",
-          "sha256": "339d65e1fc46b916ad260decea134fbd7f98e188dcfbadb6a8c7c37c77f5265b",
+          "sha256": "2c3e1ba48fca0d0fb61bfff038ad496f380326707c17a496b310b32f2fc82aeb",
           "id": "presence_same_CID_INIT_unwind_and_replay"
         },
         {
           "path": "crates/ffi/src/transport/hid/link/tests.rs",
-          "sha256": "2058961385dfa6087d1263c134c4c8ab4b6c727cb594dbe39260bd02109cc5c6",
+          "sha256": "0f336cc8d28bb07c7294038c99fbd3d2eac16363d6fb468c409725250d46c0a8",
           "id": "hid_link_interrupt_leases_progress_and_cancellation"
         }
       ],
@@ -2186,7 +2208,8 @@
       "remaining": [
         "Physical USB, withheld IN and endpoint/IRQ acceptance remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/hid/link/tests.rs, tests/card/src/bin/hid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -2196,7 +2219,7 @@
       "targets": [
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "df27a2ac0c0df30f3dbf15c4341d6bc67915b50a8d2b6c81f046d3f1d5ac0996"
+          "sha256": "7dea3866e5d6e76021f186543db1a72b9cdc02f02a7880ac7766cf5dc331937e"
         },
         {
           "path": "crates/core/src/runtime/ctaphid.rs",
@@ -2211,12 +2234,12 @@
         },
         {
           "path": "tests/card/src/bin/hid.rs",
-          "sha256": "339d65e1fc46b916ad260decea134fbd7f98e188dcfbadb6a8c7c37c77f5265b",
+          "sha256": "2c3e1ba48fca0d0fb61bfff038ad496f380326707c17a496b310b32f2fc82aeb",
           "id": "foreign_busy_then_executing_CANCEL"
         },
         {
           "path": "crates/ffi/src/transport/hid/link/tests.rs",
-          "sha256": "2058961385dfa6087d1263c134c4c8ab4b6c727cb594dbe39260bd02109cc5c6",
+          "sha256": "0f336cc8d28bb07c7294038c99fbd3d2eac16363d6fb468c409725250d46c0a8",
           "id": "hid_link_interrupt_leases_progress_and_cancellation"
         }
       ],
@@ -2254,7 +2277,8 @@
         "Physical USB, withheld IN and endpoint/IRQ acceptance remain open.",
         "Executing invalid-CID/disabled/unknown-command error ordering and adversarial flood schedules still require literal C comparison; no complete S4 claim.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/hid/link/tests.rs, tests/card/src/bin/hid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -2279,7 +2303,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb/tests.rs",
-          "sha256": "988dcfe61453b77bfbe75b4901593a0951070043d57688359375bda9db7beedc",
+          "sha256": "e74e5ee40f53704e6068d1a9aade17c0d565de21bf5b5085e218c130ab40e0b2",
           "id": "usb_controller_control_endpoints_mailboxes_and_reset"
         },
         {
@@ -2309,7 +2333,8 @@
       ],
       "remaining": [
         "Physical DATA-toggle/controller behavior and configuration/IRQ races remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/usb/mod.rs, crates/ffi/src/transport/usb.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/usb/mod.rs, crates/ffi/src/transport/usb.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -2338,7 +2363,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb/tests.rs",
-          "sha256": "988dcfe61453b77bfbe75b4901593a0951070043d57688359375bda9db7beedc",
+          "sha256": "e74e5ee40f53704e6068d1a9aade17c0d565de21bf5b5085e218c130ab40e0b2",
           "id": "usb_controller_control_endpoints_mailboxes_and_reset"
         }
       ],
@@ -2363,7 +2388,8 @@
       ],
       "remaining": [
         "Full product/serial/interface/BOS/MSOS busy and pending-RX/TX/IRQ schedules remain open; U4 retains a wire difference.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/usb/descriptors.rs, crates/core/src/runtime/usb/mod.rs, crates/ffi/src/transport/usb.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/usb/descriptors.rs, crates/core/src/runtime/usb/mod.rs, crates/ffi/src/transport/usb.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -2516,7 +2542,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb/tests.rs",
-          "sha256": "988dcfe61453b77bfbe75b4901593a0951070043d57688359375bda9db7beedc",
+          "sha256": "e74e5ee40f53704e6068d1a9aade17c0d565de21bf5b5085e218c130ab40e0b2",
           "id": "usb_controller_control_endpoints_mailboxes_and_reset"
         },
         {
@@ -2546,7 +2572,8 @@
       ],
       "remaining": [
         "Physical USB and reset/configuration IRQ schedules remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/usb/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/usb/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -2564,19 +2591,19 @@
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "df27a2ac0c0df30f3dbf15c4341d6bc67915b50a8d2b6c81f046d3f1d5ac0996"
+          "sha256": "7dea3866e5d6e76021f186543db1a72b9cdc02f02a7880ac7766cf5dc331937e"
         },
         {
           "path": "crates/ffi/src/composition.rs",
-          "sha256": "4a60694646658d22f71b3f6c2d28a227e7b985e3fae6c427ee6aa3055db31d7c"
+          "sha256": "d28d61116139199e5701e013d0be3418b3e8dda066d78eafd165154a64b98cd3"
         },
         {
           "path": "crates/ffi/src/transport/ccid/io.rs",
-          "sha256": "2117cdd70803bedf310ccf657745b07538c27543ed5bb9cd271dc37dfa23d552"
+          "sha256": "da3a2ed5c2deb22dd5c7ba0841523a9f957d0b8538aa4966754c7f58e9aa42ba"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "ac1a8dbd84f9cea5e69570be8142d8b0037586417714f7c9e0ddd785b62b01a6"
+          "sha256": "932e0cab82c067ac1488842dc22804c90057528ce0c7dc309ab3c0be12bc092c"
         },
         {
           "path": "crates/ffi/src/composition/core.rs",
@@ -2599,7 +2626,7 @@
         },
         {
           "path": "tests/support/c312_webusb.c",
-          "sha256": "5ed7171796f981491169d0b4c510a6bbfccb2f624f1a7a805d2819386ebd170c",
+          "sha256": "e03bae4e8f366f7b97ec99860d11ec70964f271caaf3024a037d9f01c784cbed",
           "id": "actual-device_loop-lifecycle-service"
         },
         {
@@ -2614,7 +2641,7 @@
         },
         {
           "path": "crates/ffi/src/transport/usb/tests.rs",
-          "sha256": "988dcfe61453b77bfbe75b4901593a0951070043d57688359375bda9db7beedc",
+          "sha256": "e74e5ee40f53704e6068d1a9aade17c0d565de21bf5b5085e218c130ab40e0b2",
           "id": "lifecycle_cleanup_gates_class_input_and_rejects_stale_completion"
         },
         {
@@ -2733,7 +2760,8 @@
       "remaining": [
         "Named E52/E54/E55 schedules and200 real Rust erasure-callback lifecycle interrupts pass. Other retained/executing/native-abort/storage/crypto IRQ, withheld-IN and endpoint-failure schedules remain open.",
         "Physical USB and CIU runtime acceptance remain open.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/ccid/io.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/usb.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/ccid/io.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/usb.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -2754,7 +2782,7 @@
         },
         {
           "path": "tests/card/src/bin/hid.rs",
-          "sha256": "339d65e1fc46b916ad260decea134fbd7f98e188dcfbadb6a8c7c37c77f5265b",
+          "sha256": "2c3e1ba48fca0d0fb61bfff038ad496f380326707c17a496b310b32f2fc82aeb",
           "id": "empty-C0-after-drained-generator-INIT-reset"
         },
         {
@@ -2802,7 +2830,8 @@
       "remaining": [
         "Pending C0 P1/P2/body/CLA differences are now explicit L8/E53; malformed trailer preserves the source on both. Other command/error combinations and physical USB acceptance remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/message.rs, tests/card/src/bin/hid.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -2893,11 +2922,11 @@
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "df27a2ac0c0df30f3dbf15c4341d6bc67915b50a8d2b6c81f046d3f1d5ac0996"
+          "sha256": "7dea3866e5d6e76021f186543db1a72b9cdc02f02a7880ac7766cf5dc331937e"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "ac1a8dbd84f9cea5e69570be8142d8b0037586417714f7c9e0ddd785b62b01a6"
+          "sha256": "932e0cab82c067ac1488842dc22804c90057528ce0c7dc309ab3c0be12bc092c"
         },
         {
           "path": "crates/ffi/src/transport/ccid/mod.rs",
@@ -2907,7 +2936,7 @@
       "regressions": [
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
+          "sha256": "3daa04a5754dc50a8f93ea5beb42549a158eaebb0f217e61f5e0333ccbe5ffd2",
           "id": "ownership_and_pending-preemption-power_and_irq"
         },
         {
@@ -2950,7 +2979,8 @@
         "Complete remaining takeover/IRQ/endpoint-failure schedules and physical/CIU acceptance.",
         "L8/CID1 intentionally preserve Rust response isolation; remaining physical/source acceptance is separate.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/ccid/mod.rs, crates/ffi/src/transport/hid/link.rs, tests/card/src/bin/usb_sessions.rs, tests/fixtures/c312-hid-ownership/vectors.json, tests/fixtures/c312-usb-ownership/vectors.json. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -2964,7 +2994,7 @@
         },
         {
           "path": "crates/core/src/applets/ctap/authentication.rs",
-          "sha256": "f1ed5ac3125777bea54a4a2c9ac960e8ed0a6a138ea323d3b02467a10f14569f"
+          "sha256": "51f4f7c646361df06c9cef656309f37e6526415f237daf679357feb0d5443b49"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -2983,7 +3013,7 @@
         },
         {
           "path": "tests/support/c312_parser.c",
-          "sha256": "392d95b056ce3b2593d629ffaf08074232f89dc6ff56ece22f1c34c9c0ffb75a",
+          "sha256": "78feece1cf29f0adaec7f520fd71b09ab022937a1a2e995711950fea17feb0ed",
           "id": "unchanged-C-exact-RP-parser-and-emitted-response-four-cases-per-run"
         }
       ],
@@ -3020,7 +3050,8 @@
       "remaining": [
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/authentication.rs, crates/core/src/applets/ctap/credential_request.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
         "2026-11-10 shared-contract review: Owned parser CBOR and algorithm capacities now use the shared derivations; the CanoKey capacities remain 1295 CBOR bytes and 64 algorithms. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
-        "Applet review: current artifact identities reflect typed CTAP parsing and documented fixed-width invariants. Historical evidence and dispositions are retained. Current-consumer qualification remains open."
+        "Applet review: current artifact identities reflect typed CTAP parsing and documented fixed-width invariants. Historical evidence and dispositions are retained. Current-consumer qualification remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -3038,11 +3069,11 @@
         },
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "584a9aa162b3700ab8948ac1cf6ebef3e0d2f31c8e89796f3f2d857fe716ed0a"
+          "sha256": "f068f9092f2d40b33584bb0c4aa813748b8e93f8f92b89fdffb51fbf8c976ef2"
         },
         {
           "path": "crates/protocol/src/cbor.rs",
-          "sha256": "09bb0a6e108d89892a22a73e1bcb8d8952a0aface516f4f84fb2e2f6ecd1c617"
+          "sha256": "d8f1846d1626936106a40e3964c758008b0fa2c54074b12906b96ed35883e336"
         },
         {
           "path": "crates/core/src/runtime/engine.rs",
@@ -3050,7 +3081,7 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "835075b3c741d5dbc42b45cf8e6c6cf3eaea8675fa6941c693c3fd844a4bcc36"
+          "sha256": "6e452e38618ae5f1c7b3a3c0ededee7f238a1595d858755cbd27a0ec5a73a4ee"
         },
         {
           "path": "crates/ctap/src/config.rs",
@@ -3062,7 +3093,7 @@
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
-          "sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a"
+          "sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b"
         }
       ],
       "regressions": [
@@ -3169,7 +3200,8 @@
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/credential_request.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/request_decoder.rs, crates/core/src/runtime/engine.rs, crates/core/tests/streaming.rs, crates/ffi/src/transport/nfc.rs, crates/protocol/src/cbor.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
         "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
         "2026-11-10 shared-contract review: Owned parser CBOR and algorithm capacities now use the shared derivations; the CanoKey capacities remain 1295 CBOR bytes and 64 algorithms. The CBOR decoder now uses RequestConfig; its CanoKey limit remains 1295 bytes. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
-        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -3179,7 +3211,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "584a9aa162b3700ab8948ac1cf6ebef3e0d2f31c8e89796f3f2d857fe716ed0a"
+          "sha256": "f068f9092f2d40b33584bb0c4aa813748b8e93f8f92b89fdffb51fbf8c976ef2"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
@@ -3226,12 +3258,12 @@
         },
         {
           "path": "tests/integration/pcsc_normal.py",
-          "sha256": "713debfb711bd1c50b7bbcca0106f48b7f5ee13a6b66de8cb7a2278f0bd8dd6b",
+          "sha256": "193c1cbbccc44f209818a27e04ea6e8c22d03585fc4968b62f70464eadcfa975",
           "id": "pcsc-getinfo-250-byte-chunk-and-nfc-aggregation"
         },
         {
           "path": "tests/support/c312_auth_response.py",
-          "sha256": "4acd294cc3f6f74137d95b15f22e9206cf09268714842340d0aff99c928bf4a3",
+          "sha256": "680f63bbb0840b024d6cbd04c6fa5b5b131276d335c470bdfce2a1be7dde1507",
           "id": "E57-real-response-source-contracts"
         },
         {
@@ -3386,7 +3418,8 @@
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
         "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
         "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
-        "Applet review: current artifact identities reflect typed CTAP parsing and documented fixed-width invariants. Historical evidence and dispositions are retained. Current-consumer qualification remains open."
+        "Applet review: current artifact identities reflect typed CTAP parsing and documented fixed-width invariants. Historical evidence and dispositions are retained. Current-consumer qualification remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -3396,7 +3429,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "584a9aa162b3700ab8948ac1cf6ebef3e0d2f31c8e89796f3f2d857fe716ed0a"
+          "sha256": "f068f9092f2d40b33584bb0c4aa813748b8e93f8f92b89fdffb51fbf8c976ef2"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
@@ -3443,12 +3476,12 @@
         },
         {
           "path": "tests/integration/pcsc_normal.py",
-          "sha256": "713debfb711bd1c50b7bbcca0106f48b7f5ee13a6b66de8cb7a2278f0bd8dd6b",
+          "sha256": "193c1cbbccc44f209818a27e04ea6e8c22d03585fc4968b62f70464eadcfa975",
           "id": "pcsc-getinfo-250-byte-chunk-and-nfc-aggregation"
         },
         {
           "path": "tests/support/c312_auth_response.py",
-          "sha256": "4acd294cc3f6f74137d95b15f22e9206cf09268714842340d0aff99c928bf4a3",
+          "sha256": "680f63bbb0840b024d6cbd04c6fa5b5b131276d335c470bdfce2a1be7dde1507",
           "id": "E57-real-response-source-contracts"
         },
         {
@@ -3609,7 +3642,8 @@
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
         "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
         "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
-        "Applet review: current artifact identities reflect typed CTAP parsing and documented fixed-width invariants. Historical evidence and dispositions are retained. Current-consumer qualification remains open."
+        "Applet review: current artifact identities reflect typed CTAP parsing and documented fixed-width invariants. Historical evidence and dispositions are retained. Current-consumer qualification remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -3619,7 +3653,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "584a9aa162b3700ab8948ac1cf6ebef3e0d2f31c8e89796f3f2d857fe716ed0a"
+          "sha256": "f068f9092f2d40b33584bb0c4aa813748b8e93f8f92b89fdffb51fbf8c976ef2"
         },
         {
           "path": "crates/core/src/applets/ctap/message.rs",
@@ -3629,7 +3663,7 @@
       "regressions": [
         {
           "path": "tests/support/c312_auth_response.py",
-          "sha256": "4acd294cc3f6f74137d95b15f22e9206cf09268714842340d0aff99c928bf4a3",
+          "sha256": "680f63bbb0840b024d6cbd04c6fa5b5b131276d335c470bdfce2a1be7dde1507",
           "id": "E57-real-response-source-contracts"
         }
       ],
@@ -3671,7 +3705,8 @@
       "remaining": [
         "E57 executes buffered getKeyAgreement Le1, exact256/257 assertions and finite/full source output. Broader buffered error/constant combinations, cancellation and physical/resource acceptance remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/message.rs, crates/core/src/applets/ctap/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted."
+        "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -3681,7 +3716,7 @@
       "targets": [
         {
           "path": "crates/core/src/applets/ctap/mod.rs",
-          "sha256": "584a9aa162b3700ab8948ac1cf6ebef3e0d2f31c8e89796f3f2d857fe716ed0a"
+          "sha256": "f068f9092f2d40b33584bb0c4aa813748b8e93f8f92b89fdffb51fbf8c976ef2"
         },
         {
           "path": "crates/core/src/applets/ctap/applet.rs",
@@ -3693,7 +3728,7 @@
         },
         {
           "path": "crates/ports/src/contracts/storage.rs",
-          "sha256": "afb95f4f517926364695807675caa3a089a756c71e4dbc9c5e82a73512cb7f74"
+          "sha256": "12fe5ff679d169196286820d894f9369735e8bceed0807583dfa49b3c02dbc1b"
         },
         {
           "path": "crates/ffi/src/platform/storage.rs",
@@ -3732,7 +3767,7 @@
         },
         {
           "path": "tests/support/c312_auth_response.py",
-          "sha256": "4acd294cc3f6f74137d95b15f22e9206cf09268714842340d0aff99c928bf4a3",
+          "sha256": "680f63bbb0840b024d6cbd04c6fa5b5b131276d335c470bdfce2a1be7dde1507",
           "id": "decimal-host-tick-control"
         },
         {
@@ -3831,7 +3866,8 @@
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/applet.rs, crates/core/src/applets/ctap/mod.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
         "Deferred registration publication (91b1f711) changes crates/core/src/applets/ctap/mod.rs, crates/core/src/applets/ctap/applet.rs. See docs/sync/deferred-registration-20261110.md for the scoped source review. Current identities keep this draft inspectable; no renewed behavior, source-hunk, stack or release approval is granted.",
         "2026-11-10 shared-contract review: Persisted Record values moved to ports::canokey; Storage signatures and numeric ABI remain unchanged. Only the persisted Record import namespace changed. The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
-        "Applet review: current artifact identities reflect typed CTAP parsing and documented fixed-width invariants. Historical evidence and dispositions are retained. Current-consumer qualification remains open."
+        "Applet review: current artifact identities reflect typed CTAP parsing and documented fixed-width invariants. Historical evidence and dispositions are retained. Current-consumer qualification remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -3865,11 +3901,11 @@
         },
         {
           "path": "crates/ffi/src/transport/hid/link.rs",
-          "sha256": "df27a2ac0c0df30f3dbf15c4341d6bc67915b50a8d2b6c81f046d3f1d5ac0996"
+          "sha256": "7dea3866e5d6e76021f186543db1a72b9cdc02f02a7880ac7766cf5dc331937e"
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "ac1a8dbd84f9cea5e69570be8142d8b0037586417714f7c9e0ddd785b62b01a6"
+          "sha256": "932e0cab82c067ac1488842dc22804c90057528ce0c7dc309ab3c0be12bc092c"
         },
         {
           "path": "crates/ffi/src/transport/usb.rs",
@@ -3884,7 +3920,7 @@
         },
         {
           "path": "tests/card/src/bin/usb_sessions.rs",
-          "sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
+          "sha256": "3daa04a5754dc50a8f93ea5beb42549a158eaebb0f217e61f5e0333ccbe5ffd2",
           "id": "E59-disjoint-controls-and-pending-native-IN"
         }
       ],
@@ -3932,7 +3968,8 @@
       "remaining": [
         "Physical USB/RF, arbitrary endpoint/IRQ schedules, every import/decipher continuation and CIU runtime stack/PKE remain open. Broader session and source audit, prior unresolved wire behaviors are separate blockers.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/ctaphid.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/hid/command.rs, crates/ffi/src/transport/hid/link.rs, crates/ffi/src/transport/usb.rs, tests/card/src/bin/usb_sessions.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open."
+        "2026-11-10 shared-contract review: The test imports the same Record type from its explicit CanoKey namespace. Current host tests pass; historical C fixture evidence and source-hunk dispositions do not qualify changed artifacts. Current-consumer release acceptance remains open.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -3946,11 +3983,11 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "835075b3c741d5dbc42b45cf8e6c6cf3eaea8675fa6941c693c3fd844a4bcc36"
+          "sha256": "6e452e38618ae5f1c7b3a3c0ededee7f238a1595d858755cbd27a0ec5a73a4ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
-          "sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a"
+          "sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b"
         }
       ],
       "regressions": [
@@ -4009,7 +4046,8 @@
       "remaining": [
         "Physical RF/WTX and its separate IRQ-local cache/turn ordering, arbitrary IRQ/cancellation, full file-fault breadth, CIU runtime stack/PKE and complete source audit remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -4023,11 +4061,11 @@
         },
         {
           "path": "crates/protocol/src/nfc.rs",
-          "sha256": "4878873b912c85c3a107f0f65dcbfcbcb5f6a7168c45a4d755faf0d74b2222fd"
+          "sha256": "c56736d479933ac25b7dcdff8e5609f260679d15c62244b1336026b7d929b8a1"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
-          "sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a"
+          "sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b"
         }
       ],
       "regressions": [
@@ -4064,7 +4102,8 @@
       "remaining": [
         "Physical RF/WTX, CIU stack/PKE, mixed hunk19 and full source audit remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc_io.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -4078,11 +4117,11 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "835075b3c741d5dbc42b45cf8e6c6cf3eaea8675fa6941c693c3fd844a4bcc36"
+          "sha256": "6e452e38618ae5f1c7b3a3c0ededee7f238a1595d858755cbd27a0ec5a73a4ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
-          "sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a"
+          "sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b"
         }
       ],
       "regressions": [
@@ -4136,7 +4175,8 @@
         "Hunk57 includes admission during live Core execution: Rust retains its existing dedicated WTX/cancellation policy; no C/Rust execution parity is claimed. WTX cache/echo and arbitrary IRQ/endpoint schedules remain open.",
         "Mixed hunk19, physical RF/WTX, CIU stack/PKE, Linux sanitizer acceptance and full source audit remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc_io.rs, crates/ffi/src/transport/nfc.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -4150,11 +4190,11 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "835075b3c741d5dbc42b45cf8e6c6cf3eaea8675fa6941c693c3fd844a4bcc36"
+          "sha256": "6e452e38618ae5f1c7b3a3c0ededee7f238a1595d858755cbd27a0ec5a73a4ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
-          "sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a"
+          "sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b"
         }
       ],
       "regressions": [
@@ -4214,7 +4254,8 @@
         "Mixed NFC source hunk19 includes WTX retransmission cache, cleanup and TXEN ordering. Normal echo evidence does not close it. Arbitrary IRQ/endpoint schedules remain open.",
         "Physical RF/WTX, CIU IRQ/call-path stack/PKE, Linux sanitizer acceptance and full source audit remain open; NFCC remains oversized.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc_io.rs, crates/ffi/src/transport/nfc.rs, tests/card/src/bin/usb_sessions/nfc_source.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -4388,7 +4429,7 @@
         },
         {
           "path": "crates/ffi/src/transport/webusb.rs",
-          "sha256": "ac1a8dbd84f9cea5e69570be8142d8b0037586417714f7c9e0ddd785b62b01a6"
+          "sha256": "932e0cab82c067ac1488842dc22804c90057528ce0c7dc309ab3c0be12bc092c"
         }
       ],
       "regressions": [
@@ -4421,7 +4462,8 @@
         "Further pending CTAP/configuration transitions, inline-size/header/body mutations and complete volatile native-HID equivalence remain open.",
         "Physical USB/RF/WTX, total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open.",
         "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 and the17 prior unequal literal cases are intentional correctness differences.",
-        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/apdu.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts."
+        "Shared-code extraction changed these target/regression artifacts: crates/core/src/applets/ctap/apdu.rs, crates/core/src/runtime/engine.rs, crates/core/src/runtime/registry.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -4486,11 +4528,11 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "835075b3c741d5dbc42b45cf8e6c6cf3eaea8675fa6941c693c3fd844a4bcc36"
+          "sha256": "6e452e38618ae5f1c7b3a3c0ededee7f238a1595d858755cbd27a0ec5a73a4ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
-          "sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a"
+          "sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b"
         }
       ],
       "regressions": [
@@ -4535,7 +4577,8 @@
         "E63 after-WTX responses, mixed NFC cache/cleanup/TXEN source hunk19 remain open; the17 previous unequal literal cases are intentional correctness differences.",
         "Physical USB/RF/WTX, CIU total stack/PKE, Linux sanitizer acceptance and full per-parent source audit remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/engine.rs, crates/core/src/runtime/nfc/request.rs, crates/core/src/runtime/registry.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     },
     {
@@ -4632,11 +4675,11 @@
         },
         {
           "path": "crates/ffi/src/transport/nfc.rs",
-          "sha256": "835075b3c741d5dbc42b45cf8e6c6cf3eaea8675fa6941c693c3fd844a4bcc36"
+          "sha256": "6e452e38618ae5f1c7b3a3c0ededee7f238a1595d858755cbd27a0ec5a73a4ee"
         },
         {
           "path": "crates/transport-runtime/src/nfc_io.rs",
-          "sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a"
+          "sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b"
         }
       ],
       "regressions": [
@@ -4678,7 +4721,8 @@
       "remaining": [
         "Other response-source classes, configuration/native-HID transitions, arbitrary cancellation/IRQ and physical RF/WTX/resource acceptance remain open.",
         "Shared-code extraction changed these target/regression artifacts: crates/core/src/runtime/nfc/request.rs, crates/ffi/src/transport/nfc.rs. Revalidate this behavior against the current shared consumers before release; the pinned historical fixture evidence does not qualify the changed artifacts.",
-        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending."
+        "2026-11-10 NFC generation guard is owned by shared Io::ignored(generation), preserving the CanoKey guard and preventing vLEI stale-event cleanup. Runtime, FFI and facade host regressions pass; historical source-hunk evidence and physical/ROM/IRQ release acceptance remain pending.",
+        "Revalidate the current native adapter or transport fixture after the 2026-11-26 boundary cleanup."
       ]
     }
   ],
@@ -11752,6 +11796,215 @@
         "crates/ffi/src/transport/nfc.rs": "9289abb7cea28a0a1c83697101805533657770e3543fbddf204c6b0092a5a45d"
       },
       "scope": "Constant sourcing only; no disposition or remaining obligation changed."
+    },
+    "boundary_cleanup_2026_11_26": {
+      "crates/core/src/applets/ctap/info.rs": {
+        "previous_sha256": "60b9ce3fffb1db496108d27f878f6b0dbd3b264d2786799e97d3c1a93c2f5ae5",
+        "current_sha256": "d3e3efefeb5ae315b484854eb41c6ee9b6843258c6196b90b9f86d9c2eca2c37",
+        "behaviors": [
+          "G1",
+          "G2",
+          "G3",
+          "G4",
+          "G5",
+          "G6",
+          "G7",
+          "G8",
+          "G9"
+        ]
+      },
+      "crates/ffi/src/transport/nfc.rs": {
+        "previous_sha256": "835075b3c741d5dbc42b45cf8e6c6cf3eaea8675fa6941c693c3fd844a4bcc36",
+        "current_sha256": "6e452e38618ae5f1c7b3a3c0ededee7f238a1595d858755cbd27a0ec5a73a4ee",
+        "behaviors": [
+          "G3",
+          "G6",
+          "T3",
+          "T4",
+          "NFC-STATE",
+          "C2",
+          "T19",
+          "T21",
+          "T22",
+          "T28",
+          "T29"
+        ]
+      },
+      "crates/transport-runtime/src/nfc_io.rs": {
+        "previous_sha256": "aed4d0f72c74eb411ae5ecd598cc82e007189fae52f8a0a9162e9c2697ead10a",
+        "current_sha256": "84477b0fe0bfe8bea9052c5807b620676ee86d84165b80d2949929ab8148190b",
+        "behaviors": [
+          "G3",
+          "G6",
+          "T3",
+          "T4",
+          "NFC-STATE",
+          "C2",
+          "T19",
+          "T20",
+          "T21",
+          "T22",
+          "T28",
+          "T29"
+        ]
+      },
+      "crates/core/src/applets/ctap/mod.rs": {
+        "previous_sha256": "584a9aa162b3700ab8948ac1cf6ebef3e0d2f31c8e89796f3f2d857fe716ed0a",
+        "current_sha256": "f068f9092f2d40b33584bb0c4aa813748b8e93f8f92b89fdffb51fbf8c976ef2",
+        "behaviors": [
+          "G6",
+          "C2",
+          "C3",
+          "T16",
+          "T17",
+          "T18"
+        ]
+      },
+      "tests/card/src/bin/usb_sessions.rs": {
+        "previous_sha256": "7addc7e7e81f07b84416eab963faeecf1fa1fc161fc4db01aef8831905027326",
+        "current_sha256": "3daa04a5754dc50a8f93ea5beb42549a158eaebb0f217e61f5e0333ccbe5ffd2",
+        "behaviors": [
+          "A2",
+          "A3",
+          "T1",
+          "T7",
+          "L5",
+          "L6",
+          "L2",
+          "L7",
+          "L1",
+          "L10"
+        ]
+      },
+      "crates/ffi/src/transport/ccid/io.rs": {
+        "previous_sha256": "2117cdd70803bedf310ccf657745b07538c27543ed5bb9cd271dc37dfa23d552",
+        "current_sha256": "da3a2ed5c2deb22dd5c7ba0841523a9f957d0b8538aa4966754c7f58e9aa42ba",
+        "behaviors": [
+          "T2",
+          "L3"
+        ]
+      },
+      "tests/integration/pcsc_normal.py": {
+        "previous_sha256": "713debfb711bd1c50b7bbcca0106f48b7f5ee13a6b66de8cb7a2278f0bd8dd6b",
+        "current_sha256": "193c1cbbccc44f209818a27e04ea6e8c22d03585fc4968b62f70464eadcfa975",
+        "behaviors": [
+          "T2",
+          "C3",
+          "T16"
+        ]
+      },
+      "crates/ffi/src/transport/webusb.rs": {
+        "previous_sha256": "ac1a8dbd84f9cea5e69570be8142d8b0037586417714f7c9e0ddd785b62b01a6",
+        "current_sha256": "932e0cab82c067ac1488842dc22804c90057528ce0c7dc309ab3c0be12bc092c",
+        "behaviors": [
+          "T5",
+          "L2",
+          "L7",
+          "L3",
+          "L1",
+          "L10",
+          "T26"
+        ]
+      },
+      "crates/ffi/src/transport/hid/link.rs": {
+        "previous_sha256": "df27a2ac0c0df30f3dbf15c4341d6bc67915b50a8d2b6c81f046d3f1d5ac0996",
+        "current_sha256": "7dea3866e5d6e76021f186543db1a72b9cdc02f02a7880ac7766cf5dc331937e",
+        "behaviors": [
+          "L5",
+          "L6",
+          "L4",
+          "L9",
+          "L3",
+          "L1",
+          "L10"
+        ]
+      },
+      "tests/card/src/bin/hid.rs": {
+        "previous_sha256": "339d65e1fc46b916ad260decea134fbd7f98e188dcfbadb6a8c7c37c77f5265b",
+        "current_sha256": "2c3e1ba48fca0d0fb61bfff038ad496f380326707c17a496b310b32f2fc82aeb",
+        "behaviors": [
+          "L4",
+          "L9",
+          "T15"
+        ]
+      },
+      "crates/ffi/src/transport/hid/link/tests.rs": {
+        "previous_sha256": "2058961385dfa6087d1263c134c4c8ab4b6c727cb594dbe39260bd02109cc5c6",
+        "current_sha256": "0f336cc8d28bb07c7294038c99fbd3d2eac16363d6fb468c409725250d46c0a8",
+        "behaviors": [
+          "L4",
+          "L9"
+        ]
+      },
+      "crates/ffi/src/transport/usb/tests.rs": {
+        "previous_sha256": "988dcfe61453b77bfbe75b4901593a0951070043d57688359375bda9db7beedc",
+        "current_sha256": "e74e5ee40f53704e6068d1a9aade17c0d565de21bf5b5085e218c130ab40e0b2",
+        "behaviors": [
+          "U1",
+          "U2",
+          "U5",
+          "L3"
+        ]
+      },
+      "crates/ffi/src/composition.rs": {
+        "previous_sha256": "4a60694646658d22f71b3f6c2d28a227e7b985e3fae6c427ee6aa3055db31d7c",
+        "current_sha256": "d28d61116139199e5701e013d0be3418b3e8dda066d78eafd165154a64b98cd3",
+        "behaviors": [
+          "L3"
+        ]
+      },
+      "tests/support/c312_webusb.c": {
+        "previous_sha256": "5ed7171796f981491169d0b4c510a6bbfccb2f624f1a7a805d2819386ebd170c",
+        "current_sha256": "e03bae4e8f366f7b97ec99860d11ec70964f271caaf3024a037d9f01c784cbed",
+        "behaviors": [
+          "L3"
+        ]
+      },
+      "crates/core/src/applets/ctap/authentication.rs": {
+        "previous_sha256": "f1ed5ac3125777bea54a4a2c9ac960e8ed0a6a138ea323d3b02467a10f14569f",
+        "current_sha256": "51f4f7c646361df06c9cef656309f37e6526415f237daf679357feb0d5443b49",
+        "behaviors": [
+          "C1"
+        ]
+      },
+      "tests/support/c312_parser.c": {
+        "previous_sha256": "392d95b056ce3b2593d629ffaf08074232f89dc6ff56ece22f1c34c9c0ffb75a",
+        "current_sha256": "78feece1cf29f0adaec7f520fd71b09ab022937a1a2e995711950fea17feb0ed",
+        "behaviors": [
+          "C1"
+        ]
+      },
+      "crates/protocol/src/cbor.rs": {
+        "previous_sha256": "09bb0a6e108d89892a22a73e1bcb8d8952a0aface516f4f84fb2e2f6ecd1c617",
+        "current_sha256": "d8f1846d1626936106a40e3964c758008b0fa2c54074b12906b96ed35883e336",
+        "behaviors": [
+          "C2"
+        ]
+      },
+      "tests/support/c312_auth_response.py": {
+        "previous_sha256": "4acd294cc3f6f74137d95b15f22e9206cf09268714842340d0aff99c928bf4a3",
+        "current_sha256": "680f63bbb0840b024d6cbd04c6fa5b5b131276d335c470bdfce2a1be7dde1507",
+        "behaviors": [
+          "C3",
+          "T16",
+          "T17",
+          "T18"
+        ]
+      },
+      "crates/ports/src/contracts/storage.rs": {
+        "previous_sha256": "afb95f4f517926364695807675caa3a089a756c71e4dbc9c5e82a73512cb7f74",
+        "current_sha256": "12fe5ff679d169196286820d894f9369735e8bceed0807583dfa49b3c02dbc1b",
+        "behaviors": [
+          "T18"
+        ]
+      },
+      "crates/protocol/src/nfc.rs": {
+        "previous_sha256": "4878873b912c85c3a107f0f65dcbfcbcb5f6a7168c45a4d755faf0d74b2222fd",
+        "current_sha256": "c56736d479933ac25b7dcdff8e5609f260679d15c62244b1336026b7d929b8a1",
+        "behaviors": [
+          "T20"
+        ]
+      }
     }
   },
   "shared_contract_review": {

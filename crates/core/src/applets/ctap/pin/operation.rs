@@ -26,7 +26,7 @@ impl<B: crate::ports::Backends> Operation<'_, '_, '_, B> {
             shared_pin::unpad_pin((&cp.new_pin[..wire::PADDED_PIN_BYTES]).try_into().unwrap());
         let pin = shared_pin::validate_pin(unpadded, usize::from(record[MIN_PIN_LENGTH]))
             .ok_or(Status::PinPolicy)?;
-        let count = pin.chars().count();
+        let count = canokey_protocol::utf8::chars(pin);
         let mut digest = [0x00; 32];
         let hash = p
             .crypto

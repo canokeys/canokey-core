@@ -9,7 +9,7 @@
 use crate::composition::Provider;
 #[cfg(not(test))]
 use crate::composition::core::{can_preempt, reset as ck_core_reset};
-use crate::sys::device_get_tick;
+use crate::sys::ck_platform_now;
 #[cfg(not(test))]
 use crate::transport::ccid::ck_ccid_idle;
 #[cfg(all(not(test), feature = "usb-hid"))]
@@ -148,7 +148,7 @@ pub enum Action {
 pub unsafe fn setup(s: Setup, interface: u8, usb_ready: bool) -> Option<Action> {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
-        let now = device_get_tick();
+        let now = ck_platform_now();
         (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).keepalive(now);
         let request = Request::decode(s, interface)?;
         let state = &mut *core::ptr::addr_of_mut!(WEBUSB.transport);
@@ -204,7 +204,7 @@ pub unsafe fn pointer(offset: usize) -> *const u8 {
 pub unsafe fn completed() {
     // SAFETY: The caller holds the USB interrupt mask while accessing controller and endpoint state.
     unsafe {
-        (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).completed(device_get_tick());
+        (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).completed(ck_platform_now());
     }
 }
 /// Consume an IRQ-published lifecycle event without admitting another command.
@@ -250,7 +250,7 @@ pub unsafe fn poll<P: Provider>() {
             return;
         }
         service_reset::<P>();
-        usb_locked(|| (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).expire(device_get_tick()));
+        usb_locked(|| (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).expire(ck_platform_now()));
         usb_locked(|| {
             if !WEBUSB.waiting || WEBUSB.cleanup {
                 return;
@@ -280,7 +280,7 @@ pub unsafe fn poll<P: Provider>() {
             WEBUSB.packet_length = 0;
             bytes[..n].copy_from_slice(&(&*core::ptr::addr_of!(WEBUSB.packet))[..n]);
             let offset =
-                (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).receive(n, device_get_tick());
+                (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).receive(n, ck_platform_now());
             Some((n, offset))
         });
         if let Some((n, offset)) = packet {
@@ -346,7 +346,7 @@ pub unsafe fn poll<P: Provider>() {
                 n as usize
             };
             usb_locked(|| {
-                if (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).finish(n, device_get_tick()) {
+                if (&mut *core::ptr::addr_of_mut!(WEBUSB.transport)).finish(n, ck_platform_now()) {
                     WEBUSB.session = true;
                 } else {
                     WEBUSB.cleanup = true;

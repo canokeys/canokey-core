@@ -120,7 +120,7 @@ impl<'a, E: Error, const LIMIT: u16> Reader<'a, E, LIMIT> {
         };
         let count = usize::from(count);
         admit(count)?;
-        core::str::from_utf8(self.body(count)?).map_err(|_| E::INVALID_CBOR)
+        canokey_protocol::utf8::str(self.body(count)?).ok_or(E::INVALID_CBOR)
     }
     /// Delimit one known value without imposing key ordering on its nested maps.
     pub fn item(&mut self) -> Result<&'a [u8], E> {

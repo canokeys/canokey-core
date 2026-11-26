@@ -51,10 +51,12 @@ impl<E: Error> Parsed<E> {
             } else {
                 Some(User {
                     id: user.bytes(raw),
-                    name: name.optional(raw).map(|v| core::str::from_utf8(v).unwrap()),
+                    name: name
+                        .optional(raw)
+                        .map(|v| canokey_protocol::utf8::str(v).unwrap()),
                     display: display
                         .optional(raw)
-                        .map(|v| core::str::from_utf8(v).unwrap()),
+                        .map(|v| canokey_protocol::utf8::str(v).unwrap()),
                 })
             },
             metadata_only: self.metadata_only,

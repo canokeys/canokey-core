@@ -4,11 +4,9 @@
 #define CK_RUST_CRYPTO_OPS_H
 #include <stddef.h>
 #include <stdint.h>
+#include "port_abi.h"
 #include <ecc.h>
 #include <rsa.h>
-
-// Distinct primitive failure; the Rust applet chooses the protocol status.
-#define CK_KEY_INVALID_PADDING (-2)
 
 // The CTAP-only adapter must not keep X25519 through the generic, out-of-line
 // ECC public-key dispatcher. Keep the same primitive and validation semantics.
@@ -23,80 +21,29 @@ static inline int ck_ecc_complete_key(key_type_t alg, ecc_key_t *key) {
 #endif
 }
 
-// Native workspace ABI mirrored by crates/ports/src/contracts/crypto.rs key_layout and state types.
-enum ck_crypto_workspace {
-  CK_KEY_METADATA_BYTES = 4,
-  CK_RSA_EXPONENT_BYTES = 4,
-  CK_RSA_LIMB_BYTES = 256,
-  CK_RSA_LIMBS = 5,
-  CK_KEY_BYTES = CK_RSA_EXPONENT_BYTES + CK_RSA_LIMBS * CK_RSA_LIMB_BYTES,
-  CK_RSA_OUTPUT_BYTES = 512,
-  CK_CRYPTO_SCRATCH_BYTES = 2400,
-  CK_HASH_STATE_BYTES = 256,
-};
-// Stable ABI, mirrored by the enums in crates/ports/src/contracts/crypto.rs.
-enum ck_key_operation {
-  CK_KEY_GENERATE = 0,
-  CK_KEY_VALIDATE = 1,
-  CK_KEY_PUBLIC = 2,
-  CK_KEY_RSA_PKCS1_SIGN = 3,
-  CK_KEY_RSA_PKCS1_DECIPHER = 4,
-  CK_KEY_AGREE = 5,
-  CK_KEY_EC_SIGN = 6,
-  CK_KEY_RSA_RAW = 7,
-  CK_KEY_SM2_EXCHANGE = 8,
-  CK_KEY_SM2_MESSAGE_DIGEST = 9,
-};
-enum ck_stream_operation {
-  CK_STREAM_PUBLIC_INIT = 0,
-  CK_STREAM_READ = 1,
-  CK_STREAM_SIGN_INIT = 2,
-  CK_STREAM_SIGN_UPDATE = 3,
-  CK_STREAM_SIGN_FINAL = 4,
-  CK_STREAM_ABORT = 5,
-  CK_STREAM_DECAPSULATE_INIT = 6,
-  CK_STREAM_DECAPSULATE_UPDATE = 7,
-  CK_STREAM_DECAPSULATE_FINAL = 8,
-  CK_STREAM_SM2_IDENTITY = 9,
-};
-enum ck_digest_operation {
-  CK_DIGEST_INIT = 0,
-  CK_DIGEST_UPDATE = 1,
-  CK_DIGEST_FINAL = 2,
-  CK_DIGEST_ABORT = 3,
-};
-// Fixed SM2 exchange packet, mirrored by crates/ports/src/contracts/crypto.rs::sm2_packet.
-enum ck_sm2_packet {
-  CK_SM2_PEER_STATIC = 32,
-  CK_SM2_PEER_EPHEMERAL = 96,
-  CK_SM2_OWN_ID = 160,
-  CK_SM2_PEER_ID = 193,
-  CK_SM2_ROLE = 226,
-  CK_SM2_OUTPUT_LENGTH = 227,
-  CK_SM2_SIZE = 228,
-};
-
 /* Buffers are borrowed for the call. Material/scratch use the native workspace
  * layout checked by the adapters; persisted keys are encoded by Rust. */
-// EC signing requires SIGNATURE_LENGTH[algorithm] output bytes; other key
-// operations require CK_RSA_OUTPUT_BYTES, including scratch-only operations.
-int32_t ck_platform_key(uint8_t op, uint8_t alg, rsa_key_t *material, const uint8_t *input, size_t length,
-                        uint8_t *output, size_t capacity);
+/* The caller selects a supported ECC algorithm and supplies sufficient output. */
+int32_t ck_key_ec_generate(uint8_t alg, rsa_key_t *material);
+int32_t ck_key_ec_validate(uint8_t alg, rsa_key_t *material);
+int32_t ck_key_ec_public(uint8_t alg, rsa_key_t *material, uint8_t *output);
+int32_t ck_key_ec_sign(uint8_t alg, rsa_key_t *material, const uint8_t *input, size_t length, uint8_t *output,
+                       size_t capacity);
+int32_t ck_key_ec_agree(uint8_t alg, rsa_key_t *material, const uint8_t *input, size_t length, uint8_t *output);
+int32_t ck_sm2_message_digest(ecc_key_t *key, const uint8_t *input, size_t length, uint8_t *output);
 int32_t ck_platform_aes192(const uint8_t *key, const uint8_t *input, uint8_t *output);
-/* Fixed-shape stream lifecycle operations avoid unused ABI arguments. */
-void ck_stream_abort(void *scratch);
-int32_t ck_stream_rewind_public(void *scratch);
-int32_t ck_stream_read(void *scratch, uint8_t *output, size_t capacity);
-int32_t ck_stream_public_init(uint8_t alg, void *scratch, const uint8_t *input, size_t n);
-int32_t ck_stream_sign_init(uint8_t alg, void *scratch, const uint8_t *input, size_t n);
+/* The caller owns the lifecycle and validates all lengths and offsets. */
+void ck_stream_abort(void *scratch, uint8_t alg, uint8_t signature);
+const uint8_t *ck_stream_output(const void *scratch, uint8_t alg, uint8_t signature);
+int32_t ck_stream_refill(void *scratch, uint8_t alg, size_t remaining);
+int32_t ck_stream_public_init(uint8_t alg, void *scratch, const uint8_t *input);
+int32_t ck_stream_sign_init(uint8_t alg, void *scratch, const uint8_t *input);
 int32_t ck_stream_sm2_identity(void *scratch, const uint8_t *input, size_t n);
-int32_t ck_stream_sign_update(void *scratch, const uint8_t *input, size_t n);
-int32_t ck_stream_sign_final(void *scratch);
-int32_t ck_stream_decapsulate_init(uint8_t alg, void *scratch, const uint8_t *input, size_t n);
-int32_t ck_stream_decapsulate_update(void *scratch, const uint8_t *input, size_t n);
-int32_t ck_stream_decapsulate_final(void *scratch, uint8_t *out, size_t capacity);
-int32_t ck_platform_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t *input, size_t length,
-                               uint8_t *output, size_t capacity);
+int32_t ck_stream_sign_update(void *scratch, uint8_t alg, const uint8_t *input, size_t n);
+int32_t ck_stream_sign_final(void *scratch, uint8_t alg, size_t total);
+void ck_stream_decapsulate_init(void *scratch, const uint8_t *input);
+void ck_stream_decapsulate_update(void *scratch, size_t offset, const uint8_t *input, size_t n);
+int32_t ck_stream_decapsulate_final(void *scratch, uint8_t alg, uint8_t *out);
 /* Incremental SHA-256. State is an aligned CK_HASH_STATE_BYTES reservation.
  * Return zero on success; final rejects capacities below 32 before mutation.
  * Final and abort erase state. Abort also releases host PSA resources. */
@@ -104,10 +51,7 @@ int32_t ck_digest_init(void *state);
 int32_t ck_digest_update(void *state, const uint8_t *input, size_t length);
 int32_t ck_digest_final(void *state, uint8_t *output, size_t capacity);
 int32_t ck_digest_abort(void *state);
-int32_t ck_platform_digest(uint8_t op, void *state, const uint8_t *input, size_t length, uint8_t *output,
-                           size_t capacity);
 /* Internal primitive adapter shared by key_crypto.c and piv_crypto.c. */
 int32_t ck_sm2_exchange(ecc_key_t *key, const uint8_t *input, size_t length, uint8_t *output);
-#endif
-
 int32_t ck_platform_p256_sign(const uint8_t scalar[32], const uint8_t digest[32], uint8_t out[64]);
+#endif

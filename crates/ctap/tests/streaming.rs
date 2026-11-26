@@ -75,8 +75,8 @@ impl Crypto for Fixture {
                 self.events.borrow_mut().push("open");
                 self.opens += 1;
                 assert_eq!(input, [0x5a; mldsa::SEED_BYTES]);
-                assert!(scratch.bytes.iter().all(|&byte| byte == 0x00));
-                scratch.bytes.fill(0xc7);
+                assert!(scratch.bytes().iter().all(|&byte| byte == 0x00));
+                scratch.bytes_mut().fill(0xc7);
                 self.offset = 0;
                 if self.fault == Some(Fault::Reopen) && self.opens == 2 {
                     return Err(CryptoError::Failure);
@@ -100,7 +100,7 @@ impl Crypto for Fixture {
             }
             Op::Abort => {
                 self.events.borrow_mut().push("stream-abort");
-                scratch.bytes.fill(0x00);
+                scratch.bytes_mut().fill(0x00);
                 0
             }
             _ => unreachable!(),
@@ -265,7 +265,7 @@ fn stage(framing: &mut Framing, plan: Pending, memory: &Fixture) {
     framing.activate(plan, params);
 }
 fn erased(stream: &Stream<'_>) {
-    assert!(stream.crypto.bytes.iter().all(|&byte| byte == 0x00));
+    assert!(stream.crypto.bytes().iter().all(|&byte| byte == 0x00));
     assert!(stream.framing.bytes.iter().all(|&byte| byte == 0x00));
     assert_eq!(stream.framing.material(), &[0x00; 64]);
     assert_eq!(stream.len(), 0);

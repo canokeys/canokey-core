@@ -9,7 +9,7 @@ static mut CALLBACK: Option<Callback> = None;
 ///
 /// # Safety
 /// A supplied callback must be callable from the board timer IRQ and remain valid until invoked or replaced.
-pub unsafe fn device_set_timeout(next: Option<Callback>, milliseconds: u16) {
+pub unsafe fn ck_timer_set_timeout(next: Option<Callback>, milliseconds: u16) {
     // SAFETY: The USB interrupt mask serializes access to the board's timer callback slot.
     usb_locked(|| unsafe {
         ck_timer_arm(0);

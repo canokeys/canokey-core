@@ -21,9 +21,9 @@ use super::io::{
     ck_hid_io_peek, ck_hid_io_receive, ck_hid_io_reset_pending, ck_hid_io_send,
 };
 #[cfg(not(all(test, not(feature = "usb-device"))))]
-use crate::sys::{device_delay, device_get_tick};
+use crate::sys::{ck_device_delay, ck_platform_now};
 #[cfg(all(test, not(feature = "usb-device")))]
-use tests::{ck_hid_poll, ck_hid_reset, device_delay, device_get_tick};
+use tests::{ck_device_delay, ck_hid_poll, ck_hid_reset, ck_platform_now};
 // Separate endpoint-owned buffers: progress runs while poll borrows OUTGOING.
 static mut OUTGOING: [u8; 64] = [0; 64];
 static mut CONTROL: [u8; 64] = [0; 64];
@@ -95,7 +95,7 @@ pub unsafe fn ck_hid_executing() -> u8 {
 pub unsafe fn ck_hid_execution_begin(cid: u32) {
     // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe {
-        LINK.execution = Execution::new(cid, ck_hid_io_epoch(), device_get_tick());
+        LINK.execution = Execution::new(cid, ck_hid_io_epoch(), ck_platform_now());
         LINK.active = true;
         LINK.keepalive_status = wire::STATUS_PROCESSING;
     }
@@ -119,7 +119,7 @@ unsafe fn send_control(cid: u32, command: u8, value: u8, epoch: u32) {
             execution().abandon();
             return;
         }
-        (&mut *core::ptr::addr_of_mut!(LINK.deadline)).sent(device_get_tick());
+        (&mut *core::ptr::addr_of_mut!(LINK.deadline)).sent(ck_platform_now());
         LINK.transmitting = true;
     }
 }
@@ -163,7 +163,7 @@ pub unsafe fn ck_hid_progress() -> u8 {
         let mut idle = ck_hid_io_idle() != 0;
         if !idle
             && LINK.transmitting
-            && (&*core::ptr::addr_of!(LINK.deadline)).expired(device_get_tick())
+            && (&*core::ptr::addr_of!(LINK.deadline)).expired(ck_platform_now())
         {
             execution().abandon();
         }
@@ -197,14 +197,14 @@ pub unsafe fn ck_hid_progress() -> u8 {
         if execution().cancelled() || execution().abandoned() {
             return 0;
         }
-        if idle && execution().keepalive_due(device_get_tick()) {
+        if idle && execution().keepalive_due(ck_platform_now()) {
             send_control(
                 execution().cid(),
                 wire::KEEPALIVE,
                 LINK.keepalive_status,
                 execution().epoch(),
             );
-            execution().keepalive_sent(device_get_tick());
+            execution().keepalive_sent(ck_platform_now());
         }
         u8::from(!execution().abandoned())
     }
@@ -213,11 +213,11 @@ pub unsafe fn ck_hid_execution_end() {
     // SAFETY: The serialized main loop owns the HID link; only the IRQ mailbox can change asynchronously.
     unsafe {
         while ck_hid_io_reset_pending() == 0 && ck_hid_io_idle() == 0 {
-            if (&*core::ptr::addr_of!(LINK.deadline)).expired(device_get_tick()) {
+            if (&*core::ptr::addr_of!(LINK.deadline)).expired(ck_platform_now()) {
                 execution().abandon();
                 break;
             }
-            device_delay(1);
+            ck_device_delay(1);
         }
         execution().end();
     }
@@ -280,7 +280,7 @@ pub unsafe fn poll<P: Provider>() -> u8 {
         }
         if ck_hid_io_idle() == 0 {
             if LINK.transmitting
-                && (&*core::ptr::addr_of!(LINK.deadline)).expired(device_get_tick())
+                && (&*core::ptr::addr_of!(LINK.deadline)).expired(ck_platform_now())
             {
                 ck_hid_reset::<P>();
                 LINK.active = false;
@@ -308,7 +308,7 @@ pub unsafe fn poll<P: Provider>() -> u8 {
                 core::ptr::null()
             },
             received,
-            device_get_tick(),
+            ck_platform_now(),
             core::ptr::addr_of_mut!(OUTGOING),
         );
         if generation != ck_hid_io_epoch() {
@@ -331,7 +331,7 @@ pub unsafe fn poll<P: Provider>() -> u8 {
                 LINK = Link::new();
                 return 0;
             }
-            (&mut *core::ptr::addr_of_mut!(LINK.deadline)).sent(device_get_tick());
+            (&mut *core::ptr::addr_of_mut!(LINK.deadline)).sent(ck_platform_now());
             LINK.transmitting = true;
         }
         ck_hid_io_receive();
