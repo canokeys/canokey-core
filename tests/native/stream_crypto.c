@@ -7,17 +7,21 @@
 #include <stdalign.h>
 #include <string.h>
 static unsigned calls, aborts;
+static size_t expected_capacity;
 static int results[2];
 static uint8_t phases[2], aborted_phase, seed[MLDSA_SEEDBYTES];
 static int keygen(uint8_t *out, size_t capacity, mldsa_keygen_state_t *state, uint8_t *tr) {
-  assert(calls < 2 && tr == NULL && capacity == 1312);
+  assert(calls < 2 && tr == NULL && capacity == expected_capacity);
   assert(state->phase == calls);
   assert(!memcmp(state->seed, seed, sizeof(seed)));
   if (calls == 0) { assert(state->backend_state == 0); state->backend_state = 0x5a; }
   else assert(state->backend_state == 0x5a);
   int n = results[calls];
   state->phase = phases[calls];
-  if (n > 0 && (size_t)n <= capacity) memset(out, 0x30 + calls, (size_t)n);
+  if (n > 0 && (size_t)n <= capacity) {
+    memset(out, 0x30 + calls, (size_t)n);
+    expected_capacity -= (size_t)n;
+  }
   ++calls;
   return n;
 }
@@ -42,12 +46,12 @@ static void test_public(uint8_t algorithm, size_t total, const struct test_case 
     memset(scratch, 0xa5, sizeof(scratch));
     memset(out, 0xa5, sizeof(out));
     calls = aborts = 0;
+    expected_capacity = total;
     results[0] = cases[i].first; results[1] = cases[i].second;
     phases[0] = cases[i].phase0; phases[1] = cases[i].phase1;
     int32_t n = ck_platform_stream(CK_STREAM_PUBLIC_INIT, algorithm, scratch, seed, sizeof(seed), NULL, 0);
     if (n == (int32_t)total) {
-      // Different read sizes cross the 1312-byte stage boundary without keeping
-      // a primitive-owned pointer or requesting another complete public key.
+      // Reads cross the boundary between the primitive's public-key chunks.
       size_t at = 0;
       while (at < total) {
         size_t count = total - at;
@@ -79,7 +83,7 @@ int main(void) {
     {-1, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, {MLDSA_PK_BYTES + 1, 0, 1, 0, 0},
     {1312, -1, 1, 1, 0}, {1312, 0, 1, 1, 0}, {1312, 641, 1, 0, 0},
     {1312, 639, 1, 0, 0}, {1312, 640, 1, 1, 0}, {1312, 640, 1, 0, 1},
-    {1311, 0, 1, 0, 0}, {1312, 640, 0, 0, 0}, {1312, 1313, 1, 0, 0}
+    {1311, 641, 1, 0, 0}, {1312, 640, 2, 0, 0}, {1312, 640, 0, 0, 0}, {1312, 1313, 1, 0, 0}
   };
   static const struct test_case cases44[] = {
     {-1, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, {1313, 0, 0, 0, 0},

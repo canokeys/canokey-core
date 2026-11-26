@@ -39,6 +39,7 @@ typedef struct {
         struct {
           uint8_t seed[MLDSA_SEEDBYTES];
           SHA3_CTX_T hash;
+          uint8_t tail[CK_MLDSA65_PREP_TAIL];
         } absorb;
         mldsa44_sign_state_t sign;
       } state;
@@ -57,6 +58,9 @@ typedef struct {
   } data;
 } stream_t;
 _Static_assert(sizeof(stream_t) <= CK_CRYPTO_SCRATCH_BYTES, "Shared Rust crypto scratch size");
+_Static_assert(offsetof(stream_t, data.dsa.state.absorb.tail) >=
+                   offsetof(stream_t, data.dsa.state.sign.core.seed) + MLDSA_SEEDBYTES,
+               "The prepared fragment survives initialization of phase and seed");
 _Static_assert(_Alignof(stream_t) <= 8, "Rust CryptoScratch alignment");
 static int is_dsa(uint32_t alg) { return alg == MLDSA65 || alg == MLDSA44; }
 static uint32_t dsa_public_bytes(uint32_t alg) { return alg == MLDSA44 ? MLDSA44_PUBLIC_KEY_BYTES : MLDSA_PK_BYTES; }
@@ -81,11 +85,22 @@ __attribute__((weak)) int ck_mldsa_sign_chunk(bool small, uint8_t *stage, mldsa4
   return small ? ml_dsa_44_sign_seed_mu_streaming(stage, CK_MLDSA_STAGE_BYTES, state, mu)
                : ml_dsa_65_sign_seed_mu_streaming(stage, CK_MLDSA_STAGE_BYTES, &state->core, mu);
 }
+__attribute__((weak)) int ck_mldsa_prepare65_tail(uint8_t *stage, uint8_t *tr, const uint8_t *seed, uint8_t *tail) {
+  (void)tail;
+  return ck_mldsa_prepare(false, stage, tr, seed);
+}
+__attribute__((weak)) int ck_mldsa_sign_first65(uint8_t *stage, mldsa44_sign_state_t *state, const uint8_t *mu,
+                                                uint8_t *tail) {
+  memzero(tail, CK_MLDSA65_PREP_TAIL);
+  return ck_mldsa_sign_chunk(false, stage, state, mu);
+}
 static int refill(stream_t *s, const uint8_t *mu) {
   const uint8_t phase = s->data.dsa.state.sign.core.phase;
   const uint32_t total = dsa_signature_bytes(s->alg);
   if (!is_dsa(s->alg) || s->emitted >= total || (s->emitted != 0 && phase == 0)) return -1;
-  int n = ck_mldsa_sign_chunk(s->alg == MLDSA44, s->data.dsa.stage, &s->data.dsa.state.sign, mu);
+  int n = mu && s->alg == MLDSA65
+              ? ck_mldsa_sign_first65(s->data.dsa.stage, &s->data.dsa.state.sign, mu, s->data.dsa.state.absorb.tail)
+              : ck_mldsa_sign_chunk(s->alg == MLDSA44, s->data.dsa.stage, &s->data.dsa.state.sign, mu);
   if (n <= 0 || (size_t)n > sizeof(s->data.dsa.stage)) return -1;
   if ((uint32_t)n > total - s->emitted) return -1;
   const int last = s->emitted + (uint32_t)n == total;
@@ -194,8 +209,12 @@ int32_t ck_stream_public_init(uint8_t alg, void *scratch, const uint8_t *input, 
       uint8_t *dest = s->data.public_key + s->length;
       const int chunk = alg == MLDSA44 ? ml_dsa_44_keygen_streaming(dest, remaining, &state, NULL)
                                        : ml_dsa_65_keygen_streaming(dest, remaining, &state, NULL);
-      if (chunk <= 0 || (size_t)chunk > remaining) break;
-      s->length += (size_t)chunk;
+      /* Phase zero emits rho and four t1 rows for both parameter sets.
+       * Only 65 has a second chunk, containing its last two rows. */
+      const size_t expected = s->length == 0 ? MLDSA44_PUBLIC_KEY_BYTES : remaining;
+      const unsigned next_phase = expected < remaining;
+      if (chunk != (int)expected || state.phase != next_phase) break;
+      s->length += expected;
     } while (state.phase != 0 && s->length < total);
     const bool complete = s->length == total && state.phase == 0;
     ml_dsa_65_keygen_streaming_abort(&state);
@@ -226,7 +245,8 @@ int32_t ck_stream_sign_init(uint8_t alg, void *scratch, const uint8_t *input, si
   }
   if (is_dsa(alg) && n == MLDSA_SEEDBYTES) {
     uint8_t tr[MLDSA_CRHBYTES];
-    int r = ck_mldsa_prepare(alg == MLDSA44, s->data.dsa.stage, tr, input);
+    int r = alg == MLDSA65 ? ck_mldsa_prepare65_tail(s->data.dsa.stage, tr, input, s->data.dsa.state.absorb.tail)
+                           : ck_mldsa_prepare(true, s->data.dsa.stage, tr, input);
     if (r < 0) {
       ck_stream_abort(s);
       return -1;
@@ -275,7 +295,9 @@ int32_t ck_stream_sign_final(void *scratch) {
     shake_finalize(&s->data.dsa.state.absorb.hash);
     shake_squeeze(&s->data.dsa.state.absorb.hash, mu, sizeof(mu));
     memcpy(seed, s->data.dsa.state.absorb.seed, sizeof(seed));
-    memzero(&s->data.dsa.state, sizeof(s->data.dsa.state));
+    /* INIT cleared the union. Only seed and hash precede the prepared
+     * fragment, which survives until the first signing call consumes it. */
+    memzero(&s->data.dsa.state, offsetof(stream_t, data.dsa.state.absorb.tail) - offsetof(stream_t, data.dsa.state));
     memcpy(s->data.dsa.state.sign.core.seed, seed, sizeof(seed));
     memzero(seed, sizeof(seed));
     int r = refill(s, mu);

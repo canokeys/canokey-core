@@ -61,6 +61,12 @@ static void check(uint8_t algorithm, size_t public_bytes, size_t signature_bytes
           : ml_dsa_65_sign_seed(reference_signature, &n, message, sizeof(message), NULL, 0, seed, tr);
   assert(r == 0 && n == signature_bytes);
 
+  // Abort while the seed, live hash and prepared row cache share the workspace.
+  prepare(&w);
+  assert(ck_stream_sign_init(algorithm, w.scratch, seed, sizeof(seed)) == 0);
+  assert(ck_stream_sign_update(w.scratch, message, sizeof(message)) == 0);
+  abort_stream(&w);
+
   // Oversized reads must fail before changing either output or stream position.
   const size_t steps[] = {1, 64, 256};
   for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); ++i) {
