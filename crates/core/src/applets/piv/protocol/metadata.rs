@@ -174,11 +174,11 @@ impl Piv {
         if m[repo::ORIGIN] == 0 {
             return Err(Sw::REFERENCE_NOT_FOUND);
         }
-        let n = m[repo::NAME_LENGTH] as usize;
         if h.p1 == 0x00 {
-            w.output[..n].copy_from_slice(&m[repo::NAME..repo::NAME + n]);
-            self.memory(n);
-            return Ok(n as u32);
+            let name = repo::name(&m);
+            w.output[..name.len()].copy_from_slice(name);
+            self.memory(name.len());
+            return Ok(name.len() as u32);
         }
         let value = &w.input[..self.used];
         if value.len() > repo::NAME_MAX || !value.len().is_multiple_of(2) {
@@ -200,7 +200,7 @@ impl Piv {
         if high {
             return Err(Sw::WRONG_DATA);
         }
-        if value == &m[repo::NAME..repo::NAME + n] {
+        if value == repo::name(&m) {
             return Ok(0);
         }
         if !value.is_empty() {
@@ -210,18 +210,13 @@ impl Piv {
                 }
                 let mut o = [0; repo::META];
                 repo::read_meta(other, p, &mut o)?;
-                if o[repo::ORIGIN] != 0
-                    && o[repo::NAME_LENGTH] as usize == value.len()
-                    && value == &o[repo::NAME..repo::NAME + value.len()]
-                {
+                if o[repo::ORIGIN] != 0 && value == repo::name(&o) {
                     return Err(Sw::WRONG_DATA);
                 }
             }
         }
-        m[repo::NAME_LENGTH] = value.len() as u8;
-        m[repo::NAME..].fill(0);
-        m[repo::NAME..repo::NAME + value.len()].copy_from_slice(value);
-        repo::save_name(id, &m, p)?;
+        repo::set_name(&mut m, value);
+        repo::save_name(id, &m, &mut w.key.bytes, p)?;
         Ok(0)
     }
     pub(super) fn move_key(

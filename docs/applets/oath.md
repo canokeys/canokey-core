@@ -25,11 +25,11 @@ access code requires successful OATH authentication; ADMIN PIN is separate.
 | --- | --- | --- |
 | SELECT A4 | P1=04, P2=00, AID | Version 6.0.0, stable handle; challenge/algorithm when locked |
 | PUT 01 | P1/P2=0, name/key, optional properties/counter | Create credential, reject duplicate names; SHA-1/256/512, HOTP/TOTP |
-| DELETE 02 | P1/P2=0, name | Clear PASS references before tombstoning the record |
+| DELETE 02 | P1/P2=0, name | Clear PASS references before removing the record |
 | RENAME 05 | P1/P2=0, old/new names | Preserve logical ID and enumeration position |
 | SET CODE 03 | P1/P2=0, key/challenge/proof, or empty key | Existing 16-byte access-key proof/set/clear; no new KDF |
 | VALIDATE A3 | P1/P2=0, proof/host challenge | Session grant and mutual HMAC-SHA1 proof |
-| LIST A1 | P1/P2=0 | Name/type metadata in physical storage order |
+| LIST A1 | P1/P2=0 | Name/type metadata in insertion order |
 | CALCULATE A2 | P1=0, P2=0/1, name/challenge | Full/truncated digest; durable HOTP preincrement; touch policy |
 | CALCULATE ALL A4 | P1=0, P2=0/1, challenge | Bounded pages, HOTP and touch markers; full/truncated TOTP |
 | SEND REMAINING A5 | Existing continuation | A5/61FF page cursor; no repeated completed calculation |
@@ -68,33 +68,33 @@ development version 0.0.0, matching the common version policy.
 
 - `02`: version/key-present/handle8, followed by access-key16 only when set
   (10 or 26 bytes).
-- `03`: literal `OAT2` header, then fixed 146-byte slots: big-endian ID4,
-  version2/name-length/key-length/type/digits/properties (six bytes), name64,
-  key64 and moving-factor8. Unused name/key bytes are zero. Rename never moves
-  the key, counter or another slot. Counter patches have a fixed slot offset.
-- Deletion atomically zeros the entire credential while retaining its ID;
-  credential version zero marks a reusable slot. Insertion scans live and
-  deleted IDs and assigns max+1, refusing exhaustion. Reusing the first vacant
-  slot requires no file growth or separate watermark commit. A stale PASS
-  binding cannot alias a new credential, even after deleting every credential
-  and rebooting. Full OATH reset clears PASS bindings before resetting IDs.
-- LIST/CALCULATE ALL enumerate physical slots, skipping tombstones. A reused
-  slot appears at its original position, matching the legacy C ordering;
-  insertion order after deletion is not guaranteed.
+- `03`: literal `OAT3` header, a big-endian next-ID lower bound, then packed
+  entries: big-endian ID4, version2/name-length/key-length/type/digits/
+  properties (six bytes), the name, the key and moving-factor8, with no padding
+  to the 64-byte name and key limits. A typical 24-byte name with a 20-byte
+  key stores 62 bytes instead of a 146-byte fixed slot.
+- Insertion appends one entry and assigns `max(next, largest live ID + 1)`,
+  never `u32::MAX`. Deletion and rename stage a complete copy with the entry
+  removed or replaced and publish it by atomic rename; deletion raises the
+  stored next-ID bound above the deleted ID. A stale PASS binding cannot alias
+  a new credential, even after deleting every credential and rebooting. Full
+  OATH reset clears PASS bindings before resetting IDs.
+- LIST/CALCULATE ALL enumerate entries in insertion order; deletion and rename
+  preserve the relative order of the remaining credentials.
 - `00`: two compact PASS slots. OATH slots store ID and display name, never
   the key. No previous-format upgrade path is included.
-- Slot creation/replacement/deletion is one atomic patch; counter updates patch
-  eight bytes. The CIU backend uses one LittleFS open/write/close transaction,
-  relying on its copy-on-write data and atomic metadata commit instead of a
-  second whole-file copy. LittleFS can still copy the suffix after an early-file
-  write; this is not an eight-byte physical Flash write guarantee. File caches
-  are word aligned. New-slot admission accounts for two 512-byte growth pages
-  plus `max(20 KiB, ceil((file_bytes + 146) / 512) * 512 + 8 * 512)` of
-  OATH-local update margin. This replaces the old 64 KiB quota; other applets
-  do not enforce it, so it is not a global reserve. Vacant slots are reusable
-  without reserving another slot's space. Mount failure never
+- Insertion is one append patch and counter updates patch eight bytes. The CIU
+  backend uses one LittleFS open/write/close transaction, relying on its
+  copy-on-write data and atomic metadata commit. LittleFS can still copy the
+  suffix after an early-file write; this is not an eight-byte physical Flash
+  write guarantee. Deletion and rename copy the file through 256-byte stack
+  chunks into the staging file. File caches are word aligned. Insertion
+  admission accounts for two 512-byte growth pages plus
+  `max(20 KiB, ceil((file_bytes + 146) / 512) * 512 + 8 * 512)` of OATH-local
+  update margin, which covers the staged copy for a later deletion. Other
+  applets do not enforce it, so it is not a global reserve. Mount failure never
   formats. Provision fresh storage: old empty and populated OATH files are
-  rejected by the `OAT2` header check, not imported or silently reinterpreted.
+  rejected by the `OAT3` header check, not imported or silently reinterpreted.
   Uncertain writes disable storage until remount.
 
 Rust owns the 30-second request-bound press/release wait. C only polls raw

@@ -151,7 +151,7 @@ fn credential(
     .unwrap()
 }
 #[test]
-fn fixed_records_preserve_keys_and_counters_when_names_change_size() {
+fn packed_records_preserve_keys_and_counters_when_names_change_size() {
     let mut crypto = Primitives::default();
     for key_len in [1, 20, 32, 64] {
         let key = [0xa5; 64];
@@ -171,15 +171,17 @@ fn fixed_records_preserve_keys_and_counters_when_names_change_size() {
             record.rename(&name[..name_len], &mut crypto).unwrap();
             let mut encoded = [0xcc; codec::LENGTH];
             let n = codec::encode(&record, &mut encoded);
-            assert_eq!(n, 142);
+            // Header, name, key and counter with no padding to the limits.
+            assert_eq!(n, 6 + name_len + key_len + 8);
             assert_eq!(
                 &encoded[..6],
                 &[2, name_len as u8, key_len as u8, 0x13, 8, 3]
             );
-            assert!(encoded[6 + name_len..70].iter().all(|b| *b == 0));
-            assert_eq!(&encoded[70..70 + key_len], &key[..key_len]);
-            assert!(encoded[70 + key_len..134].iter().all(|b| *b == 0));
+            assert_eq!(&encoded[6..6 + name_len], &name[..name_len]);
+            assert_eq!(&encoded[6 + name_len..n - 8], &key[..key_len]);
             assert_eq!(&encoded[n - 8..n], &counter);
+            assert!(encoded[n..].iter().all(|b| *b == 0xcc));
+            assert_eq!(codec::decode(&encoded[..n - 1]).err(), Some(Error::Invalid));
             let mut decoded = codec::decode(&encoded[..n]).unwrap();
             assert_eq!(decoded.name(), &name[..name_len]);
             assert_eq!(decoded.key(), &key[..key_len]);

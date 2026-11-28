@@ -4,7 +4,15 @@
 use crate::ports::Memory as _;
 use canokey_protocol::response::StatusWord as Sw;
 pub const AID: &[u8] = &[0xd2, 0x76, 0, 0, 0x85, 1, 1];
+/// Logical NDEF file size declared by the Capability Container (bytes).
+/// Storage keeps only the written prefix: bytes past the stored length read as
+/// zero, so a short default message stays inline in LittleFS metadata instead
+/// of occupying three 512-byte blocks.
 pub const FILE_LIMIT: usize = 1024;
+// Stack chunk used to zero-fill a write that starts past the stored prefix.
+// Storage writes may not leave gaps; such writes are rare (Type 4 writers
+// write sequentially), so a short chunk bounds stack rather than commits.
+const GAP_FILL_BYTES: usize = 256;
 // ISO 7816-4 instructions used by the Type-4 NDEF application.
 const INS_SELECT: u8 = 0xa4;
 pub(crate) const INS_READ_BINARY: u8 = 0xb0;
@@ -64,7 +72,6 @@ pub trait Store {
         bytes: &[u8],
         truncate: bool,
     ) -> Result<(), Failure>;
-    fn resize(&mut self, file: File, length: usize) -> Result<(), Failure>;
 }
 pub struct Ndef {
     selected: Option<File>,
@@ -114,17 +121,13 @@ impl Ndef {
         if !reset {
             let cc = size(s.size(File::Capability))?;
             let message = size(s.size(File::Message))?;
-            if cc == 15 && message > 0 {
-                if message != FILE_LIMIT {
-                    s.resize(File::Message, FILE_LIMIT)
-                        .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-                }
+            // Earlier firmware stored the full 1024-byte file; any stored
+            // prefix up to the logical limit keeps its meaning.
+            if cc == 15 && message > 0 && message <= FILE_LIMIT {
                 return self.cc(s);
             }
         }
         s.write(File::Message, 0, INITIAL, true)
-            .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-        s.resize(File::Message, FILE_LIMIT)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         s.write(File::Capability, 0, &DEFAULT_CC, true)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
@@ -208,7 +211,17 @@ impl Ndef {
             out.copy_from_slice(&self.cc[offset..offset + out.len()]);
             Ok(())
         } else {
-            s.read(File::Message, offset, out)
+            let stored = s
+                .size(File::Message)
+                .map_err(|_| Sw::UNABLE_TO_PROCESS)?
+                .saturating_sub(offset)
+                .min(out.len());
+            let (head, tail) = out.split_at_mut(stored);
+            tail.fill(0);
+            if head.is_empty() {
+                return Ok(());
+            }
+            s.read(File::Message, offset, head)
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)
         }
     }
@@ -238,10 +251,25 @@ impl Ndef {
         }
         // Do not retain a continuation after an uncertain persistence result.
         self.write_offset = None;
+        Self::fill_gap(offset, s)?;
         s.write(File::Message, offset, data, false)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         if chained {
             self.write_offset = Some(offset + data.len());
+        }
+        Ok(())
+    }
+    /// Extend the stored prefix with zeros up to `offset`. Interrupted fills
+    /// leave only zeros that already read as zero, so they are invisible.
+    #[inline(never)]
+    fn fill_gap(offset: usize, s: &mut (impl Store + ?Sized)) -> Result<(), Sw> {
+        let mut end = s.size(File::Message).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+        let zeros = [0; GAP_FILL_BYTES];
+        while end < offset {
+            let n = (offset - end).min(GAP_FILL_BYTES);
+            s.write(File::Message, end, &zeros[..n], false)
+                .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+            end += n;
         }
         Ok(())
     }
@@ -293,14 +321,6 @@ impl<T: crate::ports::Storage + ?Sized> Store for T {
             )
             .map_err(failure)
         }
-    }
-    fn resize(&mut self, file: File, length: usize) -> Result<(), Failure> {
-        crate::ports::Storage::resize(
-            self,
-            record(file),
-            u32::try_from(length).map_err(|_| Failure::Io)?,
-        )
-        .map_err(failure)
     }
 }
 

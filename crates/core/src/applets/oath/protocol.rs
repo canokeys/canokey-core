@@ -662,7 +662,10 @@ mod parameter_tests {
     }
 
     struct BindingStore {
-        oath: [u8; 8 + super::super::codec::LENGTH],
+        // File header (magic, next ID), entry ID, then the packed credential.
+        oath: [u8; 12 + super::super::codec::LENGTH],
+        oath_len: usize,
+        key_at: usize,
         pass: [u8; crate::applets::pass::codec::FILE_SIZE],
         writes: usize,
         fail_write: bool,
@@ -670,12 +673,14 @@ mod parameter_tests {
     impl BindingStore {
         fn new(name: &[u8], kind: Kind) -> Self {
             let mut store = Self {
-                oath: [0; 8 + super::super::codec::LENGTH],
+                oath: [0; 12 + super::super::codec::LENGTH],
+                oath_len: 0,
+                key_at: 12 + super::super::codec::HEADER_BYTES + name.len(),
                 pass: [0; crate::applets::pass::codec::FILE_SIZE],
                 writes: 0,
                 fail_write: false,
             };
-            store.oath[..8].copy_from_slice(b"OAT2\x00\x00\x00\x07");
+            store.oath[..12].copy_from_slice(b"OAT3\x00\x00\x00\x08\x00\x00\x00\x07");
             let mut credential = Credential::new(
                 name,
                 &[0x5a; 64],
@@ -686,7 +691,11 @@ mod parameter_tests {
                 [0; 8],
             )
             .unwrap();
-            super::super::codec::encode(&credential, (&mut store.oath[8..]).try_into().unwrap());
+            store.oath_len = 12
+                + super::super::codec::encode(
+                    &credential,
+                    (&mut store.oath[12..]).try_into().unwrap(),
+                );
             credential.clear(&mut Mac::new(&mut NoMac, &Wipe));
             store
         }
@@ -718,15 +727,12 @@ mod parameter_tests {
         }
         fn size(&mut self, record: Record) -> Result<u32, StorageError> {
             assert_eq!(record, Record::OathRecords);
-            Ok(self.oath.len() as u32)
+            Ok(self.oath_len as u32)
         }
         fn read_at(&mut self, record: Record, at: u32, out: &mut [u8]) -> Result<(), StorageError> {
             assert_eq!(record, Record::OathRecords);
             let end = at as usize + out.len();
-            assert!(
-                end <= 8 + super::super::codec::KEY_OFFSET,
-                "SET_DEFAULT read a key"
-            );
+            assert!(end <= self.key_at, "SET_DEFAULT read a key");
             out.copy_from_slice(&self.oath[at as usize..end]);
             Ok(())
         }
@@ -792,7 +798,7 @@ mod parameter_tests {
         ] {
             let mut storage = BindingStore::new(b"h", kind);
             if corrupt {
-                storage.oath[8 + 4] = 9;
+                storage.oath[12 + 4] = 9;
             } // Invalid digits.
             let mut pass = Pass::new();
             pass.install(&mut storage, &Wipe).unwrap();

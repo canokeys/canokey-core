@@ -146,12 +146,15 @@ Algorithm mapping updates validate the input and atomically patch the fixed
 still write: this infrequent command omits readback/deduplication to reduce ROM.
 
 PIV records use hexadecimal filenames `0e`..`4c`, with no directory prefix.
-Keys store a version-2 discriminator byte, private material, then a fixed
-84-byte footer (six metadata bytes and 78 name bytes). Name changes patch only
-the footer and do not copy the key through a staging file.
-RSA material is exponent4 plus five active-width components (644/964/1284
-bytes); ECC and PQ records store only their scalar or seed. Unused name bytes
-are zero. Version-1 key records are rejected. Provision fresh storage.
+Keys store a version-2 discriminator byte, private material, the name bytes,
+then six fixed bytes: footer version 3, algorithm, origin, PIN policy, touch
+policy and name length. Unnamed ECC and 32-byte seed records therefore fit the
+64-byte LittleFS inline limit. A name change resizes the record, so it
+republishes the existing key with the new footer through staging; interruption
+keeps the old key and name. RSA material is exponent4 plus five active-width
+components (644/964/1284 bytes); ECC and PQ records store only their scalar or
+seed. Version-1 records and version-2 footers with a fixed 78-byte name field
+are rejected. Provision fresh storage.
 Key staging batches borrowed pieces in one synchronous open/write/close;
 PQ generation still publishes only after the final public response chunk.
 Object capacities match C: certificates 6568 bytes, other large objects 3040,

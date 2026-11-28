@@ -681,7 +681,8 @@ def pq_keys(c):
             assert metadata[1] == bytes([alg]) and metadata[3] == bytes([2 if imported else 1])
             assert metadata[4] == encoded
             if c.host_only("internal record sizes"):
-                assert c.wire.command("SIZE 17") == (85 + size).to_bytes(4, "big")
+                # Discriminator, seed and the six-byte unnamed footer.
+                assert c.wire.command("SIZE 17") == (1 + size + 6).to_bytes(4, "big")
             public = cls.from_public_bytes(fields(encoded)[0x86])
             assert len(fields(encoded)[0x86]) == public_size
             c.verify()

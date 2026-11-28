@@ -15,10 +15,21 @@ with connection(sys.argv[1]) as wire:
     def size(record):
         return int.from_bytes(wire.command(f"SIZE {record}"), "big")
 
+    # OATH file: OAT3 magic and next-ID bound, then packed entries of ID4,
+    # header6, name, key and counter8.
+    OATH_HEADER = 8
+
+    def oath_entry(name, key=20):
+        return 4 + 6 + name + key + 8
+
+    # PIV key: discriminator, material, name bytes and six fixed footer bytes.
+    def piv_key(material, name=0):
+        return 1 + material + name + 6
+
     assert [size(i) for i in (1, 2, 3, 4, 5, 6, 7, 14)] == [
         10,
         10,
-        4,
+        OATH_HEADER,
         439,
         10,
         12,
@@ -38,17 +49,17 @@ with connection(sys.argv[1]) as wire:
         c.cmd(
             "put", 1, data=tlv(0x71, name) + tlv(0x73, b"\x21\x06" + b"k" * 20), le=None
         )
-    assert size(3) == 4 + 2 * 146
+    assert size(3) == OATH_HEADER + oath_entry(1) + oath_entry(64)
     c.cmd("rename", 5, data=tlv(0x71, b"a") + tlv(0x71, b"c" * 64), le=None)
-    assert size(3) == 4 + 2 * 146
+    assert size(3) == OATH_HEADER + 2 * oath_entry(64)
     wire.command("RESET")
     c.cmd("oath", 0xA4, 4, data=bytes.fromhex("a0000005272101"))
     assert len(c.cmd("list", 0xA1)) == 134
     for name in (b"c" * 64, b"b" * 64):
         c.cmd("delete", 2, data=tlv(0x71, name), le=None)
-    assert size(3) == 4 + 2 * 146
+    assert size(3) == OATH_HEADER
     c.cmd("reuse", 1, data=tlv(0x71, b"reused") + tlv(0x73, b"\x21\x06" + b"k" * 20), le=None)
-    assert size(3) == 4 + 2 * 146
+    assert size(3) == OATH_HEADER + oath_entry(6)
 
     pgp = OpenPgp(wire)
     pgp.select()
@@ -91,16 +102,16 @@ with connection(sys.argv[1]) as wire:
     piv.auth()
     for a, width in [(5, 128), (6, 192), (7, 256)]:
         key = piv.generate(a)
-        assert size(17) == 85 + 4 + 5 * width
+        assert size(17) == piv_key(4 + 5 * width)
         for name in ("x" * 39, "y", ""):
             name = name.encode("utf-16le")
             piv.cmd("name", 0xF5, 1, 0x9A, name, le=None)
-            assert size(17) == 85 + 4 + 5 * width
+            assert size(17) == piv_key(4 + 5 * width, len(name))
             assert piv.cmd("name_read", 0xF5, 0, 0x9A) == name
             assert piv.public(a).public_numbers() == key.public_numbers()
 
     piv.import_key(8, private)
-    assert size(17) == 85 + 66
+    assert size(17) == piv_key(66)
     wire.command("RESET")
     piv.select()
     public = piv.public(8)

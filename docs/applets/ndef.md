@@ -6,6 +6,10 @@ A nearby reader can replace the URI with a phishing link, and repeated writes
 consume Flash endurance.
 
 The NDEF file is 1024 bytes, including the two-byte big-endian message length.
+Storage keeps only the written prefix; bytes past it read as zero. A write that
+starts past the prefix first extends it with zeros in 256-byte chunks, so an
+interrupted write leaves only bytes that already read as zero. Records written
+by earlier firmware at the full 1024 bytes remain valid unchanged.
 The Capability Container's read and write access bytes are at offsets 13 and
 14. A value of `0x00` permits access without authentication. A value of
 `0xff` denies the corresponding access.

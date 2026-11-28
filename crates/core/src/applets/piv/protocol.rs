@@ -317,7 +317,7 @@ impl Piv {
                 self.import.meta = metadata;
                 self.import.meta[repo::ALGORITHM] = a;
                 self.import.meta[repo::ORIGIN] = 2;
-                self.import.meta[repo::NAME_LENGTH..].fill(0);
+                repo::set_name(&mut self.import.meta, &[]);
                 self.import.slot = id;
                 Request::Import
             }

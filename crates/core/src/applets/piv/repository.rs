@@ -51,19 +51,30 @@ const fn records<const N: usize>(first: Record) -> [Record; N] {
 }
 pub const KEYS: [Record; KEY_COUNT] = records(Record::PivKey0);
 pub const OBJECTS: [Record; ADMIN_OBJECT_INDEX + 1] = records(Record::PivObject0);
-// Byte offsets in the RAM metadata view (META is its byte capacity).
-// Disk stores a discriminator, key material, then this fixed metadata footer.
-// NAME_LENGTH counts bytes, not characters. ORIGIN is 0 absent / 1 generated /
-// 2 imported; PIN_POLICY and TOUCH_POLICY use wire::policy values.
+// Version byte offset and value of the PIN, management and config records.
 pub const VERSION: usize = 0;
 pub const FORMAT_VERSION: u8 = 1;
+// Key records start with the shared key_storage discriminator (0x02).
 pub const KEY_FORMAT_VERSION: u8 = 2;
+// Key metadata footer version. Version 2 used a fixed 78-byte name field.
+pub const META_FORMAT_VERSION: u8 = 3;
 pub const NAME_MAX: usize = 78;
 pub const USER_KEY_COUNT: usize = 24;
 pub const ATTESTATION_KEY: usize = USER_KEY_COUNT;
 pub const KEY_COUNT: usize = USER_KEY_COUNT + 1;
 pub const HEADER: usize = 1;
-pub const META: usize = 84;
+// Key disk layout: discriminator, key material, NAME_LENGTH name bytes, then
+// six fixed bytes (version, algorithm, origin, PIN policy, touch policy,
+// NAME_LENGTH). Unnamed records with key material up to 57 bytes fit in
+// CIU LittleFS's 64-byte inline limit.
+// The RAM view (META bytes) right-aligns the name before the fixed bytes so
+// the persisted footer is one contiguous suffix; unused name bytes are zero.
+// NAME_LENGTH counts bytes, not characters. ORIGIN is 0 absent / 1 generated /
+// 2 imported; PIN_POLICY and TOUCH_POLICY use wire::policy values.
+pub const NAME_END: usize = NAME_MAX;
+pub const FIXED_META: usize = 6;
+pub const META: usize = NAME_END + FIXED_META;
+pub const META_VERSION: usize = NAME_END;
 const P256_BYTES: usize = 32;
 const P384_BYTES: usize = 48;
 const P521_BYTES: usize = 66;
@@ -71,12 +82,12 @@ const RSA2048_COMPONENT_BYTES: usize = 128;
 const RSA3072_COMPONENT_BYTES: usize = 192;
 const RSA4096_COMPONENT_BYTES: usize = 256;
 const MLKEM_SEED_BYTES: usize = crate::ports::mlkem::SEED_BYTES;
-pub const ALGORITHM: usize = 1;
-pub const ORIGIN: usize = 2;
-pub const PIN_POLICY: usize = 3;
-pub const TOUCH_POLICY: usize = 4;
-pub const NAME_LENGTH: usize = 5;
-pub const NAME: usize = 6;
+pub const ALGORITHM: usize = META_VERSION + 1;
+pub const ORIGIN: usize = META_VERSION + 2;
+pub const PIN_POLICY: usize = META_VERSION + 3;
+pub const TOUCH_POLICY: usize = META_VERSION + 4;
+pub const NAME_LENGTH: usize = META_VERSION + 5;
+const _: () = assert!(NAME_LENGTH + 1 == META);
 // Algorithm-mapping record: enable byte, then eleven wire IDs in the order of
 // EXTENSION_ALGORITHMS below. These values are APDU IDs, not ports::alg IDs.
 pub const CONFIG_BYTES: usize = 1 + EXTENSION_ALGORITHMS.len();
@@ -205,7 +216,7 @@ pub fn read_meta(
         Err(e) => return Err(io(e)),
     };
     if n == 0 {
-        m[VERSION] = KEY_FORMAT_VERSION;
+        m[META_VERSION] = META_FORMAT_VERSION;
         m[ALGORITHM] = NO_ALGORITHM;
         m[PIN_POLICY] = match SLOTS[id] {
             slot::SIGNATURE => policy::PIN_ALWAYS,
@@ -215,22 +226,51 @@ pub fn read_meta(
         m[TOUCH_POLICY] = policy::TOUCH_NEVER;
         return Ok(());
     }
-    let valid = key_storage::read_footer(p.storage, KEYS[id], n, KEY_FORMAT_VERSION, m, |m, n| {
-        !(m[VERSION] != KEY_FORMAT_VERSION
-            || width(m[ALGORITHM]) == 0
-            || m[ORIGIN] < 1
-            || m[ORIGIN] > 2
-            || m[PIN_POLICY] < policy::PIN_NEVER
-            || m[PIN_POLICY] > policy::PIN_ALWAYS
-            || m[TOUCH_POLICY] > policy::TOUCH_CACHED
-            || m[NAME_LENGTH] > NAME_MAX as u8
-            || n as usize != HEADER + material(m[ALGORITHM]) + META)
-    })
-    .map_err(io)?;
+    let fixed: &mut [u8; FIXED_META] = (&mut m[META_VERSION..]).try_into().unwrap();
+    let valid =
+        key_storage::read_footer(p.storage, KEYS[id], n, KEY_FORMAT_VERSION, fixed, |f, n| {
+            let at = |i: usize| f[i - META_VERSION];
+            !(at(META_VERSION) != META_FORMAT_VERSION
+                || width(at(ALGORITHM)) == 0
+                || at(ORIGIN) < 1
+                || at(ORIGIN) > 2
+                || at(PIN_POLICY) < policy::PIN_NEVER
+                || at(PIN_POLICY) > policy::PIN_ALWAYS
+                || at(TOUCH_POLICY) > policy::TOUCH_CACHED
+                || at(NAME_LENGTH) > NAME_MAX as u8
+                || n as usize
+                    != HEADER + material(at(ALGORITHM)) + at(NAME_LENGTH) as usize + FIXED_META)
+        })
+        .map_err(io)?;
     if !valid {
+        m.fill(0);
         return Err(Sw::UNABLE_TO_PROCESS);
     }
-    Ok(())
+    let length = m[NAME_LENGTH] as u32;
+    if length == 0 {
+        return Ok(());
+    }
+    p.storage
+        .read_at(
+            KEYS[id],
+            n - FIXED_META as u32 - length,
+            &mut m[NAME_END - length as usize..NAME_END],
+        )
+        .map_err(io)
+}
+/// Stored label bytes of a validated metadata view.
+pub fn name(m: &[u8; META]) -> &[u8] {
+    &m[NAME_END - m[NAME_LENGTH] as usize..NAME_END]
+}
+/// Replace the label; the caller validates `value.len() <= NAME_MAX`.
+pub fn set_name(m: &mut [u8; META], value: &[u8]) {
+    m[..NAME_END].fill(0);
+    m[NAME_END - value.len()..NAME_END].copy_from_slice(value);
+    m[NAME_LENGTH] = value.len() as u8;
+}
+/// Persisted metadata suffix: the label followed by the fixed bytes.
+pub fn footer(m: &[u8; META]) -> &[u8] {
+    &m[NAME_END - m[NAME_LENGTH] as usize..]
 }
 pub fn load(
     id: usize,
@@ -251,16 +291,19 @@ pub fn save(
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Sw> {
     let a = m[ALGORITHM];
-    key_storage::commit(p.storage, KEYS[id], rsa(a), width(a), key, m).map_err(io)
+    key_storage::commit(p.storage, KEYS[id], rsa(a), width(a), key, footer(m)).map_err(io)
 }
+/// A label change resizes the record, so it republishes the existing key with
+/// the new footer through staging; interruption keeps the old key and label.
 pub fn save_name(
     id: usize,
     m: &[u8; META],
+    key: &mut [u8; crate::ports::key_layout::SIZE],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Sw> {
-    p.storage
-        .replace_at(KEYS[id], (HEADER + material(m[ALGORITHM])) as u32, m)
-        .map_err(io)
+    let result = load(id, m, key, p).and_then(|()| save(id, m, key, p));
+    p.memory.wipe(key);
+    result
 }
 pub fn policies(m: &mut [u8; META], mut b: &[u8]) -> Result<(), Sw> {
     while !b.is_empty() {

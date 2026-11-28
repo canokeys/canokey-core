@@ -14,11 +14,10 @@ impl Store {
         let mut bytes = [0x5a; 1369];
         bytes[0] = 2;
         let footer = 1 + repo::material(algorithm);
-        bytes[footer..footer + repo::META].fill(0);
-        bytes[footer..footer + 6].copy_from_slice(&[2, algorithm, 2, 2, 0, 0]);
+        bytes[footer..footer + repo::FIXED_META].copy_from_slice(&[3, algorithm, 2, 2, 0, 0]);
         Self {
             bytes,
-            size: Some(85 + repo::material(algorithm)),
+            size: Some(1 + repo::material(algorithm) + repo::FIXED_META),
             fail_at: None,
             material_reads: 0,
         }
@@ -39,7 +38,7 @@ impl Storage for Store {
         assert_eq!(record, Record::PivKey0);
         if !out.is_empty()
             && offset >= 1
-            && (offset as usize) < self.size.unwrap_or(0).saturating_sub(repo::META)
+            && (offset as usize) < self.size.unwrap_or(0).saturating_sub(repo::FIXED_META)
         {
             self.material_reads += 1;
         }
@@ -153,7 +152,8 @@ fn truncated_seed_and_invalid_key_types_never_reach_crypto() {
     assert_eq!(store.material_reads, 0);
     for algorithm in [12, 14, 0xff] {
         let mut store = Store::key(alg::P256);
-        store.bytes[1 + repo::material(alg::P256) + repo::ALGORITHM] = algorithm;
+        store.bytes[1 + repo::material(alg::P256) + repo::ALGORITHM - repo::META_VERSION] =
+            algorithm;
         rejected(&mut store, Sw::UNABLE_TO_PROCESS);
         assert_eq!(store.material_reads, 0);
     }
@@ -161,13 +161,13 @@ fn truncated_seed_and_invalid_key_types_never_reach_crypto() {
 
 #[test]
 fn absent_keys_and_stale_origin_zero_records_never_load_material() {
-    for size in [None, Some(0), Some(85 + 32)] {
+    for size in [None, Some(0), Some(1 + 32 + repo::FIXED_META)] {
         let mut store = Store::key(alg::P256);
-        store.bytes[1 + 32 + repo::ORIGIN] = 0;
+        store.bytes[1 + 32 + repo::ORIGIN - repo::META_VERSION] = 0;
         store.size = size;
         rejected(
             &mut store,
-            if size == Some(117) {
+            if size == Some(39) {
                 Sw::UNABLE_TO_PROCESS
             } else {
                 Sw::REFERENCE_NOT_FOUND
@@ -272,8 +272,8 @@ impl Device for Gesture {
 #[test]
 fn stream_validation_and_pin_precede_touch_and_one_use_grant() {
     let mut store = Store::key(alg::MLKEM768);
-    store.bytes[65 + repo::PIN_POLICY] = policy::PIN_ALWAYS;
-    store.bytes[65 + repo::TOUCH_POLICY] = policy::TOUCH_ALWAYS;
+    store.bytes[65 + repo::PIN_POLICY - repo::META_VERSION] = policy::PIN_ALWAYS;
+    store.bytes[65 + repo::TOUCH_POLICY - repo::META_VERSION] = policy::TOUCH_ALWAYS;
     let mut crypto = Streaming::default();
     let mut device = Gesture {
         samples: 0,
@@ -364,7 +364,7 @@ fn stream_validation_and_pin_precede_touch_and_one_use_grant() {
 #[test]
 fn classic_unauthorized_signature_does_not_consume_touch() {
     let mut store = Store::key(alg::P256);
-    store.bytes[33 + repo::TOUCH_POLICY] = policy::TOUCH_ALWAYS;
+    store.bytes[33 + repo::TOUCH_POLICY - repo::META_VERSION] = policy::TOUCH_ALWAYS;
     let mut crypto = Streaming::default();
     let mut device = Gesture {
         samples: 0,
@@ -399,10 +399,10 @@ fn classic_unauthorized_signature_does_not_consume_touch() {
 fn rejected_pq_request_wipes_retained_sm2_ephemeral_key() {
     let mut sm2 = Store::key(alg::SM2);
     let footer = 1 + repo::material(alg::SM2);
-    sm2.bytes[footer + repo::PIN_POLICY] = policy::PIN_NEVER;
-    sm2.bytes[footer + repo::TOUCH_POLICY] = policy::TOUCH_NEVER;
+    sm2.bytes[footer + repo::PIN_POLICY - repo::META_VERSION] = policy::PIN_NEVER;
+    sm2.bytes[footer + repo::TOUCH_POLICY - repo::META_VERSION] = policy::TOUCH_NEVER;
     let mut pq = Store::key(alg::MLKEM768);
-    pq.bytes[65 + repo::PIN_POLICY] = policy::PIN_ALWAYS;
+    pq.bytes[65 + repo::PIN_POLICY - repo::META_VERSION] = policy::PIN_ALWAYS;
     let mut crypto = Streaming::default();
     let mut device = Backend;
     let mut piv = Piv::new();

@@ -49,6 +49,10 @@ impl Store for Disk {
         if truncate {
             bytes.clear();
         }
+        // Mirror the Storage contract: patches may extend but not leave gaps.
+        if offset > bytes.len() {
+            return Err(Failure::Io);
+        }
         bytes.resize(bytes.len().max(offset + input.len()), 0);
         bytes[offset..offset + input.len()].copy_from_slice(input);
         if self.fail_write {
@@ -56,13 +60,6 @@ impl Store for Disk {
         } else {
             Ok(())
         }
-    }
-    fn resize(&mut self, f: File, length: usize) -> Result<(), Failure> {
-        self.file(f)
-            .as_mut()
-            .ok_or(Failure::Missing)?
-            .resize(length, 0);
-        Ok(())
     }
 }
 #[test]
@@ -94,17 +91,59 @@ fn install_initial_uri_and_preserve_existing_content() {
     let mut n = Ndef::new();
     n.install(false, &mut d).unwrap();
     assert_eq!(d.cc.as_deref(), Some(DEFAULT_CC.as_slice()));
-    let bytes = d.message.as_ref().unwrap();
-    assert_eq!(bytes.len(), 1024);
-    assert_eq!(&bytes[..19], b"\x00\x11\xd1\x01\x0d\x55\x04canokeys.org");
-    assert!(bytes[19..].iter().all(|&v| v == 0));
+    // Only the written prefix is stored; the logical file stays 1024 bytes.
+    assert_eq!(
+        d.message.as_deref(),
+        Some(b"\x00\x11\xd1\x01\x0d\x55\x04canokeys.org".as_slice())
+    );
+    n.select(0, 12, &[0, 1]).unwrap();
+    let mut tail = [0xa5; 32];
+    n.read(1000, &mut tail[..24], &mut d).unwrap();
+    assert!(tail[..24].iter().all(|&v| v == 0));
+    let mut span = [0xa5; 8];
+    n.read(15, &mut span, &mut d).unwrap();
+    assert_eq!(span, *b".org\0\0\0\0");
     d.message = Some(vec![1, 2, 3]);
+    d.writes.clear();
     n.install(false, &mut d).unwrap();
-    assert_eq!(&d.message.as_ref().unwrap()[..3], &[1, 2, 3]);
+    assert_eq!(d.message.as_deref(), Some([1, 2, 3].as_slice()));
+    assert!(d.writes.is_empty());
+    // A full-size file from earlier firmware remains valid unchanged.
+    d.message = Some(vec![9; 1024]);
+    n.install(false, &mut d).unwrap();
     assert_eq!(d.message.as_ref().unwrap().len(), 1024);
-    assert!(d.message.as_ref().unwrap()[3..].iter().all(|&b| b == 0));
+    d.message = Some(vec![9; 1025]);
+    n.install(false, &mut d).unwrap();
+    assert_eq!(d.message.as_ref().unwrap().len(), 19);
     n.install(true, &mut d).unwrap();
     assert_eq!(&d.message.as_ref().unwrap()[..2], &[0, 17]);
+}
+#[test]
+fn writes_past_the_stored_prefix_fill_the_gap_with_zeros() {
+    let mut d = Disk::default();
+    let mut n = Ndef::new();
+    n.install(false, &mut d).unwrap();
+    n.select(0, 12, &[0, 1]).unwrap();
+    d.writes.clear();
+    n.update(1023, &[7], false, &mut d).unwrap();
+    let bytes = d.message.as_ref().unwrap();
+    assert_eq!(bytes.len(), 1024);
+    assert!(bytes[19..1023].iter().all(|&v| v == 0));
+    assert_eq!(bytes[1023], 7);
+    // 1004 gap bytes in 256-byte chunks, then the payload.
+    assert_eq!(
+        d.writes,
+        [
+            (File::Message, 19, 256, false),
+            (File::Message, 275, 256, false),
+            (File::Message, 531, 256, false),
+            (File::Message, 787, 236, false),
+            (File::Message, 1023, 1, false),
+        ]
+    );
+    d.writes.clear();
+    n.update(500, &[8], false, &mut d).unwrap();
+    assert_eq!(d.writes, [(File::Message, 500, 1, false)]);
 }
 #[test]
 fn selected_files_permissions_and_poweroff() {
@@ -282,9 +321,6 @@ mod apdu {
         fn replace_at(&mut self, r: Record, offset: u32, bytes: &[u8]) -> Result<(), StorageError> {
             Store::write(&mut self.0, file(r), offset as usize, bytes, false).map_err(error)
         }
-        fn resize(&mut self, r: Record, length: u32) -> Result<(), StorageError> {
-            Store::resize(&mut self.0, file(r), length as usize).map_err(error)
-        }
     }
     struct UnusedCrypto;
     impl Crypto for UnusedCrypto {
@@ -410,7 +446,7 @@ mod apdu {
         );
         p.storage.replace(Record::NdefMessage, &[0; 32]).unwrap();
         canokey_rust_core::applets::ndef::Applet::install(false, &mut p).unwrap();
-        assert_eq!(Storage::size(p.storage, Record::NdefMessage).unwrap(), 1024);
+        assert_eq!(Storage::size(p.storage, Record::NdefMessage).unwrap(), 32);
         assert_eq!(
             exchange(&mut core, &mut p, &[0, 0xa4, 0, 12, 2, 0, 1]),
             [0x90, 0]

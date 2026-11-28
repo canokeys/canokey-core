@@ -134,7 +134,7 @@ fn metadata_search_never_reads_secret_and_counter_patch_preserves_record() {
     };
     let original = files.bytes.clone();
     controls.patches.set(0);
-    let key_start = FILE_HEADER_BYTES as usize + ID_BYTES + codec::KEY_OFFSET;
+    let key_start = FILE_HEADER_BYTES as usize + ENTRY_HEADER_BYTES + b"first".len();
     controls
         .forbidden_read
         .set(Some((key_start, key_start + 20)));
@@ -202,7 +202,7 @@ fn load_reads_in_place_and_erases_the_destination_on_failure() {
     loaded.clear(&mut NoCrypto);
     drop(store);
     // A failed read must not leave partial or stale key bytes in `out`.
-    let key_start = FILE_HEADER_BYTES as usize + ID_BYTES + codec::KEY_OFFSET;
+    let key_start = FILE_HEADER_BYTES as usize + ENTRY_HEADER_BYTES + b"first".len();
     controls
         .forbidden_read
         .set(Some((key_start, key_start + 20)));
@@ -229,7 +229,7 @@ fn credential(name: &[u8]) -> Credential {
 }
 
 #[test]
-fn deletion_erases_slot_and_retains_id_across_empty_reload_and_reuse() {
+fn deletion_removes_the_entry_and_never_reuses_its_id() {
     let controls = Controls::default();
     let mut files = Files {
         bytes: Vec::new(),
@@ -240,15 +240,15 @@ fn deletion_erases_slot_and_retains_id_across_empty_reload_and_reuse() {
         let mut store = Store::new(&mut files, &Wipe);
         store.initialize().unwrap();
         let id = store.insert(&credential(b"secret name")).unwrap();
+        // ID, header, name, 20-byte key and counter are packed without padding.
+        assert_eq!(store.size().unwrap(), 8 + 4 + 6 + 11 + 20 + 8);
         store.delete(id).unwrap();
         id
     };
-    assert_eq!(&files.bytes[..4], b"OAT2");
-    assert_eq!(files.bytes.len(), 150);
-    assert_eq!(&files.bytes[4..8], &id.0.to_be_bytes());
-    assert!(files.bytes[8..].iter().all(|b| *b == 0));
-    // Even when no file growth is allowed, a deleted slot remains reusable.
-    controls.capacity.set(Some(files.bytes.len() as u32));
+    // The deleted bytes are gone; the header keeps a bound above the old ID.
+    assert_eq!(&files.bytes[..4], b"OAT3");
+    assert_eq!(files.bytes.len(), 8);
+    assert_eq!(&files.bytes[4..8], &(id.0 + 1).to_be_bytes());
     let mut store = Store::new(&mut files, &Wipe);
     store.install().unwrap();
     assert_eq!(store.first().unwrap(), None);
@@ -257,9 +257,39 @@ fn deletion_erases_slot_and_retains_id_across_empty_reload_and_reuse() {
     assert!(matches!(store.load(id), Err(Error::Missing)));
     assert_eq!(store.load(fresh).unwrap().name(), b"new");
 }
+#[test]
+fn deletion_and_rename_leave_the_old_file_on_staging_failure() {
+    let controls = Controls::default();
+    let mut files = Files {
+        bytes: Vec::new(),
+        stage: Vec::new(),
+        controls: &controls,
+    };
+    let (first, second) = {
+        let mut store = Store::new(&mut files, &Wipe);
+        store.initialize().unwrap();
+        (
+            store.insert(&credential(b"first")).unwrap(),
+            store.insert(&credential(b"second")).unwrap(),
+        )
+    };
+    let original = files.bytes.clone();
+    // No room for a staged copy: the published file must stay untouched.
+    controls.capacity.set(Some(original.len() as u32 + 16));
+    {
+        let mut store = Store::new(&mut files, &Wipe);
+        assert_eq!(store.delete(first), Err(Error::Storage));
+        assert_eq!(
+            store.replace(second, &credential(b"renamed")),
+            Err(Error::Storage)
+        );
+    }
+    assert_eq!(files.bytes, original);
+    assert!(files.stage.is_empty());
+}
 
 #[test]
-fn rejects_previous_layout_and_id_exhaustion_without_writes() {
+fn rejects_invalid_headers_and_id_exhaustion_without_writes() {
     let controls = Controls::default();
     let mut files = Files {
         bytes: std::vec![0, 0, 0, 1],
@@ -267,19 +297,35 @@ fn rejects_previous_layout_and_id_exhaustion_without_writes() {
         controls: &controls,
     };
     assert_eq!(Store::new(&mut files, &Wipe).install(), Err(Error::Storage));
+    // The fixed-slot OAT2 layout is not reinterpreted.
     files.bytes = b"OAT2".to_vec();
-    files.bytes.extend_from_slice(&u32::MAX.to_be_bytes());
-    files.bytes.extend_from_slice(&[0; 142]);
-    let before = files.bytes.clone();
+    files.bytes.extend_from_slice(&[0; 146]);
+    assert_eq!(Store::new(&mut files, &Wipe).install(), Err(Error::Storage));
+    files.bytes = b"OAT3\0\0\0\0".to_vec();
     let mut store = Store::new(&mut files, &Wipe);
-    store.install().unwrap();
-    assert_eq!(store.insert(&credential(b"no wrap")), Err(Error::NoSpace));
-    assert_eq!(files.bytes, before);
-    assert_eq!(controls.patches.get(), 0);
+    assert_eq!(store.install(), Err(Error::Storage));
+    assert_eq!(
+        store.insert(&credential(b"invalid ID")),
+        Err(Error::Storage)
+    );
+    assert_eq!(files.bytes, b"OAT3\0\0\0\0");
+    for next in [u32::MAX - 1, u32::MAX] {
+        files.bytes = b"OAT3".to_vec();
+        files.bytes.extend_from_slice(&next.to_be_bytes());
+        let mut entry = [0; MAX_ENTRY_BYTES as usize];
+        let n = encode(CredentialId(next), &credential(b"last"), &mut entry);
+        files.bytes.extend_from_slice(&entry[..n]);
+        let before = files.bytes.clone();
+        let mut store = Store::new(&mut files, &Wipe);
+        store.install().unwrap();
+        assert_eq!(store.insert(&credential(b"no wrap")), Err(Error::NoSpace));
+        assert_eq!(files.bytes, before);
+        assert_eq!(controls.patches.get(), 0);
+    }
 }
 
 #[test]
-fn enumeration_reuses_validated_header_and_recycles_slots_without_reusing_ids() {
+fn enumeration_reuses_validated_header_and_keeps_insertion_order_without_reusing_ids() {
     let controls = Controls::default();
     let mut files = Files {
         bytes: Vec::new(),
@@ -312,9 +358,9 @@ fn enumeration_reuses_validated_header_and_recycles_slots_without_reusing_ids() 
     assert!(matches!(store.load(first), Err(Error::Missing)));
     let third = store.insert(&credential(b"third")).unwrap();
     assert!(third.0 > second.0);
-    assert_eq!(store.first().unwrap(), Some(third));
-    assert_eq!(store.next(third).unwrap(), Some(second));
-    assert_eq!(store.next(second).unwrap(), None);
+    assert_eq!(store.first().unwrap(), Some(second));
+    assert_eq!(store.next(second).unwrap(), Some(third));
+    assert_eq!(store.next(third).unwrap(), None);
     assert_eq!(store.load(third).unwrap().name(), b"third");
 }
 
@@ -347,13 +393,20 @@ fn uncertain_replacement_and_reinitialization_discard_cached_boundaries() {
 
 #[test]
 fn truncated_or_invalid_entry_headers_fail_closed() {
-    for bytes in [
-        std::vec![0, 0, 0, 2, 0, 0, 0, 1],
-        // Valid version/lengths but no payload.
-        std::vec![0, 0, 0, 2, 0, 0, 0, 1, 1, 5, 20, 0x21, 6, 0],
-        // A zero stable ID is never a live entry.
-        std::vec![0, 0, 0, 2, 0, 0, 0, 0, 1, 1, 1, 0x21, 6, 0],
-    ] {
+    const H: [u8; 8] = *b"OAT3\0\0\0\x01";
+    let entry = |id: u8, version: u8| {
+        let mut v = H.to_vec();
+        v.extend_from_slice(&[0, 0, 0, id, version, 1, 1, 0x21, 6, 0, b'n', b'k']);
+        v.extend_from_slice(&[0; 8]);
+        v
+    };
+    let mut truncated = H.to_vec();
+    truncated.extend_from_slice(&[0, 0, 0, 1]);
+    // Valid version/lengths but no payload.
+    let mut empty = H.to_vec();
+    empty.extend_from_slice(&[0, 0, 0, 1, 2, 5, 20, 0x21, 6, 0]);
+    // A zero stable ID and a fixed-slot version-zero tombstone are invalid.
+    for bytes in [truncated, empty, entry(0, 2), entry(1, 0)] {
         let controls = Controls::default();
         let mut files = Files {
             bytes,
@@ -363,13 +416,23 @@ fn truncated_or_invalid_entry_headers_fail_closed() {
         let mut store = Store::new(&mut files, &Wipe);
         assert_eq!(store.first(), Err(Error::Storage));
     }
+    // The same entry with a nonzero ID and version 2 is accepted.
+    let controls = Controls::default();
+    let mut files = Files {
+        bytes: entry(1, 2),
+        stage: Vec::new(),
+        controls: &controls,
+    };
+    let mut store = Store::new(&mut files, &Wipe);
+    assert_eq!(store.first(), Ok(Some(CredentialId(1))));
+    assert_eq!(store.next(CredentialId(1)), Ok(None));
 }
 
 #[test]
 fn capacity_exceeds_one_hundred_and_reserves_delete_and_reinsert_space() {
     let controls = Controls::default();
-    // A finite device. Exhausting the growth reserve must still allow deletion
-    // and reuse of an existing slot, without asking for another slot's space.
+    // A finite device. Exhausting the growth reserve must still leave room to
+    // stage the copy that deletion needs, then admit a replacement entry.
     controls.capacity.set(Some(96 * 1024));
     let mut files = Files {
         bytes: Vec::new(),
@@ -388,10 +451,8 @@ fn capacity_exceeds_one_hundred_and_reserves_delete_and_reinsert_space() {
             }
         }
         assert!(ids.len() > 100 && ids.len() < 2048);
-        assert_eq!(
-            controls.reserve.get(),
-            update_reserve(FILE_HEADER_BYTES + ids.len() as u32 * ENTRY_BYTES)
-        );
+        let size = store.size().unwrap();
+        assert_eq!(controls.reserve.get(), update_reserve(size));
     }
     let original = files.bytes.clone();
     {

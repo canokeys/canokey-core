@@ -8,7 +8,8 @@ use super::{
 pub struct CredentialId(pub u32);
 /// Serialized storage access. No live file/cache lease may cross crypto or a yield.
 /// Mutations commit atomically or return an error; uncertain errors invalidate
-/// backend access until reload. Enumeration follows physical slots, including reuse.
+/// backend access until reload. Enumeration follows insertion order; deletion
+/// and renaming preserve the relative order of the remaining credentials.
 pub trait Repository {
     fn first(&mut self) -> Result<Option<CredentialId>, Error>;
     fn next(&mut self, id: CredentialId) -> Result<Option<CredentialId>, Error>;

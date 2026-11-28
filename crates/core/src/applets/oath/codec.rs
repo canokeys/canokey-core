@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fixed credential encoding: header6, name64, key64 and counter8.
+//! Credential RAM view: header6, name64, key64 and counter8, unused bytes zero.
+//! Storage packs the same fields as header6, name, key and counter8.
 //! Storage identity belongs to the repository, not this codec.
 use super::{
     Algorithm, Error,
@@ -31,9 +32,21 @@ pub fn length(header: &[u8]) -> Result<usize, Error> {
     }
     Ok(LENGTH)
 }
+/// Stored length of a validated header: header, name, key and counter with no
+/// padding to the name and key limits.
+pub fn stored_length(header: &[u8]) -> Result<usize, Error> {
+    length(header)?;
+    Ok(FIXED_BYTES + usize::from(header[NAME_LENGTH]) + usize::from(header[KEY_LENGTH]))
+}
+/// Pack the fixed RAM view into its stored form and return the stored length.
 pub fn encode(record: &Credential, out: &mut [u8; LENGTH]) -> usize {
-    out.copy_from_slice(&record.bytes);
-    LENGTH
+    let name_end = HEADER_BYTES + usize::from(record.bytes[NAME_LENGTH]);
+    let key = record.key();
+    let key_end = name_end + key.len();
+    out[..name_end].copy_from_slice(&record.bytes[..name_end]);
+    out[name_end..key_end].copy_from_slice(key);
+    out[key_end..key_end + COUNTER_BYTES].copy_from_slice(&record.bytes[COUNTER_OFFSET..]);
+    key_end + COUNTER_BYTES
 }
 /// Validated non-secret fields.
 pub(super) struct Header {
@@ -62,10 +75,18 @@ pub(super) fn validate(bytes: &[u8; LENGTH]) -> Result<(), Error> {
     fields(bytes[..HEADER_BYTES].try_into().unwrap())?;
     Ok(())
 }
+/// Expand one stored credential, the inverse of `encode`.
 pub fn decode(bytes: &[u8]) -> Result<Credential, Error> {
-    let bytes: &[u8; LENGTH] = bytes.try_into().map_err(|_| Error::Invalid)?;
-    validate(bytes)?;
+    if stored_length(bytes)? != bytes.len() {
+        return Err(Error::Invalid);
+    }
+    let name_end = HEADER_BYTES + usize::from(bytes[NAME_LENGTH]);
+    let key_end = name_end + usize::from(bytes[KEY_LENGTH]);
     let mut record = Credential { bytes: [0; LENGTH] };
-    record.bytes.copy_from_slice(bytes);
+    record.bytes[..name_end].copy_from_slice(&bytes[..name_end]);
+    record.bytes[KEY_OFFSET..KEY_OFFSET + key_end - name_end]
+        .copy_from_slice(&bytes[name_end..key_end]);
+    record.bytes[COUNTER_OFFSET..].copy_from_slice(&bytes[key_end..]);
+    validate(&record.bytes)?;
     Ok(record)
 }

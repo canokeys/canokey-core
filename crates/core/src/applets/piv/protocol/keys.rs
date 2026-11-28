@@ -180,7 +180,7 @@ impl Piv {
         repo::read_meta(id, p, &mut m)?;
         m[repo::ALGORITHM] = a;
         m[repo::ORIGIN] = 1;
-        m[repo::NAME_LENGTH..].fill(0);
+        repo::set_name(&mut m, &[]);
         repo::policies(&mut m, b)?;
         if repo::pq(a) {
             p.crypto
@@ -200,7 +200,7 @@ impl Piv {
                 repo::rsa(a),
                 repo::width(a),
                 &w.key.bytes,
-                &m,
+                repo::footer(&m),
             )
             .map_err(repo::io)?;
             self.pending_public = Some(PendingPublicKey {
