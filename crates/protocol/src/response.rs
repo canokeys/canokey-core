@@ -3,24 +3,27 @@ pub fn checked_window(offset: usize, len: usize, total: usize) -> bool {
     offset.checked_add(len).is_some_and(|end| end <= total)
 }
 
-use core::num::NonZeroU16;
+use core::num::NonZeroU32;
 
 /// A nonzero APDU status word. Zero is not a response status; reserving it lets
 /// Rust represent optional statuses and unit results without a separate tag.
+/// The wire value stays 16 bits. Holding it in a 32-bit word lets Thumb-1
+/// callers use the return register directly while keeping the zero niche.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct StatusWord(NonZeroU16);
+pub struct StatusWord(NonZeroU32);
 
 impl StatusWord {
     /// Construct a wire status, rejecting the reserved zero value.
     pub const fn new(value: u16) -> Option<Self> {
-        match NonZeroU16::new(value) {
+        match NonZeroU32::new(value as u32) {
             Some(value) => Some(Self(value)),
             None => None,
         }
     }
     pub const fn value(self) -> u16 {
-        self.0.get()
+        // Only `new` constructs the value, so it always fits in 16 bits.
+        self.0.get() as u16
     }
 
     pub const REFERENCE_NOT_FOUND: Self = Self::new(0x6a88).unwrap();
@@ -250,8 +253,8 @@ mod tests {
         }
         // This representation is the reason for the nonzero invariant. No
         // code depends on the bit layout of Result or reads it through FFI.
-        assert_eq!(core::mem::size_of::<Result<(), StatusWord>>(), 2);
-        assert_eq!(core::mem::size_of::<Option<StatusWord>>(), 2);
+        assert_eq!(core::mem::size_of::<Result<(), StatusWord>>(), 4);
+        assert_eq!(core::mem::size_of::<Option<StatusWord>>(), 4);
     }
 
     use super::*;
