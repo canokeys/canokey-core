@@ -96,7 +96,7 @@ impl<S: Storage + ?Sized, M: Memory + ?Sized> Store<'_, S, M> {
     }
     pub fn install(&mut self) -> Result<(), Error> {
         self.located = None;
-        self.next_id().map(|_| ())
+        self.header().map(|_| ())
     }
     fn size(&mut self) -> Result<u32, Error> {
         let size = match self.storage.size(Record::OathRecords) {
@@ -109,9 +109,10 @@ impl<S: Storage + ?Sized, M: Memory + ?Sized> Store<'_, S, M> {
         }
         Ok(size)
     }
-    /// Validate the file header and return its stored next-ID lower bound.
-    fn next_id(&mut self) -> Result<u32, Error> {
-        self.size()?;
+    /// Validate the file header; return the file size and the stored next-ID
+    /// lower bound.
+    fn header(&mut self) -> Result<(u32, u32), Error> {
+        let size = self.size()?;
         let mut bytes = [0; FILE_HEADER_BYTES as usize];
         self.storage
             .read_at(Record::OathRecords, 0, &mut bytes)
@@ -123,7 +124,7 @@ impl<S: Storage + ?Sized, M: Memory + ?Sized> Store<'_, S, M> {
         if next == 0 {
             return Err(Error::Storage);
         }
-        Ok(next)
+        Ok((size, next))
     }
     /// Entry at a byte offset; zero starts an iteration after the file header.
     pub fn at(&mut self, offset: u32) -> Result<Option<(CredentialId, u32)>, Error> {
@@ -187,8 +188,7 @@ impl<S: Storage + ?Sized, M: Memory + ?Sized> Store<'_, S, M> {
     /// Publish a complete copy with the entry replaced or removed. Entries
     /// change length, so this is one atomic staged rename, never a shift.
     fn rewrite(&mut self, id: CredentialId, value: Option<&Credential>) -> Result<(), Error> {
-        let next = self.next_id()?;
-        let size = self.size()?;
+        let (size, next) = self.header()?;
         let entry = self.locate(id)?;
         self.located = None;
         let mut header = empty_file();
@@ -199,17 +199,25 @@ impl<S: Storage + ?Sized, M: Memory + ?Sized> Store<'_, S, M> {
         let result = (|| {
             self.storage.stage_begin()?;
             self.storage.stage_append(&header)?;
-            for (mut from, to) in [(FILE_HEADER_BYTES, entry.offset), (entry.end, size)] {
-                if from == entry.end && length != 0 {
+            // Copy the surviving bytes around the entry; the replacement, if
+            // any, is appended where the old entry started.
+            let mut from = FILE_HEADER_BYTES;
+            while from < size {
+                if from == entry.offset {
                     self.storage.stage_append(&bytes[..length])?;
+                    from = entry.end;
+                    continue;
                 }
-                while from < to {
-                    let n = (to - from).min(COPY_CHUNK_BYTES as u32) as usize;
-                    self.storage
-                        .read_at(Record::OathRecords, from, &mut chunk[..n])?;
-                    self.storage.stage_append(&chunk[..n])?;
-                    from += n as u32;
-                }
+                let to = if from < entry.offset {
+                    entry.offset
+                } else {
+                    size
+                };
+                let n = (to - from).min(COPY_CHUNK_BYTES as u32) as usize;
+                self.storage
+                    .read_at(Record::OathRecords, from, &mut chunk[..n])?;
+                self.storage.stage_append(&chunk[..n])?;
+                from += n as u32;
             }
             self.storage.stage_commit(Record::OathRecords)
         })();
@@ -260,33 +268,28 @@ impl<S: Storage + ?Sized, M: Memory + ?Sized> Repository for Store<'_, S, M> {
     }
     fn load_into(&mut self, id: CredentialId, out: &mut Credential) -> Result<(), Error> {
         // Read in place: no intermediate stack copy of the key exists. The
-        // packed name and key expand into the zero-padded RAM view.
-        out.bytes.fill(0);
+        // packed entry is read once, then expanded into the zero-padded RAM
+        // view: the counter moves to its fixed offset first, then the key.
         let result = self.locate(id).and_then(|entry| {
-            let name = codec::HEADER_BYTES + usize::from(entry.header[codec::NAME_LENGTH]);
-            let key = usize::from(entry.header[codec::KEY_LENGTH]);
-            let at = entry.offset + ID_BYTES as u32;
-            let key_at = at + name as u32;
-            let counter_at = key_at + key as u32;
+            let name_end = codec::HEADER_BYTES + usize::from(entry.header[codec::NAME_LENGTH]);
+            let key_end = name_end + usize::from(entry.header[codec::KEY_LENGTH]);
             let b = &mut out.bytes;
             self.storage
-                .read_at(Record::OathRecords, at, &mut b[..name])
-                .and_then(|()| {
-                    self.storage.read_at(
-                        Record::OathRecords,
-                        key_at,
-                        &mut b[codec::KEY_OFFSET..codec::KEY_OFFSET + key],
-                    )
-                })
-                .and_then(|()| {
-                    self.storage.read_at(
-                        Record::OathRecords,
-                        counter_at,
-                        &mut b[codec::COUNTER_OFFSET..],
-                    )
-                })
-                .map_err(io)
-                .and_then(|()| codec::validate(&out.bytes))
+                .read_at(
+                    Record::OathRecords,
+                    entry.offset + ID_BYTES as u32,
+                    &mut b[..key_end + codec::COUNTER_BYTES],
+                )
+                .map_err(io)?;
+            b.copy_within(
+                key_end..key_end + codec::COUNTER_BYTES,
+                codec::COUNTER_OFFSET,
+            );
+            b.copy_within(name_end..key_end, codec::KEY_OFFSET);
+            let key_len = key_end - name_end;
+            b[name_end..codec::KEY_OFFSET].fill(0);
+            b[codec::KEY_OFFSET + key_len..codec::COUNTER_OFFSET].fill(0);
+            codec::validate(&out.bytes)
         });
         if result.is_err() {
             self.memory.wipe(&mut out.bytes);
@@ -294,8 +297,7 @@ impl<S: Storage + ?Sized, M: Memory + ?Sized> Repository for Store<'_, S, M> {
         result
     }
     fn insert(&mut self, value: &Credential) -> Result<CredentialId, Error> {
-        let mut next = self.next_id()?;
-        let size = self.size()?;
+        let (size, mut next) = self.header()?;
         let mut offset = FILE_HEADER_BYTES;
         while let Some(entry) = self.read_entry(offset)? {
             next = next.max(entry.id.0.checked_add(1).ok_or(Error::NoSpace)?);
