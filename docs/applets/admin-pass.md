@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-# ADMIN + PASS implementation checkpoint
+# ADMIN and PASS
 
 ADMIN retains wire parsing and grant checks and delegates typed CTAP/NDEF
 administrative operations to their owning services. Reset actions route through
@@ -7,11 +7,7 @@ administrative operations to their owning services. Reset actions route through
 The flow performs all persistent factory phases with ADMIN PIN recovery last.
 `flows/credential_output.rs` handles both static password and OATH HOTP output.
 
-This checkpoint establishes the independent core's first applet composition.
-Published protocol behavior is the migration contract; C behavior is a
-reference where the protocol is silent, not a requirement to accept malformed
-commands. The user explicitly
-confirmed retaining default ADMIN PIN `123456` and three retries.
+The default ADMIN PIN is `123456` and has three retries.
 
 ## Implemented protocol
 
@@ -47,7 +43,7 @@ All byte encodings are independent of C layout and CPU endianness:
   bytes (10 bytes for the default PIN). No hashing, salt or KDF is added.
 - `00`: two fixed 72-byte version-3 PASS slots, each containing its
   four-byte header and zero-padded payload. OATH bindings add a four-byte stable ID.
-  The record is always 144 bytes. No previous-format decoder is retained.
+  The record is always 144 bytes.
 - `t`: atomic-replacement temporary file; close then rename. The current
   record is atomically replaced for initialization and PIN changes. Retry updates
   and PASS slot changes use atomic LittleFS patches. Failed mutations invalidate cached state;
@@ -59,18 +55,19 @@ detect malicious deletion with raw Flash access. Provision fresh storage;
 compatibility with previous C or Rust layouts is not supported.
 The PASS service creates a missing record during installation. A single-slot
 change patches 72 bytes; clearing or unlinking both slots publishes one atomic
-144-byte patch. Pack/unpack and their temporary secret buffer are removed.
-LittleFS mount failure never formats. The file cache is aligned to four bytes
-because CIU page programming reads words, including non-inline file payloads.
+144-byte patch. LittleFS mount failure never formats. The file cache is
+aligned to four bytes because CIU page programming reads words, including
+non-inline file payloads.
 
 Firmware startup and recovery remain the original C implementation.
 
 ## Storage usage response
 
-ADMIN `00 41 P1 00` accepts an empty body and P1 0 or 1. P1 0 returns
-two bytes: physically allocated KiB and total KiB, each rounded down and
-encoded as a single byte. P1 1 returns 48 bytes: eight six-byte entries
-`ID | flags | size_be32`, with size measured in bytes.
+ADMIN `00 41 P1 00` accepts an empty body and P1 0 or 1. P1 0 requires
+Le of at least 2 and returns physically allocated KiB and total KiB, each
+rounded down and encoded as a single byte. P1 1 requires Le of at least 48
+and returns eight six-byte entries in `ID | flags | size_be32` order, with
+size measured in bytes.
 
 | ID | Attribution | Record IDs (hexadecimal) |
 | --- | --- | --- |
@@ -90,37 +87,16 @@ Flag `0x01` means at least one record in that namespace is missing; optional
 records and unused CTAP resident groups count, so this flag does not indicate
 corruption.
 Other flag bits are zero. The final system entry has zero flags and includes
-filesystem metadata, page slack and unattributed allocation. Its size saturates
-at zero if attributed sizes exceed physical usage. A storage error other than
+filesystem metadata, page slack and allocation for unrecognized and temporary
+files. Its size saturates at zero if attributed sizes exceed physical usage. A storage error other than
 missing, or physical usage exceeding total capacity, returns `0x6900`.
 
-## Remaining compatibility work
+## Command admission
 
-This is not yet the full C ADMIN command set. Device configuration/enable flags,
-version/serial reporting, custom keyboard maps
-and vendor hooks still need their typed services and normal functional coverage.
-They currently return INS_NOT_SUPPORTED. Commands managing CTAP/PIV/OpenPGP/
-NDEF will arrive only with those applets; none are linked implicitly.
-The OATH profile additionally enables authenticated ADMIN INS 05 RESET OATH.
+The command and status contracts follow the published ADMIN protocol and the
+product extensions below.
+[Admin Applet protocol](https://docs.canokeys.org/development/protocols/admin/)
 
-HMAC computation is covered through the typed service and C ABI. The optional
-OATH profile now also provides the existing YubiKey HMAC USB binding.
-Keyboard HID enumerates, while automatic tests validate Rust output without
-injecting keystrokes into the user's desktop. Physical-touch/end-to-end typing
-needs a deliberately focused capture target. No exhaustive or boundary suite
-is part of this checkpoint.
-
-## Protocol-based review (2026-09-22)
-
-Normative source for implemented ADMIN commands:
-[Admin Applet protocol](https://docs.canokeys.org/development/protocols/admin/),
-retrieved 2026-09-22. Published wire requirements take precedence over accidental
-permissiveness in the C implementation. Missing commands remain explicitly
-unsupported; this is not a claim of full ADMIN protocol coverage.
-
-- ADMIN accepts CLA 00 only in this profile. The documented CLA 10 exception
-  belongs to Write FIDO Certificate (02), which is not enabled yet. Generic
-  chaining remains a common protocol capability, not an ADMIN extension.
 - Unknown/disabled instructions return 6982 without ADMIN authentication and
   6D00 after authentication, preserving legacy precedence. Implemented protected
   commands retain their command-specific P1/P2 and length validation order.
@@ -133,33 +109,29 @@ unsupported; this is not a claim of full ADMIN protocol coverage.
   minimum Le requirements must enforce those in their own adapters.
 - Backend failures map to 6900; semantic validation errors retain their specific
   protocol status. Response storage is sized for two maximum OATH descriptions
-  (134 bytes), not the former four-byte static/HMAC-only result.
+  (134 bytes).
 - Factory Reset (50): P1/P2=0, exactly ASCII RESET, locked PIN required. USB is
   the only enabled transport. Rust prompts five fresh short press/release
   gestures, each within a two-second blinking window, separated by two seconds.
   C supplies only raw LED/input/time and CCID keepalive. Failure returns 6982.
-  PASS and enabled OATH data are cleared before the PIN is restored to 123456
-  with three retries; identity/SN and legacy C files are untouched. The PIN is
-  committed last so a partial failure remains locked and can be retried after
-  remount. This is not an atomic transaction across all applet records.
+  Factory reset clears enabled applet records and preserves device identity.
+  The flow commits the default ADMIN PIN last so a partial failure remains
+  locked and can be retried after remount.
 
 ### Deliberate strictness and output policy
 
 Static with-enter flags are restricted to 0/1. Extra command bytes and reserved
 P1/P2 values are rejected; legacy C acceptance is not a requirement. Password
 storage is length-delimited; NUL has no HID mapping and is skipped rather than
-terminating the rest of the output. The undocumented FF EE FF EE eject APDU is
-not enabled. PASS HMAC type 03 and its OATH-selected compatibility route remain
-an explicitly supported extension; the public ADMIN page does not list it.
+terminating the rest of the output. PASS HMAC type 03 and its OATH-selected
+compatibility route are supported product extensions.
 
 Keyboard gestures require at least 30 ms; 500 ms selects the long slot. Contacts
 in the first 1.5 seconds after power-on are ignored and must be released before
 arming. While an APDU command chain or response is pending, a PASS gesture is
 discarded and requires a new touch. While keyboard output is active (including
 its final report release), new ordinary APDUs return 6985. Link reset cancels
-output and authentication. Busy requests do not queue secret text. The future
-multi-transport scheduler/Busy indicator is not implemented by this CCID-only
-profile; serialization and these explicit lease checks cover the current paths.
+output and authentication. Busy requests do not queue secret text.
 
 Normal host validation includes same-AID reselection, missing-Le discovery,
 static output, and the complete locked-PIN -> five-touch -> restored-PIN flow.
@@ -167,7 +139,7 @@ The host supplies raw input timing, not a production presence-bypass command.
 Hardware factory-reset validation requires a separate user-assisted five-touch
 run; do not infer it from the prior single-touch OATH test.
 
-### Device configuration and keyboard layout migration
+## Device configuration and keyboard layout
 
 Rust retains the native-endian 512-byte platform configuration format, including
 CRC, loader-word exclusion and write-once serial at bytes 16..20. ADMIN `30 00 00`
@@ -217,20 +189,7 @@ touch ignore window; subsequent gestures still use the normal timing policy.
 The HID facade fixture tests a failed Eject submission, byte-stable retry,
 release while WebUSB owns the session, and USB-reset cleanup.
 
-Public ADMIN `41 00 00` (Le >= 2) returns `{used_kib,total_kib}`, retaining
-integer truncation and the original byte-sized fields. `41 01 00` (Le >= 48)
-returns eight six-byte records: `{applet_id,flags,logical_bytes_be32}` for ADMIN,
-OpenPGP, PIV, OATH, CTAP, NDEF, PASS, then system (ID 0). A missing known record
-sets flag bit 0 and contributes zero; storage errors return 6900. P2 must be zero.
-
-Attribution follows the Rust durable record namespace, including optional or
-currently disabled applet records. Security metadata stored inside a Rust record
-is included in that record's payload size. Filesystem metadata, old/unrecognized
-files and temporary files contribute to the nonnegative system remainder.
-LittleFS supplies allocated and total bytes; all grouping and wire encoding is
-Rust. The operation is read-only and uses the existing response workspace.
-
-### Deferred keyboard gestures
+## Deferred keyboard gestures
 
 One completed short/long gesture may wait behind an active text job, including
 its final USB key release. It resolves the configured slot only when that job

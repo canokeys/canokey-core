@@ -240,41 +240,22 @@ its duration, the active scenario and error. Rust tests cover retry durability, 
 DevKit builds require the 48-vector/early-ResumeLoader boot gate. Host tests,
 linking, and offline stack inspection alone do not establish measured device stack
 high-water, power-loss recovery, or third-party PIV client interoperability;
-these require dedicated-device HIL validation. Rust NFCC is not enabled.
+these require dedicated-device HIL validation.
 
-### CIU DevKit validation, 2026-09-23
+### CIU DevKit measurements, 2026-09-23
 
-The CIU port's `tools/hil/rust_piv_smoke.py` passed 280 checks on both the
-ordinary PIV image and an optional stack-report image. Independent host checks
-verified the classical, SM2 and PQ operations and attestation certificates.
-`rust_piv_persistence.py` passed 41 checks across actual CIU reset and power
-off/on, covering keys, a 6504-byte object, names, changed PIN/management key,
-retry counts and cleared authorization. These are completed-write persistence
-checks, not arbitrary power cuts during flash writes. Physical touch and
-third-party PIV client interoperability were not exercised.
+The smoke suite ran 280 checks. The 41 reset and power-off/on checks covered
+keys, a 6504-byte object, names, changed PIN and management key, retry counts
+and authorization revocation. These runs exercised completed writes. Physical
+touch, third-party clients and interruption during writes require separate runs.
 
-HIL exposed missing timer-based CCID time extensions in PIV-only builds;
-the transport now enables the same timer for either PIV or OpenPGP. A successful
-31-second generation on the instrumented image exercised the corrected path.
-Separating buffered-command temporaries from private-operation dispatch reduced
-the observed RSA-2048 path high-water from 5300 to 4956 bytes.
+The PIV-only HIL run exposed missing CCID time extensions. PIV and OpenPGP
+share the timer, and a 31-second generation exercised the corrected path.
+Separating buffered-command temporaries from private dispatch reduced the
+observed RSA-2048 stack peak from 5300 to 4956 bytes.
 
-Isolated `rust_piv_stack.py` runs measured P-521 generation at 5016 bytes and
-P-521 attestation at 6288 bytes, versus ML-DSA-65 generation at 3688 bytes and
-attestation at 4672 bytes. These are complete APDU-path high-water measurements,
-including protocol and interrupt frames. The 6288-byte peak is above the ordinary
-5120-byte target, with 1392 bytes remaining in the 7680-byte reserved stack;
-this run found no overflow, but does not establish the ordinary budget or a
-worst-case bound for every interrupt schedule. The UART algorithm tag records
-the last classic primitive, so peak attribution uses isolated requests instead.
-Reports are in the CIU workspace's `hil-reports/rust-piv-20260923/` directory.
-
-### Review refactor validation
-
-The follow-up review fixes passed six combined host suites, including a new
-cross-applet ADMIN reset regression, and isolated empty/ADMIN-PASS/OpenPGP/PIV
-profiles. DevKit PIV passed the same 280 command checks and 41 reset/off-on
-persistence checks after the refactor. P-521 generation/attestation painted
-5024/6296 bytes (previously 5016/6288); ML-DSA remained 3688/4672. Static RAM
-is unchanged. Full evidence is in the CIU port's
-`hil-reports/rust-review-20260923/README.md`.
+The follow-up measured P-521 generation and attestation at 5024 and 6296 bytes
+of stack high-water, and ML-DSA-65 at 3688 and 4672 bytes. The instrumentation
+isolated individual APDUs because the UART algorithm tag reports the last
+classic primitive. These results belong to the historical 7680-byte stack
+reservation and 5120-byte ordinary target.

@@ -1,4 +1,4 @@
-# Rust CTAP migration
+# CTAP and U2F
 
 `ctap::Applet` owns shared session/execution/response state. The APDU adapter is
 in `apdu.rs`; HID MSG framing and continuation are in `message.rs`. Native HID
@@ -7,9 +7,9 @@ uses `reset_persistent`; ordinary transport/session reset does not erase records
 Provisioning and SM2 settings return typed errors mapped by ADMIN to its existing
 status words. Certificate staging owns begin, append, commit and abort together.
 
-## Resident storage groups (2026-10-01)
+## Resident storage groups
 
-Fresh provisioning is required. There is no migration or compatibility decoder.
+Changing from an older record layout requires fresh provisioning.
 The 100 logical slots share 25 physical files, `50`..`68`, four consecutive slots
 per file. Each begins with `CTG1`, four big-endian u16 lengths (zero means absent),
 then present payloads in slot order. Payloads remain at most 327 bytes; the group
@@ -20,17 +20,16 @@ validate copied members before publication.
 Mutations stream into the session stage using disjoint existing workspace
 borrows and a single atomic publish. Last-member deletion removes the file.
 No group-sized stack buffer or extra file cache is used. Enumeration and
-same-RP/user replacement retain logical-slot order. Reset deletes groups and
-user-information updates retain best-effort semantics: they return success even
-if group publication fails or has an uncertain outcome. Credential deletion
-propagates storage errors. Atomic group publication still prevents partial
-records; it does not imply that a best-effort command reports storage failure.
-Actual CIU-model fault
-tests compare complete old/new group bytes. Capacity depends on occupancy and
-field lengths; see the platform NFCC storage capacity report.
+same-RP/user replacement retain logical-slot order. Reset deletes the groups.
+Atomic publication and error handling for deletion and user-information updates
+are described under [resident mutations](#resident-mutations-and-rp-enumeration).
+The CIU storage model checks complete old/new group bytes after interrupted
+writes and measures capacity across credential sizes.
 
-The independent `ctap` feature links no C CTAP dispatcher or applet. It is a
-**development profile**, not a complete authenticator. It currently supports:
+## Commands and capabilities
+
+The `ctap` feature enables the Rust applet. A product selects its transports
+through its platform profile.
 
 - CTAPHID INIT, PING, WINK, LOCK and CBOR dispatch; INIT advertises WINK and
   CBOR (`0x05`). NMSG is not advertised. U2F/MSG handling is available through
@@ -73,7 +72,7 @@ The independent `ctap` feature links no C CTAP dispatcher or applet. It is a
   U2F registration continues to require the provisioned attestation key and
   certificate because its wire format has no packed self-attestation variant.
   ML-DSA makeCredential also requires provisioned P-256 attestation material;
-  their3309/2420-byte signatures cannot fit the bounded packed framing workspace.
+  their 3309/2420-byte signatures cannot fit the bounded packed framing workspace.
   Discoverable credentials, exclusion, credProtect, minPinLength (RP allowlist),
   credBlob (32 bytes), largeBlobKey, hmac-secret/hmac-secret-mc (protocols 1/2),
   and thirdPartyPayment are implemented.
@@ -410,8 +409,10 @@ events never authorize or write storage.
 
 The clientPIN/config roots, recognized COSE maps and config parameter maps
 require canonical integer-key order and unique keys. Unknown values are structurally skipped without retaining source
-offsets. **Canonical key order in skipped unknown nested maps remains unchecked**;
-complete CTAP validation must close that gap. Known fields have protocol-specific
+offsets. The decoder does not check canonical key order in skipped unknown
+nested maps. Credential-map text keys longer than the 32-byte recognition
+window are checked for UTF-8 and ordered by length. Bounded keys also retain
+their exact ordering checks. Known fields have protocol-specific
 length/type checks. Missing parameters return 0x14, wrong types 0x11, malformed CBOR
 0x12, invalid protocol 0x02 and unsupported subcommands 0x3e.
 
@@ -493,98 +494,15 @@ and maximum message271 bytes, independent of CTAP/HID enablement. Short HID tran
 
 ## Validation
 
-From the core directory:
-
-```sh
-cargo +nightly-2026-09-04 test --manifest-path Cargo.toml --workspace --all-features
-cmake -S . -B build/rust-host -DCANOKEY_PROFILE=ctap
-cmake --build build/rust-host
-ctest --test-dir build/rust-host -R '(hid|ccid)-usb' --output-on-failure
-```
-
-Config tests cover protocol 1/2 MAC message framing across all request splits,
-permission and expiry rejection, compact RP hashes, monotonic minimum policy,
-forceChange/token revocation, policy-preserving PIN changes, atomic-write failure
-and long-reset gestures. Crypto is mocked in these policy tests; the existing
-PIN HIL script independently verifies the primitives via python-fido2.
-
-Rust tests cover literal endian vectors, request boundaries, monotonic source
-reads, close-once semantics, contention, sequence/timeout/resync and injected
-scratch failures. The C adapter test injects an interrupt during an empty poll,
-checks pending IN-buffer retention after timeout, and resets during a Rust poll.
-The CCID adapter test covers split headers, literal LE/BE lengths, extended
-rejection, indefinite oversized drain, cleanup, reset races and HID contention.
-NFC tests cover inline boundaries, PKE sources, retransmission and finite Le. Execution checks cover CANCEL during in-flight
-KEEPALIVE, foreign-channel isolation, INIT resync and a stalled control endpoint. CBOR tests use
-minicbor-generated vectors at every split, one-byte fragments, all truncated
-prefixes, malformed canonical encodings, nesting limits and split UTF-8.
-
-In the CIU parent repository:
-
-```sh
-cmake --preset devkit
-cmake --build --preset build-devkit
-.venv-hil/bin/python tools/hil/devkit_ctl.py --list
-# Flash using the parent AGENTS.md workflow, then:
-.venv-hil/bin/python tools/hil/rust_ctap_smoke.py --control <control-port> --output <report.json>
-```
-
-The read-only HIL checks run 70 PINGs at 0/57/58/192/193/256/1024 bytes, independently
-decode GetInfo with python-fido2, check transport errors and CCID ownership, and
-check CCID extended rejection, oversized drain/recovery, malformed envelopes
-and chain conflicts. Historical extended-CCID successes are archived; NFC
-staging requires separate RF acceptance. They create no credentials or PINs.
-
-## Remaining migration and target evidence
-
-Continue with configurable SM2 identifiers and provisioned attestation. Long crypto needs cooperative
-progress/cancellation. Unknown credential-map text labels are consumed beyond
-the32-byte recognition window. Their complete UTF-8 is validated; equal-length
-long unknown names follow C's skip policy without retaining their full spelling.
-Bounded labels keep exact ordering checks. RP values must be text and options
-must be boolean even for unknown labels. Broader canonical-validation and
-source-cancellation review remains open. Preserve the input-close boundary.
-
-The independent CTAP Release build on 2026-09-24 uses 104,192 Flash bytes and
-6,732 static RAM bytes and passes the 48-vector/early-ResumeLoader gate. Other
-Rust applets are disabled in this profile. Combined capacity is deliberately
-deferred; do not change FS_BASE or crypto performance to make the combined image
-fit during functional migration. Normal C DevKit and NFCC builds also pass.
-
-The 171-check host flow independently verifies ES256/Ed25519/SM2 signatures,
-resident replacement/persistence, both PIN protocols, permission and RP binding,
-credential management, credProtect/minPinLength/credBlob/largeBlobKey, and
-largeBlob fragmentation, LE offsets, integrity rejection and interrupted uploads.
-It also checks hmac-secret registration/assertion consistency, single/double salts,
-protocol interoperability, UV domain isolation, invalid MAC/peer rejection,
-getNextAssertion and maximal responses exceeding 528 bytes.
-CTAP CTest passes 5/5, and the existing combined host suite passes 9/9.
-
-The saved DevKit clientPIN workload paints 3,464 of the 5,120-byte ordinary stack
-budget, with 7,680 bytes reserved. This is an older PIN-only measurement, not
-validation of the new credential, management or largeBlob call paths. The new
-image has been built but has not yet been flashed or measured on device.
-
-Dedicated-device PIN validation (leaves PIN `12345678` configured, after temporary
-changes; requires that PIN if already configured):
-
-```sh
-.venv-hil/bin/python tools/hil/rust_ctap_pin.py --output /tmp/rust-ctap-pin.json
-```
-
-The script uses python-fido2/cryptography independently for ECDH, KDF, AES-CBC,
-HMAC and token decryption under both protocols. Run the read-only transport smoke
-before/after it. Preserve evidence of firmware identity and stack profile settings.
+The [host test guide](../testing/README.md#transport-and-ctap-regressions) lists
+the packet, parser and applet suites. The CIU port's `tools/hil/README.md`
+documents physical transport smoke and clientPIN validation.
 
 FIDO APDUs require explicit SELECT-by-name after startup or slot reset.
-CTAP2/U2F command headers do not select an applet; unselected short, chained
-and standalone extended FIDO requests return `6A82`. Native CTAPHID CBOR
-execution remains independent of APDU selection. Large NFC admission requires
-an already selected FIDO applet before staging request bytes. CCID rejects
-extended encoding before selection checks. Streaming
-regressions cover explicit selection, bounded length, owner restrictions,
-source cleanup and chain errors.
-
+Unselected short, chained and standalone extended FIDO requests return
+`0x6A82`. Native CTAPHID CBOR execution is independent of APDU selection.
+NFC requires a selected FIDO applet before staging extended request bytes.
+CCID rejects extended encoding before checking selection.
 
 ### Full host HID execution regression
 
@@ -781,15 +699,14 @@ and recovery through authorized ADMIN provisioning.
 
 ### Optional credential algorithm restriction
 
-The `ctap-restrict-algorithms` Cargo feature (CIU CMake
-`CTAP_RESTRICT_ALGORITHMS=ON`) retains the existing optional policy. GetInfo
+The standalone Core host's `CTAP_RESTRICT_ALGORITHMS=ON` CMake option enables
+the `ctap-restrict-algorithms` Cargo feature. GetInfo
 advertises only ES256/Ed25519; makeCredential chooses the first permitted RP
 algorithm or returns UnsupportedAlgorithm (26). Allow/exclude lists and
 discoverable assertion enumeration ignore existing SM2/ML-DSA credentials;
 authentication with only such credentials returns NoCredentials (2e).
 Credential management still lists their original public keys and can delete
-them. Persistent records and U2F's P-256 path are unchanged. Full production
-presets leave this option OFF; restriction is not a firmware-capacity solution.
+them. CIU product presets use the full algorithm set.
 
 The existing `ctap-normal` test also runs a separately compiled restricted
 host: real five-algorithm credentials and their master/resident records cross
@@ -937,8 +854,8 @@ checks full-hash equality, ordering, sparse groups, no persistent writes, maximu
 peer-copy capacity, no-op/patch mutations, staging failures and an uncertain
 commit that actually took effect. `ctap-normal` checks same-size and size-changing
 update rejection, reauthorization, reset persistence and normalized no-op updates.
-CIU's storage-cost fixture separately compares physical programs and erases
-against the historical interleaved-read publication path.
+The CIU resident storage model cuts each observed flash checkpoint and
+checks atomic publication and unrelated records after remount.
 
 NFC staged input checks both execution liveness and activation generation around
 source reads and after source cleanup. Runtime closes the source exactly once

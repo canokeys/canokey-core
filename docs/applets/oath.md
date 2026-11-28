@@ -100,50 +100,21 @@ development version 0.0.0, matching the common version policy.
 Rust owns the 30-second request-bound press/release wait. C only polls raw
 input/ticks and services CCID time extensions without reentering Rust. A
 consumed OATH touch cannot also trigger PASS output. This is synchronous
-main-loop operation, not the future full multi-transport scheduler.
+main-loop operation.
 
-## Reproduce normal validation
+## Validation
 
-From the parent CIU repository:
+CTest's `oath-normal` runs the Python APDU oracle against `oath-host`. The
+`virtual-oath-regressions` suite exercises the PC/SC driver. The CIU HIL guide
+documents the physical command and persistence tests. They reset OATH/PASS
+and use throwaway credentials on a dedicated DevKit. The persistence test
+checks the access key, HOTP counter and PASS binding across reset and CIU
+power off/on, and verifies revocation of the session grant.
+The September 2026 DevKit run exercised physical OATH touch. The host
+keyboard fixtures verify HID bytes, while physical typing requires a
+separate device run.
 
-```sh
-cargo +nightly-2026-09-04 test --manifest-path canokey-core/Cargo.toml -p canokey-protocol -p canokey-rust-core --features admin,pass,oath
-cmake -S canokey-core -B build/rust-core-oath -DCANOKEY_PROFILE=oath -DCANOKEY_VERSIONS_FILE="$PWD/versions.cmake"
-cmake --build build/rust-core-oath
-ctest --test-dir build/rust-core-oath --output-on-failure
-.venv-hil/bin/python tools/hil/rust_oath_smoke.py --host build/rust-core-oath/oath-host
-cmake --preset devkit
-cmake --build --preset build-devkit
-# Flash only the HEX produced after the mandatory vector/ResumeLoader gate.
-.venv-hil/bin/python tools/hil/rust_oath_smoke.py --touch --output /tmp/oath-usb.json
-.venv-hil/bin/python tools/hil/devkit_ctl.py --list
-.venv-hil/bin/python tools/hil/rust_oath_persistence.py --control <current-control-port> --output /tmp/oath-persistence.json
-```
-
-These device scripts use a dedicated DevKit, reset OATH and write throwaway
-credentials/PASS slots. Successful completion leaves OATH empty, access code
-unset and PASS slots off; ADMIN PIN remains 123456. No boundary, injected-fault,
-fuzz or differential campaign is included.
-
-On 2026-09-22, five domain tests, 68 host APDU checks, 64 USB checks (65 with
-actual user touch), and 29 reset/power-cycle checks passed. Real HMAC results
-are checked independently with host OpenSSL/Python HMAC. Coverage includes all
-three algorithms, full/truncated output, ordinary command chaining, LIST/ALL
-pagination, rename/delete/reuse, access-code mutual authentication, PASS binding,
-YubiKey HMAC before authentication and common GET RESPONSE. Reset and genuine
-CIU power loss preserve handle/access key, HOTP counter and PASS binding while
-clearing the session grant. Local reports: `hil-reports/rust-oath-20260922/`.
-
-Host fixtures exercise actual HOTP keyboard bytes. Physical OATH touch passed;
-physical keyboard typing into a capture target has not been tested. New OATH
-firmware remains installed. NFCC is deferred; credential migration is not supported.
-
-
-## OATH protocol review (2026-09-23)
-
-The current A1/A2/A5 protocol and access-code commands are authoritative; the
-historical CanoKey web page's 03/04/06 instruction numbers are not a target.
-C source is reference material, not authority for undocumented permissiveness.
+## Command admission and continuation
 
 - SELECT starts a new OATH challenge/validation exchange. With an access code,
   even same-AID reselection requires VALIDATE again. This is intentionally
@@ -165,28 +136,7 @@ C source is reference material, not authority for undocumented permissiveness.
   is not itself a successful applet operation.
 - CALCULATE parses the challenge before asking for touch. presence_attempted
   marks input consumed by a wait, including failed waits, so the same gesture
-  cannot later cause PASS typing. It does not mean presence was authorized.
-  NFC presence semantics will be defined with the future NFC profile.
-
-CTest now registers oath-normal: a Python standard-library driver owns actual
-APDU assertions and runs oath-host as its card backend. Registering oath-host
-alone would only start a stdin interpreter and could falsely pass on empty
-input. The suite resides in core/tests/oath_normal.py and requires no CIU
-checkout or USB modules in host mode; the CIU script is a thin USB entrypoint.
-The documented root versions.cmake path is supplied explicitly by the caller,
-not discovered by reaching outside the standalone core repository.
-
-HIL cleanup is success-only. On failure the dedicated test device may retain
-throwaway credentials or bindings; a rerun begins by resetting OATH/PASS and
-requires the default ADMIN PIN. Factory reset's five physical touches and
-keyboard typing remain outside this normal OATH APDU suite.
-
-
-The 2026-09-23 follow-up passed 80 host APDU checks, 76
-USB checks, 29 reset/power-cycle checks and 19
-ADMIN USB checks. Both release-version and development-version OATH CTest
-profiles run two tests and pass. Local evidence is in
-`hil-reports/rust-oath-review-20260923/`; no new physical-touch run was performed.
+  cannot later cause PASS typing.
 
 ## Malformed input compatibility
 
@@ -194,5 +144,5 @@ KEY and challenge TLVs reject an impossible declared length with `6A80` before
 reading the value; a valid declared length with missing bytes returns `6700`.
 This preserves legacy status precedence without out-of-bounds access. The
 `virtual-oath-regressions` host suite includes the legacy literal vectors,
-failed counter commits, PASS configuration and persistence. Capacity/reserve
-coverage and the retired C cases are recorded in `legacy-test-coverage.md`.
+failed counter commits, PASS configuration and persistence. Repository tests
+cover the admission reserve and preserve existing records when staging fails.

@@ -203,7 +203,7 @@ Rust profile's explicit mapping for the legacy touch-cancel path.
 
 ## Validation scope
 
-`core/tests/openpgp_normal.py` is shared by host and USB runners. It generates
+`tests/integration/openpgp_normal.py` is shared by host and USB runners. It generates
 and imports all nine algorithms, uses every permitted role, checks results with
 Python cryptography, transfers multi-APDU RSA-4096 templates and 1 KiB
 certificates, and exercises ordinary PIN/configuration/reset flows. The host C
@@ -217,20 +217,9 @@ success. Failures retain test state for inspection; they do not erase legacy
 files or other applets. Persistence includes real reset and CIU power off/on.
 GnuPG card recognition is checked separately with an isolated host configuration.
 
-The initial integration UART stack instrument measured a 5072-byte high-water mark over normal
-OpenPGP operations, below the 5120-byte budget, with the original 7680-byte stack
-reservation. This is workload evidence, not an exhaustive stack proof. Physical
-OpenPGP touch was explicitly deferred by the user; host presence simulation is
-not evidence of physical touch. No fuzz, fault-injection or exhaustive boundary
-campaign was run. CIU evidence is in `hil-reports/rust-openpgp-20260923/README.md`.
-
-The design-review revision uses domain errors in PIN/repository services and
-explicit `RsaPkcs1Sign`, `RsaPkcs1Decipher`, `EcSign` and `Agree` crypto operations.
-UIF waits use runtime Request tracking: even a failed wait claims its gesture,
-which remains unavailable to PASS until release. Core/FFI `openpgp` alone does
-not initialize ADMIN, PASS or OATH; the CIU preset deliberately combines all four.
-See `hil-reports/rust-design-review-20260923/README.md` for current resource and
-validation measurements; earlier stack evidence is not reused as a new bound.
+The September 2026 CIU DevKit run measured a 5072-byte stack high-water mark
+across normal OpenPGP operations with a 7680-byte reserved stack. Physical
+touch requires its own device run.
 
 ### Lifecycle cache and uncertain writes
 

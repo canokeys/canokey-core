@@ -117,6 +117,10 @@ The full host CI and its deb-producing job use Ubuntu 24.04 together. The pinned
 pinentry 1.2.1 mock requires libassuan API 2; binary deb, GnuPG and FIDO caches
 include the distribution to prevent reuse across incompatible runner ABIs.
 
+The historical C-to-Rust case mapping identifies the original regressions
+and their initial replacements. Use the current suites above for validation.
+[Legacy test replacement ledger](https://github.com/canokeys/canokey-core/blob/e93d926a0b4c14342e29a22b92c54a35370dea72/docs/testing/legacy-test-coverage.md)
+
 ## Fuzzing
 
 `CANOKEY_FUZZING` builds `apdu-fuzzer`, a Rust/libfuzzer-sys harness that drives the
