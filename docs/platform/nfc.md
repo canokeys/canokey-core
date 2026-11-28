@@ -114,7 +114,7 @@ returns `0x6985` in NFC mode. Five-touch ADMIN reset requires a contact interfac
 
 Validation entrypoints:
 
-- `tools/hil/test_rust_nfc.py`: production raw bus adapter.
+- `python3 tests/host/run_fixtures.py --fixture nfc` from the CIU checkout exercises the raw bus adapter.
 - FFI host tests `--lib nfc`: fragmentation, retransmission, FIDO aggregation,
   WTX and reset with mocked Core and registers.
 - Transport-runtime `--test nfc_fifo`: bounded FIFO, co-latched flags, reader

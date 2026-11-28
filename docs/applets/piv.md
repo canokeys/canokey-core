@@ -208,7 +208,7 @@ cmake -S canokey-core -B build/rust-combined-host \
 cmake --build build/rust-combined-host
 ctest --test-dir build/rust-combined-host --output-on-failure
 
-python3 tools/hil/test_rust_storage.py
+python3 tests/host/run_fixtures.py --fixture storage
 
 cmake --preset devkit
 cmake --build --preset build-devkit

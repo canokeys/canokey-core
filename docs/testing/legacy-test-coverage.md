@@ -20,9 +20,9 @@ The five cases in `test/test_ndef.c` are replaced by `core/tests/ndef.rs`:
 
 The new cases use the Rust NDEF Store boundary to distinguish failures before
 and after commit. Production LittleFS byte operations remain native and are
-separately exercised by `native-storage` (`tools/hil/test_rust_storage.py` in the
-CIU parent checkout), using the real service adapter and LittleFS with mock
-Flash. Rust host snapshots are not evidence for LittleFS power-loss durability.
+exercised by the CIU storage fixtures. Run
+`python3 tests/host/run_fixtures.py --fixture storage` from the CIU checkout.
+The fixtures use the real service adapter and LittleFS with simulated Flash. Rust host snapshots are not evidence for LittleFS power-loss durability.
 Registry tests additionally verify selection, chained writes and streamed reads
 through the actual APDU engine.
 

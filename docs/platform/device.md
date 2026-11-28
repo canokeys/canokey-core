@@ -28,17 +28,10 @@ remaining native storage service is a LittleFS adapter, including raw record
 reads/writes/staging and filesystem allocation queries. ADMIN owns storage
 attribution, page validation/update, access checks and response encoding.
 
-Validation from the CIU parent repository:
-
-- `tools/hil/test_rust_device.py`: production boot module, ten mode/failure
-  scenarios, and timer cancellation/rearming/IRQ-mask semantics.
-- `tools/hil/test_rust_ccid.py`: real CCID facade and asynchronous endpoint
-  lifecycle, timed extensions, reset and stable in-flight bytes.
-- `tools/hil/test_rust_hid.py`: real HID/keyboard facade, resynchronization,
-  cancellation, report retry, eject release and reset during submission.
-- `tools/hil/test_rust_usb.py`: all eight HID/keyboard/WebUSB feature combinations
-  plus a separate hardware DCD register fixture.
-- `tools/hil/test_rust_storage.py`: actual LittleFS adapter and persistent files.
+The Core `rust-transports` CTest exercises device startup, timer callbacks,
+CCID, CTAPHID, keyboard and USB feature combinations. CIU's
+`tests/host/run_fixtures.py` runs the native DCD, timer and LittleFS fixtures.
+See the [Core test guide](../testing/README.md).
 
 These host checks do not establish firmware capacity, physical USB/NFC
 interoperability or runtime stack bounds. Full DevKit and NFCC link capacity,
