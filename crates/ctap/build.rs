@@ -7,7 +7,12 @@ type R = Result<(), Error<Infallible>>;
 fn fragment(out: &mut String, name: &str, encode: impl FnOnce(&mut E) -> R) {
     let mut e = E::new(Vec::new());
     encode(&mut e).unwrap();
-    write!(out, "pub const {name}: &[u8] = &[").unwrap();
+    // Fragments also read by parsers or GetInfo are statics: one Flash copy.
+    if name == "PUBLIC_KEY_TYPE" {
+        write!(out, "pub static {name}: [u8; {}] = [", e.writer().len()).unwrap();
+    } else {
+        write!(out, "pub const {name}: &[u8] = &[").unwrap();
+    }
     for byte in e.writer() {
         write!(out, "0x{byte:02x},").unwrap();
     }

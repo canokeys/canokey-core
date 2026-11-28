@@ -212,7 +212,7 @@ impl<E: Error, const PREFIX: usize, const METADATA_ONLY: bool> Parser<E, PREFIX,
                 };
                 self.value = true;
             } else {
-                self.public_key = text == b"public-key";
+                self.public_key = text == crate::response::encoding::public_key_text();
             }
             self.text_kind = 0;
         }

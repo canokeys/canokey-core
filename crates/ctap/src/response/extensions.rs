@@ -2,6 +2,7 @@
 //! Authenticator-data extension maps over already prepared public outputs.
 //! Product capabilities retain record reads, hmac-secret crypto and key erasure.
 use super::encoding::{EncodeError, Encoder};
+use crate::extensions::{Extension, name};
 
 #[derive(Clone, Copy, Default)]
 pub struct Fields {
@@ -42,27 +43,28 @@ impl Fields {
     ) -> Result<(), EncodeError> {
         e.map(self.count());
         if let Some(accepted) = self.cred_blob {
-            e.str("credBlob").bool(accepted);
+            e.encoded(name(Extension::CredBlob)).bool(accepted);
         } else if self.get_cred_blob {
-            e.str("credBlob").bytes(blob);
+            e.encoded(name(Extension::CredBlob)).bytes(blob);
         }
         if let Some(protection) = self.protection {
-            e.str("credProtect").u8(protection);
+            e.encoded(name(Extension::CredProtect)).u8(protection);
         }
         if self.hmac_secret {
-            e.str("hmac-secret").bool(true);
+            e.encoded(name(Extension::HmacSecret)).bool(true);
         }
         if !self.make && !hmac.is_empty() {
-            e.str("hmac-secret").bytes(hmac);
+            e.encoded(name(Extension::HmacSecret)).bytes(hmac);
         }
         if let Some(minimum) = self.min_pin_length {
-            e.str("minPinLength").u8(minimum);
+            e.encoded(name(Extension::MinPinLength)).u8(minimum);
         }
         if self.make && !hmac.is_empty() {
-            e.str("hmac-secret-mc").bytes(hmac);
+            e.encoded(name(Extension::HmacSecretMc)).bytes(hmac);
         }
         if !self.make && self.third_party_payment {
-            e.str("thirdPartyPayment").bool(third_party_accepted());
+            e.encoded(name(Extension::ThirdPartyPayment))
+                .bool(third_party_accepted());
         }
         e.finish()
     }

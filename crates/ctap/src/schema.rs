@@ -4,7 +4,7 @@
 //! It reads no environment or product files and adds no firmware parser.
 use crate::{
     client_pin::Protocol,
-    info::{Flag, Value},
+    info::{self, Flag, Value},
 };
 use minicbor::{Encoder, encode::Error};
 use std::{convert::Infallible, format, string::String, vec::Vec};
@@ -163,8 +163,15 @@ impl Builder {
                     Ok(())
                 });
             }
-            Field::Extensions(values)
-            | Field::Transports(values)
+            Field::Extensions(values) => {
+                // Products declaring the shared list reference its one copy.
+                if Self::bytes(|e| strings(e, values)) == crate::extensions::NAMES {
+                    self.value(Value::Extensions);
+                } else {
+                    self.encoded(|e| strings(e, values));
+                }
+            }
+            Field::Transports(values)
             | Field::AttestationFormats(values)
             | Field::TransportsForReset(values) => self.encoded(|e| strings(e, values)),
             Field::Aaguid => self.value(Value::Aaguid),
@@ -244,10 +251,7 @@ impl Builder {
                         }),
                         Algorithm::Configured => self.value(Value::Algorithm),
                     }
-                    self.encoded(|e| {
-                        e.str("type")?.str("public-key")?;
-                        Ok(())
-                    });
+                    self.value(Value::PublicKeyType);
                 }
             }
             Field::ForcePinChange => self.value(Value::ForceChange),
@@ -267,31 +271,33 @@ impl Builder {
             }),
         }
     }
-    fn source(&self) -> String {
-        fn literal(bytes: &[u8]) -> String {
-            let mut output = String::from("&[");
-            for byte in bytes {
-                output.push_str(&format!("0x{byte:02x},"));
+    /// Lower fragments to the compact operation string read by `info::encode`.
+    fn program(&self) -> Vec<u8> {
+        fn literal(output: &mut Vec<u8>, condition: Option<u8>, bytes: &[u8]) {
+            for chunk in bytes.chunks(info::LITERAL_MAX) {
+                output.extend(condition);
+                output.push(chunk.len() as u8);
+                output.extend_from_slice(chunk);
             }
-            output.push(']');
-            output
         }
-        let mut output = String::from(
-            "// Generated immutable GetInfo schema.\nuse canokey_ctap::info::Part;\nconst INFO: &[Part] = &[\n",
-        );
+        let mut output = Vec::new();
         for part in &self.parts {
-            output.push_str(&match part {
-                Fragment::Encoded(bytes) => format!("Part::Encoded({})", literal(bytes)),
-                Fragment::Choice(flag, yes, no) => format!(
-                    "Part::Choice(canokey_ctap::info::Flag::{flag:?}, {}, {})",
-                    literal(yes),
-                    literal(no)
-                ),
-                Fragment::Value(value) => {
-                    format!("Part::Value(canokey_ctap::info::Value::{value:?})")
+            match part {
+                Fragment::Encoded(bytes) => literal(&mut output, None, bytes),
+                Fragment::Choice(flag, yes, no) => {
+                    literal(&mut output, Some(info::when(*flag, true)), yes);
+                    literal(&mut output, Some(info::when(*flag, false)), no);
                 }
-            });
-            output.push_str(",\n");
+                Fragment::Value(value) => output.push(info::value(*value)),
+            }
+        }
+        output
+    }
+    fn source(&self) -> String {
+        let mut output =
+            String::from("// Generated immutable GetInfo schema.\nconst INFO: &[u8] = &[");
+        for byte in self.program() {
+            output.push_str(&format!("0x{byte:02x},"));
         }
         output.push_str("];\n");
         output

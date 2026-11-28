@@ -4,6 +4,11 @@ use crate::{credential, resident};
 pub use canokey_protocol::cbor::{EncodeError, Encoder};
 
 include!(concat!(env!("OUT_DIR"), "/ctap_response.rs"));
+/// The `"public-key"` credential type text inside [`PUBLIC_KEY_TYPE`].
+#[inline(always)]
+pub fn public_key_text() -> &'static [u8] {
+    &PUBLIC_KEY_TYPE[PUBLIC_KEY_TYPE.len() - 10..]
+}
 
 pub mod cose {
     pub const ES256: i32 = -7;
@@ -43,7 +48,7 @@ use management as cm;
 // These boundaries share the schema across authentication and management.
 #[inline(never)]
 pub fn descriptor(e: &mut Encoder<&mut [u8]>, id: &[u8]) -> Result<(), EncodeError> {
-    e.encoded(DESCRIPTOR).bytes(id).encoded(PUBLIC_KEY_TYPE);
+    e.encoded(DESCRIPTOR).bytes(id).encoded(&PUBLIC_KEY_TYPE);
     e.finish()
 }
 

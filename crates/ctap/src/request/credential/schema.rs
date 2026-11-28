@@ -78,17 +78,31 @@ pub(super) fn admit_auth<E: crate::request::Error>(
     }
     Ok(())
 }
-// Compact records carry a byte length instead of a fat slice pointer. Build
-// names and lengths from the same literals so the two arrays cannot drift.
+// Names are CBOR text keys (header then spelling) in one byte string, so a
+// record needs no length or fat slice pointer. Extension names are the shared
+// GetInfo array; every other name comes from the literals below.
 pub(crate) fn text_field(context: Context, key: &[u8], make: bool) -> Field {
     macro_rules! fields {
         ($(($scope:ident, $name:literal, $field:ident, $make_only:literal)),* $(,)?) => {
-            const NAMES: &[u8] = concat!($($name),*).as_bytes();
-            const FIELDS: &[(Context, u8, Field, bool)] = &[$(
-                (Context::$scope, const {
-                    assert!($name.len() <= u8::MAX as usize);
-                    $name.len() as u8
-                }, Field::$field, $make_only),
+            const NAMES: [u8; 0 $(+ 1 + $name.len())*] = {
+                let mut names = [0; 0 $(+ 1 + $name.len())*];
+                let mut at = 0;
+                $(
+                    let name = $name.as_bytes();
+                    assert!(name.len() < 24);
+                    names[at] = 0x60 | name.len() as u8;
+                    let mut i = 0;
+                    while i < name.len() {
+                        names[at + 1 + i] = name[i];
+                        i += 1;
+                    }
+                    at += 1 + name.len();
+                )*
+                assert!(at == names.len());
+                names
+            };
+            const FIELDS: &[(Context, Field, bool)] = &[$(
+                (Context::$scope, Field::$field, $make_only),
             )*];
         };
     }
@@ -107,17 +121,29 @@ pub(crate) fn text_field(context: Context, key: &[u8], make: bool) -> Field {
         (Options, "rk", Resident, false),
         (Options, "uv", Uv, false),
         (Options, "up", Up, false),
-        (Extensions, "thirdPartyPayment", ThirdPartyPayment, false),
-        (Extensions, "hmac-secret", HmacSecret, false),
-        (Extensions, "hmac-secret-mc", HmacSecretMc, true),
-        (Extensions, "credBlob", CredBlob, false),
-        (Extensions, "largeBlobKey", LargeBlobKey, false),
-        (Extensions, "minPinLength", MinPinLength, true),
-        (Extensions, "credProtect", Protection, true),
     ];
-    let mut names = NAMES;
-    for &(scope, length, field, make_only) in FIELDS {
-        let (name, rest) = names.split_at(usize::from(length));
+    // Destinations in `extensions::NAMES` order.
+    const EXTENSIONS: &[(Context, Field, bool)] = &[
+        (Context::Extensions, Field::CredBlob, false),
+        (Context::Extensions, Field::Protection, true),
+        (Context::Extensions, Field::HmacSecret, false),
+        (Context::Extensions, Field::HmacSecretMc, true),
+        (Context::Extensions, Field::LargeBlobKey, false),
+        (Context::Extensions, Field::MinPinLength, true),
+        (Context::Extensions, Field::ThirdPartyPayment, false),
+    ];
+    let (mut names, fields): (&[u8], _) = if context == Context::Extensions {
+        (&crate::extensions::NAMES[1..], EXTENSIONS)
+    } else {
+        (&NAMES, FIELDS)
+    };
+    for &(scope, field, make_only) in fields {
+        let Some((name, rest)) = names
+            .split_first()
+            .and_then(|(&header, rest)| rest.split_at_checked(usize::from(header & 0x1f)))
+        else {
+            break;
+        };
         names = rest;
         if scope == context && name == key && (!make_only || make) {
             return field;

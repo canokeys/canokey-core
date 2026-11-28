@@ -286,7 +286,8 @@ impl<E: Error, const ALGORITHMS: usize> Fields<E, ALGORITHMS> {
                         self.key_body = false;
                         self.text_key()?;
                     } else if matches!(field, Field::Type) {
-                        self.item_type = pos == 10 && &self.key[..pos] == b"public-key";
+                        self.item_type = pos == 10
+                            && &self.key[..pos] == crate::response::encoding::public_key_text();
                     }
                 }
                 _ => return Err(E::INVALID_CBOR),
